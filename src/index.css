@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CSS Variables for Themes */
+:root {
+  --background: 0 0% 100%;
+  --foreground: 240 10% 3.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 10% 3.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 10% 3.9%;
+  --primary: 262 80% 42%; /* Rich royal purple */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 222 14% 90%;
+  --secondary-foreground: 240 6% 10%;
+  --muted: 240 5% 96%;
+  --muted-foreground: 240 6% 40%;
+  --accent: 292 90% 54%; /* Luxury accent purple */
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 240 6% 90%;
+  --input: 240 6% 90%;
+  --ring: 262 80% 42%;
+  --radius: 14px;
+}
+
+.dark {
+  --background: 270 20% 6%; /* Deep luxe plum */
+  --foreground: 0 0% 98%;
+  --card: 270 22% 8%;
+  --card-foreground: 0 0% 98%;
+  --popover: 270 22% 8%;
+  --popover-foreground: 0 0% 98%;
+  --primary: 273 84% 64%; /* Vibrant luxury purple */
+  --primary-foreground: 0 0% 8%;
+  --secondary: 270 18% 14%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 270 16% 12%;
+  --muted-foreground: 270 8% 72%;
+  --accent: 285 85% 70%;
+  --accent-foreground: 0 0% 8%;
+  --destructive: 0 62% 50%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 270 14% 18%;
+  --input: 270 14% 18%;
+  --ring: 273 84% 64%;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html, body, #root {
+    @apply h-full;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-luxury transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-ring;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center rounded-lg bg-secondary px-4 py-2 text-sm font-semibold text-secondary-foreground transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-ring;
+  }
+  .glass {
+    @apply bg-white/60 dark:bg-white/5 backdrop-blur-xl border border-border/60;
+  }
+}
+
