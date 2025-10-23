@@ -1,22 +1,26 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useContext } from 'react'
-import { AuthContext } from '../providers/AuthProvider'
-import { Sparkles, Lock } from 'lucide-react'
+import { useAuth } from '../hooks/useAuth'
+import { Sparkles, Lock, AlertCircle } from 'lucide-react'
 
 export default function LoginPage() {
-  const { login } = useContext(AuthContext)
+  const { login, isLoading, error } = useAuth()
   const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [localError, setLocalError] = useState<string | null>(null)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setLoading(true)
-    await login(username, password)
-    setLoading(false)
-    navigate('/')
+    setLocalError(null)
+    
+    try {
+      await login(username, password)
+      navigate('/')
+    } catch (error) {
+      // Error is already handled by AuthProvider
+      setLocalError('Login failed. Please check your credentials.')
+    }
   }
 
   return (
@@ -49,6 +53,13 @@ export default function LoginPage() {
           </div>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {(error || localError) && (
+            <div className="flex items-center gap-2 rounded-xl bg-destructive/10 p-3 text-sm text-destructive">
+              <AlertCircle className="h-4 w-4" />
+              {error || localError}
+            </div>
+          )}
+          
           <div className="space-y-2">
             <label htmlFor="username" className="text-sm font-medium">Username</label>
             <input
@@ -59,6 +70,7 @@ export default function LoginPage() {
               className="w-full rounded-xl border border-border bg-background/60 px-3 py-2 outline-none ring-0 transition focus:border-primary"
               placeholder="Your username"
               required
+              disabled={isLoading}
             />
           </div>
           <div className="space-y-2">
@@ -71,10 +83,15 @@ export default function LoginPage() {
               className="w-full rounded-xl border border-border bg-background/60 px-3 py-2 outline-none ring-0 transition focus:border-primary"
               placeholder="••••••••"
               required
+              disabled={isLoading}
             />
           </div>
-          <button className="btn-primary w-full rounded-xl py-2" disabled={loading}>
-            {loading ? 'Signing in…' : 'Sign in'}
+          <button 
+            className="btn-primary w-full rounded-xl py-2" 
+            disabled={isLoading}
+            type="submit"
+          >
+            {isLoading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
         <p className="mt-4 text-center text-xs text-muted-foreground">

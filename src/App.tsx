@@ -1,16 +1,10 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { ThemeProvider } from './theme/ThemeProvider'
-import { AuthProvider, AuthContext } from './providers/AuthProvider'
+import { AuthProvider } from './providers/AuthProvider'
 import LandingPage from './pages/Landing'
 import LoginPage from './pages/Login'
-import { useContext, type ReactNode } from 'react'
 import { AppLayout } from './layouts/AppLayout'
-
-function RequireAuth({ children }: { children: ReactNode }) {
-  const { user } = useContext(AuthContext)
-  if (!user) return <Navigate to="/login" replace />
-  return <>{children}</>
-}
+import { ProtectedRoute } from './components/ProtectedRoute'
 
 export default function App() {
   return (
@@ -21,11 +15,11 @@ export default function App() {
             <Route
               path="/"
               element={
-                <RequireAuth>
+                <ProtectedRoute>
                   <AppLayout>
                     <LandingPage />
                   </AppLayout>
-                </RequireAuth>
+                </ProtectedRoute>
               }
             />
             <Route path="/login" element={<LoginPage />} />
