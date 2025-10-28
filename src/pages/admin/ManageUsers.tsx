@@ -8,10 +8,14 @@ import { UserFormModal } from '../../components/admin/users/UserFormModal';
 import { SalesmanFormModal } from '../../components/admin/salesmen/SalesmanFormModal';
 import { VendorFormModal } from '../../components/admin/vendors/VendorFormModal';
 import { BrokerFormModal } from '../../components/admin/brokers/BrokerFormModal';
+import { useUsers } from '../../hooks/useUsers';
+import type { User } from '../../types/entities';
 
 export default function ManageUsers() {
+  const { refetch: refetchUsers } = useUsers();
   const [activeTab, setActiveTab] = useState<'users' | 'vendors' | 'salesmen' | 'brokers'>('users');
   const [userModalOpen, setUserModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
   const [salesmanModalOpen, setSalesmanModalOpen] = useState(false);
   const [vendorModalOpen, setVendorModalOpen] = useState(false);
   const [brokerModalOpen, setBrokerModalOpen] = useState(false);
@@ -61,7 +65,10 @@ export default function ManageUsers() {
       
       <button
         onClick={() => {
-          if (activeTab === 'users') setUserModalOpen(true);
+          if (activeTab === 'users') {
+            setEditingUser(null);
+            setUserModalOpen(true);
+          }
           if (activeTab === 'salesmen') setSalesmanModalOpen(true);
           if (activeTab === 'vendors') setVendorModalOpen(true);
           if (activeTab === 'brokers') setBrokerModalOpen(true);
@@ -75,23 +82,38 @@ export default function ManageUsers() {
 
       {/* Tab Content */}
       <div className="card-glow rounded-2xl p-6 highlight-box">
-        {activeTab === 'users' && <UsersTab />}
+        {activeTab === 'users' && <UsersTab onEditUser={handleEditUser} />}
         {activeTab === 'vendors' && <VendorsTab />}
         {activeTab === 'salesmen' && <SalesmenTab />}
         {activeTab === 'brokers' && <BrokersTab />}
       </div>
 
       {/* Modals */}
-      <UserFormModal open={userModalOpen} onOpenChange={setUserModalOpen} />
+      <UserFormModal 
+        open={userModalOpen} 
+        onOpenChange={(open) => {
+          setUserModalOpen(open);
+          if (!open) {
+            setEditingUser(null);
+            refetchUsers(); // Refresh the users list when modal closes
+          }
+        }} 
+        user={editingUser}
+      />
       <SalesmanFormModal open={salesmanModalOpen} onOpenChange={setSalesmanModalOpen} />
       <VendorFormModal open={vendorModalOpen} onOpenChange={setVendorModalOpen} />
       <BrokerFormModal open={brokerModalOpen} onOpenChange={setBrokerModalOpen} />
     </div>
   );
+
+  function handleEditUser(user: User) {
+    setEditingUser(user);
+    setUserModalOpen(true);
+  }
 }
 
-function UsersTab() {
-  return <UsersTable />;
+function UsersTab({ onEditUser }: { onEditUser: (user: User) => void }) {
+  return <UsersTable onEditUser={onEditUser} />;
 }
 
 function VendorsTab() {

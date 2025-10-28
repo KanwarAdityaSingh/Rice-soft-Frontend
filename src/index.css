@@ -4,103 +4,66 @@
 
 /* CSS Variables for Themes */
 :root {
-  --background: 210 100% 96%; /* #e6f3ff - More intense light blue background */
-  --foreground: 210 35% 15%; /* #0f1f2e - Deeper blue text */
+  --background: 258 100% 98%; /* #f8f6ff */
+  --foreground: 258 28% 22%; /* #2d2348 */
   --card: 0 0% 100%; /* #ffffff */
-  --card-foreground: 210 35% 15%; /* #0f1f2e - Deeper blue text */
+  --card-foreground: 258 28% 22%; /* #2d2348 */
   --popover: 0 0% 100%;
-  --popover-foreground: 210 35% 15%;
-  --primary: 210 100% 45%; /* #0052cc - More intense luxury blue */
+  --popover-foreground: 258 28% 22%;
+  --primary: 263 100% 65%; /* #8a4fff */
   --primary-foreground: 0 0% 100%;
-  --secondary: 200 100% 35%; /* #0073b3 - More intense deep blue accent */
+  --secondary: 293 73% 58%; /* #c840e9 */
   --secondary-foreground: 0 0% 100%;
-  --muted: 210 25% 92%;
-  --muted-foreground: 210 25% 30%; /* #3d4f5e - More intense muted blue-gray */
-  --accent: 200 100% 35%; /* #0073b3 - More intense deep blue accent */
+  --muted: 258 20% 95%;
+  --muted-foreground: 258 18% 35%; /* #4a4568 */
+  --accent: 293 73% 58%; /* #c840e9 */
   --accent-foreground: 0 0% 100%;
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 98%;
-  --border: 210 25% 85%;
-  --input: 210 25% 85%;
-  --ring: 210 100% 45%;
+  --border: 258 20% 90%;
+  --input: 258 20% 90%;
+  --ring: 263 100% 65%;
   --radius: 14px;
   
   /* Custom properties matching your previous website */
-  --text-color: #0f1f2e;
-  --text-secondary: #3d4f5e;
-  --background-color: #e6f3ff;
+  --text-color: #2d2348;
+  --text-secondary: #4a4568;
+  --background-color: #f8f6ff;
   --card-background: #ffffff;
-  --primary-gradient: linear-gradient(90deg, #0052cc, #0073b3);
-  --primary-color: #0052cc;
-  --secondary-color: #0073b3;
-  
-  /* Original pink/purple colors - commented out for easy switching */
-  /* --background: 258 100% 98%; /* #f8f6ff */
-  /* --foreground: 258 28% 22%; /* #2d2348 */
-  /* --card-foreground: 258 28% 22%; /* #2d2348 */
-  /* --popover-foreground: 258 28% 22%; */
-  /* --primary: 263 100% 65%; /* #8a4fff */
-  /* --secondary: 293 73% 58%; /* #c840e9 */
-  /* --muted: 258 20% 95%; */
-  /* --muted-foreground: 258 18% 35%; /* #4a4568 */
-  /* --accent: 293 73% 58%; /* #c840e9 */
-  /* --border: 258 20% 90%; */
-  /* --input: 258 20% 90%; */
-  /* --ring: 263 100% 65%; */
-  /* --text-color: #2d2348; */
-  /* --text-secondary: #4a4568; */
-  /* --background-color: #f8f6ff; */
-  /* --primary-gradient: linear-gradient(90deg, #8a4fff, #c840e9); */
-  /* --primary-color: #8a4fff; */
-  /* --secondary-color: #c840e9; */
+  --primary-gradient: linear-gradient(90deg, #8a4fff, #c840e9);
+  --primary-color: #8a4fff;
+  --secondary-color: #c840e9;
 }
 
 .dark {
-  --background: 210 65% 10%; /* #0a1a2e - Deep navy background */
+  --background: 258 65% 10%; /* #1a1033 */
   --foreground: 0 0% 100%; /* #ffffff */
-  --card: 210 28% 22% / 0.7; /* rgba(30, 58, 95, 0.7) - Dark blue card */
+  --card: 258 28% 22% / 0.7; /* rgba(45, 35, 72, 0.7) */
   --card-foreground: 0 0% 100%;
-  --popover: 210 28% 22% / 0.7;
+  --popover: 258 28% 22% / 0.7;
   --popover-foreground: 0 0% 100%;
-  --primary: 210 100% 60%; /* #3399ff - Brighter luxury blue for dark mode */
+  --primary: 263 100% 65%; /* #8a4fff */
   --primary-foreground: 0 0% 100%;
-  --secondary: 200 100% 50%; /* #00ccff - Bright blue accent */
+  --secondary: 293 73% 58%; /* #c840e9 */
   --secondary-foreground: 0 0% 100%;
-  --muted: 210 40% 15%;
+  --muted: 258 40% 15%;
   --muted-foreground: 0 0% 100% / 0.7; /* rgba(255, 255, 255, 0.7) */
-  --accent: 200 100% 50%; /* #00ccff - Bright blue accent */
+  --accent: 293 73% 58%; /* #c840e9 */
   --accent-foreground: 0 0% 100%;
   --destructive: 0 62% 50%;
   --destructive-foreground: 0 0% 98%;
-  --border: 210 30% 25%;
-  --input: 210 30% 25%;
-  --ring: 210 100% 60%;
+  --border: 258 30% 25%;
+  --input: 258 30% 25%;
+  --ring: 263 100% 65%;
   
   /* Custom properties for dark mode */
   --text-color: #ffffff;
   --text-secondary: rgba(255, 255, 255, 0.7);
-  --background-color: #0a1a2e;
-  --card-background: rgba(30, 58, 95, 0.7);
-  --primary-gradient: linear-gradient(90deg, #3399ff, #00ccff);
-  --primary-color: #3399ff;
-  --secondary-color: #00ccff;
-  
-  /* Original dark mode colors - commented out for easy switching */
-  /* --background: 258 65% 10%; /* #1a1033 */
-  /* --card: 258 28% 22% / 0.7; /* rgba(45, 35, 72, 0.7) */
-  /* --popover: 258 28% 22% / 0.7; */
-  /* --primary: 263 100% 65%; /* #8a4fff */
-  /* --secondary: 293 73% 58%; /* #c840e9 */
-  /* --muted: 258 40% 15%; */
-  /* --accent: 293 73% 58%; /* #c840e9 */
-  /* --border: 258 30% 25%; */
-  /* --input: 258 30% 25%; */
-  /* --ring: 263 100% 65%; */
-  /* --background-color: #1a1033; */
-  /* --card-background: rgba(45, 35, 72, 0.7); */
-  /* --primary-gradient: linear-gradient(90deg, #8a4fff, #c840e9); */
-  /* --primary-color: #8a4fff; */
-  /* --secondary-color: #c840e9; */
+  --background-color: #1a1033;
+  --card-background: rgba(45, 35, 72, 0.7);
+  --primary-gradient: linear-gradient(90deg, #8a4fff, #c840e9);
+  --primary-color: #8a4fff;
+  --secondary-color: #c840e9;
 }
 
 @layer base {
@@ -465,8 +428,8 @@
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -475,7 +438,7 @@
 
 ::-webkit-scrollbar-thumb {
   background: linear-gradient(180deg, hsl(var(--primary)), hsl(var(--accent)));
-  border-radius: 5px;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {

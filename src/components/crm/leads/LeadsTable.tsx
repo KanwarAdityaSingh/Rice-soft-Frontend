@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { format } from 'date-fns';
 import { SearchBar } from '../../admin/shared/SearchBar';
 import { FilterDropdown } from '../../admin/shared/FilterDropdown';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
@@ -8,8 +7,8 @@ import { EmptyState } from '../../admin/shared/EmptyState';
 import { LeadStatusBadge } from '../../admin/shared/LeadStatusBadge';
 import { LeadPriorityBadge } from '../../admin/shared/LeadPriorityBadge';
 import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
-import { Users, Edit, Trash2, TrendingUp } from 'lucide-react';
-import type { Lead, LeadFilters, LeadEvent } from '../../../types/entities';
+import { Users, Edit, Trash2, TrendingUp, Copy, Check } from 'lucide-react';
+import type { Lead, LeadFilters } from '../../../types/entities';
 
 interface LeadsTableProps {
   leads: Lead[];
@@ -34,14 +33,26 @@ export function LeadsTable({
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const filteredLeads = leads.filter((lead) => {
     const matchesSearch =
       lead.company_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       lead.contact_person.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      lead.email.toLowerCase().includes(searchQuery.toLowerCase());
+      lead.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      lead.business_details?.business_keyword?.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesSearch;
   });
+
+  const copyToClipboard = async (text: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy: ', err);
+    }
+  };
 
   const handleDeleteClick = (lead: Lead) => {
     setSelectedLead(lead);
@@ -77,7 +88,7 @@ export function LeadsTable({
           <SearchBar 
             value={searchQuery} 
             onChange={setSearchQuery} 
-            placeholder="Search by company name, contact, or email..." 
+            placeholder="Search by business name, contact, email, or keyword..." 
           />
         </div>
         <FilterDropdown
@@ -109,7 +120,8 @@ export function LeadsTable({
         <table className="w-full">
           <thead>
             <tr className="border-b border-border">
-              <th className="text-left py-3 px-4 text-sm font-semibold">Company Name</th>
+              <th className="text-left py-3 px-4 text-sm font-semibold">Lead ID</th>
+              <th className="text-left py-3 px-4 text-sm font-semibold">Business Name</th>
               <th className="text-left py-3 px-4 text-sm font-semibold">Contact Person</th>
               <th className="text-left py-3 px-4 text-sm font-semibold">Email</th>
               <th className="text-left py-3 px-4 text-sm font-semibold">Phone</th>
@@ -126,6 +138,22 @@ export function LeadsTable({
                 className="border-b border-border/60 hover:bg-muted/30 transition-colors cursor-pointer"
                 onClick={() => navigate(`/crm/leads/${lead.id}`)}
               >
+                <td className="py-3 px-4 text-sm" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs text-muted-foreground">{lead.id.slice(0, 8)}...</span>
+                    <button
+                      onClick={() => copyToClipboard(lead.id, lead.id)}
+                      className="p-1 hover:bg-muted/50 rounded transition-colors"
+                      title="Copy Lead ID"
+                    >
+                      {copiedId === lead.id ? (
+                        <Check className="h-3 w-3 text-green-600" />
+                      ) : (
+                        <Copy className="h-3 w-3 text-muted-foreground" />
+                      )}
+                    </button>
+                  </div>
+                </td>
                 <td className="py-3 px-4 text-sm font-medium">{lead.company_name}</td>
                 <td className="py-3 px-4 text-sm">{lead.contact_person}</td>
                 <td className="py-3 px-4 text-sm">{lead.email}</td>

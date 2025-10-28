@@ -73,7 +73,7 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead }: LeadFormModa
     }
 
     const newErrors: Record<string, string> = {};
-    if (!formData.company_name) newErrors.company_name = 'Company name required';
+    if (!formData.company_name) newErrors.company_name = 'Business name required';
     if (!formData.contact_person) newErrors.contact_person = 'Contact person required';
     if (!validateEmail(formData.email)) newErrors.email = 'Valid email required';
 
@@ -96,13 +96,13 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead }: LeadFormModa
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" />
-        <Dialog.Content className="fixed left-[50%] top-[50%] z-50 max-w-4xl w-full max-h-[90vh] translate-x-[-50%] translate-y-[-50%] overflow-y-auto">
+        <Dialog.Content className="fixed left-[50%] top-[50%] z-50 max-w-4xl w-full max-h-[90vh] translate-x-[-50%] translate-y-[-50%] overflow-hidden">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className="glass rounded-2xl p-8 shadow-2xl my-8"
+            className="glass rounded-2xl p-8 shadow-2xl my-8 max-h-[90vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between mb-6">
               <Dialog.Title className="text-xl font-semibold">

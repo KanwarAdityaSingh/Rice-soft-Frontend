@@ -1,17 +1,18 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
-import { useUsers } from '../../../hooks/useUsers';
+import { usersAPI } from '../../../services/users.api';
 import { validateEmail, validateUsername, validatePassword } from '../../../utils/validation';
-import type { CreateUserRequest } from '../../../types/entities';
+import type { CreateUserRequest, UpdateUserRequest, User } from '../../../types/entities';
 
 interface UserFormModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  user?: User | null;
 }
 
-export function UserFormModal({ open, onOpenChange }: UserFormModalProps) {
-  const { createUser } = useUsers();
+export function UserFormModal({ open, onOpenChange, user }: UserFormModalProps) {
+  const isEdit = !!user;
   const [formData, setFormData] = useState<CreateUserRequest>({
     username: '',
     email: '',
@@ -23,6 +24,34 @@ export function UserFormModal({ open, onOpenChange }: UserFormModalProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
 
+  // Reset form when modal opens/closes or user changes
+  useEffect(() => {
+    if (open) {
+      if (user) {
+        // Edit mode - populate form with user data
+        setFormData({
+          username: user.username,
+          email: user.email,
+          password: '', // Don't populate password for edit
+          full_name: user.full_name || '',
+          phone: user.phone || '',
+          user_type: user.user_type === 'admin' || user.user_type === 'custom' ? user.user_type : 'admin',
+        });
+      } else {
+        // Create mode - reset form
+        setFormData({
+          username: '',
+          email: '',
+          password: '',
+          full_name: '',
+          phone: '',
+          user_type: 'admin',
+        });
+      }
+      setErrors({});
+    }
+  }, [open, user]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const newErrors: Record<string, string> = {};
@@ -33,7 +62,8 @@ export function UserFormModal({ open, onOpenChange }: UserFormModalProps) {
     if (!validateEmail(formData.email)) {
       newErrors.email = 'Invalid email';
     }
-    if (!validatePassword(formData.password)) {
+    // Only validate password for create mode or if password is provided in edit mode
+    if (!isEdit && !validatePassword(formData.password)) {
       newErrors.password = 'Password must be at least 6 characters';
     }
     if (!formData.full_name) {
@@ -47,7 +77,27 @@ export function UserFormModal({ open, onOpenChange }: UserFormModalProps) {
 
     setLoading(true);
     try {
-      await createUser(formData);
+      if (isEdit && user) {
+        // Update user - only include password if it's provided
+        const updateData: UpdateUserRequest = {
+          username: formData.username,
+          email: formData.email,
+          full_name: formData.full_name,
+          phone: formData.phone,
+          user_type: formData.user_type,
+        };
+        
+        // Only include password if it's provided (not empty)
+        if (formData.password.trim()) {
+          updateData.password = formData.password;
+        }
+        
+        await usersAPI.updateUser(user.id, updateData);
+      } else {
+        // Create user
+        await usersAPI.createUser(formData);
+      }
+      
       onOpenChange(false);
       setFormData({
         username: '',
@@ -59,7 +109,7 @@ export function UserFormModal({ open, onOpenChange }: UserFormModalProps) {
       });
       setErrors({});
     } catch (error) {
-      // Error handled by hook
+      console.error('Error saving user:', error);
     } finally {
       setLoading(false);
     }
@@ -73,7 +123,9 @@ export function UserFormModal({ open, onOpenChange }: UserFormModalProps) {
         >
           <div className="glass rounded-2xl p-6 shadow-xl">
             <div className="flex items-center justify-between mb-6">
-              <Dialog.Title className="text-xl font-semibold">Create User</Dialog.Title>
+              <Dialog.Title className="text-xl font-semibold">
+                {isEdit ? 'Edit User' : 'Create User'}
+              </Dialog.Title>
               <button
                 onClick={() => onOpenChange(false)}
                 className="rounded-lg p-1 hover:bg-muted/50 transition-colors"
@@ -120,13 +172,15 @@ export function UserFormModal({ open, onOpenChange }: UserFormModalProps) {
               </div>
 
               <div>
-                <label className="text-sm font-medium mb-1.5 block">Password *</label>
+                <label className="text-sm font-medium mb-1.5 block">
+                  Password {isEdit ? '(leave blank to keep current)' : '*'}
+                </label>
                 <input
                   type="password"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                  placeholder="••••••••"
+                  placeholder={isEdit ? "Leave blank to keep current password" : "••••••••"}
                 />
                 {errors.password && <p className="mt-1 text-xs text-red-600">{errors.password}</p>}
               </div>
@@ -167,7 +221,7 @@ export function UserFormModal({ open, onOpenChange }: UserFormModalProps) {
                   disabled={loading}
                   className="btn-primary flex-1"
                 >
-                  {loading ? 'Creating...' : 'Create User'}
+                  {loading ? (isEdit ? 'Updating...' : 'Creating...') : (isEdit ? 'Update User' : 'Create User')}
                 </button>
               </div>
             </form>

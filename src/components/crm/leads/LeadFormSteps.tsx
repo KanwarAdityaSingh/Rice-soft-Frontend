@@ -58,7 +58,7 @@ export function LeadFormSteps({
       {step === 1 && (
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Company Name *</label>
+            <label className="text-sm font-medium mb-1.5 block">Business Name *</label>
             <input
               type="text"
               value={formData.company_name}
@@ -255,6 +255,17 @@ export function LeadFormSteps({
                 placeholder="Manufacturing, Retail, etc."
               />
             </div>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Business Keyword</label>
+            <input
+              type="text"
+              value={formData.business_details?.business_keyword || ''}
+              onChange={(e) => updateBusinessField('business_keyword', e.target.value)}
+              className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+              placeholder="rice, wheat, pulses, etc."
+            />
           </div>
 
           <div className="flex gap-3 pt-4">

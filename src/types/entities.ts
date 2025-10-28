@@ -24,6 +24,7 @@ export interface CreateUserRequest {
 export interface UpdateUserRequest {
   username?: string;
   email?: string;
+  password?: string;
   full_name?: string;
   phone?: string;
   user_type?: string;
@@ -194,6 +195,7 @@ export interface LeadBusinessDetails {
   industry?: string;
   company_size?: string;
   annual_revenue?: number;
+  business_keyword?: string;
 }
 
 export interface Lead {

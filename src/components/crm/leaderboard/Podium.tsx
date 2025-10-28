@@ -5,12 +5,12 @@ export function Podium({ entries }: { entries: LeaderboardEntry[] }) {
   const topThree = entries.slice(0, 3);
   if (topThree.length === 0) return null;
 
-  // true podium order: left = silver (#2), center = gold (#1), right = bronze (#3)
+  // Always show three podiums - true podium order: left = silver (#2), center = gold (#1), right = bronze (#3)
   const slots: Array<{ entry: LeaderboardEntry | undefined; rank: 1 | 2 | 3; height: number; gradient: string }>
     = [
-      { entry: topThree[1], rank: 2, height: 72, gradient: 'from-zinc-200 to-zinc-400' },
-      { entry: topThree[0], rank: 1, height: 96, gradient: 'from-amber-300 to-amber-500' },
-      { entry: topThree[2], rank: 3, height: 60, gradient: 'from-orange-300 to-amber-600' },
+      { entry: topThree[1], rank: 2, height: 72, gradient: 'from-zinc-200/60 to-zinc-400/60' },
+      { entry: topThree[0], rank: 1, height: 96, gradient: 'from-amber-300/60 to-amber-500/60' },
+      { entry: topThree[2], rank: 3, height: 60, gradient: 'from-orange-300/60 to-amber-600/60' },
     ];
 
   return (
@@ -24,9 +24,9 @@ export function Podium({ entries }: { entries: LeaderboardEntry[] }) {
           className={`relative overflow-hidden rounded-2xl border border-border/70 p-4 text-center ${slot.rank === 1 ? 'bg-gradient-to-br from-primary/10 to-accent/10' : ''}`}
           style={{ minHeight: 180 }}
         >
-          {/* Pedestal */}
+          {/* Pedestal - Translucent */}
           <div
-            className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t ${slot.gradient}`}
+            className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t ${slot.gradient} backdrop-blur-sm`}
             style={{ height: slot.height }}
           />
 
@@ -50,7 +50,10 @@ export function Podium({ entries }: { entries: LeaderboardEntry[] }) {
               })()}
             </div>
           ) : (
-            <div className="relative z-10 text-sm text-muted-foreground">--</div>
+            <div className="relative z-10 flex h-full flex-col items-center justify-center">
+              <div className="text-4xl mb-2 opacity-30">{getRankIcon(slot.rank)}</div>
+              <div className="text-sm text-muted-foreground/60">No Data</div>
+            </div>
           )}
         </motion.div>
       ))}
@@ -68,10 +71,10 @@ function getRankIcon(rank: number) {
 }
 
 function scoreBarClass(score: number) {
-  if (score >= 80) return 'bg-emerald-500';
-  if (score >= 60) return 'bg-yellow-500';
-  if (score >= 40) return 'bg-orange-500';
-  return 'bg-red-500';
+  if (score >= 80) return 'bg-gradient-to-r from-emerald-400 to-emerald-600';
+  if (score >= 60) return 'bg-gradient-to-r from-blue-400 to-blue-600';
+  if (score >= 40) return 'bg-gradient-to-r from-yellow-400 to-yellow-600';
+  return 'bg-gradient-to-r from-slate-400 to-slate-600';
 }
 
 

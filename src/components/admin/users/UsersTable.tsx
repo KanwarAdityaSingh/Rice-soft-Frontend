@@ -7,8 +7,13 @@ import { ActionButtons } from '../shared/ActionButtons';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { Users } from 'lucide-react';
 import { useUsers } from '../../../hooks/useUsers';
+import type { User } from '../../../types/entities';
 
-export function UsersTable() {
+interface UsersTableProps {
+  onEditUser?: (user: User) => void;
+}
+
+export function UsersTable({ onEditUser }: UsersTableProps) {
   const { users, loading, deleteUser, toggleUserStatus } = useUsers();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
@@ -94,7 +99,7 @@ export function UsersTable() {
                     <td className="py-3 px-4 text-right">
                       <ActionButtons
                         isActive={user.is_active}
-                        onEdit={() => console.log('Edit', user.id)}
+                        onEdit={onEditUser ? () => onEditUser(user) : undefined}
                         onToggleStatus={() => toggleUserStatus(user.id, user.is_active)}
                         onDelete={() => {
                           setSelectedUser(user);

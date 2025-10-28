@@ -1,4 +1,4 @@
-import { ArrowRight, Users, BarChart3, Trophy, Sparkles, Zap } from 'lucide-react'
+import { ArrowRight, Users, BarChart3, Trophy, Sparkles, Zap, UserCheck, TrendingUp } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 
@@ -40,8 +40,8 @@ export default function LandingPage() {
               <div className="grid gap-4">
                 <div className="grid grid-cols-3 gap-3">
                   <MiniCard icon={<Users className="h-4 w-4" />} title="Leads" value="2,431" accent="primary" />
-                  <MiniCard icon={<BarChart3 className="h-4 w-4" />} title="MQL" value="312" accent="accent" />
-                  <MiniCard icon={<Trophy className="h-4 w-4" />} title="Wins" value="58" accent="primary" />
+                  <MiniCard icon={<UserCheck className="h-4 w-4" />} title="Salesmen" value="312" accent="accent" />
+                  <MiniCard icon={<TrendingUp className="h-4 w-4" />} title="Conversions" value="58" accent="primary" />
                 </div>
                 <div className="gradient-border p-4">
                   <div className="flex items-center justify-between">
@@ -76,7 +76,7 @@ export default function LandingPage() {
         <div className="grid gap-4 sm:grid-cols-3">
           <FeatureCard link="/crm/leads" icon={<Users className="h-5 w-5" />} title="Leads" subtitle="Capture, qualify and convert" />
           <FeatureCard link="/crm/analytics" icon={<BarChart3 className="h-5 w-5" />} title="Analytics" subtitle="Clarity without the clutter" />
-          <FeatureCard highlight link="/crm/leaderboard" icon={<Trophy className="h-5 w-5" />} title="Leaderboard" subtitle="Compete. Win. Celebrate." />
+          <FeatureCard link="/crm/leaderboard" icon={<Trophy className="h-5 w-5" />} title="Leaderboard" subtitle="Compete. Win. Celebrate." />
         </div>
       </section>
 
