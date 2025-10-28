@@ -14,6 +14,9 @@ module.exports = {
       },
     },
     extend: {
+      fontFamily: {
+        'inter': ['Inter', 'sans-serif'],
+      },
       colors: {
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
@@ -52,10 +55,17 @@ module.exports = {
       },
       boxShadow: {
         luxury: "0 10px 30px -12px hsl(var(--primary) / 0.35)",
+        "luxury-lg": "0 16px 50px -12px hsl(var(--primary) / 0.4)",
+        "luxury-xl": "0 20px 60px -12px hsl(var(--primary) / 0.5)",
       },
       backgroundImage: {
         "luxury-gradient":
           "linear-gradient(135deg, hsl(var(--primary)/0.1), hsl(var(--accent)/0.1))",
+        "gradient-primary": 
+          "linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)))",
+      },
+      animation: {
+        "gradient-shift": "gradient-shift 3s ease infinite",
       },
     },
   },

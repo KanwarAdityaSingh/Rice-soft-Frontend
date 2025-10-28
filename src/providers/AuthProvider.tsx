@@ -1,14 +1,13 @@
 import { createContext, useCallback, useEffect, useMemo, useState } from 'react'
-import { apiService, ApiError, type UserResponse } from '../services/api'
+import { apiService, ApiError } from '../services/api'
 
 interface UserProfile {
   id: string
   username: string
   email: string
-  role_id: string
-  role_name: string
   full_name: string
-  phone: string
+  phone: string | null
+  user_type: string
   is_active: boolean
   last_login: string | null
   created_at: string
@@ -31,31 +30,45 @@ export const AuthContext = createContext<AuthContextValue>({
   error: null,
 })
 
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const initializeAuth = async () => {
-      const token = localStorage.getItem('auth:token')
-      const userData = localStorage.getItem('auth:user')
-      
-      if (token && userData) {
-        try {
-          setUser(JSON.parse(userData))
-          // Optionally verify token with backend
-          await apiService.getProfile()
-        } catch (error) {
-          // Token is invalid, clear storage
-          localStorage.removeItem('auth:token')
-          localStorage.removeItem('auth:user')
+    // Initialize auth from storage or fetch profile with token
+    const init = async () => {
+      setIsLoading(true)
+      try {
+        const userData = localStorage.getItem('auth:user')
+        const token = localStorage.getItem('auth:token')
+
+        if (userData) {
+          try {
+            setUser(JSON.parse(userData))
+          } catch {
+            localStorage.removeItem('auth:user')
+          }
+        } else if (token) {
+          try {
+            const profile = await apiService.getProfile()
+            localStorage.setItem('auth:user', JSON.stringify(profile))
+            setUser(profile)
+          } catch (e) {
+            // Invalid/expired token
+            localStorage.removeItem('auth:token')
+            localStorage.removeItem('auth:user')
+            setUser(null)
+          }
+        } else {
           setUser(null)
         }
+      } finally {
+        setIsLoading(false)
       }
     }
-
-    initializeAuth()
+    void init()
   }, [])
 
   const login = useCallback(async (username: string, password: string) => {
@@ -65,15 +78,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await apiService.login({ username, password })
       
-      // Store token and user data
+      // Store token and user data in localStorage
       localStorage.setItem('auth:token', response.token)
       localStorage.setItem('auth:user', JSON.stringify(response.user))
       
       setUser(response.user)
     } catch (error) {
-      const errorMessage = error instanceof ApiError 
-        ? error.message 
-        : 'Login failed. Please try again.'
+      let errorMessage = 'Login failed. Please try again.'
+      
+      if (error instanceof ApiError) {
+        if (error.status === 401) {
+          errorMessage = 'Invalid username or password'
+        } else if (error.status === 400) {
+          errorMessage = 'Please check your username and password'
+        } else {
+          errorMessage = error.message || 'Login failed'
+        }
+      } else if (error instanceof Error) {
+        errorMessage = error.message
+      }
+      
       setError(errorMessage)
       throw error
     } finally {
@@ -81,17 +105,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  const logout = useCallback(async () => {
-    try {
-      await apiService.logout()
-    } catch (error) {
-      // Log error but don't prevent logout
-      console.error('Logout error:', error)
-    } finally {
-      setUser(null)
-      localStorage.removeItem('auth:token')
-      localStorage.removeItem('auth:user')
-    }
+  const logout = useCallback(() => {
+    setUser(null)
+    localStorage.removeItem('auth:token')
+    localStorage.removeItem('auth:user')
   }, [])
 
   const value = useMemo(() => ({ 
@@ -104,6 +121,3 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
-
-
-

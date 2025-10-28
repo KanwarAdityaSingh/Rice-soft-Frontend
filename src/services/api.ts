@@ -16,10 +16,9 @@ export interface UserResponse {
   id: string;
   username: string;
   email: string;
-  role_id: string;
-  role_name: string;
   full_name: string;
-  phone: string;
+  phone: string | null;
+  user_type: string;
   is_active: boolean;
   last_login: string | null;
   created_at: string;
@@ -104,8 +103,8 @@ class ApiService {
 
   // Authentication endpoints
   async login(credentials: LoginRequest): Promise<LoginResponse> {
-    console.log('Login request:', { endpoint: '/auth/login', credentials });
-    const response = await this.request<LoginResponse>('/auth/login', {
+    console.log('Login request:', { endpoint: '/auth/loginUser', credentials });
+    const response = await this.request<LoginResponse>('/auth/loginUser', {
       method: 'POST',
       body: JSON.stringify(credentials),
     });

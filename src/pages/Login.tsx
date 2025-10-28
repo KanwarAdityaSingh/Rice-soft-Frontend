@@ -28,10 +28,10 @@ export default function LoginPage() {
       <div className="relative hidden h-full flex-col justify-center lg:flex">
         <div className="absolute inset-0 -z-10 rounded-3xl bg-luxury-gradient blur-3xl" />
         <div className="relative space-y-6">
-          <div className="inline-flex items-center gap-3 rounded-2xl bg-secondary/60 px-4 py-2 text-sm text-secondary-foreground">
+          {/* <div className="inline-flex items-center gap-3 rounded-2xl bg-secondary/60 px-4 py-2 text-sm text-secondary-foreground">
             <Sparkles className="h-4 w-4 text-primary" />
             Luxury-grade internal tooling
-          </div>
+          </div> */}
           <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
             Rice Trading Management
           </h1>

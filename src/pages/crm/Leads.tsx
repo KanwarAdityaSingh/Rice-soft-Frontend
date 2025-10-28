@@ -1,0 +1,145 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Plus } from 'lucide-react';
+import { useLeads } from '../../hooks/useLeads';
+import { useLeadEvents } from '../../hooks/useLeadEvents';
+import { LeadFormModal } from '../../components/crm/leads/LeadFormModal';
+import { LeadProgressModal } from '../../components/crm/leads/LeadProgressModal';
+import { LeadsTable } from '../../components/crm/leads/LeadsTable';
+import type { Lead, LeadFilters } from '../../types/entities';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { leadsAPI } from '../../services/leads.api';
+
+export default function LeadsPage() {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [filters, setFilters] = useState<LeadFilters>({});
+  const [modalOpen, setModalOpen] = useState(false);
+  const [progressModalOpen, setProgressModalOpen] = useState(false);
+  const [editingLead, setEditingLead] = useState<Lead | null>(null);
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+
+  const { leads, loading, createLead, updateLead, deleteLead } = useLeads(filters);
+  const { events, refetch: refetchEvents } = useLeadEvents(selectedLead?.id || null);
+
+  // Open edit modal if ?edit={id} is present
+  useEffect(() => {
+    const editId = searchParams.get('edit');
+    if (!editId) return;
+
+    const existing = leads.find((l) => l.id === editId) || null;
+    if (existing) {
+      setEditingLead(existing);
+      setModalOpen(true);
+    } else {
+      // Fetch lead by id if not in current list
+      (async () => {
+        try {
+          const lead = await leadsAPI.getLeadById(editId);
+          setEditingLead(lead);
+          setModalOpen(true);
+        } catch {
+          // silently ignore
+          // remove invalid edit param
+          const next = new URLSearchParams(searchParams);
+          next.delete('edit');
+          setSearchParams(next, { replace: true });
+        }
+      })();
+    }
+  }, [searchParams, leads]);
+
+  const handleSave = async (data: any) => {
+    try {
+      if (editingLead) {
+        await updateLead(editingLead.id, data);
+        setEditingLead(null);
+      } else {
+        await createLead(data);
+      }
+      setModalOpen(false);
+    } catch (error) {
+      console.error('Failed to save lead:', error);
+    }
+  };
+
+  const handleEdit = (lead: Lead) => {
+    setEditingLead(lead);
+    setModalOpen(true);
+  };
+
+  return (
+    <div className="container mx-auto py-10 space-y-8">
+      <header className="hero-bg rounded-2xl p-6 sm:p-8 relative overflow-hidden">
+        <div className="absolute -left-6 -top-6 h-24 w-24 floating-orb" />
+        <div className="absolute -right-6 -bottom-6 h-20 w-20 floating-orb" />
+        <div className="relative">
+          <h1 className="text-3xl sm:text-4xl font-bold"><span className="text-gradient">Lead Management</span></h1>
+          <p className="mt-2 text-muted-foreground">Manage prospects and track your sales pipeline</p>
+        </div>
+      </header>
+
+      <div className="flex items-center justify-between">
+        <div className="flex-1" />
+        <button
+          onClick={() => {
+            setEditingLead(null);
+            setModalOpen(true);
+          }}
+          className="btn-primary flex items-center gap-2"
+        >
+          <Plus className="h-4 w-4" />
+          Create Lead
+        </button>
+      </div>
+
+      <div className="card-glow rounded-2xl p-6 highlight-box">
+        <LeadsTable
+          leads={leads}
+          loading={loading}
+          deleteLead={deleteLead}
+          filters={filters}
+          onFiltersChange={setFilters}
+          onEdit={handleEdit}
+          onViewProgress={(lead) => {
+            setSelectedLead(lead);
+            setProgressModalOpen(true);
+            refetchEvents();
+          }}
+        />
+      </div>
+
+      <LeadFormModal
+        open={modalOpen}
+        onOpenChange={(open) => {
+          setModalOpen(open);
+          if (!open) {
+            setEditingLead(null);
+            const next = new URLSearchParams(searchParams);
+            if (next.has('edit')) {
+              next.delete('edit');
+              setSearchParams(next, { replace: true });
+            }
+          }
+        }}
+        onSave={async (data) => {
+          await handleSave(data);
+          const next = new URLSearchParams(searchParams);
+          if (next.has('edit')) {
+            next.delete('edit');
+            setSearchParams(next, { replace: true });
+          }
+        }}
+        lead={editingLead}
+      />
+
+      {selectedLead && (
+        <LeadProgressModal
+          open={progressModalOpen}
+          onOpenChange={setProgressModalOpen}
+          lead={selectedLead}
+          events={events}
+        />
+      )}
+    </div>
+  );
+}

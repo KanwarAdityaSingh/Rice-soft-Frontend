@@ -1,0 +1,134 @@
+import { useState } from 'react';
+import { SearchBar } from '../shared/SearchBar';
+import { FilterDropdown } from '../shared/FilterDropdown';
+import { LoadingSpinner } from '../shared/LoadingSpinner';
+import { EmptyState } from '../shared/EmptyState';
+import { ActionButtons } from '../shared/ActionButtons';
+import { ConfirmDialog } from '../shared/ConfirmDialog';
+import { Users } from 'lucide-react';
+import { useUsers } from '../../../hooks/useUsers';
+
+export function UsersTable() {
+  const { users, loading, deleteUser, toggleUserStatus } = useUsers();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string | undefined>();
+  const [typeFilter, setTypeFilter] = useState<string | undefined>();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<{ id: string; full_name?: string; username?: string } | null>(null);
+
+  const filteredUsers = users.filter((user) => {
+    const matchesSearch = 
+      user.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      user.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const matchesStatus = statusFilter ? (statusFilter === 'active' ? user.is_active : !user.is_active) : true;
+    const matchesType = typeFilter ? user.user_type === typeFilter : true;
+
+    return matchesSearch && matchesStatus && matchesType;
+  });
+
+  return (
+    <div>
+      <div className="flex gap-4 mb-6">
+        <div className="flex-1">
+          <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search by username, name, or email..." />
+        </div>
+        <FilterDropdown
+          label="Status"
+          options={[
+            { label: 'Active', value: 'active' },
+            { label: 'Inactive', value: 'inactive' },
+          ]}
+          value={statusFilter}
+          onChange={setStatusFilter}
+        />
+        <FilterDropdown
+          label="Type"
+          options={[
+            { label: 'Admin', value: 'admin' },
+            { label: 'Custom', value: 'custom' },
+            { label: 'Vendor', value: 'vendor' },
+            { label: 'Salesman', value: 'salesman' },
+            { label: 'Broker', value: 'broker' },
+          ]}
+          value={typeFilter}
+          onChange={setTypeFilter}
+        />
+      </div>
+
+      {loading ? (
+        <LoadingSpinner />
+      ) : filteredUsers.length === 0 ? (
+        <EmptyState
+          icon={Users}
+          title="No users found"
+          description="Get started by creating a new user or adjust your filters."
+        />
+      ) : (
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left py-3 px-4 text-sm font-semibold">Username</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold">Full Name</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold">Email</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold">Phone</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold">Type</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold">Last Login</th>
+                  <th className="text-right py-3 px-4 text-sm font-semibold">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredUsers.map((user) => (
+                  <tr key={user.id} className="border-b border-border/60 hover:bg-muted/30 transition-colors">
+                    <td className="py-3 px-4 text-sm">{user.username}</td>
+                    <td className="py-3 px-4 text-sm">{user.full_name}</td>
+                    <td className="py-3 px-4 text-sm">{user.email}</td>
+                    <td className="py-3 px-4 text-sm">{user.phone || '-'}</td>
+                    <td className="py-3 px-4 text-sm capitalize">{user.user_type}</td>
+                    <td className="py-3 px-4 text-sm">
+                      {user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never'}
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <ActionButtons
+                        isActive={user.is_active}
+                        onEdit={() => console.log('Edit', user.id)}
+                        onToggleStatus={() => toggleUserStatus(user.id, user.is_active)}
+                        onDelete={() => {
+                          setSelectedUser(user);
+                          setDeleteDialogOpen(true);
+                        }}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-6 flex items-center justify-between text-sm text-muted-foreground">
+            <span>Showing {filteredUsers.length} of {users.length} users</span>
+          </div>
+        </>
+      )}
+
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        onConfirm={async () => {
+          if (selectedUser) {
+            await deleteUser(selectedUser.id);
+            setDeleteDialogOpen(false);
+            setSelectedUser(null);
+          }
+        }}
+        title="Delete User"
+        description={`Are you sure you want to delete ${selectedUser?.full_name || selectedUser?.username}? This action cannot be undone.`}
+        confirmText="Delete"
+      />
+    </div>
+  );
+}
+
