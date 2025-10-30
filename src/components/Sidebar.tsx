@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Users, BarChart3, Trophy, Store, UserCheck, UserCircle, ChevronRight, Settings, LogOut, X } from 'lucide-react'
+import { Users, BarChart3, Trophy, Store, UserCheck, UserCircle, ChevronRight, Settings, LogOut, X, Sprout } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 
 interface SidebarProps {
@@ -31,6 +31,7 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
     { to: '/directory/vendors', label: 'Vendors', icon: Store },
     { to: '/directory/salesmen', label: 'Salesmen', icon: UserCheck },
     { to: '/directory/brokers', label: 'Brokers', icon: UserCircle },
+    { to: '/directory/rice-codes', label: 'Rice Codes', icon: Sprout },
   ] as const
 
   // Close mobile menu when route changes

@@ -8,6 +8,7 @@ import ManageUsers from './pages/admin/ManageUsers'
 import BrokersPage from './pages/directory/Brokers.tsx'
 import SalesmenPage from './pages/directory/Salesmen.tsx'
 import VendorsPage from './pages/directory/Vendors.tsx'
+import RiceCodesPage from './pages/directory/RiceCodes.tsx'
 import LeadsPage from './pages/crm/Leads'
 import LeadDetailPage from './pages/crm/LeadDetail'
 import AnalyticsPage from './pages/crm/Analytics'
@@ -126,6 +127,16 @@ function AnimatedRoutes() {
             <ProtectedRoute>
               <AppLayout>
                 <VendorsPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/directory/rice-codes"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <RiceCodesPage />
               </AppLayout>
             </ProtectedRoute>
           }
