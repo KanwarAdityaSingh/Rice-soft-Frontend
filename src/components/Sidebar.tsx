@@ -2,14 +2,16 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Users, BarChart3, Trophy, Store, UserCheck, UserCircle, ChevronRight, Settings, LogOut, X, Sprout } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
+import { Tooltip } from '@mui/material'
 
 interface SidebarProps {
   collapsedDefault?: boolean
   mobileOpen?: boolean
   onMobileClose?: () => void
+  onCollapsedChange?: (collapsed: boolean) => void
 }
 
-export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileClose }: SidebarProps) {
+export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileClose, onCollapsedChange }: SidebarProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, logout } = useAuth()
@@ -17,12 +19,19 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
 
   useEffect(() => {
     const persisted = localStorage.getItem('sidebar_collapsed')
-    if (persisted != null) setCollapsed(persisted === 'true')
-  }, [])
+    if (persisted != null) {
+      const persistedCollapsed = persisted === 'true'
+      setCollapsed(persistedCollapsed)
+      onCollapsedChange?.(persistedCollapsed)
+    } else {
+      onCollapsedChange?.(collapsedDefault)
+    }
+  }, [collapsedDefault, onCollapsedChange])
 
   useEffect(() => {
     localStorage.setItem('sidebar_collapsed', String(collapsed))
-  }, [collapsed])
+    onCollapsedChange?.(collapsed)
+  }, [collapsed, onCollapsedChange])
 
   const links = [
     { to: '/crm/leads', label: 'Leads', icon: Users },
@@ -55,7 +64,7 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
       {/* Sidebar */}
       <aside
         className={`fixed left-0 top-16 bottom-0 z-40 transition-all duration-300 ${
-          collapsed ? 'w-[64px]' : 'w-[260px]'
+          collapsed ? 'w-16' : 'w-[260px]'
         } ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         } md:translate-x-0`}
@@ -74,34 +83,41 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
             </button>
 
             {/* Desktop Toggle */}
-            <button
-              className="hidden md:flex h-8 w-8 rounded-lg hover:bg-muted/60 items-center justify-center transition-colors"
-              onClick={() => setCollapsed((c) => !c)}
-              aria-label="Toggle sidebar"
-              title="Toggle sidebar"
-            >
-              <ChevronRight className={`h-4 w-4 transition-transform ${collapsed ? '' : 'rotate-180'}`} />
-            </button>
+            <Tooltip title="Toggle sidebar" placement="right" arrow>
+              <button
+                className="hidden md:flex h-8 w-8 rounded-lg hover:bg-muted/60 items-center justify-center transition-colors"
+                onClick={() => setCollapsed((c) => !c)}
+                aria-label="Toggle sidebar"
+              >
+                <ChevronRight className={`h-4 w-4 transition-transform ${collapsed ? '' : 'rotate-180'}`} />
+              </button>
+            </Tooltip>
           </div>
 
         {/* Links */}
         <nav className="flex-1 px-2 space-y-1 overflow-y-auto">
           {links.map(({ to, label, icon: Icon }) => {
             const active = location.pathname.startsWith(to)
-            return (
+            const linkContent = (
               <Link
-                key={to}
                 to={to}
                 className={`group flex items-center gap-3 rounded-xl px-2 py-2 text-sm transition-colors ${
                   active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
                 }`}
-                title={label}
               >
                 <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted/70">
                   <Icon className="h-4.5 w-4.5" />
                 </span>
                 {!collapsed && <span className="font-medium">{label}</span>}
               </Link>
+            )
+            
+            return collapsed ? (
+              <Tooltip key={to} title={label} placement="right" arrow>
+                <span style={{ display: 'contents' }}>{linkContent}</span>
+              </Tooltip>
+            ) : (
+              <div key={to}>{linkContent}</div>
             )
           })}
         </nav>
@@ -155,21 +171,23 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
               {collapsed && (
                 <>
                   {user.user_type === 'admin' && (
-                    <button
-                      className="flex items-center justify-center rounded-lg p-2 hover:bg-primary/10 hover:text-primary transition-colors"
-                      onClick={() => navigate('/admin/users')}
-                      title="Manage Users"
-                    >
-                      <Settings className="h-5 w-5" />
-                    </button>
+                    <Tooltip title="Manage Users" placement="right" arrow>
+                      <button
+                        className="flex items-center justify-center rounded-lg p-2 hover:bg-primary/10 hover:text-primary transition-colors"
+                        onClick={() => navigate('/admin/users')}
+                      >
+                        <Settings className="h-5 w-5" />
+                      </button>
+                    </Tooltip>
                   )}
-                  <button
-                    className="flex items-center justify-center rounded-lg p-2 hover:bg-destructive/10 hover:text-destructive transition-colors"
-                    onClick={() => logout()}
-                    title="Logout"
-                  >
-                    <LogOut className="h-5 w-5" />
-                  </button>
+                  <Tooltip title="Logout" placement="right" arrow>
+                    <button
+                      className="flex items-center justify-center rounded-lg p-2 hover:bg-destructive/10 hover:text-destructive transition-colors"
+                      onClick={() => logout()}
+                    >
+                      <LogOut className="h-5 w-5" />
+                    </button>
+                  </Tooltip>
                 </>
               )}
             </div>

@@ -7,6 +7,7 @@ import { Sidebar } from '../components/Sidebar'
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
 
   return (
     <div className="relative flex min-h-screen flex-col bg-background">
@@ -22,9 +23,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         collapsedDefault={true} 
         mobileOpen={mobileMenuOpen}
         onMobileClose={() => setMobileMenuOpen(false)}
+        onCollapsedChange={setSidebarCollapsed}
       />
       <PageTransition>
-        <div className="flex-1 relative z-10 md:pl-16">{children}</div>
+        <div 
+          className={`flex-1 relative z-10 transition-all duration-300 ${
+            sidebarCollapsed ? 'md:pl-16' : 'md:pl-[260px]'
+          }`}
+        >
+          {children}
+        </div>
       </PageTransition>
       <Footer />
       <ToastContainer />
