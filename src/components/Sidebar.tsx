@@ -106,37 +106,70 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
         </nav>
 
         {/* Footer: user */}
-        <div className="p-3 border-t border-border/60">
+        <div className="p-4 border-t border-border/60 bg-muted/20">
           {user && (
-            <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between'} gap-2`}>
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="h-8 w-8 rounded-lg bg-primary/15 text-primary flex items-center justify-center text-xs font-semibold">
+            <div className={`${collapsed ? 'flex flex-col items-center gap-2' : 'space-y-3'}`}>
+              {/* User Info */}
+              <div className={`flex items-center gap-3 ${collapsed ? 'justify-center' : 'w-full'}`}>
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 text-primary flex items-center justify-center text-sm font-bold shadow-sm flex-shrink-0">
                   {user.full_name?.[0]?.toUpperCase() || user.username?.[0]?.toUpperCase() || 'U'}
                 </div>
                 {!collapsed && (
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium leading-tight truncate">{user.full_name || user.username}</div>
-                    <div className="text-xs text-muted-foreground leading-tight truncate capitalize">{user.user_type}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold leading-snug truncate" title={user.full_name || user.username}>
+                      {user.full_name || user.username}
+                    </div>
+                    <div className="text-xs text-muted-foreground leading-snug capitalize" title={user.user_type}>
+                      {user.user_type}
+                    </div>
                   </div>
                 )}
               </div>
+
+              {/* Action Buttons */}
               {!collapsed && (
-                <div className="flex items-center gap-1">
+                <div className="flex flex-col gap-1.5 w-full">
                   {user.user_type === 'admin' && (
                     <button
-                      className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs hover:bg-muted/60"
+                      className="flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium hover:bg-primary/10 hover:text-primary transition-colors w-full border border-border/40"
                       onClick={() => navigate('/admin/users')}
+                      title="Manage Users"
                     >
-                      <Settings className="h-3.5 w-3.5" /> Manage
+                      <Settings className="h-4 w-4" />
+                      <span>Manage Users</span>
                     </button>
                   )}
                   <button
-                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs hover:bg-muted/60"
+                    className="flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium hover:bg-destructive/10 hover:text-destructive transition-colors w-full border border-border/40"
                     onClick={() => logout()}
+                    title="Logout"
                   >
-                    <LogOut className="h-3.5 w-3.5" /> Logout
+                    <LogOut className="h-4 w-4" />
+                    <span>Logout</span>
                   </button>
                 </div>
+              )}
+
+              {/* Collapsed State Buttons */}
+              {collapsed && (
+                <>
+                  {user.user_type === 'admin' && (
+                    <button
+                      className="flex items-center justify-center rounded-lg p-2 hover:bg-primary/10 hover:text-primary transition-colors"
+                      onClick={() => navigate('/admin/users')}
+                      title="Manage Users"
+                    >
+                      <Settings className="h-5 w-5" />
+                    </button>
+                  )}
+                  <button
+                    className="flex items-center justify-center rounded-lg p-2 hover:bg-destructive/10 hover:text-destructive transition-colors"
+                    onClick={() => logout()}
+                    title="Logout"
+                  >
+                    <LogOut className="h-5 w-5" />
+                  </button>
+                </>
               )}
             </div>
           )}
