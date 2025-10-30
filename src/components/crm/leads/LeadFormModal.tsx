@@ -46,6 +46,8 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead }: LeadFormModa
         source: lead.source,
         estimated_value: lead.estimated_value,
         expected_close_date: lead.expected_close_date,
+        rice_code_id: lead.rice_code_id || null,
+        rice_type: lead.rice_type || null,
       });
       setStep(1);
     } else if (!lead && open) {
@@ -59,6 +61,8 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead }: LeadFormModa
         lead_status: 'new',
         priority: 'medium',
         is_existing_customer: false,
+        rice_code_id: null,
+        rice_type: null,
       });
       setStep(1);
     }

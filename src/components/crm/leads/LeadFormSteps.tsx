@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { ArrowRight, ArrowLeft, Search } from 'lucide-react';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { salesmenAPI } from '../../../services/salesmen.api';
+import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { validateEmail } from '../../../utils/validation';
-import type { CreateLeadRequest, UpdateLeadRequest, Salesman } from '../../../types/entities';
+import type { CreateLeadRequest, UpdateLeadRequest, Salesman, RiceCode, RiceType } from '../../../types/entities';
 
 interface LeadFormStepsProps {
   formData: CreateLeadRequest;
@@ -25,6 +26,10 @@ export function LeadFormSteps({
   isEdit
 }: LeadFormStepsProps) {
   const [salesmen, setSalesmen] = useState<Salesman[]>([]);
+  const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
+  const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
+  const [loadingRiceCodes, setLoadingRiceCodes] = useState(false);
+  const [loadingRiceTypes, setLoadingRiceTypes] = useState(false);
 
   useEffect(() => {
     const fetchSalesmen = async () => {
@@ -36,6 +41,36 @@ export function LeadFormSteps({
       }
     };
     fetchSalesmen();
+  }, []);
+
+  useEffect(() => {
+    const fetchRiceCodes = async () => {
+      setLoadingRiceCodes(true);
+      try {
+        const data = await riceCodesAPI.getAllRiceCodes();
+        setRiceCodes(data);
+      } catch (error) {
+        console.error('Failed to fetch rice codes:', error);
+      } finally {
+        setLoadingRiceCodes(false);
+      }
+    };
+    fetchRiceCodes();
+  }, []);
+
+  useEffect(() => {
+    const fetchRiceTypes = async () => {
+      setLoadingRiceTypes(true);
+      try {
+        const data = await riceCodesAPI.getRiceTypes();
+        setRiceTypes(data);
+      } catch (error) {
+        console.error('Failed to fetch rice types:', error);
+      } finally {
+        setLoadingRiceTypes(false);
+      }
+    };
+    fetchRiceTypes();
   }, []);
 
   const updateAddressField = (field: string, value: string) => {
@@ -142,6 +177,54 @@ export function LeadFormSteps({
               className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
               placeholder="website, referral, etc."
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Rice Code</label>
+              {loadingRiceCodes ? (
+                <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm flex items-center gap-2">
+                  <LoadingSpinner size="sm" />
+                  <span className="text-muted-foreground">Loading rice codes...</span>
+                </div>
+              ) : (
+                <select
+                  value={formData.rice_code_id || ''}
+                  onChange={(e) => setFormData({ ...formData, rice_code_id: e.target.value || null })}
+                  className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                >
+                  <option value="">Select Rice Code</option>
+                  {riceCodes.map((riceCode) => (
+                    <option key={riceCode.rice_code_id} value={riceCode.rice_code_id}>
+                      {riceCode.rice_code_name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Rice Type</label>
+              {loadingRiceTypes ? (
+                <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm flex items-center gap-2">
+                  <LoadingSpinner size="sm" />
+                  <span className="text-muted-foreground">Loading rice types...</span>
+                </div>
+              ) : (
+                <select
+                  value={formData.rice_type || ''}
+                  onChange={(e) => setFormData({ ...formData, rice_type: e.target.value || null })}
+                  className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                >
+                  <option value="">Select Rice Type</option>
+                  {riceTypes.map((riceType) => (
+                    <option key={riceType.value} value={riceType.value}>
+                      {riceType.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-2">

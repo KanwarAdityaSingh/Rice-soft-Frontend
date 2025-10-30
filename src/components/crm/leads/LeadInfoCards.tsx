@@ -1,11 +1,52 @@
 import { Mail, Phone, MapPin, Briefcase, TrendingUp } from 'lucide-react';
-import type { Lead } from '../../../types/entities';
+import { useState, useEffect } from 'react';
+import { riceCodesAPI } from '../../../services/riceCodes.api';
+import type { Lead, RiceCode, RiceType } from '../../../types/entities';
 
 interface LeadInfoCardsProps {
   lead: Lead;
 }
 
 export function LeadInfoCards({ lead }: LeadInfoCardsProps) {
+  const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
+  const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
+
+  useEffect(() => {
+    const fetchRiceCodes = async () => {
+      try {
+        const data = await riceCodesAPI.getAllRiceCodes();
+        setRiceCodes(data);
+      } catch (error) {
+        console.error('Failed to fetch rice codes:', error);
+      }
+    };
+    fetchRiceCodes();
+  }, []);
+
+  useEffect(() => {
+    const fetchRiceTypes = async () => {
+      try {
+        const data = await riceCodesAPI.getRiceTypes();
+        setRiceTypes(data);
+      } catch (error) {
+        console.error('Failed to fetch rice types:', error);
+      }
+    };
+    fetchRiceTypes();
+  }, []);
+
+  const getRiceCodeName = (riceCodeId: string | null | undefined): string | null => {
+    if (!riceCodeId) return null;
+    const riceCode = riceCodes.find((rc) => rc.rice_code_id === riceCodeId);
+    return riceCode ? riceCode.rice_code_name : null;
+  };
+
+  const getRiceTypeLabel = (riceTypeValue: string | null | undefined): string | null => {
+    if (!riceTypeValue) return null;
+    const riceType = riceTypes.find((rt) => rt.value === riceTypeValue);
+    return riceType ? riceType.label : null;
+  };
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {/* Contact Information */}
@@ -86,6 +127,18 @@ export function LeadInfoCards({ lead }: LeadInfoCardsProps) {
           {lead.source && (
             <div>
               <span className="text-muted-foreground">Source:</span> {lead.source}
+            </div>
+          )}
+          {lead.rice_code_id && (
+            <div>
+              <span className="text-muted-foreground">Rice Code:</span>{' '}
+              {getRiceCodeName(lead.rice_code_id) || lead.rice_code_id}
+            </div>
+          )}
+          {lead.rice_type && (
+            <div>
+              <span className="text-muted-foreground">Rice Type:</span>{' '}
+              {getRiceTypeLabel(lead.rice_type) || lead.rice_type}
             </div>
           )}
           {lead.estimated_value && (

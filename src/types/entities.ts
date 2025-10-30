@@ -220,6 +220,8 @@ export interface Lead {
   estimated_value?: number;
   expected_close_date?: string;
   revenue?: number;
+  rice_code_id?: string | null;
+  rice_type?: string | null;
 }
 
 export interface CreateLeadRequest {
@@ -238,6 +240,8 @@ export interface CreateLeadRequest {
   source?: string;
   estimated_value?: number;
   expected_close_date?: string;
+  rice_code_id?: string | null;
+  rice_type?: string | null;
 }
 
 export interface UpdateLeadRequest extends Partial<CreateLeadRequest> {}
@@ -419,5 +423,20 @@ export interface RecentActivity {
   timestamp: string;
   lead_id: string;
   lead_company: string;
+}
+
+// Rice Code Types
+export interface RiceCode {
+  rice_code_id: string;
+  rice_code_name: string;
+  created_at: string;
+  updated_at: string;
+  created_by: string;
+  updated_by: string;
+}
+
+export interface RiceType {
+  value: string;
+  label: string;
 }
 
