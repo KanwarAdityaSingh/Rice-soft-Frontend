@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
-import { Sparkles, Lock, AlertCircle, TrendingUp, Shield, Zap } from 'lucide-react'
+import { Lock, AlertCircle, TrendingUp, Shield, Zap } from 'lucide-react'
 
 export default function LoginPage() {
   const { login, isLoading, error } = useAuth()
@@ -24,8 +24,8 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="relative isolate mx-auto grid min-h-[calc(100vh-4rem)] w-full max-w-6xl grid-cols-1 items-center gap-8 px-6 py-10 sm:py-16 lg:grid-cols-2">
-      <div className="relative hidden h-full flex-col justify-center lg:flex">
+    <div className="relative isolate mx-auto grid min-h-[calc(100vh-4rem)] w-full max-w-6xl grid-cols-1 items-center gap-6 sm:gap-8 px-4 sm:px-6 py-8 sm:py-10 md:py-16 lg:grid-cols-2">
+      <div className="relative hidden h-full flex-col justify-center md:flex lg:flex">
         {/* Enhanced background with multiple gradient layers */}
         <div className="absolute inset-0 -z-10">
           <div className="absolute inset-0 rounded-3xl bg-luxury-gradient blur-3xl opacity-60" />
@@ -38,8 +38,8 @@ export default function LoginPage() {
 
           
           {/* Enhanced heading with gradient text */}
-          <div className="space-y-4">
-            <h1 className="text-5xl font-bold tracking-tight sm:text-6xl lg:text-7xl">
+          <div className="space-y-3 sm:space-y-4">
+            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight">
               <span className="text-gradient bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent">
                 Rice Trading
               </span>
@@ -83,45 +83,45 @@ export default function LoginPage() {
         </div>
       </div>
 
-      <div className="glass relative mx-auto w-full max-w-md rounded-3xl p-6 sm:p-8 shadow-2xl border border-white/10">
+      <div className="glass relative mx-auto w-full max-w-md rounded-2xl sm:rounded-3xl p-5 sm:p-6 md:p-8 shadow-2xl border border-white/10">
         {/* Enhanced header with gradient background */}
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-2xl bg-gradient-to-br from-primary to-accent shadow-lg">
-            <Lock className="h-8 w-8 text-white" />
+        <div className="mb-6 sm:mb-8 text-center">
+          <div className="mx-auto mb-3 sm:mb-4 grid h-14 w-14 sm:h-16 sm:w-16 place-items-center rounded-xl sm:rounded-2xl bg-gradient-to-br from-primary to-accent shadow-lg">
+            <Lock className="h-7 w-7 sm:h-8 sm:w-8 text-white" />
           </div>
-          <h2 className="text-2xl font-bold text-gradient mb-2">Welcome Back</h2>
-          <p className="text-muted-foreground">Sign in to access your trading dashboard</p>
+          <h2 className="text-xl sm:text-2xl font-bold text-gradient mb-1 sm:mb-2">Welcome Back</h2>
+          <p className="text-sm sm:text-base text-muted-foreground">Sign in to access your trading dashboard</p>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-5 sm:space-y-6">
           {(error || localError) && (
-            <div className="flex items-center gap-3 rounded-xl bg-destructive/10 border border-destructive/20 p-4 text-sm text-destructive">
-              <AlertCircle className="h-5 w-5 flex-shrink-0" />
+            <div className="flex items-center gap-2 sm:gap-3 rounded-lg sm:rounded-xl bg-destructive/10 border border-destructive/20 p-3 sm:p-4 text-xs sm:text-sm text-destructive">
+              <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />
               <span>{error || localError}</span>
             </div>
           )}
           
-          <div className="space-y-3">
-            <label htmlFor="username" className="text-sm font-semibold text-foreground">Username</label>
+          <div className="space-y-2 sm:space-y-3">
+            <label htmlFor="username" className="text-xs sm:text-sm font-semibold text-foreground">Username</label>
             <input
               id="username"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full rounded-xl border border-border bg-background/80 px-4 py-3 text-sm outline-none ring-0 transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-primary/20 hover:border-primary/50"
+              className="w-full rounded-lg sm:rounded-xl border border-border bg-background/80 px-3 sm:px-4 py-2.5 sm:py-3 text-sm outline-none ring-0 transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-primary/20 hover:border-primary/50"
               placeholder="Enter your username"
               required
               disabled={isLoading}
             />
           </div>
           
-          <div className="space-y-3">
-            <label htmlFor="password" className="text-sm font-semibold text-foreground">Password</label>
+          <div className="space-y-2 sm:space-y-3">
+            <label htmlFor="password" className="text-xs sm:text-sm font-semibold text-foreground">Password</label>
             <input
               id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-xl border border-border bg-background/80 px-4 py-3 text-sm outline-none ring-0 transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-primary/20 hover:border-primary/50"
+              className="w-full rounded-lg sm:rounded-xl border border-border bg-background/80 px-3 sm:px-4 py-2.5 sm:py-3 text-sm outline-none ring-0 transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-primary/20 hover:border-primary/50"
               placeholder="Enter your password"
               required
               disabled={isLoading}
@@ -129,7 +129,7 @@ export default function LoginPage() {
           </div>
           
           <button 
-            className="btn-primary w-full rounded-xl py-3 text-sm font-semibold shadow-lg hover:shadow-xl transition-all duration-200 transform hover:-translate-y-0.5" 
+            className="btn-primary w-full rounded-lg sm:rounded-xl py-2.5 sm:py-3 text-sm font-semibold shadow-lg hover:shadow-xl transition-all duration-200 transform hover:-translate-y-0.5" 
             disabled={isLoading}
             type="submit"
           >

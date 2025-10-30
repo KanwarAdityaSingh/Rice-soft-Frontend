@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Users, BarChart3, Trophy, Store, UserCheck, UserCircle, ChevronRight, Settings, LogOut } from 'lucide-react'
+import { Users, BarChart3, Trophy, Store, UserCheck, UserCircle, ChevronRight, Settings, LogOut, X } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 
 interface SidebarProps {
   collapsedDefault?: boolean
+  mobileOpen?: boolean
+  onMobileClose?: () => void
 }
 
-export function Sidebar({ collapsedDefault = true }: SidebarProps) {
+export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileClose }: SidebarProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, logout } = useAuth()
@@ -31,23 +33,55 @@ export function Sidebar({ collapsedDefault = true }: SidebarProps) {
     { to: '/directory/brokers', label: 'Brokers', icon: UserCircle },
   ] as const
 
+  // Close mobile menu when route changes
+  useEffect(() => {
+    if (mobileOpen && onMobileClose) {
+      onMobileClose()
+    }
+  }, [location.pathname])
+
   return (
-    <aside
-      className={`fixed left-0 top-16 bottom-0 z-40 transition-[width] duration-300 ${collapsed ? 'w-[64px]' : 'w-[260px]'}`}
-      aria-label="Sidebar"
-    >
-      <div className="h-full flex flex-col border-r border-border/60 bg-background/80 backdrop-blur-sm">
-        {/* Header / Toggle */}
-        <div className="p-2 flex items-center justify-end">
-          <button
-            className="h-8 w-8 rounded-lg hover:bg-muted/60 flex items-center justify-center transition-colors"
-            onClick={() => setCollapsed((c) => !c)}
-            aria-label="Toggle sidebar"
-            title="Toggle sidebar"
-          >
-            <ChevronRight className={`h-4 w-4 transition-transform ${collapsed ? '' : 'rotate-180'}`} />
-          </button>
-        </div>
+    <>
+      {/* Mobile Overlay */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={onMobileClose}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside
+        className={`fixed left-0 top-16 bottom-0 z-40 transition-all duration-300 ${
+          collapsed ? 'w-[64px]' : 'w-[260px]'
+        } ${
+          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+        } md:translate-x-0`}
+        aria-label="Sidebar"
+      >
+        <div className="h-full flex flex-col border-r border-border/60 bg-background/95 backdrop-blur-sm">
+          {/* Header / Toggle */}
+          <div className="p-2 flex items-center justify-between md:justify-end">
+            {/* Mobile Close Button */}
+            <button
+              className="md:hidden h-8 w-8 rounded-lg hover:bg-muted/60 flex items-center justify-center transition-colors"
+              onClick={onMobileClose}
+              aria-label="Close menu"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            {/* Desktop Toggle */}
+            <button
+              className="hidden md:flex h-8 w-8 rounded-lg hover:bg-muted/60 items-center justify-center transition-colors"
+              onClick={() => setCollapsed((c) => !c)}
+              aria-label="Toggle sidebar"
+              title="Toggle sidebar"
+            >
+              <ChevronRight className={`h-4 w-4 transition-transform ${collapsed ? '' : 'rotate-180'}`} />
+            </button>
+          </div>
 
         {/* Links */}
         <nav className="flex-1 px-2 space-y-1 overflow-y-auto">
@@ -109,6 +143,7 @@ export function Sidebar({ collapsedDefault = true }: SidebarProps) {
         </div>
       </div>
     </aside>
+    </>
   )
 }
 

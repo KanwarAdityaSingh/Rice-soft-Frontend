@@ -30,29 +30,32 @@ export function BrokersTable() {
 
   return (
     <div>
-      <div className="flex gap-4 mb-6">
-        <div className="flex-1">
+      {/* Filters Section - Responsive */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+        <div className="flex-1 min-w-0">
           <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search by business name, contact, or email..." />
         </div>
-        <FilterDropdown
-          label="Status"
-          options={[
-            { label: 'Active', value: 'active' },
-            { label: 'Inactive', value: 'inactive' },
-          ]}
-          value={statusFilter}
-          onChange={setStatusFilter}
-        />
-        <FilterDropdown
-          label="Type"
-          options={[
-            { label: 'Purchase', value: 'purchase' },
-            { label: 'Sale', value: 'sale' },
-            { label: 'Both', value: 'both' },
-          ]}
-          value={typeFilter}
-          onChange={setTypeFilter}
-        />
+        <div className="flex gap-2">
+          <FilterDropdown
+            label="Status"
+            options={[
+              { label: 'Active', value: 'active' },
+              { label: 'Inactive', value: 'inactive' },
+            ]}
+            value={statusFilter}
+            onChange={setStatusFilter}
+          />
+          <FilterDropdown
+            label="Type"
+            options={[
+              { label: 'Purchase', value: 'purchase' },
+              { label: 'Sale', value: 'sale' },
+              { label: 'Both', value: 'both' },
+            ]}
+            value={typeFilter}
+            onChange={setTypeFilter}
+          />
+        </div>
       </div>
 
       {loading ? (
@@ -65,7 +68,8 @@ export function BrokersTable() {
         />
       ) : (
         <>
-          <div className="overflow-x-auto">
+          {/* Desktop Table View */}
+          <div className="hidden lg:block overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">
@@ -101,6 +105,63 @@ export function BrokersTable() {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile Card View */}
+          <div className="lg:hidden space-y-4">
+            {filteredBrokers.map((broker) => (
+              <div
+                key={broker.id}
+                className="card-glow rounded-xl p-4 space-y-3 hover:shadow-lg transition-all"
+              >
+                {/* Header */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-base truncate">{broker.business_name}</h3>
+                    <p className="text-sm text-muted-foreground truncate">{broker.contact_person}</p>
+                  </div>
+                  <span className={`px-2 py-1 rounded-md text-xs whitespace-nowrap ${
+                    broker.is_active 
+                      ? 'bg-emerald-500/10 text-emerald-600' 
+                      : 'bg-muted text-muted-foreground'
+                  }`}>
+                    {broker.is_active ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
+
+                {/* Details Grid */}
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span className="text-muted-foreground text-xs">Email</span>
+                    <p className="truncate">{broker.email}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground text-xs">Phone</span>
+                    <p className="truncate">{broker.phone}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground text-xs">Type</span>
+                    <p className="capitalize">{broker.type}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground text-xs">City</span>
+                    <p className="truncate">{broker.address.city}</p>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/60">
+                  <ActionButtons
+                    isActive={broker.is_active}
+                    onEdit={() => console.log('Edit', broker.id)}
+                    onDelete={() => {
+                      setSelectedBroker(broker);
+                      setDeleteDialogOpen(true);
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
 
           <div className="mt-6 flex items-center justify-between text-sm text-muted-foreground">

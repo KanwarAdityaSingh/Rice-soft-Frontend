@@ -35,31 +35,34 @@ export function UsersTable({ onEditUser }: UsersTableProps) {
 
   return (
     <div>
-      <div className="flex gap-4 mb-6">
-        <div className="flex-1">
+      {/* Filters Section - Responsive */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+        <div className="flex-1 min-w-0">
           <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search by username, name, or email..." />
         </div>
-        <FilterDropdown
-          label="Status"
-          options={[
-            { label: 'Active', value: 'active' },
-            { label: 'Inactive', value: 'inactive' },
-          ]}
-          value={statusFilter}
-          onChange={setStatusFilter}
-        />
-        <FilterDropdown
-          label="Type"
-          options={[
-            { label: 'Admin', value: 'admin' },
-            { label: 'Custom', value: 'custom' },
-            { label: 'Vendor', value: 'vendor' },
-            { label: 'Salesman', value: 'salesman' },
-            { label: 'Broker', value: 'broker' },
-          ]}
-          value={typeFilter}
-          onChange={setTypeFilter}
-        />
+        <div className="flex gap-2">
+          <FilterDropdown
+            label="Status"
+            options={[
+              { label: 'Active', value: 'active' },
+              { label: 'Inactive', value: 'inactive' },
+            ]}
+            value={statusFilter}
+            onChange={setStatusFilter}
+          />
+          <FilterDropdown
+            label="Type"
+            options={[
+              { label: 'Admin', value: 'admin' },
+              { label: 'Custom', value: 'custom' },
+              { label: 'Vendor', value: 'vendor' },
+              { label: 'Salesman', value: 'salesman' },
+              { label: 'Broker', value: 'broker' },
+            ]}
+            value={typeFilter}
+            onChange={setTypeFilter}
+          />
+        </div>
       </div>
 
       {loading ? (
@@ -72,7 +75,8 @@ export function UsersTable({ onEditUser }: UsersTableProps) {
         />
       ) : (
         <>
-          <div className="overflow-x-auto">
+          {/* Desktop Table View */}
+          <div className="hidden lg:block overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">
@@ -111,6 +115,66 @@ export function UsersTable({ onEditUser }: UsersTableProps) {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile Card View */}
+          <div className="lg:hidden space-y-4">
+            {filteredUsers.map((user) => (
+              <div
+                key={user.id}
+                className="card-glow rounded-xl p-4 space-y-3 hover:shadow-lg transition-all"
+              >
+                {/* Header */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-base truncate">{user.full_name}</h3>
+                    <p className="text-sm text-muted-foreground truncate">@{user.username}</p>
+                  </div>
+                  <span className={`px-2 py-1 rounded-md text-xs whitespace-nowrap ${
+                    user.is_active 
+                      ? 'bg-emerald-500/10 text-emerald-600' 
+                      : 'bg-muted text-muted-foreground'
+                  }`}>
+                    {user.is_active ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
+
+                {/* Details Grid */}
+                <div className="grid grid-cols-1 gap-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground text-xs">Email</span>
+                    <p className="truncate">{user.email}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <span className="text-muted-foreground text-xs">Phone</span>
+                      <p className="truncate">{user.phone || '-'}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-xs">Type</span>
+                      <p className="capitalize">{user.user_type}</p>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground text-xs">Last Login</span>
+                    <p>{user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never'}</p>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/60">
+                  <ActionButtons
+                    isActive={user.is_active}
+                    onEdit={onEditUser ? () => onEditUser(user) : undefined}
+                    onToggleStatus={() => toggleUserStatus(user.id, user.is_active)}
+                    onDelete={() => {
+                      setSelectedUser(user);
+                      setDeleteDialogOpen(true);
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
 
           <div className="mt-6 flex items-center justify-between text-sm text-muted-foreground">

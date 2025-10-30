@@ -26,23 +26,23 @@ export function LeadProgressModal({ open, onOpenChange, lead, events }: LeadProg
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
-        <Dialog.Content className="fixed left-[50%] top-[50%] z-50 max-w-4xl w-full translate-x-[-50%] translate-y-[-50%]">
+        <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-[95vw] sm:w-[90vw] md:w-full max-w-4xl translate-x-[-50%] translate-y-[-50%]">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="glass rounded-2xl p-8 shadow-xl max-h-[90vh] overflow-y-auto"
+            className="glass rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 shadow-xl max-h-[90vh] overflow-y-auto"
           >
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <Dialog.Title className="text-2xl font-bold text-gradient">
+            <div className="flex items-center justify-between mb-4 sm:mb-6">
+              <div className="flex-1 min-w-0 pr-2">
+                <Dialog.Title className="text-lg sm:text-xl md:text-2xl font-bold text-gradient truncate">
                   Progress Pipeline
                 </Dialog.Title>
-                <p className="text-muted-foreground mt-1">{lead.company_name}</p>
+                <p className="text-sm sm:text-base text-muted-foreground mt-0.5 sm:mt-1 truncate">{lead.company_name}</p>
               </div>
               <button
                 onClick={() => onOpenChange(false)}
-                className="rounded-lg p-1 hover:bg-muted/50 transition-colors"
+                className="rounded-lg p-1 hover:bg-muted/50 transition-colors flex-shrink-0"
               >
                 <X className="h-5 w-5" />
               </button>

@@ -35,43 +35,46 @@ export default function VendorsPage() {
   }, [vendors, searchQuery, statusFilter, typeFilter])
 
   return (
-    <div className="container mx-auto py-10 space-y-8">
-      <header className="hero-bg rounded-2xl p-6 sm:p-8 relative overflow-hidden">
+    <div className="container mx-auto py-6 sm:py-10 space-y-6 sm:space-y-8 px-4 sm:px-6">
+      <header className="hero-bg rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 relative overflow-hidden">
         <div className="absolute -left-6 -top-6 h-24 w-24 floating-orb" />
         <div className="absolute -right-6 -bottom-6 h-20 w-20 floating-orb" />
         <div className="relative">
-          <h1 className="text-3xl sm:text-4xl font-bold">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold">
             <span className="text-gradient">Vendors Directory</span>
           </h1>
-          <p className="mt-2 text-muted-foreground">Find and manage suppliers seamlessly</p>
+          <p className="mt-1 sm:mt-2 text-sm sm:text-base text-muted-foreground">Find and manage suppliers seamlessly</p>
         </div>
       </header>
 
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex-1 min-w-[16rem]">
+      {/* Responsive Filters and Action Button */}
+      <div className="space-y-3">
+        <div className="w-full">
           <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search by business, contact, email, or phone..." />
         </div>
-        <div className="flex gap-2">
-          <FilterDropdown
-            label="Status"
-            options={[
-              { label: 'Active', value: 'active' },
-              { label: 'Inactive', value: 'inactive' },
-            ]}
-            value={statusFilter}
-            onChange={setStatusFilter}
-          />
-          <FilterDropdown
-            label="Type"
-            options={[
-              { label: 'Purchaser', value: 'purchaser' },
-              { label: 'Seller', value: 'seller' },
-              { label: 'Both', value: 'both' },
-            ]}
-            value={typeFilter}
-            onChange={setTypeFilter}
-          />
-          <button className="btn-primary rounded-xl inline-flex items-center gap-2" onClick={() => setCreateOpen(true)}>
+        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+          <div className="flex gap-2 flex-1">
+            <FilterDropdown
+              label="Status"
+              options={[
+                { label: 'Active', value: 'active' },
+                { label: 'Inactive', value: 'inactive' },
+              ]}
+              value={statusFilter}
+              onChange={setStatusFilter}
+            />
+            <FilterDropdown
+              label="Type"
+              options={[
+                { label: 'Purchaser', value: 'purchaser' },
+                { label: 'Seller', value: 'seller' },
+                { label: 'Both', value: 'both' },
+              ]}
+              value={typeFilter}
+              onChange={setTypeFilter}
+            />
+          </div>
+          <button className="btn-primary rounded-xl inline-flex items-center justify-center gap-2 w-full sm:w-auto" onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4" /> Add Vendor
           </button>
         </div>

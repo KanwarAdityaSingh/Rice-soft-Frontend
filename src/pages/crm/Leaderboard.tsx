@@ -35,14 +35,14 @@ export default function LeaderboardPage() {
   }, [fireConfetti]);
 
   return (
-    <div className="container py-8 space-y-8">
-      <header className="hero-bg rounded-2xl p-6 sm:p-8 relative overflow-hidden">
+    <div className="container py-6 sm:py-8 space-y-6 sm:space-y-8 px-4 sm:px-6">
+      <header className="hero-bg rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 relative overflow-hidden">
         <div className="absolute -left-6 -top-6 h-24 w-24 floating-orb" />
         <div className="absolute -right-6 -bottom-6 h-20 w-20 floating-orb" />
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between relative">
           <div>
-            <h1 className="text-3xl sm:text-4xl font-bold"><span className="text-gradient">Leaderboard</span></h1>
-            <p className="text-sm text-muted-foreground">Track top performers and team momentum.</p>
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold"><span className="text-gradient">Leaderboard</span></h1>
+            <p className="text-xs sm:text-sm text-muted-foreground">Track top performers and team momentum.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <DateRangeFilter onPreset={applyPresetRange} />
@@ -57,7 +57,8 @@ export default function LeaderboardPage() {
 
       <Podium entries={entries} />
 
-      <section className="rounded-2xl card-glow overflow-hidden">
+      {/* Desktop Table View */}
+      <section className="hidden lg:block rounded-2xl card-glow overflow-hidden">
         <div className="grid grid-cols-12 bg-muted/30 text-xs font-medium">
           <HeaderCell className="col-span-1">Rank</HeaderCell>
           <HeaderCell className="col-span-3">Name</HeaderCell>
@@ -102,6 +103,64 @@ export default function LeaderboardPage() {
           )}
         </div>
       </section>
+
+      {/* Mobile Card View */}
+      <div className="lg:hidden space-y-4">
+        {loading ? (
+          <div className="p-6 text-center text-sm text-muted-foreground">Loading...</div>
+        ) : entries.length === 0 ? (
+          <div className="p-6 text-center text-sm text-muted-foreground">No leaderboard data available yet</div>
+        ) : (
+          entries.map((e) => (
+            <div key={e.salesperson_id} className="card-glow rounded-xl p-4 space-y-3">
+              {/* Header with Rank */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className="text-2xl">{getRankIcon(e.rank)}</div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-base truncate">{e.salesperson_name}</h3>
+                    <p className="text-xs text-muted-foreground truncate">{e.salesperson_email}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Stats Grid */}
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <span className="text-muted-foreground text-xs">Total Leads</span>
+                  <p className="font-semibold text-lg">{Number(e.total_leads ?? 0)}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground text-xs">Revenue</span>
+                  <p className="font-semibold text-lg">{formatCurrency(Number(e.total_revenue ?? 0))}</p>
+                </div>
+              </div>
+
+              {/* Progress Bars */}
+              <div className="space-y-3 pt-2 border-t border-border/60">
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs text-muted-foreground">Conversion Rate</span>
+                    <span className="text-xs font-medium">{Number(e.conversion_rate ?? 0).toFixed(1)}%</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-muted">
+                    <div className="h-2 rounded-full bg-primary" style={{ width: `${Math.min(100, Number(e.conversion_rate ?? 0))}%` }} />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs text-muted-foreground">Performance Score</span>
+                    <span className="text-xs font-medium">{Number(e.performance_score ?? 0).toFixed(1)}</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-muted">
+                    <div className={scoreBarClass(Number(e.performance_score ?? 0))} style={{ width: `${Math.min(100, Number(e.performance_score ?? 0))}%` }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }

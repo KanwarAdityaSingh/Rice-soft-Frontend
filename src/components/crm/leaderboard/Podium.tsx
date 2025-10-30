@@ -14,15 +14,15 @@ export function Podium({ entries }: { entries: LeaderboardEntry[] }) {
     ];
 
   return (
-    <div className="grid grid-cols-3 gap-3">
+    <div className="grid grid-cols-3 gap-2 sm:gap-3">
       {slots.map((slot, idx) => (
         <motion.div
           key={slot.entry?.salesperson_id || `podium-${idx}`}
           initial={{ opacity: 0, y: 14, scale: 0.96 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ type: 'spring', stiffness: 220, damping: 18, delay: idx * 0.05 }}
-          className={`relative overflow-hidden rounded-2xl border border-border/70 p-4 text-center ${slot.rank === 1 ? 'bg-gradient-to-br from-primary/10 to-accent/10' : ''}`}
-          style={{ minHeight: 180 }}
+          className={`relative overflow-hidden rounded-xl sm:rounded-2xl border border-border/70 p-2 sm:p-4 text-center ${slot.rank === 1 ? 'bg-gradient-to-br from-primary/10 to-accent/10' : ''}`}
+          style={{ minHeight: slot.rank === 1 ? '160px' : '140px' }}
         >
           {/* Pedestal - Translucent */}
           <div
@@ -32,27 +32,27 @@ export function Podium({ entries }: { entries: LeaderboardEntry[] }) {
 
           {/* Content */}
           {slot.entry ? (
-            <div className="relative z-10 flex h-full flex-col items-center justify-start gap-1">
-              <div className="mb-1 text-2xl">
+            <div className="relative z-10 flex h-full flex-col items-center justify-start gap-0.5 sm:gap-1">
+              <div className="mb-0.5 sm:mb-1 text-xl sm:text-2xl">
                 {getRankIcon(slot.rank)}
               </div>
-              <div className="font-semibold truncate" title={slot.entry.salesperson_name}>{slot.entry.salesperson_name}</div>
-              <div className="text-xs text-muted-foreground truncate" title={slot.entry.salesperson_email}>{slot.entry.salesperson_email}</div>
-              <div className="mt-2 text-[11px] uppercase tracking-wide text-muted-foreground">Score</div>
+              <div className="font-semibold text-xs sm:text-sm truncate w-full px-1" title={slot.entry.salesperson_name}>{slot.entry.salesperson_name}</div>
+              <div className="text-[10px] sm:text-xs text-muted-foreground truncate w-full px-1" title={slot.entry.salesperson_email}>{slot.entry.salesperson_email}</div>
+              <div className="mt-1 sm:mt-2 text-[10px] sm:text-[11px] uppercase tracking-wide text-muted-foreground">Score</div>
               {(() => {
                 const score = Number(slot.entry?.performance_score ?? 0);
                 return (
                   <>
-                    <div className={`mx-auto mt-1 h-2 w-24 rounded-full ${scoreBarClass(score)}`} />
-                    <div className="text-sm font-semibold mt-1">{score.toFixed(1)}</div>
+                    <div className={`mx-auto mt-0.5 sm:mt-1 h-1.5 sm:h-2 w-16 sm:w-24 rounded-full ${scoreBarClass(score)}`} />
+                    <div className="text-xs sm:text-sm font-semibold mt-0.5 sm:mt-1">{score.toFixed(1)}</div>
                   </>
                 );
               })()}
             </div>
           ) : (
             <div className="relative z-10 flex h-full flex-col items-center justify-center">
-              <div className="text-4xl mb-2 opacity-30">{getRankIcon(slot.rank)}</div>
-              <div className="text-sm text-muted-foreground/60">No Data</div>
+              <div className="text-2xl sm:text-4xl mb-1 sm:mb-2 opacity-30">{getRankIcon(slot.rank)}</div>
+              <div className="text-xs sm:text-sm text-muted-foreground/60">No Data</div>
             </div>
           )}
         </motion.div>

@@ -83,40 +83,44 @@ export function LeadsTable({
 
   return (
     <>
-      <div className="flex gap-4 mb-6">
-        <div className="flex-1">
+      {/* Filters Section - Responsive */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+        <div className="flex-1 min-w-0">
           <SearchBar 
             value={searchQuery} 
             onChange={setSearchQuery} 
             placeholder="Search by business name, contact, email, or keyword..." 
           />
         </div>
-        <FilterDropdown
-          label="Status"
-          options={[
-            { label: 'New', value: 'new' },
-            { label: 'Contacted', value: 'contacted' },
-            { label: 'Engaged', value: 'engaged' },
-            { label: 'Converted', value: 'converted' },
-            { label: 'Rejected', value: 'rejected' },
-          ]}
-          value={filters.lead_status}
-          onChange={(value) => onFiltersChange({ ...filters, lead_status: value as any })}
-        />
-        <FilterDropdown
-          label="Priority"
-          options={[
-            { label: 'Low', value: 'low' },
-            { label: 'Medium', value: 'medium' },
-            { label: 'High', value: 'high' },
-            { label: 'Urgent', value: 'urgent' },
-          ]}
-          value={filters.priority}
-          onChange={(value) => onFiltersChange({ ...filters, priority: value as any })}
-        />
+        <div className="flex gap-2">
+          <FilterDropdown
+            label="Status"
+            options={[
+              { label: 'New', value: 'new' },
+              { label: 'Contacted', value: 'contacted' },
+              { label: 'Engaged', value: 'engaged' },
+              { label: 'Converted', value: 'converted' },
+              { label: 'Rejected', value: 'rejected' },
+            ]}
+            value={filters.lead_status}
+            onChange={(value) => onFiltersChange({ ...filters, lead_status: value as any })}
+          />
+          <FilterDropdown
+            label="Priority"
+            options={[
+              { label: 'Low', value: 'low' },
+              { label: 'Medium', value: 'medium' },
+              { label: 'High', value: 'high' },
+              { label: 'Urgent', value: 'urgent' },
+            ]}
+            value={filters.priority}
+            onChange={(value) => onFiltersChange({ ...filters, priority: value as any })}
+          />
+        </div>
       </div>
 
-      <div className="overflow-x-auto">
+      {/* Desktop Table View */}
+      <div className="hidden lg:block overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="border-b border-border">
@@ -198,6 +202,94 @@ export function LeadsTable({
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile Card View */}
+      <div className="lg:hidden space-y-4">
+        {filteredLeads.map((lead) => (
+          <div
+            key={lead.id}
+            className="card-glow rounded-xl p-4 space-y-3 hover:shadow-lg transition-all"
+            onClick={() => navigate(`/crm/leads/${lead.id}`)}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-base truncate">{lead.company_name}</h3>
+                <p className="text-sm text-muted-foreground truncate">{lead.contact_person}</p>
+              </div>
+              <div className="flex gap-2">
+                <LeadStatusBadge status={lead.lead_status} />
+              </div>
+            </div>
+
+            {/* Details Grid */}
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <span className="text-muted-foreground text-xs">Email</span>
+                <p className="truncate">{lead.email}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground text-xs">Phone</span>
+                <p className="truncate">{lead.phone}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground text-xs">Priority</span>
+                <div className="mt-0.5">
+                  <LeadPriorityBadge priority={lead.priority} />
+                </div>
+              </div>
+              <div>
+                <span className="text-muted-foreground text-xs">Value</span>
+                <p className="font-medium">{lead.estimated_value ? `₹${lead.estimated_value.toLocaleString()}` : '-'}</p>
+              </div>
+            </div>
+
+            {/* Lead ID */}
+            <div className="flex items-center gap-2 pt-2 border-t border-border/60" onClick={(e) => e.stopPropagation()}>
+              <span className="text-xs text-muted-foreground">ID:</span>
+              <span className="font-mono text-xs text-muted-foreground">{lead.id.slice(0, 8)}...</span>
+              <button
+                onClick={() => copyToClipboard(lead.id, lead.id)}
+                className="p-1 hover:bg-muted/50 rounded transition-colors"
+                title="Copy Lead ID"
+              >
+                {copiedId === lead.id ? (
+                  <Check className="h-3 w-3 text-green-600" />
+                ) : (
+                  <Copy className="h-3 w-3 text-muted-foreground" />
+                )}
+              </button>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-2 pt-2 border-t border-border/60" onClick={(e) => e.stopPropagation()}>
+              {onViewProgress && (
+                <button
+                  onClick={() => onViewProgress(lead)}
+                  className="flex-1 py-2 px-3 bg-primary/10 text-primary rounded-lg text-sm font-medium hover:bg-primary/20 transition-colors flex items-center justify-center gap-2"
+                >
+                  <TrendingUp className="h-4 w-4" />
+                  Progress
+                </button>
+              )}
+              <button
+                onClick={() => onEdit(lead)}
+                className="flex-1 py-2 px-3 bg-muted/50 rounded-lg text-sm font-medium hover:bg-muted transition-colors flex items-center justify-center gap-2"
+              >
+                <Edit className="h-4 w-4" />
+                Edit
+              </button>
+              <button
+                onClick={() => handleDeleteClick(lead)}
+                className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors"
+                title="Delete"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        ))}
       </div>
 
       <div className="mt-6 flex items-center justify-between text-sm text-muted-foreground">

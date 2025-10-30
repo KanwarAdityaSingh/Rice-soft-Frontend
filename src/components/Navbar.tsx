@@ -1,10 +1,14 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { Moon, Sun, User, LogOut, Settings } from 'lucide-react'
+import { Moon, Sun, User, LogOut, Settings, Menu } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../hooks/useTheme'
 import { useAuth } from '../hooks/useAuth'
 
-export function Navbar() {
+interface NavbarProps {
+  onMobileMenuToggle?: () => void
+}
+
+export function Navbar({ onMobileMenuToggle }: NavbarProps) {
   const { theme, setTheme } = useTheme()
   const { user, logout } = useAuth()
   const navigate = useNavigate()
@@ -12,9 +16,22 @@ export function Navbar() {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border/60 backdrop-blur supports-[backdrop-filter]:bg-background/70">
       <div className="container flex h-16 items-center justify-between">
-        <button onClick={() => navigate('/')} className="group flex items-center">
-          <span className="text-xl font-bold tracking-wider uppercase bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Rice Trading</span>
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Mobile Menu Button */}
+          {user && onMobileMenuToggle && (
+            <button
+              onClick={onMobileMenuToggle}
+              className="md:hidden h-10 w-10 flex items-center justify-center hover:bg-muted/60 rounded-lg transition-colors"
+              aria-label="Toggle menu"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+          )}
+          
+          <button onClick={() => navigate('/')} className="group flex items-center">
+            <span className="text-lg sm:text-xl font-bold tracking-wider uppercase bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Rice Trading</span>
+          </button>
+        </div>
 
         <div className="flex items-center gap-2">
           {/* Theme Switcher */}

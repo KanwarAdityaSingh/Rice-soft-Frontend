@@ -96,16 +96,16 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead }: LeadFormModa
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" />
-        <Dialog.Content className="fixed left-[50%] top-[50%] z-50 max-w-4xl w-full max-h-[90vh] translate-x-[-50%] translate-y-[-50%] overflow-hidden">
+        <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-[95vw] sm:w-[90vw] md:w-full max-w-4xl max-h-[90vh] sm:max-h-[85vh] translate-x-[-50%] translate-y-[-50%] overflow-hidden">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className="glass rounded-2xl p-8 shadow-2xl my-8 max-h-[90vh] overflow-y-auto"
+            className="glass rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 shadow-2xl my-4 sm:my-8 max-h-[90vh] overflow-y-auto"
           >
-            <div className="flex items-center justify-between mb-6">
-              <Dialog.Title className="text-xl font-semibold">
+            <div className="flex items-center justify-between mb-4 sm:mb-6">
+              <Dialog.Title className="text-lg sm:text-xl font-semibold">
                 {isEdit ? 'Edit Lead' : 'Create Lead'}
               </Dialog.Title>
               <button onClick={() => onOpenChange(false)} className="rounded-lg p-1 hover:bg-muted/50 transition-colors">
@@ -114,15 +114,15 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead }: LeadFormModa
             </div>
 
             {/* Steps Indicator */}
-            <div className="flex gap-2 mb-6">
-              <div className={`flex-1 rounded-lg p-2 text-center text-sm font-medium ${step >= 1 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
-                1. Basic Info
+            <div className="flex gap-1 sm:gap-2 mb-4 sm:mb-6">
+              <div className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium ${step >= 1 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+                <span className="hidden sm:inline">1. </span>Basic
               </div>
-              <div className={`flex-1 rounded-lg p-2 text-center text-sm font-medium ${step >= 2 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
-                2. Address & Business
+              <div className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium ${step >= 2 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+                <span className="hidden sm:inline">2. </span>Address
               </div>
-              <div className={`flex-1 rounded-lg p-2 text-center text-sm font-medium ${step >= 3 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
-                3. Lead Details
+              <div className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium ${step >= 3 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+                <span className="hidden sm:inline">3. </span>Details
               </div>
             </div>
 

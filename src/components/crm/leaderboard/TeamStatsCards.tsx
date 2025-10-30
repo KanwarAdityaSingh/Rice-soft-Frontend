@@ -22,9 +22,9 @@ export function TeamStatsCards({ stats }: { stats: TeamStats }) {
 
 function Kpi({ label, value }: { label: string; value: string | number }) {
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="rounded-xl border border-border/70 p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-lg font-semibold">{value}</div>
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="rounded-lg sm:rounded-xl border border-border/70 p-2 sm:p-3">
+      <div className="text-[10px] sm:text-xs text-muted-foreground">{label}</div>
+      <div className="text-base sm:text-lg font-semibold">{value}</div>
     </motion.div>
   );
 }
