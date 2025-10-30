@@ -5,6 +5,9 @@ import { AuthProvider } from './providers/AuthProvider'
 import LandingPage from './pages/Landing'
 import LoginPage from './pages/Login'
 import ManageUsers from './pages/admin/ManageUsers'
+import BrokersPage from './pages/directory/Brokers.tsx'
+import SalesmenPage from './pages/directory/Salesmen.tsx'
+import VendorsPage from './pages/directory/Vendors.tsx'
 import LeadsPage from './pages/crm/Leads'
 import LeadDetailPage from './pages/crm/LeadDetail'
 import AnalyticsPage from './pages/crm/Analytics'
@@ -93,6 +96,36 @@ function AnimatedRoutes() {
             <ProtectedRoute>
               <AppLayout>
                 <LeaderboardPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/directory/brokers"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <BrokersPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/directory/salesmen"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <SalesmenPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/directory/vendors"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <VendorsPage />
               </AppLayout>
             </ProtectedRoute>
           }

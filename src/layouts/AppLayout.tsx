@@ -2,6 +2,7 @@ import { Navbar } from '../components/Navbar'
 import { Footer } from '../components/Footer'
 import { PageTransition } from '../components/shared/PageTransition'
 import { ToastContainer } from '../components/shared/ToastContainer'
+import { Sidebar } from '../components/Sidebar'
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -14,11 +15,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       </div>
       
       <Navbar />
+      <Sidebar collapsedDefault={true} />
       <PageTransition>
-        <div className="flex-1 relative z-10">{children}</div>
+        <div className="flex-1 relative z-10 pl-16">{children}</div>
       </PageTransition>
       <Footer />
       <ToastContainer />
     </div>
   )
 }
+
+
+

@@ -1,6 +1,5 @@
-import { ArrowRight, Users, BarChart3, Trophy, Sparkles, Zap, UserCheck, TrendingUp } from 'lucide-react'
+import { ArrowRight, Users, Sparkles, Zap, UserCheck, TrendingUp } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
 
 export default function LandingPage() {
   return (
@@ -71,14 +70,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Feature Grid */}
-      <section className="container py-10 sm:py-14">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <FeatureCard link="/crm/leads" icon={<Users className="h-5 w-5" />} title="Leads" subtitle="Capture, qualify and convert" />
-          <FeatureCard link="/crm/analytics" icon={<BarChart3 className="h-5 w-5" />} title="Analytics" subtitle="Clarity without the clutter" />
-          <FeatureCard link="/crm/leaderboard" icon={<Trophy className="h-5 w-5" />} title="Leaderboard" subtitle="Compete. Win. Celebrate." />
-        </div>
-      </section>
+      {/* Feature Grid removed; global sidebar provides routing */}
 
       {/* Trust & Compliance */}
 
@@ -98,26 +90,7 @@ function MiniCard({ icon, title, value, accent = 'primary' }: { icon: React.Reac
   )
 }
 
-function FeatureCard({ link, icon, title, subtitle, highlight = false }: { link: string; icon: React.ReactNode; title: string; subtitle: string; highlight?: boolean }) {
-  return (
-    <Link to={link} className="group">
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true, amount: 0.4 }}
-        transition={{ duration: 0.35 }}
-        className={`rounded-2xl p-5 cursor-pointer transition-all duration-300 group-hover:scale-[1.02] ${highlight ? 'border border-primary/40 bg-gradient-to-br from-primary/10 to-accent/10' : 'card-glow'}`}
-      >
-        <div className="mb-2 inline-flex items-center gap-2 text-sm font-medium">
-          <span className={`text-primary ${highlight ? 'animate-subtle-pulse' : ''}`}>{icon}</span>
-          {title}
-        </div>
-        <div className="text-xs text-muted-foreground">{subtitle}</div>
-
-      </motion.div>
-    </Link>
-  )
-}
+// FeatureCard removed with feature grid
 
 function AnimatedBars() {
   const bars = new Array(12).fill(0);
