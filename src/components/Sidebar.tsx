@@ -83,7 +83,13 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
             </button>
 
             {/* Desktop Toggle */}
-            <Tooltip title="Toggle sidebar" placement="right" arrow>
+            <Tooltip 
+              title="Toggle sidebar" 
+              placement="right" 
+              arrow
+              disableInteractive
+              enterDelay={300}
+            >
               <button
                 className="hidden md:flex h-8 w-8 rounded-lg hover:bg-muted/60 items-center justify-center transition-colors"
                 onClick={() => setCollapsed((c) => !c)}
@@ -113,8 +119,28 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
             )
             
             return collapsed ? (
-              <Tooltip key={to} title={label} placement="right" arrow>
-                <span style={{ display: 'contents' }}>{linkContent}</span>
+              <Tooltip 
+                key={to} 
+                title={label} 
+                placement="right" 
+                arrow
+                disableInteractive
+                enterDelay={300}
+                enterNextDelay={300}
+                slotProps={{
+                  popper: {
+                    modifiers: [
+                      {
+                        name: 'offset',
+                        options: {
+                          offset: [0, 8],
+                        },
+                      },
+                    ],
+                  },
+                }}
+              >
+                <div className="w-full">{linkContent}</div>
               </Tooltip>
             ) : (
               <div key={to}>{linkContent}</div>
@@ -171,7 +197,25 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
               {collapsed && (
                 <>
                   {user.user_type === 'admin' && (
-                    <Tooltip title="Manage Users" placement="right" arrow>
+                    <Tooltip 
+                      title="Manage Users" 
+                      placement="right" 
+                      arrow
+                      disableInteractive
+                      enterDelay={300}
+                      slotProps={{
+                        popper: {
+                          modifiers: [
+                            {
+                              name: 'offset',
+                              options: {
+                                offset: [0, 8],
+                              },
+                            },
+                          ],
+                        },
+                      }}
+                    >
                       <button
                         className="flex items-center justify-center rounded-lg p-2 hover:bg-primary/10 hover:text-primary transition-colors"
                         onClick={() => navigate('/admin/users')}
@@ -180,7 +224,25 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
                       </button>
                     </Tooltip>
                   )}
-                  <Tooltip title="Logout" placement="right" arrow>
+                  <Tooltip 
+                    title="Logout" 
+                    placement="right" 
+                    arrow
+                    disableInteractive
+                    enterDelay={300}
+                    slotProps={{
+                      popper: {
+                        modifiers: [
+                          {
+                            name: 'offset',
+                            options: {
+                              offset: [0, 8],
+                            },
+                          },
+                        ],
+                      },
+                    }}
+                  >
                     <button
                       className="flex items-center justify-center rounded-lg p-2 hover:bg-destructive/10 hover:text-destructive transition-colors"
                       onClick={() => logout()}
