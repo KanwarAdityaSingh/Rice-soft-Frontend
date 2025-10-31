@@ -1,6 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import { CustomSelect } from '../../shared/CustomSelect';
 import { usersAPI } from '../../../services/users.api';
 import { validateEmail, validateUsername, validatePassword } from '../../../utils/validation';
 import type { CreateUserRequest, UpdateUserRequest, User } from '../../../types/entities';
@@ -137,14 +138,15 @@ export function UserFormModal({ open, onOpenChange, user }: UserFormModalProps) 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="text-sm font-medium mb-1.5 block">User Type *</label>
-                <select
+                <CustomSelect
                   value={formData.user_type}
-                  onChange={(e) => setFormData({ ...formData, user_type: e.target.value as any })}
-                  className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                >
-                  <option value="admin">Admin</option>
-                  <option value="custom">Custom</option>
-                </select>
+                  onChange={(value) => setFormData({ ...formData, user_type: value as any })}
+                  options={[
+                    { value: 'admin', label: 'Admin' },
+                    { value: 'custom', label: 'Custom' }
+                  ]}
+                  placeholder="Select User Type"
+                />
               </div>
 
               <div>

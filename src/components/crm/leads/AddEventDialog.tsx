@@ -1,6 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState } from 'react';
 import { X } from 'lucide-react';
+import { CustomSelect } from '../../shared/CustomSelect';
 import { leadsAPI } from '../../../services/leads.api';
 import type { CreateLeadEventRequest } from '../../../types/entities';
 
@@ -84,17 +85,15 @@ export function AddEventDialog({ open, onOpenChange, leadId, onSuccess }: AddEve
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="text-sm font-medium mb-1.5 block">Event Type</label>
-                <select
+                <CustomSelect
                   value={eventType}
-                  onChange={(e) => setEventType(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                >
-                  {EVENT_TYPES.map((type) => (
-                    <option key={type} value={type}>
-                      {type.replace(/_/g, ' ')}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(value) => setEventType(value || 'note_added')}
+                  options={EVENT_TYPES.map((type) => ({
+                    value: type,
+                    label: type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+                  }))}
+                  placeholder="Select Event Type"
+                />
               </div>
 
               <div>

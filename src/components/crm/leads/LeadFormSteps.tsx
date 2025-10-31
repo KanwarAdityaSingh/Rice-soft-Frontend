@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowRight, ArrowLeft, Search } from 'lucide-react';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
+import { CustomSelect } from '../../shared/CustomSelect';
 import { salesmenAPI } from '../../../services/salesmen.api';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { validateEmail } from '../../../utils/validation';
@@ -140,31 +141,33 @@ export function LeadFormSteps({
 
             <div>
               <label className="text-sm font-medium mb-1.5 block">Status</label>
-              <select
+              <CustomSelect
                 value={formData.lead_status}
-                onChange={(e) => setFormData({ ...formData, lead_status: e.target.value as any })}
-                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-              >
-                <option value="new">New</option>
-                <option value="contacted">Contacted</option>
-                <option value="engaged">Engaged</option>
-                <option value="converted">Converted</option>
-                <option value="rejected">Rejected</option>
-              </select>
+                onChange={(value) => setFormData({ ...formData, lead_status: value as any })}
+                options={[
+                  { value: 'new', label: 'New' },
+                  { value: 'contacted', label: 'Contacted' },
+                  { value: 'engaged', label: 'Engaged' },
+                  { value: 'converted', label: 'Converted' },
+                  { value: 'rejected', label: 'Rejected' }
+                ]}
+                placeholder="Select Status"
+              />
             </div>
 
             <div>
               <label className="text-sm font-medium mb-1.5 block">Priority</label>
-              <select
+              <CustomSelect
                 value={formData.priority}
-                onChange={(e) => setFormData({ ...formData, priority: e.target.value as any })}
-                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-              >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="urgent">Urgent</option>
-              </select>
+                onChange={(value) => setFormData({ ...formData, priority: value as any })}
+                options={[
+                  { value: 'low', label: 'Low' },
+                  { value: 'medium', label: 'Medium' },
+                  { value: 'high', label: 'High' },
+                  { value: 'urgent', label: 'Urgent' }
+                ]}
+                placeholder="Select Priority"
+              />
             </div>
           </div>
 
@@ -188,18 +191,16 @@ export function LeadFormSteps({
                   <span className="text-muted-foreground">Loading rice codes...</span>
                 </div>
               ) : (
-                <select
-                  value={formData.rice_code_id || ''}
-                  onChange={(e) => setFormData({ ...formData, rice_code_id: e.target.value || null })}
-                  className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                >
-                  <option value="">Select Rice Code</option>
-                  {riceCodes.map((riceCode) => (
-                    <option key={riceCode.rice_code_id} value={riceCode.rice_code_id}>
-                      {riceCode.rice_code_name}
-                    </option>
-                  ))}
-                </select>
+                <CustomSelect
+                  value={formData.rice_code_id || null}
+                  onChange={(value) => setFormData({ ...formData, rice_code_id: value || null })}
+                  options={riceCodes.map((riceCode) => ({
+                    value: riceCode.rice_code_id,
+                    label: riceCode.rice_code_name
+                  }))}
+                  placeholder="Select Rice Code"
+                  openUpward={true}
+                />
               )}
             </div>
 
@@ -211,18 +212,16 @@ export function LeadFormSteps({
                   <span className="text-muted-foreground">Loading rice types...</span>
                 </div>
               ) : (
-                <select
-                  value={formData.rice_type || ''}
-                  onChange={(e) => setFormData({ ...formData, rice_type: e.target.value || null })}
-                  className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                >
-                  <option value="">Select Rice Type</option>
-                  {riceTypes.map((riceType) => (
-                    <option key={riceType.value} value={riceType.value}>
-                      {riceType.label}
-                    </option>
-                  ))}
-                </select>
+                <CustomSelect
+                  value={formData.rice_type || null}
+                  onChange={(value) => setFormData({ ...formData, rice_type: value || null })}
+                  options={riceTypes.map((riceType) => ({
+                    value: riceType.value,
+                    label: riceType.label
+                  }))}
+                  placeholder="Select Rice Type"
+                  openUpward={true}
+                />
               )}
             </div>
           </div>
@@ -408,18 +407,15 @@ export function LeadFormSteps({
 
           <div>
             <label className="text-sm font-medium mb-1.5 block">Assigned Salesman</label>
-            <select
-              value={formData.assigned_to || ''}
-              onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value || null })}
-              className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-            >
-              <option value="">No Assignment</option>
-              {salesmen.map((salesman) => (
-                <option key={salesman.id} value={salesman.id}>
-                  {salesman.name}
-                </option>
-              ))}
-            </select>
+            <CustomSelect
+              value={formData.assigned_to || null}
+              onChange={(value) => setFormData({ ...formData, assigned_to: value || null })}
+              options={salesmen.map((salesman) => ({
+                value: salesman.id,
+                label: salesman.name
+              }))}
+              placeholder="No Assignment"
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">

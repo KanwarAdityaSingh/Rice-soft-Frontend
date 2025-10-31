@@ -1,6 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState } from 'react';
 import { X, Search } from 'lucide-react';
+import { CustomSelect } from '../../shared/CustomSelect';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { brokersAPI } from '../../../services/brokers.api';
 import { validateEmail, validateGST } from '../../../utils/validation';
@@ -186,15 +187,16 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
 
                     <div>
                       <label className="text-sm font-medium mb-1.5 block">Type *</label>
-                      <select
+                      <CustomSelect
                         value={formData.type}
-                        onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
-                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                      >
-                        <option value="purchase">Purchase</option>
-                        <option value="sale">Sale</option>
-                        <option value="both">Both</option>
-                      </select>
+                        onChange={(value) => setFormData({ ...formData, type: value as any })}
+                        options={[
+                          { value: 'purchase', label: 'Purchase' },
+                          { value: 'sale', label: 'Sale' },
+                          { value: 'both', label: 'Both' }
+                        ]}
+                        placeholder="Select Type"
+                      />
                     </div>
                   </div>
 

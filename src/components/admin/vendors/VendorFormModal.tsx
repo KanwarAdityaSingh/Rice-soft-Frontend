@@ -1,6 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState } from 'react';
 import { X, Search } from 'lucide-react';
+import { CustomSelect } from '../../shared/CustomSelect';
 import { useVendors } from '../../../hooks/useVendors';
 import { vendorsAPI } from '../../../services/vendors.api';
 import { validateEmail, validateGST, validatePAN } from '../../../utils/validation';
@@ -230,15 +231,16 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
 
                     <div>
                       <label className="text-sm font-medium mb-1.5 block">Type *</label>
-                      <select
+                      <CustomSelect
                         value={formData.type}
-                        onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
-                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                      >
-                        <option value="purchaser">Purchaser</option>
-                        <option value="seller">Seller</option>
-                        <option value="both">Both</option>
-                      </select>
+                        onChange={(value) => setFormData({ ...formData, type: value as any })}
+                        options={[
+                          { value: 'purchaser', label: 'Purchaser' },
+                          { value: 'seller', label: 'Seller' },
+                          { value: 'both', label: 'Both' }
+                        ]}
+                        placeholder="Select Type"
+                      />
                     </div>
                   </div>
 
