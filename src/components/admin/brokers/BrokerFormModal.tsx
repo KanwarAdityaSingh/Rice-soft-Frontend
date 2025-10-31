@@ -111,8 +111,8 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
-        <Dialog.Content className="fixed left-[50%] top-[50%] z-50 max-h-[85vh] w-full max-w-3xl translate-x-[-50%] translate-y-[-50%] overflow-y-auto">
-          <div className="glass rounded-2xl p-6 shadow-xl my-8">
+        <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-full max-w-3xl translate-x-[-50%] translate-y-[-50%]">
+          <div className="glass rounded-2xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <Dialog.Title className="text-xl font-semibold">Create Broker</Dialog.Title>
               <button onClick={() => onOpenChange(false)} className="rounded-lg p-1 hover:bg-muted/50 transition-colors">

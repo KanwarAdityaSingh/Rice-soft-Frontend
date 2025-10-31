@@ -222,6 +222,8 @@ export interface Lead {
   revenue?: number;
   rice_code_id?: string | null;
   rice_type?: string | null;
+  salesman_latitude?: number | null;
+  salesman_longitude?: number | null;
 }
 
 export interface CreateLeadRequest {
@@ -242,6 +244,8 @@ export interface CreateLeadRequest {
   expected_close_date?: string;
   rice_code_id?: string | null;
   rice_type?: string | null;
+  salesman_latitude?: number | null;
+  salesman_longitude?: number | null;
 }
 
 export interface UpdateLeadRequest extends Partial<CreateLeadRequest> {}

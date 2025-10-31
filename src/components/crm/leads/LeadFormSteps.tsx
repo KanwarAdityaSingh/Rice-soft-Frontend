@@ -250,56 +250,76 @@ export function LeadFormSteps({
           <h3 className="text-lg font-semibold mb-4">Address Information</h3>
           
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Street</label>
+            <label className="text-sm font-medium mb-1.5 block">
+              Street <span className="text-red-500">*</span>
+            </label>
             <input
               type="text"
               value={formData.address?.street || ''}
               onChange={(e) => updateAddressField('street', e.target.value)}
               className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+              required
             />
+            {errors.street && <p className="mt-1 text-xs text-red-600">{errors.street}</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-sm font-medium mb-1.5 block">City</label>
+              <label className="text-sm font-medium mb-1.5 block">
+                City <span className="text-red-500">*</span>
+              </label>
               <input
                 type="text"
                 value={formData.address?.city || ''}
                 onChange={(e) => updateAddressField('city', e.target.value)}
                 className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                required
               />
+              {errors.city && <p className="mt-1 text-xs text-red-600">{errors.city}</p>}
             </div>
 
             <div>
-              <label className="text-sm font-medium mb-1.5 block">State</label>
+              <label className="text-sm font-medium mb-1.5 block">
+                State <span className="text-red-500">*</span>
+              </label>
               <input
                 type="text"
                 value={formData.address?.state || ''}
                 onChange={(e) => updateAddressField('state', e.target.value)}
                 className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                required
               />
+              {errors.state && <p className="mt-1 text-xs text-red-600">{errors.state}</p>}
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-sm font-medium mb-1.5 block">Pincode</label>
+              <label className="text-sm font-medium mb-1.5 block">
+                Pincode <span className="text-red-500">*</span>
+              </label>
               <input
                 type="text"
                 value={formData.address?.pincode || ''}
                 onChange={(e) => updateAddressField('pincode', e.target.value)}
                 className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                required
               />
+              {errors.pincode && <p className="mt-1 text-xs text-red-600">{errors.pincode}</p>}
             </div>
 
             <div>
-              <label className="text-sm font-medium mb-1.5 block">Country</label>
+              <label className="text-sm font-medium mb-1.5 block">
+                Country <span className="text-red-500">*</span>
+              </label>
               <input
                 type="text"
                 value={formData.address?.country || 'India'}
                 onChange={(e) => updateAddressField('country', e.target.value)}
                 className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                required
               />
+              {errors.country && <p className="mt-1 text-xs text-red-600">{errors.country}</p>}
             </div>
           </div>
 
@@ -355,7 +375,26 @@ export function LeadFormSteps({
             <button type="button" onClick={() => setStep(1)} className="btn-secondary flex-1 flex items-center justify-center gap-2">
               <ArrowLeft className="h-4 w-4" /> Back
             </button>
-            <button type="button" onClick={() => setStep(3)} className="btn-primary flex-1 flex items-center justify-center gap-2">
+            <button 
+              type="button" 
+              onClick={() => {
+                // Validate address fields before proceeding
+                const newErrors: Record<string, string> = {};
+                if (!formData.address?.street?.trim()) newErrors.street = 'Street is required';
+                if (!formData.address?.city?.trim()) newErrors.city = 'City is required';
+                if (!formData.address?.state?.trim()) newErrors.state = 'State is required';
+                if (!formData.address?.pincode?.trim()) newErrors.pincode = 'Pincode is required';
+                if (!formData.address?.country?.trim()) newErrors.country = 'Country is required';
+                
+                if (Object.keys(newErrors).length > 0) {
+                  setErrors(newErrors);
+                  return;
+                }
+                setErrors({});
+                setStep(3);
+              }}
+              className="btn-primary flex-1 flex items-center justify-center gap-2"
+            >
               Next: Lead Details <ArrowRight className="h-4 w-4" />
             </button>
           </div>
@@ -420,6 +459,37 @@ export function LeadFormSteps({
             <button type="button" onClick={() => setStep(2)} className="btn-secondary flex-1 flex items-center justify-center gap-2">
               <ArrowLeft className="h-4 w-4" /> Back
             </button>
+            <button type="button" onClick={() => setStep(4)} className="btn-primary flex-1 flex items-center justify-center gap-2">
+              Next: Location <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 4: Salesman Location */}
+      {step === 4 && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold mb-4">Salesman Location</h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            Capture your current GPS location to help track field activity and optimize route planning.
+          </p>
+
+          <LocationCapture
+            latitude={formData.salesman_latitude}
+            longitude={formData.salesman_longitude}
+            onLocationChange={(lat, lng) => {
+              setFormData({
+                ...formData,
+                salesman_latitude: lat,
+                salesman_longitude: lng
+              });
+            }}
+          />
+
+          <div className="flex gap-3 pt-4">
+            <button type="button" onClick={() => setStep(3)} className="btn-secondary flex-1 flex items-center justify-center gap-2">
+              <ArrowLeft className="h-4 w-4" /> Back
+            </button>
             <button type="submit" disabled={false} className="btn-primary flex-1">
               {isEdit ? 'Update Lead' : 'Create Lead'}
             </button>
@@ -427,5 +497,142 @@ export function LeadFormSteps({
         </div>
       )}
     </>
+  );
+}
+
+// Location Capture Component
+interface LocationCaptureProps {
+  latitude: number | null | undefined;
+  longitude: number | null | undefined;
+  onLocationChange: (lat: number | null, lng: number | null) => void;
+}
+
+function LocationCapture({ latitude, longitude, onLocationChange }: LocationCaptureProps) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const captureLocation = () => {
+    setLoading(true);
+    setError(null);
+
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported by your browser');
+      setLoading(false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        onLocationChange(position.coords.latitude, position.coords.longitude);
+        setLoading(false);
+      },
+      (error) => {
+        let errorMessage = 'Unable to retrieve location';
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage = 'Location permission denied. Please enable location access in your browser.';
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMessage = 'Location information is unavailable.';
+            break;
+          case error.TIMEOUT:
+            errorMessage = 'Location request timed out.';
+            break;
+        }
+        setError(errorMessage);
+        setLoading(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      }
+    );
+  };
+
+  const clearLocation = () => {
+    onLocationChange(null, null);
+    setError(null);
+  };
+
+  return (
+    <div className="space-y-4">
+      {!latitude && !longitude ? (
+        <button
+          type="button"
+          onClick={captureLocation}
+          disabled={loading}
+          className="w-full btn-primary flex items-center justify-center gap-2 py-3"
+        >
+          {loading ? (
+            <>
+              <LoadingSpinner size="sm" />
+              <span>Capturing Location...</span>
+            </>
+          ) : (
+            <>
+              <Search className="h-5 w-5" />
+              <span>Capture My Location</span>
+            </>
+          )}
+        </button>
+      ) : (
+        <div className="glass rounded-xl p-4 border border-border/50">
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+              <h4 className="font-semibold text-sm">Location Captured</h4>
+            </div>
+            <button
+              type="button"
+              onClick={clearLocation}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Clear
+            </button>
+          </div>
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground min-w-[80px]">Latitude:</span>
+              <code className="bg-muted/50 px-2 py-1 rounded text-xs">{latitude?.toFixed(6)}</code>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground min-w-[80px]">Longitude:</span>
+              <code className="bg-muted/50 px-2 py-1 rounded text-xs">{longitude?.toFixed(6)}</code>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={captureLocation}
+            disabled={loading}
+            className="mt-3 w-full text-sm btn-secondary flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <>
+                <LoadingSpinner size="sm" />
+                <span>Updating...</span>
+              </>
+            ) : (
+              <>
+                <Search className="h-4 w-4" />
+                <span>Recapture Location</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
+          <p className="text-sm text-destructive">{error}</p>
+        </div>
+      )}
+
+      <div className="p-3 bg-muted/30 rounded-lg">
+        <p className="text-xs text-muted-foreground">
+          <strong>Note:</strong> Location capture is optional. This helps track where leads are being created and can assist with route optimization for field sales teams.
+        </p>
+      </div>
+    </div>
   );
 }

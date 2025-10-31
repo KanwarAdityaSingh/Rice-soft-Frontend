@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useLeads } from '../../hooks/useLeads';
 import { useLeadEvents } from '../../hooks/useLeadEvents';
+import { useAuth } from '../../hooks/useAuth';
 import { LeadFormModal } from '../../components/crm/leads/LeadFormModal';
 import { LeadProgressModal } from '../../components/crm/leads/LeadProgressModal';
 import { LeadsTable } from '../../components/crm/leads/LeadsTable';
@@ -11,6 +12,7 @@ import { leadsAPI } from '../../services/leads.api';
 
 export default function LeadsPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState<LeadFilters>({});
   const [modalOpen, setModalOpen] = useState(false);
@@ -21,12 +23,27 @@ export default function LeadsPage() {
   const { leads, loading, createLead, updateLead, deleteLead } = useLeads(filters);
   const { events, refetch: refetchEvents } = useLeadEvents(selectedLead?.id || null);
 
+  // Filter leads based on user role and permissions
+  const filteredLeads = useMemo(() => {
+    if (!user) return [];
+    
+    // Admin users can see all leads
+    if (user.user_type === 'admin') {
+      return leads;
+    }
+    
+    // Non-admin users can only see leads they created or are assigned to
+    return leads.filter(lead => 
+      lead.created_by === user.id || lead.assigned_to === user.id
+    );
+  }, [leads, user]);
+
   // Open edit modal if ?edit={id} is present
   useEffect(() => {
     const editId = searchParams.get('edit');
-    if (!editId) return;
+    if (!editId || !user) return;
 
-    const existing = leads.find((l) => l.id === editId) || null;
+    const existing = filteredLeads.find((l) => l.id === editId) || null;
     if (existing) {
       setEditingLead(existing);
       setModalOpen(true);
@@ -35,8 +52,21 @@ export default function LeadsPage() {
       (async () => {
         try {
           const lead = await leadsAPI.getLeadById(editId);
-          setEditingLead(lead);
-          setModalOpen(true);
+          
+          // Check if user has permission to view this lead
+          const hasPermission = user.user_type === 'admin' || 
+                                lead.created_by === user.id || 
+                                lead.assigned_to === user.id;
+          
+          if (hasPermission) {
+            setEditingLead(lead);
+            setModalOpen(true);
+          } else {
+            // User doesn't have permission to view this lead
+            const next = new URLSearchParams(searchParams);
+            next.delete('edit');
+            setSearchParams(next, { replace: true });
+          }
         } catch {
           // silently ignore
           // remove invalid edit param
@@ -46,7 +76,7 @@ export default function LeadsPage() {
         }
       })();
     }
-  }, [searchParams, leads]);
+  }, [searchParams, filteredLeads, user]);
 
   const handleSave = async (data: any) => {
     try {
@@ -92,19 +122,30 @@ export default function LeadsPage() {
       </div>
 
       <div className="card-glow rounded-xl sm:rounded-2xl p-4 sm:p-6 highlight-box">
-        <LeadsTable
-          leads={leads}
-          loading={loading}
-          deleteLead={deleteLead}
-          filters={filters}
-          onFiltersChange={setFilters}
-          onEdit={handleEdit}
-          onViewProgress={(lead) => {
-            setSelectedLead(lead);
-            setProgressModalOpen(true);
-            refetchEvents();
-          }}
-        />
+        {user && (
+          <>
+            {user.user_type !== 'admin' && (
+              <div className="mb-4 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                <p className="text-sm text-muted-foreground">
+                  <span className="font-medium text-primary">Note:</span> You are viewing leads that you created or are assigned to you.
+                </p>
+              </div>
+            )}
+            <LeadsTable
+              leads={filteredLeads}
+              loading={loading}
+              deleteLead={deleteLead}
+              filters={filters}
+              onFiltersChange={setFilters}
+              onEdit={handleEdit}
+              onViewProgress={(lead) => {
+                setSelectedLead(lead);
+                setProgressModalOpen(true);
+                refetchEvents();
+              }}
+            />
+          </>
+        )}
       </div>
 
       <LeadFormModal
