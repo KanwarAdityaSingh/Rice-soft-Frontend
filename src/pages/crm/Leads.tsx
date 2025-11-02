@@ -20,7 +20,7 @@ export default function LeadsPage() {
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
 
-  const { leads, loading, createLead, updateLead, deleteLead } = useLeads(filters);
+  const { leads, loading, createLead, updateLead, deleteLead, refetch } = useLeads(filters);
   const { events, refetch: refetchEvents } = useLeadEvents(selectedLead?.id || null);
 
   // Filter leads based on user role and permissions
@@ -85,6 +85,7 @@ export default function LeadsPage() {
         setEditingLead(null);
       } else {
         await createLead(data);
+        await refetch();
       }
       setModalOpen(false);
     } catch (error) {
