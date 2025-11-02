@@ -15,6 +15,7 @@ import AnalyticsPage from './pages/crm/Analytics'
 import LeaderboardPage from './pages/crm/Leaderboard'
 import { AppLayout } from './layouts/AppLayout'
 import { ProtectedRoute } from './components/ProtectedRoute'
+import UserPermissionsPage from './pages/admin/UserPermissions'
 
 export default function App() {
   // Global error handler
@@ -62,9 +63,19 @@ function AnimatedRoutes() {
           }
         />
         <Route
-          path="/crm/leads"
+          path="/admin/users/:id/permissions"
           element={
             <ProtectedRoute>
+              <AppLayout>
+                <UserPermissionsPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/crm/leads"
+          element={
+            <ProtectedRoute entity="leads" action="read">
               <AppLayout>
                 <LeadsPage />
               </AppLayout>
@@ -104,7 +115,7 @@ function AnimatedRoutes() {
         <Route
           path="/directory/brokers"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute entity="broker" action="read">
               <AppLayout>
                 <BrokersPage />
               </AppLayout>
@@ -114,7 +125,7 @@ function AnimatedRoutes() {
         <Route
           path="/directory/salesmen"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute entity="salesman" action="read">
               <AppLayout>
                 <SalesmenPage />
               </AppLayout>
@@ -124,7 +135,7 @@ function AnimatedRoutes() {
         <Route
           path="/directory/vendors"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute entity="vendor" action="read">
               <AppLayout>
                 <VendorsPage />
               </AppLayout>
@@ -134,7 +145,7 @@ function AnimatedRoutes() {
         <Route
           path="/directory/rice-codes"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute entity="riceCode" action="read">
               <AppLayout>
                 <RiceCodesPage />
               </AppLayout>

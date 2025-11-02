@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Users, BarChart3, Trophy, Store, UserCheck, UserCircle, ChevronRight, Settings, LogOut, X, Sprout } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
+import { canRead, isCustomUser } from '../utils/permissions'
 import { Tooltip } from '@mui/material'
 
 interface SidebarProps {
@@ -33,15 +34,21 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
     onCollapsedChange?.(collapsed)
   }, [collapsed, onCollapsedChange])
 
-  const links = [
-    { to: '/crm/leads', label: 'Leads', icon: Users },
-    { to: '/crm/analytics', label: 'Analytics', icon: BarChart3 },
-    { to: '/crm/leaderboard', label: 'Leaderboard', icon: Trophy },
-    { to: '/directory/vendors', label: 'Vendors', icon: Store },
-    { to: '/directory/salesmen', label: 'Salesmen', icon: UserCheck },
-    { to: '/directory/brokers', label: 'Brokers', icon: UserCircle },
-    { to: '/directory/rice-codes', label: 'Rice Codes', icon: Sprout },
-  ] as const
+  const baseLinks = [
+    { to: '/crm/leads', label: 'Leads', icon: Users, key: 'leads' as const },
+    { to: '/crm/analytics', label: 'Analytics', icon: BarChart3, key: null as any },
+    { to: '/crm/leaderboard', label: 'Leaderboard', icon: Trophy, key: null as any },
+    { to: '/directory/vendors', label: 'Vendors', icon: Store, key: 'vendor' as const },
+    { to: '/directory/salesmen', label: 'Salesmen', icon: UserCheck, key: 'salesman' as const },
+    { to: '/directory/brokers', label: 'Brokers', icon: UserCircle, key: 'broker' as const },
+    { to: '/directory/rice-codes', label: 'Rice Codes', icon: Sprout, key: 'riceCode' as const },
+  ]
+
+  const links = baseLinks.filter((l) => {
+    if (!l.key) return true; // non-entity routes always visible
+    // Only apply permission filtering for custom users
+    return !isCustomUser() || canRead(l.key)
+  }) as Array<{ to: string; label: string; icon: any }>
 
   // Close mobile menu when route changes
   useEffect(() => {

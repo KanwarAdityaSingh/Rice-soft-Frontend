@@ -81,6 +81,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Store token and user data in localStorage
       localStorage.setItem('auth:token', response.token)
       localStorage.setItem('auth:user', JSON.stringify(response.user))
+      try {
+        localStorage.setItem('auth:permissions', JSON.stringify(response.permissions ?? null))
+      } catch {}
       
       setUser(response.user)
     } catch (error) {
@@ -109,6 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null)
     localStorage.removeItem('auth:token')
     localStorage.removeItem('auth:user')
+    localStorage.removeItem('auth:permissions')
   }, [])
 
   const value = useMemo(() => ({ 

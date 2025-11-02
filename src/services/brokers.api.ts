@@ -1,5 +1,5 @@
 import { apiService } from './api';
-import type { Broker, CreateBrokerRequest, UpdateBrokerRequest, GSTLookupResponse } from '../types/entities';
+import type { Broker, CreateBrokerRequest, UpdateBrokerRequest } from '../types/entities';
 
 export const brokersAPI = {
   // Get all brokers
@@ -32,19 +32,14 @@ export const brokersAPI = {
     return apiService.post<{ success: boolean; message: string }>(`/brokers/deleteBroker/${id}`);
   },
 
-  // Lookup GST
-  lookupGST: (gstNumber: string) => {
-    return apiService.get<GSTLookupResponse>(`/brokers/lookupGST?gst_number=${gstNumber}`);
-  },
-
   // Lookup PAN
   lookupPAN: (panNumber: string) => {
     return apiService.get(`/brokers/lookupPAN?pan_number=${panNumber}`);
   },
 
-  // Quick create from GST
-  quickCreateFromGST: (data: any) => {
-    return apiService.post<Broker>('/brokers/quickCreateFromGST', data);
+  // Lookup Aadhaar
+  lookupAadhaar: (aadhaarNumber: string) => {
+    return apiService.get<{ is_valid: boolean; already_exists: boolean }>(`/brokers/lookupAadhaar?aadhaar_number=${aadhaarNumber}`);
   },
 
   // Quick create from PAN

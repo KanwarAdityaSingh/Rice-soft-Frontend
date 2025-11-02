@@ -79,6 +79,7 @@ export function SalesmenTable() {
                           setSelectedSalesman(salesman);
                           setDeleteDialogOpen(true);
                         }}
+                        permissionEntity="salesman"
                       />
                     </td>
                   </tr>
@@ -129,6 +130,7 @@ export function SalesmenTable() {
                       setSelectedSalesman(salesman);
                       setDeleteDialogOpen(true);
                     }}
+                    permissionEntity="salesman"
                   />
                 </div>
               </div>

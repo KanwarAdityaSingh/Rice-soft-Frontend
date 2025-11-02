@@ -31,6 +31,12 @@ export interface UpdateUserRequest {
   is_active?: boolean;
 }
 
+// Permissions
+export type PermissionAction = 'create' | 'read' | 'update' | 'delete';
+export type PermissionSet = Record<PermissionAction, boolean>;
+export type PermissionsEntityKey = 'salesman' | 'broker' | 'vendor' | 'leads' | 'riceCode';
+export type PermissionsMap = Partial<Record<PermissionsEntityKey, PermissionSet>>;
+
 // Vendor Types
 export interface VendorAddress {
   street: string;
@@ -116,7 +122,7 @@ export interface BrokerAddress {
 
 export interface BrokerBusinessDetails {
   pan_number?: string;
-  gst_number?: string;
+  aadhaar_number?: string;
   registration_number?: string;
 }
 

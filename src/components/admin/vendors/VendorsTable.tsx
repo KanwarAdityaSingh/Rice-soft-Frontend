@@ -95,6 +95,7 @@ export function VendorsTable() {
                           setSelectedVendor(vendor);
                           setDeleteDialogOpen(true);
                         }}
+                        permissionEntity="vendor"
                       />
                     </td>
                   </tr>

@@ -4,8 +4,7 @@ import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { salesmenAPI } from '../../../services/salesmen.api';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
-import { validateEmail } from '../../../utils/validation';
-import type { CreateLeadRequest, UpdateLeadRequest, Salesman, RiceCode, RiceType } from '../../../types/entities';
+import type { CreateLeadRequest, Salesman, RiceCode, RiceType } from '../../../types/entities';
 
 interface LeadFormStepsProps {
   formData: CreateLeadRequest;
@@ -15,6 +14,7 @@ interface LeadFormStepsProps {
   step: number;
   setStep: (step: number) => void;
   isEdit?: boolean;
+  mode?: 'create' | 'edit' | 'pre-conversion';
 }
 
 export function LeadFormSteps({
@@ -24,7 +24,8 @@ export function LeadFormSteps({
   setErrors,
   step,
   setStep,
-  isEdit
+  isEdit,
+  mode = 'edit'
 }: LeadFormStepsProps) {
   const [salesmen, setSalesmen] = useState<Salesman[]>([]);
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
@@ -90,8 +91,234 @@ export function LeadFormSteps({
 
   return (
     <>
-      {/* Step 1: Basic Information */}
-      {step === 1 && (
+      {/* CREATE MODE - Step 1: Essential Info Only */}
+      {mode === 'create' && step === 1 && (
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Business Name *</label>
+            <input
+              type="text"
+              value={formData.company_name}
+              onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+              className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+            />
+            {errors.company_name && <p className="mt-1 text-xs text-red-600">{errors.company_name}</p>}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Contact Person *</label>
+              <input
+                type="text"
+                value={formData.contact_person}
+                onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })}
+                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+              />
+              {errors.contact_person && <p className="mt-1 text-xs text-red-600">{errors.contact_person}</p>}
+            </div>
+
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Phone *</label>
+              <input
+                type="tel"
+                value={formData.phone || ''}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Email *</label>
+            <input
+              type="email"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+            />
+            {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Rice Code</label>
+              {loadingRiceCodes ? (
+                <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm flex items-center gap-2">
+                  <LoadingSpinner size="sm" />
+                  <span className="text-muted-foreground">Loading rice codes...</span>
+                </div>
+              ) : (
+                <CustomSelect
+                  value={formData.rice_code_id || null}
+                  onChange={(value) => setFormData({ ...formData, rice_code_id: value || null })}
+                  options={riceCodes.map((riceCode) => ({
+                    value: riceCode.rice_code_id,
+                    label: riceCode.rice_code_name
+                  }))}
+                  placeholder="Select Rice Code"
+                  openUpward={true}
+                />
+              )}
+            </div>
+
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Rice Type</label>
+              {loadingRiceTypes ? (
+                <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm flex items-center gap-2">
+                  <LoadingSpinner size="sm" />
+                  <span className="text-muted-foreground">Loading rice types...</span>
+                </div>
+              ) : (
+                <CustomSelect
+                  value={formData.rice_type || null}
+                  onChange={(value) => setFormData({ ...formData, rice_type: value || null })}
+                  options={riceTypes.map((riceType) => ({
+                    value: riceType.value,
+                    label: riceType.label
+                  }))}
+                  placeholder="Select Rice Type"
+                  openUpward={true}
+                />
+              )}
+            </div>
+          </div>
+
+          <button type="button" onClick={() => setStep(2)} className="btn-primary w-full flex items-center justify-center gap-2">
+            Next: Address & Location <ArrowRight className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* CREATE MODE - Step 2: Address & Location */}
+      {mode === 'create' && step === 2 && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold mb-4">Address Information</h3>
+          
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">
+              Street <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={formData.address?.street || ''}
+              onChange={(e) => updateAddressField('street', e.target.value)}
+              className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+              required
+            />
+            {errors.street && <p className="mt-1 text-xs text-red-600">{errors.street}</p>}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">
+                City <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.address?.city || ''}
+                onChange={(e) => updateAddressField('city', e.target.value)}
+                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                required
+              />
+              {errors.city && <p className="mt-1 text-xs text-red-600">{errors.city}</p>}
+            </div>
+
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">
+                State <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.address?.state || ''}
+                onChange={(e) => updateAddressField('state', e.target.value)}
+                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                required
+              />
+              {errors.state && <p className="mt-1 text-xs text-red-600">{errors.state}</p>}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">
+                Pincode <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.address?.pincode || ''}
+                onChange={(e) => updateAddressField('pincode', e.target.value)}
+                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                required
+              />
+              {errors.pincode && <p className="mt-1 text-xs text-red-600">{errors.pincode}</p>}
+            </div>
+
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">
+                Country <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.address?.country || 'India'}
+                onChange={(e) => updateAddressField('country', e.target.value)}
+                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                required
+              />
+              {errors.country && <p className="mt-1 text-xs text-red-600">{errors.country}</p>}
+            </div>
+          </div>
+
+          <h3 className="text-lg font-semibold mb-4 mt-6">Capture Location</h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            Tap the button below to automatically capture your location and fill in the address fields above.
+          </p>
+
+          <LocationCapture
+            latitude={formData.salesman_latitude}
+            longitude={formData.salesman_longitude}
+            onLocationChange={(lat, lng) => {
+              setFormData({
+                ...formData,
+                salesman_latitude: lat,
+                salesman_longitude: lng
+              });
+            }}
+            onAddressChange={(address) => {
+              setFormData({
+                ...formData,
+                address: {
+                  street: address.street,
+                  city: address.city,
+                  state: address.state,
+                  pincode: address.pincode,
+                  country: address.country
+                }
+              });
+              // Clear any address-related errors
+              setErrors({
+                ...errors,
+                street: '',
+                city: '',
+                state: '',
+                pincode: '',
+                country: ''
+              });
+            }}
+          />
+
+          <div className="flex gap-3 pt-4">
+            <button type="button" onClick={() => setStep(1)} className="btn-secondary flex-1 flex items-center justify-center gap-2">
+              <ArrowLeft className="h-4 w-4" /> Back
+            </button>
+            <button type="submit" disabled={false} className="btn-primary flex-1">
+              Create Lead
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT/PRE-CONVERSION MODE - Step 1: Basic Information */}
+      {(mode === 'edit' || mode === 'pre-conversion') && step === 1 && (
         <div className="space-y-4">
           <div>
             <label className="text-sm font-medium mb-1.5 block">Business Name *</label>
@@ -243,8 +470,8 @@ export function LeadFormSteps({
         </div>
       )}
 
-      {/* Step 2: Address & Business Details */}
-      {step === 2 && (
+      {/* EDIT/PRE-CONVERSION MODE - Step 2: Address & Business Details */}
+      {(mode === 'edit' || mode === 'pre-conversion') && step === 2 && (
         <div className="space-y-4">
           <h3 className="text-lg font-semibold mb-4">Address Information</h3>
           
@@ -400,8 +627,8 @@ export function LeadFormSteps({
         </div>
       )}
 
-      {/* Step 3: Lead Details */}
-      {step === 3 && (
+      {/* EDIT/PRE-CONVERSION MODE - Step 3: Lead Details */}
+      {(mode === 'edit' || mode === 'pre-conversion') && step === 3 && (
         <div className="space-y-4">
           <h3 className="text-lg font-semibold mb-4">Assignment & Value</h3>
 
@@ -462,12 +689,12 @@ export function LeadFormSteps({
         </div>
       )}
 
-      {/* Step 4: Salesman Location */}
-      {step === 4 && (
+      {/* EDIT/PRE-CONVERSION MODE - Step 4: Salesman Location */}
+      {(mode === 'edit' || mode === 'pre-conversion') && step === 4 && (
         <div className="space-y-4">
-          <h3 className="text-lg font-semibold mb-4">Salesman Location</h3>
+          <h3 className="text-lg font-semibold mb-4">Update Location & Address</h3>
           <p className="text-sm text-muted-foreground mb-4">
-            Capture your current GPS location to help track field activity and optimize route planning.
+            Capture your current GPS location to automatically update the address in Step 2.
           </p>
 
           <LocationCapture
@@ -478,6 +705,27 @@ export function LeadFormSteps({
                 ...formData,
                 salesman_latitude: lat,
                 salesman_longitude: lng
+              });
+            }}
+            onAddressChange={(address) => {
+              setFormData({
+                ...formData,
+                address: {
+                  street: address.street,
+                  city: address.city,
+                  state: address.state,
+                  pincode: address.pincode,
+                  country: address.country
+                }
+              });
+              // Clear any address-related errors
+              setErrors({
+                ...errors,
+                street: '',
+                city: '',
+                state: '',
+                pincode: '',
+                country: ''
               });
             }}
           />
@@ -501,11 +749,57 @@ interface LocationCaptureProps {
   latitude: number | null | undefined;
   longitude: number | null | undefined;
   onLocationChange: (lat: number | null, lng: number | null) => void;
+  onAddressChange?: (address: { street: string; city: string; state: string; pincode: string; country: string }) => void;
 }
 
-function LocationCapture({ latitude, longitude, onLocationChange }: LocationCaptureProps) {
+function LocationCapture({ latitude, longitude, onLocationChange, onAddressChange }: LocationCaptureProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [addressLoading, setAddressLoading] = useState(false);
+
+  const reverseGeocode = async (lat: number, lng: number) => {
+    setAddressLoading(true);
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`,
+        {
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'RiceSoftCRM/1.0'
+          }
+        }
+      );
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch address');
+      }
+
+      const data = await response.json();
+      const address = data.address;
+
+      if (address && onAddressChange) {
+        // Extract address components
+        const street = address.road || address.neighbourhood || address.suburb || '';
+        const city = address.city || address.town || address.village || address.municipality || '';
+        const state = address.state || address.region || '';
+        const pincode = address.postcode || '';
+        const country = address.country || 'India';
+
+        onAddressChange({
+          street,
+          city,
+          state,
+          pincode,
+          country
+        });
+      }
+    } catch (err) {
+      console.error('Reverse geocoding failed:', err);
+      setError('Could not fetch address from location. Please enter manually.');
+    } finally {
+      setAddressLoading(false);
+    }
+  };
 
   const captureLocation = () => {
     setLoading(true);
@@ -518,8 +812,15 @@ function LocationCapture({ latitude, longitude, onLocationChange }: LocationCapt
     }
 
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        onLocationChange(position.coords.latitude, position.coords.longitude);
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        
+        onLocationChange(lat, lng);
+        
+        // Fetch address from coordinates
+        await reverseGeocode(lat, lng);
+        
         setLoading(false);
       },
       (error) => {
@@ -563,7 +864,7 @@ function LocationCapture({ latitude, longitude, onLocationChange }: LocationCapt
           {loading ? (
             <>
               <LoadingSpinner size="sm" />
-              <span>Capturing Location...</span>
+              <span>Capturing Location & Address...</span>
             </>
           ) : (
             <>
@@ -606,7 +907,7 @@ function LocationCapture({ latitude, longitude, onLocationChange }: LocationCapt
             {loading ? (
               <>
                 <LoadingSpinner size="sm" />
-                <span>Updating...</span>
+                <span>Updating Location & Address...</span>
               </>
             ) : (
               <>
@@ -618,6 +919,15 @@ function LocationCapture({ latitude, longitude, onLocationChange }: LocationCapt
         </div>
       )}
 
+      {addressLoading && (
+        <div className="p-3 bg-primary/10 border border-primary/20 rounded-lg">
+          <div className="flex items-center gap-2">
+            <LoadingSpinner size="sm" />
+            <p className="text-sm text-primary">Fetching address from location...</p>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
           <p className="text-sm text-destructive">{error}</p>
@@ -626,7 +936,7 @@ function LocationCapture({ latitude, longitude, onLocationChange }: LocationCapt
 
       <div className="p-3 bg-muted/30 rounded-lg">
         <p className="text-xs text-muted-foreground">
-          <strong>Note:</strong> Location capture is optional. This helps track where leads are being created and can assist with route optimization for field sales teams.
+          <strong>Note:</strong> Capturing location will automatically fill in your address details. You can edit them manually if needed.
         </p>
       </div>
     </div>

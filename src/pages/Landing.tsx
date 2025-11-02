@@ -76,9 +76,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Feature Grid removed; global sidebar provides routing */}
-
-      {/* Trust & Compliance */}
+   
 
     </main>
   )
@@ -112,5 +110,50 @@ function AnimatedBars() {
         ))}
       </div>
     </div>
+  )
+}
+
+function PipelineNode({ to, label, description, icon }: { to: string; label: string; description: string; icon?: React.ReactNode }) {
+  return (
+    <Link to={to} className="group relative isolate">
+      <div className="relative highlight-box card-glow px-4 py-3 sm:px-5 sm:py-4 rounded-xl md:min-w-[180px]">
+        <div className="absolute -inset-px rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 animate-gradient bg-[linear-gradient(135deg,hsl(var(--primary)/0.18),hsl(var(--accent)/0.14))]"></div>
+        <div className="relative z-10 flex items-start gap-2">
+          <div className="mt-0.5 text-primary">{icon}</div>
+          <div>
+            <div className="text-sm sm:text-base font-semibold">
+              {label}
+            </div>
+            <div className="text-[11px] sm:text-xs text-muted-foreground">
+              {description}
+            </div>
+          </div>
+        </div>
+      </div>
+    </Link>
+  )
+}
+
+function PipelineConnector() {
+  return (
+    <div className="relative md:flex-1 flex md:block items-center justify-center">
+      {/* Vertical (mobile) */}
+      <div className="md:hidden h-8 w-[2px] mx-auto bg-gradient-to-b from-primary/40 via-accent/40 to-transparent rounded-full"></div>
+      {/* Horizontal (md+) */}
+      <div className="hidden md:block h-[2px] w-full bg-gradient-to-r from-transparent via-primary/50 to-transparent rounded-full animate-subtle-pulse"></div>
+    </div>
+  )
+}
+
+function PipelineMini({ to, label }: { to: string; label: string }) {
+  return (
+    <Link to={to} className="group">
+      <div className="card-glow rounded-lg p-2.5 sm:p-3 text-center hover:translate-y-[-2px] transition-transform">
+        <div className="text-xs sm:text-sm font-medium">
+          {label}
+        </div>
+        <div className="mt-1 h-[2px] w-full bg-gradient-to-r from-transparent via-primary/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+      </div>
+    </Link>
   )
 }

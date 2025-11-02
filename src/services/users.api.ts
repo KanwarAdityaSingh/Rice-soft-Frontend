@@ -1,5 +1,5 @@
 import { apiService } from './api';
-import type { User, CreateUserRequest, UpdateUserRequest } from '../types/entities';
+import type { User, CreateUserRequest, UpdateUserRequest, PermissionsMap } from '../types/entities';
 
 export const usersAPI = {
   // Get all users
@@ -30,6 +30,12 @@ export const usersAPI = {
   // Delete user
   deleteUser: (id: string) => {
     return apiService.post<{ success: boolean; message: string }>(`/users/deleteUser/${id}`);
+  },
+
+  // Update custom user permissions
+  updatePermissions: (id: string, permissions: PermissionsMap) => {
+    // Backend expects PATCH /users/:id/permissions; using PUT here per service capabilities
+    return apiService.put<null>(`/users/${id}/permissions`, permissions);
   },
 };
 

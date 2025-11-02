@@ -1,11 +1,9 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState } from 'react';
-import { X, Search } from 'lucide-react';
+import { X } from 'lucide-react';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { useBrokers } from '../../../hooks/useBrokers';
-import { brokersAPI } from '../../../services/brokers.api';
-import { validateEmail, validateGST } from '../../../utils/validation';
-import { LoadingSpinner } from '../shared/LoadingSpinner';
+import { validateEmail, validatePAN, validateAadhaar } from '../../../utils/validation';
 import type { CreateBrokerRequest } from '../../../types/entities';
 
 interface BrokerFormModalProps {
@@ -29,7 +27,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
     },
     business_details: {
       pan_number: '',
-      gst_number: '',
+      aadhaar_number: '',
       registration_number: '',
     },
     broker_details: {
@@ -43,41 +41,32 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
-  const [lookupLoading, setLookupLoading] = useState(false);
   const [step, setStep] = useState(1);
-
-  const handleGSTLookup = async () => {
-    if (!formData.business_details.gst_number || !validateGST(formData.business_details.gst_number)) {
-      setErrors({ ...errors, gst_number: 'Please enter a valid GST number' });
-      return;
-    }
-
-    setLookupLoading(true);
-    try {
-      const response = await brokersAPI.lookupGST(formData.business_details.gst_number);
-      const mapped = response.data.mapped_data;
-      
-      setFormData({
-        ...formData,
-        business_name: mapped.business_name || formData.business_name,
-        address: { ...formData.address, ...mapped.address },
-        business_details: { ...formData.business_details, ...mapped.business_details },
-      });
-    } catch (error) {
-      setErrors({ ...errors, gst_number: 'Failed to lookup GST details' });
-    } finally {
-      setLookupLoading(false);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const newErrors: Record<string, string> = {};
 
+    // Basic validation
     if (!formData.business_name) newErrors.business_name = 'Business name required';
     if (!formData.contact_person) newErrors.contact_person = 'Contact person required';
     if (!validateEmail(formData.email)) newErrors.email = 'Valid email required';
     if (!formData.phone) newErrors.phone = 'Phone required';
+
+    // Validate PAN format if provided
+    if (formData.business_details.pan_number && !validatePAN(formData.business_details.pan_number)) {
+      newErrors.pan_number = 'Invalid PAN format (e.g., ABCDE1234F)';
+    }
+
+    // Validate Aadhaar format if provided
+    if (formData.business_details.aadhaar_number && !validateAadhaar(formData.business_details.aadhaar_number)) {
+      newErrors.aadhaar_number = 'Invalid Aadhaar format (12 digits, cannot start with 0 or 1)';
+    }
+
+    // Ensure at least one of PAN or Aadhaar is provided
+    if (!formData.business_details.pan_number && !formData.business_details.aadhaar_number) {
+      newErrors.business_details = 'Either PAN number or Aadhaar number must be provided';
+    }
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -94,7 +83,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         email: '',
         phone: '',
         address: { street: '', city: '', state: '', pincode: '', country: 'India' },
-        business_details: { pan_number: '', gst_number: '', registration_number: '' },
+        business_details: { pan_number: '', aadhaar_number: '', registration_number: '' },
         broker_details: { commission_rate: 0, specialization: '', experience_years: 0 },
         type: 'both',
         is_active: true,
@@ -241,21 +230,47 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                     </div>
                   </div>
 
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">GST Number</label>
-                    <div className="flex gap-2">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium mb-1.5 block">PAN Number</label>
                       <input
                         type="text"
-                        value={formData.business_details.gst_number}
-                        onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, gst_number: e.target.value.toUpperCase() } })}
-                        className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                        placeholder="27ABCDE1234F1Z5"
+                        value={formData.business_details.pan_number}
+                        onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, pan_number: e.target.value.toUpperCase() } })}
+                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                        placeholder="ABCDE1234F"
                       />
-                      <button type="button" onClick={handleGSTLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2 px-4">
-                        {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
-                      </button>
+                      {errors.pan_number && <p className="mt-1 text-xs text-red-600">{errors.pan_number}</p>}
                     </div>
-                    {errors.gst_number && <p className="mt-1 text-xs text-red-600">{errors.gst_number}</p>}
+
+                    <div>
+                      <label className="text-sm font-medium mb-1.5 block">Aadhaar Number</label>
+                      <input
+                        type="text"
+                        value={formData.business_details.aadhaar_number}
+                        onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, aadhaar_number: e.target.value } })}
+                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                        placeholder="234567890123"
+                        maxLength={12}
+                      />
+                      {errors.aadhaar_number && <p className="mt-1 text-xs text-red-600">{errors.aadhaar_number}</p>}
+                    </div>
+                  </div>
+
+                  {errors.business_details && (
+                    <div className="rounded-lg bg-red-50 border border-red-200 p-3">
+                      <p className="text-xs text-red-600">{errors.business_details}</p>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Registration Number</label>
+                    <input
+                      type="text"
+                      value={formData.business_details.registration_number}
+                      onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, registration_number: e.target.value } })}
+                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                    />
                   </div>
 
                   <div className="flex gap-3">

@@ -11,10 +11,12 @@ interface LeadFormModalProps {
   onOpenChange: (open: boolean) => void;
   onSave: (data: CreateLeadRequest | UpdateLeadRequest) => Promise<void>;
   lead?: Lead | null;
+  mode?: 'create' | 'edit' | 'pre-conversion';
 }
 
-export function LeadFormModal({ open, onOpenChange, onSave, lead }: LeadFormModalProps) {
-  const isEdit = !!lead;
+export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode }: LeadFormModalProps) {
+  const mode = propMode || (lead ? 'edit' : 'create');
+  const isEdit = mode === 'edit' || mode === 'pre-conversion';
   const [step, setStep] = useState(1);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formData, setFormData] = useState<CreateLeadRequest>({
@@ -93,7 +95,9 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead }: LeadFormModa
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (step < 4) {
+    const maxStep = mode === 'create' ? 2 : 4;
+    
+    if (step < maxStep) {
       setStep(step + 1);
       return;
     }
@@ -147,7 +151,7 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead }: LeadFormModa
           >
             <div className="flex items-center justify-between mb-4 sm:mb-6">
               <Dialog.Title className="text-lg sm:text-xl font-semibold">
-                {isEdit ? 'Edit Lead' : 'Create Lead'}
+                {mode === 'pre-conversion' ? 'Pre-Conversion Formalities' : isEdit ? 'Edit Lead' : 'Create Lead'}
               </Dialog.Title>
               <button onClick={() => onOpenChange(false)} className="rounded-lg p-1 hover:bg-muted/50 transition-colors">
                 <X className="h-5 w-5" />
@@ -155,20 +159,31 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead }: LeadFormModa
             </div>
 
             {/* Steps Indicator */}
-            <div className="flex gap-1 sm:gap-2 mb-4 sm:mb-6">
-              <div className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium ${step >= 1 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
-                <span className="hidden sm:inline">1. </span>Basic
+            {mode === 'create' ? (
+              <div className="flex gap-1 sm:gap-2 mb-4 sm:mb-6">
+                <div className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium ${step >= 1 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+                  <span className="hidden sm:inline">1. </span>Basic Info
+                </div>
+                <div className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium ${step >= 2 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+                  <span className="hidden sm:inline">2. </span>Address & Location
+                </div>
               </div>
-              <div className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium ${step >= 2 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
-                <span className="hidden sm:inline">2. </span>Address
+            ) : (
+              <div className="flex gap-1 sm:gap-2 mb-4 sm:mb-6">
+                <div className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium ${step >= 1 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+                  <span className="hidden sm:inline">1. </span>Basic
+                </div>
+                <div className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium ${step >= 2 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+                  <span className="hidden sm:inline">2. </span>Address
+                </div>
+                <div className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium ${step >= 3 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+                  <span className="hidden sm:inline">3. </span>Details
+                </div>
+                <div className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium ${step >= 4 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+                  <span className="hidden sm:inline">4. </span>Location
+                </div>
               </div>
-              <div className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium ${step >= 3 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
-                <span className="hidden sm:inline">3. </span>Details
-              </div>
-              <div className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium ${step >= 4 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
-                <span className="hidden sm:inline">4. </span>Location
-              </div>
-            </div>
+            )}
 
             <form onSubmit={handleSubmit}>
               <LeadFormSteps
@@ -179,6 +194,7 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead }: LeadFormModa
                 step={step}
                 setStep={setStep}
                 isEdit={isEdit}
+                mode={mode}
               />
             </form>
           </motion.div>

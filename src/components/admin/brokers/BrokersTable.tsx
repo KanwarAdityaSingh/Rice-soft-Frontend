@@ -99,6 +99,7 @@ export function BrokersTable() {
                           setSelectedBroker(broker);
                           setDeleteDialogOpen(true);
                         }}
+                        permissionEntity="broker"
                       />
                     </td>
                   </tr>
@@ -158,6 +159,7 @@ export function BrokersTable() {
                       setSelectedBroker(broker);
                       setDeleteDialogOpen(true);
                     }}
+                    permissionEntity="broker"
                   />
                 </div>
               </div>

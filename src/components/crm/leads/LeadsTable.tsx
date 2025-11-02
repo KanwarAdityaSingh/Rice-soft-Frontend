@@ -8,6 +8,7 @@ import { LeadStatusBadge } from '../../admin/shared/LeadStatusBadge';
 import { LeadPriorityBadge } from '../../admin/shared/LeadPriorityBadge';
 import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
 import { Users, Edit, Trash2, TrendingUp, Copy, Check } from 'lucide-react';
+import { canDelete, canUpdate, isAdmin, isCustomUser } from '../../../utils/permissions';
 import type { Lead, LeadFilters } from '../../../types/entities';
 
 interface LeadsTableProps {
@@ -182,20 +183,24 @@ export function LeadsTable({
                         <TrendingUp className="h-4 w-4" />
                       </button>
                     )}
-                    <button
-                      onClick={() => onEdit(lead)}
-                      className="p-2 hover:bg-muted/50 rounded-lg transition-colors"
-                      title="Edit"
-                    >
-                      <Edit className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteClick(lead)}
-                      className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors"
-                      title="Delete"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    {((isAdmin()) || (isCustomUser() ? canUpdate('leads') : true)) && (
+                      <button
+                        onClick={() => onEdit(lead)}
+                        className="p-2 hover:bg-muted/50 rounded-lg transition-colors"
+                        title="Edit"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+                    )}
+                    {((isAdmin()) || (isCustomUser() ? canDelete('leads') : true)) && (
+                      <button
+                        onClick={() => handleDeleteClick(lead)}
+                        className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -273,20 +278,24 @@ export function LeadsTable({
                   Progress
                 </button>
               )}
-              <button
-                onClick={() => onEdit(lead)}
-                className="flex-1 py-2 px-3 bg-muted/50 rounded-lg text-sm font-medium hover:bg-muted transition-colors flex items-center justify-center gap-2"
-              >
-                <Edit className="h-4 w-4" />
-                Edit
-              </button>
-              <button
-                onClick={() => handleDeleteClick(lead)}
-                className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors"
-                title="Delete"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
+              {((isAdmin()) || (isCustomUser() ? canUpdate('leads') : true)) && (
+                <button
+                  onClick={() => onEdit(lead)}
+                  className="flex-1 py-2 px-3 bg-muted/50 rounded-lg text-sm font-medium hover:bg-muted transition-colors flex items-center justify-center gap-2"
+                >
+                  <Edit className="h-4 w-4" />
+                  Edit
+                </button>
+              )}
+              {((isAdmin()) || (isCustomUser() ? canDelete('leads') : true)) && (
+                <button
+                  onClick={() => handleDeleteClick(lead)}
+                  className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors"
+                  title="Delete"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
             </div>
           </div>
         ))}

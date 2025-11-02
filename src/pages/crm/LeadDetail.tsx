@@ -11,7 +11,8 @@ import { LoadingSpinner } from '../../components/admin/shared/LoadingSpinner';
 import { ConfirmDialog } from '../../components/admin/shared/ConfirmDialog';
 import { ConversionDialog } from '../../components/crm/leads/ConversionDialog';
 import { AddEventDialog } from '../../components/crm/leads/AddEventDialog';
-import type { Lead } from '../../types/entities';
+import { LeadFormModal } from '../../components/crm/leads/LeadFormModal';
+import type { Lead, UpdateLeadRequest } from '../../types/entities';
 
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -21,6 +22,7 @@ export default function LeadDetailPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [conversionOpen, setConversionOpen] = useState(false);
   const [addEventOpen, setAddEventOpen] = useState(false);
+  const [preConversionOpen, setPreConversionOpen] = useState(false);
 
   const { events, refetch: refetchEvents } = useLeadEvents(id || null);
 
@@ -57,6 +59,25 @@ export default function LeadDetailPage() {
     } catch (error) {
       console.error('Failed to delete lead:', error);
     }
+  };
+
+  const handlePreConversionUpdate = async (data: UpdateLeadRequest) => {
+    if (!id) return;
+    try {
+      await leadsAPI.updateLead(id, data);
+      await refetchLead();
+      setPreConversionOpen(false);
+      // After successful update, open the conversion dialog
+      setConversionOpen(true);
+    } catch (error) {
+      console.error('Failed to update lead:', error);
+      throw error;
+    }
+  };
+
+  const handleConversionClick = () => {
+    // First, open the pre-conversion update form
+    setPreConversionOpen(true);
   };
 
   if (loading) {
@@ -117,7 +138,7 @@ export default function LeadDetailPage() {
           {lead.lead_status !== 'converted' && (
             <button
               className="btn-primary flex items-center gap-2"
-              onClick={() => setConversionOpen(true)}
+              onClick={handleConversionClick}
             >
               Convert to Vendor
               <ArrowRight className="h-4 w-4" />
@@ -175,6 +196,16 @@ export default function LeadDetailPage() {
           onSuccess={async () => {
             await refetchEvents();
           }}
+        />
+      )}
+
+      {lead && (
+        <LeadFormModal
+          open={preConversionOpen}
+          onOpenChange={setPreConversionOpen}
+          onSave={handlePreConversionUpdate}
+          lead={lead}
+          mode="pre-conversion"
         />
       )}
     </div>

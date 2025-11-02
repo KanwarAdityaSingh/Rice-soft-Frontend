@@ -16,6 +16,13 @@ export const validatePAN = (pan: string): boolean => {
   return panRegex.test(pan.toUpperCase());
 };
 
+// Aadhaar validation (12 digits, cannot start with 0 or 1)
+export const validateAadhaar = (aadhaar: string): boolean => {
+  const cleaned = aadhaar.replace(/\s/g, ''); // Remove spaces
+  const aadhaarRegex = /^[2-9]{1}[0-9]{11}$/;
+  return aadhaarRegex.test(cleaned);
+};
+
 // Phone validation (10 digits)
 export const validatePhone = (phone: string): boolean => {
   const phoneRegex = /^[0-9]{10}$/;
@@ -54,6 +61,8 @@ export const getValidationError = (field: string, value: string): string | null 
       return validateGST(value) ? null : 'Invalid GST format (e.g., 27ABCDE1234F1Z5)';
     case 'pan_number':
       return validatePAN(value) ? null : 'Invalid PAN format (e.g., ABCDE1234F)';
+    case 'aadhaar_number':
+      return validateAadhaar(value) ? null : 'Invalid Aadhaar format (12 digits, cannot start with 0 or 1)';
     case 'phone':
       return validatePhone(value) ? null : 'Phone must be 10 digits';
     case 'password':

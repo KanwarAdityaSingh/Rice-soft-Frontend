@@ -1,15 +1,21 @@
 import { type ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import type { PermissionAction, PermissionsEntityKey } from '../types/entities';
+import { hasAccess, isAdmin, isCustomUser } from '../utils/permissions';
 
 interface ProtectedRouteProps {
   children: ReactNode;
   redirectTo?: string;
+  entity?: PermissionsEntityKey;
+  action?: PermissionAction;
 }
 
 export function ProtectedRoute({ 
   children, 
-  redirectTo = '/login' 
+  redirectTo = '/login',
+  entity,
+  action,
 }: ProtectedRouteProps) {
   const { user, isLoading } = useAuth();
 
@@ -26,6 +32,15 @@ export function ProtectedRoute({
 
   if (!user) {
     return <Navigate to={redirectTo} replace />;
+  }
+
+  if (entity && action) {
+    // Admin has full access
+    if (isAdmin()) return <>{children}</>;
+    // Custom users require permission
+    if (isCustomUser() && hasAccess(entity, action)) return <>{children}</>;
+    // Otherwise unauthorized
+    return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;

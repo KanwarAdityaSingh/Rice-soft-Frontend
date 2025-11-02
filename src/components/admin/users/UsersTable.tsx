@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { SearchBar } from '../shared/SearchBar';
 import { FilterDropdown } from '../shared/FilterDropdown';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
@@ -15,9 +16,10 @@ interface UsersTableProps {
 
 export function UsersTable({ onEditUser }: UsersTableProps) {
   const { users, loading, deleteUser, toggleUserStatus } = useUsers();
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
-  const [typeFilter, setTypeFilter] = useState<string | undefined>();
+  const [typeFilter, setTypeFilter] = useState<string | undefined>('custom');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<{ id: string; full_name?: string; username?: string } | null>(null);
 
@@ -100,7 +102,7 @@ export function UsersTable({ onEditUser }: UsersTableProps) {
                     <td className="py-3 px-4 text-sm">
                       {user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never'}
                     </td>
-                    <td className="py-3 px-4 text-right">
+                  <td className="py-3 px-4 text-right">
                       <ActionButtons
                         isActive={user.is_active}
                         onEdit={onEditUser ? () => onEditUser(user) : undefined}
@@ -109,6 +111,7 @@ export function UsersTable({ onEditUser }: UsersTableProps) {
                           setSelectedUser(user);
                           setDeleteDialogOpen(true);
                         }}
+                      onPermissions={user.user_type === 'custom' ? () => navigate(`/admin/users/${user.id}/permissions`) : undefined}
                       />
                     </td>
                   </tr>
@@ -171,6 +174,7 @@ export function UsersTable({ onEditUser }: UsersTableProps) {
                       setSelectedUser(user);
                       setDeleteDialogOpen(true);
                     }}
+                    onPermissions={user.user_type === 'custom' ? () => navigate(`/admin/users/${user.id}/permissions`) : undefined}
                   />
                 </div>
               </div>

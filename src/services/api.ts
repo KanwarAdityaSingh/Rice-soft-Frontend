@@ -25,10 +25,13 @@ export interface UserResponse {
   updated_at: string;
 }
 
+import type { PermissionsMap } from '../types/entities';
+
 export interface LoginResponse {
   user: UserResponse;
   token: string;
   expires_in: string;
+  permissions?: PermissionsMap | null;
 }
 
 class ApiError extends Error {

@@ -28,8 +28,27 @@ export function Navbar({ onMobileMenuToggle }: NavbarProps) {
             </button>
           )}
           
-          <button onClick={() => navigate('/')} className="group flex items-center">
-            <span className="text-lg sm:text-xl font-bold tracking-wider uppercase bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Rice Trading</span>
+          <button 
+            onClick={() => navigate('/')} 
+            className="group flex items-center relative"
+          >
+            {/* Brand name with enhanced styling */}
+            <div className="relative">
+              {/* Glow effect */}
+              <div className="absolute inset-0 blur-md opacity-0 group-hover:opacity-40 transition-opacity duration-500">
+                <span className="text-lg sm:text-xl md:text-2xl font-extrabold tracking-[0.15em] uppercase bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent">
+                  Rice Trading
+                </span>
+              </div>
+              
+              {/* Main text with shimmer animation */}
+              <span className="relative text-lg sm:text-xl md:text-2xl font-extrabold tracking-[0.15em] uppercase bg-gradient-to-r from-primary via-accent to-primary bg-[length:200%_100%] bg-clip-text text-transparent animate-gradient transition-all duration-300 group-hover:tracking-[0.18em]">
+                Rice Trading
+              </span>
+              
+              {/* Subtle underline accent */}
+              <div className="absolute -bottom-1 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-primary to-transparent opacity-0 group-hover:opacity-60 transition-opacity duration-500"></div>
+            </div>
           </button>
         </div>
 
