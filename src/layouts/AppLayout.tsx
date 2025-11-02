@@ -34,7 +34,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           {children}
         </div>
       </PageTransition>
-      <Footer />
+      <div 
+        className={`relative z-10 transition-all duration-300 ${
+          sidebarCollapsed ? 'md:pl-16' : 'md:pl-[260px]'
+        }`}
+      >
+        <Footer />
+      </div>
       <ToastContainer />
     </div>
   )

@@ -24,6 +24,8 @@
   --input: 258 30% 85%;
   --ring: 263 100% 65%;
   --radius: 14px;
+  /* Layout metrics */
+  --footer-height: 72px;
   
   /* Custom properties matching your previous website */
   --text-color: #2d2348;
