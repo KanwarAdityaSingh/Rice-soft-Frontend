@@ -90,7 +90,7 @@ export default function RiceCodesPage() {
                     <Sprout className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-semibold leading-tight">{rc.rice_code_name}</h3>
+                    <h3 className="text-sm font-semibold leading-tight">{rc.rice_code_name.trim()}</h3>
                     <div className="text-xs text-muted-foreground mt-1">Created {formatDate(rc.created_at)}</div>
                   </div>
                 </div>

@@ -38,7 +38,7 @@ export default function SalesmenPage() {
         <div className="absolute -right-6 -bottom-6 h-20 w-20 floating-orb" />
         <div className="relative">
           <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold">
-            <span className="text-gradient">Salesmen Directory</span>
+            <span className="text-gradient">Salesperson Directory</span>
           </h1>
           <p className="mt-1 sm:mt-2 text-sm sm:text-base text-muted-foreground">Your sales force at a glance</p>
         </div>
@@ -62,7 +62,7 @@ export default function SalesmenPage() {
             />
           </div>
           <button className="btn-primary rounded-xl inline-flex items-center justify-center gap-2 w-full sm:w-auto" onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4" /> Add Salesman
+            <Plus className="h-4 w-4" /> Add Salesperson
           </button>
         </div>
       </div>
@@ -70,7 +70,7 @@ export default function SalesmenPage() {
       {loading ? (
         <div className="flex justify-center py-20"><LoadingSpinner /></div>
       ) : filtered.length === 0 ? (
-        <EmptyState icon={UserCheck} title="No salesmen found" description="Create your first salesman or adjust filters." />
+        <EmptyState icon={UserCheck} title="No salesperson found" description="Create your first salesperson or adjust filters." />
       ) : (
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((s) => (
@@ -84,15 +84,15 @@ export default function SalesmenPage() {
                     <UserCheck className="h-5 w-5" />
                   </div>
                   <div>
-                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Salesman</div>
-                    <h3 className="text-sm font-semibold leading-tight">{s.name}</h3>
-                    <div className="text-xs text-muted-foreground inline-flex items-center gap-1"><Mail className="h-3 w-3" /> {s.email}</div>
+                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Salesperson</div>
+                    <h3 className="text-sm font-semibold leading-tight">{s.name.trim()}</h3>
+                    <div className="text-xs text-muted-foreground inline-flex items-center gap-1"><Mail className="h-3 w-3" /> {s.email.trim()}</div>
                   </div>
                 </div>
                 <span className={`whitespace-nowrap px-2 py-1 rounded-md text-[10px] ${s.is_active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground'}`}>{s.is_active ? 'Active' : 'Inactive'}</span>
               </div>
               <div className="mt-3 grid gap-1.5 text-xs">
-                <div className="inline-flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><span>{s.phone}</span></div>
+                <div className="inline-flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><span>{s.phone.trim()}</span></div>
               </div>
               <div className="mt-3 flex items-center justify-end">
                 <ActionButtons
@@ -118,8 +118,8 @@ export default function SalesmenPage() {
             setDeleteDialogOpen(false)
           }
         }}
-        title="Delete Salesman"
-        description="Are you sure you want to delete this salesman? This action cannot be undone."
+        title="Delete Salesperson"
+        description="Are you sure you want to delete this salesperson? This action cannot be undone."
         confirmText="Delete"
       />
 

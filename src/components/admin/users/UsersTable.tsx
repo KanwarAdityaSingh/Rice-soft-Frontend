@@ -56,9 +56,9 @@ export function UsersTable({ onEditUser }: UsersTableProps) {
             label="Type"
             options={[
               { label: 'Admin', value: 'admin' },
-              { label: 'Custom', value: 'custom' },
+              { label: 'System User', value: 'custom' },
               { label: 'Vendor', value: 'vendor' },
-              { label: 'Salesman', value: 'salesman' },
+              { label: 'Salesperson', value: 'salesman' },
               { label: 'Broker', value: 'broker' },
             ]}
             value={typeFilter}

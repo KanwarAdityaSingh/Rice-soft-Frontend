@@ -1,7 +1,8 @@
-import { Mail, MapPin, Briefcase, TrendingUp, Navigation } from 'lucide-react';
+import { Mail, MapPin, Briefcase, TrendingUp, Navigation, UserCircle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
-import type { Lead, RiceCode, RiceType } from '../../../types/entities';
+import { brokersAPI } from '../../../services/brokers.api';
+import type { Lead, RiceCode, RiceType, Broker } from '../../../types/entities';
 
 interface LeadInfoCardsProps {
   lead: Lead;
@@ -10,6 +11,7 @@ interface LeadInfoCardsProps {
 export function LeadInfoCards({ lead }: LeadInfoCardsProps) {
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
+  const [broker, setBroker] = useState<Broker | null>(null);
 
   useEffect(() => {
     const fetchRiceCodes = async () => {
@@ -34,6 +36,23 @@ export function LeadInfoCards({ lead }: LeadInfoCardsProps) {
     };
     fetchRiceTypes();
   }, []);
+
+  useEffect(() => {
+    const fetchBroker = async () => {
+      if (!lead.broker_id) {
+        setBroker(null);
+        return;
+      }
+      try {
+        const data = await brokersAPI.getBrokerById(lead.broker_id);
+        setBroker(data);
+      } catch (error) {
+        console.error('Failed to fetch broker:', error);
+        setBroker(null);
+      }
+    };
+    fetchBroker();
+  }, [lead.broker_id]);
 
   const getRiceCodeName = (riceCodeId: string | null | undefined): string | null => {
     if (!riceCodeId) return null;
@@ -160,14 +179,43 @@ export function LeadInfoCards({ lead }: LeadInfoCardsProps) {
           )}
         </div>
       </div>
+
+      {/* Broker Information */}
+      {broker && (
+        <div className="glass rounded-xl p-4 border border-border/50">
+          <div className="flex items-center gap-2 mb-3">
+            <UserCircle className="h-5 w-5 text-primary" />
+            <h3 className="font-semibold">Broker Information</h3>
+          </div>
+          <div className="space-y-2 text-sm">
+            <div>
+              <span className="text-muted-foreground">Business Name:</span> {broker.business_name}
+            </div>
+            <div>
+              <span className="text-muted-foreground">Contact Person:</span> {broker.contact_person}
+            </div>
+            <div>
+              <span className="text-muted-foreground">Email:</span> {broker.email}
+            </div>
+            <div>
+              <span className="text-muted-foreground">Phone:</span> {broker.phone}
+            </div>
+            {broker.broker_details?.commission_rate && (
+              <div>
+                <span className="text-muted-foreground">Commission Rate:</span> {broker.broker_details.commission_rate}%
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
 
-    {/* Salesman Location Map */}
+    {/* Salesperson Location Map */}
     {hasLocation && lat && lng && (
       <div className="mt-4 glass rounded-xl p-4 sm:p-6 border border-border/50">
         <div className="flex items-center gap-2 mb-3 sm:mb-4">
           <Navigation className="h-5 w-5 text-primary" />
-          <h3 className="font-semibold text-base sm:text-lg">Salesman Location</h3>
+          <h3 className="font-semibold text-base sm:text-lg">Salesperson Location</h3>
         </div>
         <div className="space-y-3 sm:space-y-4">
           <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 text-sm">
@@ -188,7 +236,7 @@ export function LeadInfoCards({ lead }: LeadInfoCardsProps) {
           {/* OpenStreetMap Embed - No API Key Required */}
           <div className="w-full h-[250px] sm:h-[350px] md:h-[400px] rounded-lg overflow-hidden border border-border/50">
             <iframe
-              title="Salesman Location Map"
+              title="Salesperson Location Map"
               width="100%"
               height="100%"
               frameBorder="0"

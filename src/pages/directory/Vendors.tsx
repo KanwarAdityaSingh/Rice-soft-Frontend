@@ -97,17 +97,17 @@ export default function VendorsPage() {
                     <Store className="h-5 w-5" />
                   </div>
                   <div>
-                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{v.type}</div>
-                    <h3 className="text-sm font-semibold leading-tight">{v.business_name}</h3>
-                    <div className="text-xs text-muted-foreground inline-flex items-center gap-1"><MapPin className="h-3 w-3" /> {v.address.city}</div>
+                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{String(v.type).trim()}</div>
+                    <h3 className="text-sm font-semibold leading-tight">{v.business_name.trim()}</h3>
+                    <div className="text-xs text-muted-foreground inline-flex items-center gap-1"><MapPin className="h-3 w-3" /> {v.address.city.trim()}</div>
                   </div>
                 </div>
                 <span className={`whitespace-nowrap px-2 py-1 rounded-md text-[10px] ${v.is_active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground'}`}>{v.is_active ? 'Active' : 'Inactive'}</span>
               </div>
               <div className="mt-3 grid gap-1.5 text-xs">
-                <div className="inline-flex items-center gap-2 text-foreground/90"><span className="text-muted-foreground w-16">Contact</span><span className="font-medium">{v.contact_person}</span></div>
-                <div className="inline-flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" /><span className="truncate">{v.email}</span></div>
-                <div className="inline-flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><span>{v.phone}</span></div>
+                <div className="inline-flex items-center gap-2 text-foreground/90"><span className="text-muted-foreground w-16">Contact</span><span className="font-medium">{v.contact_person.trim()}</span></div>
+                <div className="inline-flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" /><span className="truncate">{v.email.trim()}</span></div>
+                <div className="inline-flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><span>{v.phone.trim()}</span></div>
               </div>
               <div className="mt-3 flex items-center justify-end">
                 <ActionButtons

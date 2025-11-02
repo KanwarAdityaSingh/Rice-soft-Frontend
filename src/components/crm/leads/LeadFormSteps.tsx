@@ -3,6 +3,7 @@ import { ArrowRight, ArrowLeft, Search } from 'lucide-react';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { salesmenAPI } from '../../../services/salesmen.api';
+import { useBrokers } from '../../../hooks/useBrokers';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import type { CreateLeadRequest, Salesman, RiceCode, RiceType } from '../../../types/entities';
 
@@ -28,10 +29,14 @@ export function LeadFormSteps({
   mode = 'edit'
 }: LeadFormStepsProps) {
   const [salesmen, setSalesmen] = useState<Salesman[]>([]);
+  const { brokers: allBrokers, loading: loadingBrokers } = useBrokers();
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
   const [loadingRiceCodes, setLoadingRiceCodes] = useState(false);
   const [loadingRiceTypes, setLoadingRiceTypes] = useState(false);
+  
+  // Filter to only active brokers for dropdown
+  const brokers = allBrokers.filter(b => b.is_active);
 
   useEffect(() => {
     const fetchSalesmen = async () => {
@@ -44,6 +49,7 @@ export function LeadFormSteps({
     };
     fetchSalesmen();
   }, []);
+
 
   useEffect(() => {
     const fetchRiceCodes = async () => {
@@ -137,6 +143,26 @@ export function LeadFormSteps({
               className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
             />
             {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
+          </div>
+
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Broker</label>
+            {loadingBrokers ? (
+              <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm flex items-center gap-2">
+                <LoadingSpinner size="sm" />
+                <span className="text-muted-foreground">Loading brokers...</span>
+              </div>
+            ) : (
+              <CustomSelect
+                value={formData.broker_id || null}
+                onChange={(value) => setFormData({ ...formData, broker_id: value || null })}
+                options={brokers.map((broker) => ({
+                  value: broker.id,
+                  label: `${broker.business_name}${broker.contact_person ? ` (${broker.contact_person})` : ''}`
+                }))}
+                placeholder="No Broker Assigned"
+              />
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -279,8 +305,8 @@ export function LeadFormSteps({
             onLocationChange={(lat, lng) => {
               setFormData({
                 ...formData,
-                salesman_latitude: lat,
-                salesman_longitude: lng
+                salesman_latitude: lat != null ? Number(lat) : null,
+                salesman_longitude: lng != null ? Number(lng) : null
               });
             }}
             onAddressChange={(address) => {
@@ -453,17 +479,6 @@ export function LeadFormSteps({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="existing-customer"
-              checked={formData.is_existing_customer}
-              onChange={(e) => setFormData({ ...formData, is_existing_customer: e.target.checked })}
-              className="rounded border-border"
-            />
-            <label htmlFor="existing-customer" className="text-sm">Is Existing Customer</label>
-          </div>
-
           <button type="button" onClick={() => setStep(2)} className="btn-primary w-full flex items-center justify-center gap-2">
             Next: Address & Business <ArrowRight className="h-4 w-4" />
           </button>
@@ -633,7 +648,7 @@ export function LeadFormSteps({
           <h3 className="text-lg font-semibold mb-4">Assignment & Value</h3>
 
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Assigned Salesman</label>
+            <label className="text-sm font-medium mb-1.5 block">Assigned Salesperson</label>
             <CustomSelect
               value={formData.assigned_to || null}
               onChange={(value) => setFormData({ ...formData, assigned_to: value || null })}
@@ -643,6 +658,26 @@ export function LeadFormSteps({
               }))}
               placeholder="No Assignment"
             />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Broker</label>
+            {loadingBrokers ? (
+              <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm flex items-center gap-2">
+                <LoadingSpinner size="sm" />
+                <span className="text-muted-foreground">Loading brokers...</span>
+              </div>
+            ) : (
+              <CustomSelect
+                value={formData.broker_id || null}
+                onChange={(value) => setFormData({ ...formData, broker_id: value || null })}
+                options={brokers.map((broker) => ({
+                  value: broker.id,
+                  label: `${broker.business_name}${broker.contact_person ? ` (${broker.contact_person})` : ''}`
+                }))}
+                placeholder="No Broker Assigned"
+              />
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -689,7 +724,7 @@ export function LeadFormSteps({
         </div>
       )}
 
-      {/* EDIT/PRE-CONVERSION MODE - Step 4: Salesman Location */}
+      {/* EDIT/PRE-CONVERSION MODE - Step 4: Salesperson Location */}
       {(mode === 'edit' || mode === 'pre-conversion') && step === 4 && (
         <div className="space-y-4">
           <h3 className="text-lg font-semibold mb-4">Update Location & Address</h3>
@@ -703,8 +738,8 @@ export function LeadFormSteps({
             onLocationChange={(lat, lng) => {
               setFormData({
                 ...formData,
-                salesman_latitude: lat,
-                salesman_longitude: lng
+                salesman_latitude: lat != null ? Number(lat) : null,
+                salesman_longitude: lng != null ? Number(lng) : null
               });
             }}
             onAddressChange={(address) => {
@@ -891,11 +926,15 @@ function LocationCapture({ latitude, longitude, onLocationChange, onAddressChang
           <div className="space-y-2 text-sm">
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground min-w-[80px]">Latitude:</span>
-              <code className="bg-muted/50 px-2 py-1 rounded text-xs">{latitude?.toFixed(6)}</code>
+              <code className="bg-muted/50 px-2 py-1 rounded text-xs">
+                {latitude != null ? Number(latitude).toFixed(6) : '-'}
+              </code>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground min-w-[80px]">Longitude:</span>
-              <code className="bg-muted/50 px-2 py-1 rounded text-xs">{longitude?.toFixed(6)}</code>
+              <code className="bg-muted/50 px-2 py-1 rounded text-xs">
+                {longitude != null ? Number(longitude).toFixed(6) : '-'}
+              </code>
             </div>
           </div>
           <button

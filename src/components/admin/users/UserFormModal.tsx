@@ -143,7 +143,7 @@ export function UserFormModal({ open, onOpenChange, user }: UserFormModalProps) 
                   onChange={(value) => setFormData({ ...formData, user_type: value as any })}
                   options={[
                     { value: 'admin', label: 'Admin' },
-                    { value: 'custom', label: 'Custom' }
+                    { value: 'custom', label: 'System User' }
                   ]}
                   placeholder="Select User Type"
                 />

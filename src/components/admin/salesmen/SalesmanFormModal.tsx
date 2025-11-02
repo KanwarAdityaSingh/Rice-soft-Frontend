@@ -53,7 +53,7 @@ export function SalesmanFormModal({ open, onOpenChange }: SalesmanFormModalProps
         <Dialog.Content className="fixed left-[50%] top-[50%] z-50 max-w-md translate-x-[-50%] translate-y-[-50%] w-full">
           <div className="glass rounded-2xl p-6 shadow-xl">
             <div className="flex items-center justify-between mb-6">
-              <Dialog.Title className="text-xl font-semibold">Create Salesman</Dialog.Title>
+              <Dialog.Title className="text-xl font-semibold">Create Salesperson</Dialog.Title>
               <button onClick={() => onOpenChange(false)} className="rounded-lg p-1 hover:bg-muted/50 transition-colors">
                 <X className="h-5 w-5" />
               </button>
@@ -98,7 +98,7 @@ export function SalesmanFormModal({ open, onOpenChange }: SalesmanFormModalProps
                   Cancel
                 </button>
                 <button type="submit" disabled={loading} className="btn-primary flex-1">
-                  {loading ? 'Creating...' : 'Create Salesman'}
+                  {loading ? 'Creating...' : 'Create Salesperson'}
                 </button>
               </div>
             </form>

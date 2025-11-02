@@ -41,7 +41,7 @@ export default function LandingPage() {
                 {/* Mini Cards - responsive grid */}
                 <div className="grid grid-cols-3 gap-2 sm:gap-3">
                   <MiniCard icon={<Users className="h-3 sm:h-4 w-3 sm:w-4" />} title="Leads" value="2,431" accent="primary" />
-                  <MiniCard icon={<UserCheck className="h-3 sm:h-4 w-3 sm:w-4" />} title="Salesmen" value="312" accent="accent" />
+                  <MiniCard icon={<UserCheck className="h-3 sm:h-4 w-3 sm:w-4" />} title="Salesperson" value="312" accent="accent" />
                   <MiniCard icon={<TrendingUp className="h-3 sm:h-4 w-3 sm:w-4" />} title="Conversions" value="58" accent="primary" />
                 </div>
                 

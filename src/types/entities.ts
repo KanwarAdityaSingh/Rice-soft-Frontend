@@ -216,6 +216,7 @@ export interface Lead {
   lead_status: 'new' | 'contacted' | 'engaged' | 'converted' | 'rejected';
   customer_status: string | null;
   assigned_to: string | null;
+  broker_id: string | null;
   created_by: string;
   updated_by: string | null;
   created_at: string;
@@ -243,6 +244,7 @@ export interface CreateLeadRequest {
   lead_status?: 'new' | 'contacted' | 'engaged' | 'converted' | 'rejected';
   customer_status?: string | null;
   assigned_to?: string | null;
+  broker_id?: string | null;
   notes?: string;
   priority?: 'low' | 'medium' | 'high' | 'urgent';
   source?: string;
@@ -259,6 +261,7 @@ export interface UpdateLeadRequest extends Partial<CreateLeadRequest> {}
 export interface LeadFilters {
   lead_status?: 'new' | 'contacted' | 'engaged' | 'converted' | 'rejected';
   assigned_to?: string;
+  broker_id?: string;
   priority?: 'low' | 'medium' | 'high' | 'urgent';
   is_existing_customer?: boolean;
 }

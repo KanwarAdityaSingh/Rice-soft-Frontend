@@ -34,7 +34,6 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
     business_details: {},
     lead_status: 'new',
     priority: 'medium',
-    is_existing_customer: false,
   });
 
   useEffect(() => {
@@ -54,8 +53,8 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
         business_details: lead.business_details || {},
         lead_status: lead.lead_status,
         priority: lead.priority,
-        is_existing_customer: lead.is_existing_customer,
         assigned_to: lead.assigned_to,
+        broker_id: lead.broker_id || null,
         notes: lead.notes,
         source: lead.source,
         estimated_value: lead.estimated_value,
@@ -82,7 +81,7 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
         business_details: {},
         lead_status: 'new',
         priority: 'medium',
-        is_existing_customer: false,
+        broker_id: null,
         rice_code_id: null,
         rice_type: null,
         salesman_latitude: null,
@@ -128,8 +127,27 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
     }
 
     try {
-      // All validations passed, submit the form
-      await onSave(formData);
+      // All validations passed, clean up form data before submission
+      const cleanedFormData: CreateLeadRequest | UpdateLeadRequest = { ...formData };
+      
+      // Ensure latitude and longitude are proper numbers when present
+      // Backend expects numbers only, so omit the fields if they're null
+      if (formData.salesman_latitude != null) {
+        cleanedFormData.salesman_latitude = Number(formData.salesman_latitude);
+      } else {
+        // Omit the field if it's null to avoid backend validation errors
+        delete cleanedFormData.salesman_latitude;
+      }
+      
+      if (formData.salesman_longitude != null) {
+        cleanedFormData.salesman_longitude = Number(formData.salesman_longitude);
+      } else {
+        // Omit the field if it's null to avoid backend validation errors
+        delete cleanedFormData.salesman_longitude;
+      }
+      
+      // Submit the cleaned form data
+      await onSave(cleanedFormData);
       onOpenChange(false);
       setErrors({});
     } catch (error) {
@@ -150,9 +168,14 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
             className="glass rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 shadow-2xl max-h-[90vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between mb-4 sm:mb-6">
-              <Dialog.Title className="text-lg sm:text-xl font-semibold">
-                {mode === 'pre-conversion' ? 'Pre-Conversion Formalities' : isEdit ? 'Edit Lead' : 'Create Lead'}
-              </Dialog.Title>
+              <div>
+                <Dialog.Title className="text-lg sm:text-xl font-semibold">
+                  {mode === 'pre-conversion' ? 'Pre-Conversion Formalities' : isEdit ? 'Edit Lead' : 'Create Lead'}
+                </Dialog.Title>
+                <Dialog.Description className="sr-only hidden">
+                  {mode === 'pre-conversion' ? 'Pre-Conversion Formalities' : isEdit ? 'Edit Lead' : 'Create Lead'} form
+                </Dialog.Description>
+              </div>
               <button onClick={() => onOpenChange(false)} className="rounded-lg p-1 hover:bg-muted/50 transition-colors">
                 <X className="h-5 w-5" />
               </button>

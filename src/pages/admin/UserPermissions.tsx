@@ -101,7 +101,7 @@ export default function UserPermissionsPage() {
             <span className="px-2 py-1 rounded-md text-xs capitalize bg-muted text-muted-foreground">{user.user_type}</span>
             {!isCustom && (
               <span className="px-2 py-1 rounded-md text-xs bg-orange-500/10 text-orange-700 dark:text-orange-300">
-                Permissions applicable only to custom users
+                Permissions applicable only to system users
               </span>
             )}
           </div>

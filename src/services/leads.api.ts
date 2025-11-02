@@ -18,6 +18,7 @@ export const leadsAPI = {
     
     if (filters?.lead_status) params.append('lead_status', filters.lead_status);
     if (filters?.assigned_to) params.append('assigned_to', filters.assigned_to);
+    if (filters?.broker_id) params.append('broker_id', filters.broker_id);
     if (filters?.priority) params.append('priority', filters.priority);
     if (filters?.is_existing_customer !== undefined) {
       params.append('is_existing_customer', filters.is_existing_customer.toString());

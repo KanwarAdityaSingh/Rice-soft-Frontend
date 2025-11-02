@@ -49,8 +49,8 @@ export function SalesmenTable() {
       ) : filteredSalesmen.length === 0 ? (
         <EmptyState
           icon={Briefcase}
-          title="No salesmen found"
-          description="Get started by creating a new salesman or adjust your filters."
+          title="No salesperson found"
+          description="Get started by creating a new salesperson or adjust your filters."
         />
       ) : (
         <>
@@ -138,7 +138,7 @@ export function SalesmenTable() {
           </div>
 
           <div className="mt-6 flex items-center justify-between text-sm text-muted-foreground">
-            <span>Showing {filteredSalesmen.length} of {salesmen.length} salesmen</span>
+            <span>Showing {filteredSalesmen.length} of {salesmen.length} salespeople</span>
           </div>
         </>
       )}
@@ -153,7 +153,7 @@ export function SalesmenTable() {
             setSelectedSalesman(null);
           }
         }}
-        title="Delete Salesman"
+        title="Delete Salesperson"
         description={`Are you sure you want to delete ${selectedSalesman?.name}? This action cannot be undone.`}
         confirmText="Delete"
       />
