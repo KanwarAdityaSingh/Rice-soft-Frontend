@@ -130,20 +130,17 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
       // All validations passed, clean up form data before submission
       const cleanedFormData: CreateLeadRequest | UpdateLeadRequest = { ...formData };
       
-      // Ensure latitude and longitude are proper numbers when present
-      // Backend expects numbers only, so omit the fields if they're null
+      // Ensure latitude and longitude are proper numbers when present, null otherwise
       if (formData.salesman_latitude != null) {
         cleanedFormData.salesman_latitude = Number(formData.salesman_latitude);
       } else {
-        // Omit the field if it's null to avoid backend validation errors
-        delete cleanedFormData.salesman_latitude;
+        cleanedFormData.salesman_latitude = null;
       }
       
       if (formData.salesman_longitude != null) {
         cleanedFormData.salesman_longitude = Number(formData.salesman_longitude);
       } else {
-        // Omit the field if it's null to avoid backend validation errors
-        delete cleanedFormData.salesman_longitude;
+        cleanedFormData.salesman_longitude = null;
       }
       
       // Submit the cleaned form data

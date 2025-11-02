@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 import { ArrowRight, ArrowLeft, Search } from 'lucide-react';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { CustomSelect } from '../../shared/CustomSelect';
@@ -9,7 +10,7 @@ import type { CreateLeadRequest, Salesman, RiceCode, RiceType } from '../../../t
 
 interface LeadFormStepsProps {
   formData: CreateLeadRequest;
-  setFormData: (data: CreateLeadRequest) => void;
+  setFormData: Dispatch<SetStateAction<CreateLeadRequest>>;
   errors: Record<string, string>;
   setErrors: (errors: Record<string, string>) => void;
   step: number;
@@ -303,15 +304,15 @@ export function LeadFormSteps({
             latitude={formData.salesman_latitude}
             longitude={formData.salesman_longitude}
             onLocationChange={(lat, lng) => {
-              setFormData({
-                ...formData,
+              setFormData((prev) => ({
+                ...prev,
                 salesman_latitude: lat != null ? Number(lat) : null,
                 salesman_longitude: lng != null ? Number(lng) : null
-              });
+              }));
             }}
             onAddressChange={(address) => {
-              setFormData({
-                ...formData,
+              setFormData((prev) => ({
+                ...prev,
                 address: {
                   street: address.street,
                   city: address.city,
@@ -319,7 +320,7 @@ export function LeadFormSteps({
                   pincode: address.pincode,
                   country: address.country
                 }
-              });
+              }));
               // Clear any address-related errors
               setErrors({
                 ...errors,
@@ -736,15 +737,15 @@ export function LeadFormSteps({
             latitude={formData.salesman_latitude}
             longitude={formData.salesman_longitude}
             onLocationChange={(lat, lng) => {
-              setFormData({
-                ...formData,
+              setFormData((prev) => ({
+                ...prev,
                 salesman_latitude: lat != null ? Number(lat) : null,
                 salesman_longitude: lng != null ? Number(lng) : null
-              });
+              }));
             }}
             onAddressChange={(address) => {
-              setFormData({
-                ...formData,
+              setFormData((prev) => ({
+                ...prev,
                 address: {
                   street: address.street,
                   city: address.city,
@@ -752,7 +753,7 @@ export function LeadFormSteps({
                   pincode: address.pincode,
                   country: address.country
                 }
-              });
+              }));
               // Clear any address-related errors
               setErrors({
                 ...errors,
