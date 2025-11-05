@@ -17,6 +17,7 @@ interface LeadFormStepsProps {
   setStep: (step: number) => void;
   isEdit?: boolean;
   mode?: 'create' | 'edit' | 'pre-conversion';
+  onPreviewClick?: () => void;
 }
 
 export function LeadFormSteps({
@@ -27,7 +28,8 @@ export function LeadFormSteps({
   step,
   setStep,
   isEdit,
-  mode = 'edit'
+  mode = 'edit',
+  onPreviewClick
 }: LeadFormStepsProps) {
   const [salesmen, setSalesmen] = useState<Salesman[]>([]);
   const { brokers: allBrokers, loading: loadingBrokers } = useBrokers();
@@ -337,7 +339,12 @@ export function LeadFormSteps({
             <button type="button" onClick={() => setStep(1)} className="btn-secondary flex-1 flex items-center justify-center gap-2">
               <ArrowLeft className="h-4 w-4" /> Back
             </button>
-            <button type="submit" disabled={false} className="btn-primary flex-1">
+            <button 
+              type="button" 
+              onClick={onPreviewClick}
+              disabled={!onPreviewClick}
+              className="btn-primary flex-1"
+            >
               Create Lead
             </button>
           </div>

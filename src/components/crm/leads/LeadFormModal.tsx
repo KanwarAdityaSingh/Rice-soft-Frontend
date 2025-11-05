@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { validateEmail } from '../../../utils/validation';
 import { LeadFormSteps } from './LeadFormSteps';
+import { LeadPreviewDialog } from './LeadPreviewDialog';
 import type { CreateLeadRequest, UpdateLeadRequest, Lead } from '../../../types/entities';
 
 interface LeadFormModalProps {
@@ -19,6 +20,7 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
   const isEdit = mode === 'edit' || mode === 'pre-conversion';
   const [step, setStep] = useState(1);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [formData, setFormData] = useState<CreateLeadRequest>({
     company_name: '',
     contact_person: '',
@@ -91,16 +93,7 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
     }
   }, [lead, open]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    const maxStep = mode === 'create' ? 2 : 4;
-    
-    if (step < maxStep) {
-      setStep(step + 1);
-      return;
-    }
-
+  const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
     
     // Step 1 validations
@@ -123,6 +116,34 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
       } else if (newErrors.street || newErrors.city || newErrors.state || newErrors.pincode || newErrors.country) {
         setStep(2);
       }
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    const maxStep = mode === 'create' ? 2 : 4;
+    
+    if (step < maxStep) {
+      setStep(step + 1);
+      return;
+    }
+
+    // For create mode, validate and show preview instead of directly saving
+    if (mode === 'create') {
+      if (validateForm()) {
+        // Close form modal and open preview dialog
+        onOpenChange(false);
+        setPreviewOpen(true);
+      }
+      return;
+    }
+
+    // For edit mode, validate and save directly
+    if (!validateForm()) {
       return;
     }
 
@@ -149,6 +170,42 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
       setErrors({});
     } catch (error) {
       // Error handled by parent
+    }
+  };
+
+  const handlePreviewConfirm = async (data: CreateLeadRequest) => {
+    try {
+      // Clean up form data before submission
+      const cleanedFormData: CreateLeadRequest = { ...data };
+      
+      // Ensure latitude and longitude are proper numbers when present, null otherwise
+      if (data.salesman_latitude != null) {
+        cleanedFormData.salesman_latitude = Number(data.salesman_latitude);
+      } else {
+        cleanedFormData.salesman_latitude = null;
+      }
+      
+      if (data.salesman_longitude != null) {
+        cleanedFormData.salesman_longitude = Number(data.salesman_longitude);
+      } else {
+        cleanedFormData.salesman_longitude = null;
+      }
+      
+      // Submit the cleaned form data
+      await onSave(cleanedFormData);
+      setPreviewOpen(false);
+      setErrors({});
+    } catch (error) {
+      // Error handled by parent
+      throw error;
+    }
+  };
+
+  const handlePreviewClick = () => {
+    if (validateForm()) {
+      // Close form modal and open preview dialog
+      onOpenChange(false);
+      setPreviewOpen(true);
     }
   };
 
@@ -181,27 +238,63 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
             {/* Steps Indicator */}
             {mode === 'create' ? (
               <div className="flex gap-1 sm:gap-2 mb-4 sm:mb-6">
-                <div className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium ${step >= 1 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium transition-colors ${
+                    step >= 1 ? 'bg-primary/20 text-primary' : 'bg-muted hover:bg-muted/80'
+                  }`}
+                >
                   <span className="hidden sm:inline">1. </span>Basic Info
-                </div>
-                <div className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium ${step >= 2 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium transition-colors ${
+                    step >= 2 ? 'bg-primary/20 text-primary' : 'bg-muted hover:bg-muted/80'
+                  }`}
+                >
                   <span className="hidden sm:inline">2. </span>Address & Location
-                </div>
+                </button>
               </div>
             ) : (
               <div className="flex gap-1 sm:gap-2 mb-4 sm:mb-6">
-                <div className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium ${step >= 1 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium transition-colors ${
+                    step >= 1 ? 'bg-primary/20 text-primary' : 'bg-muted hover:bg-muted/80'
+                  }`}
+                >
                   <span className="hidden sm:inline">1. </span>Basic
-                </div>
-                <div className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium ${step >= 2 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium transition-colors ${
+                    step >= 2 ? 'bg-primary/20 text-primary' : 'bg-muted hover:bg-muted/80'
+                  }`}
+                >
                   <span className="hidden sm:inline">2. </span>Address
-                </div>
-                <div className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium ${step >= 3 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStep(3)}
+                  className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium transition-colors ${
+                    step >= 3 ? 'bg-primary/20 text-primary' : 'bg-muted hover:bg-muted/80'
+                  }`}
+                >
                   <span className="hidden sm:inline">3. </span>Details
-                </div>
-                <div className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium ${step >= 4 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStep(4)}
+                  className={`flex-1 rounded-lg p-1.5 sm:p-2 text-center text-xs sm:text-sm font-medium transition-colors ${
+                    step >= 4 ? 'bg-primary/20 text-primary' : 'bg-muted hover:bg-muted/80'
+                  }`}
+                >
                   <span className="hidden sm:inline">4. </span>Location
-                </div>
+                </button>
               </div>
             )}
 
@@ -215,11 +308,26 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
                 setStep={setStep}
                 isEdit={isEdit}
                 mode={mode}
+                onPreviewClick={mode === 'create' ? handlePreviewClick : undefined}
               />
             </form>
           </motion.div>
         </Dialog.Content>
       </Dialog.Portal>
+      
+      {/* Preview Dialog */}
+      <LeadPreviewDialog
+        open={previewOpen}
+        onOpenChange={(open) => {
+          setPreviewOpen(open);
+          if (!open) {
+            // If preview is closed without confirming, optionally reopen the form
+            // For now, we'll just close it
+          }
+        }}
+        formData={formData}
+        onConfirm={handlePreviewConfirm}
+      />
     </Dialog.Root>
   );
 }

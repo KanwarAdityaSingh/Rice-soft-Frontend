@@ -6,6 +6,7 @@ import { useVendors } from '../../../hooks/useVendors';
 import { vendorsAPI } from '../../../services/vendors.api';
 import { validateEmail, validateGST, validatePAN } from '../../../utils/validation';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
+import { VendorPreviewDialog } from './VendorPreviewDialog';
 import type { CreateVendorRequest } from '../../../types/entities';
 
 interface VendorFormModalProps {
@@ -40,6 +41,7 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
   const [loading, setLoading] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [step, setStep] = useState(1);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const handleGSTLookup = async () => {
     if (!formData.business_details.gst_number) {
@@ -57,7 +59,7 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
     
     try {
       const response = await vendorsAPI.lookupGST(formData.business_details.gst_number);
-      const mapped = response.mapped_data;
+      const mapped = response.data.mapped_data;
       
       setFormData({
         ...formData,
@@ -91,7 +93,7 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
     
     try {
       const response = await vendorsAPI.lookupPAN(formData.business_details.pan_number);
-      const mapped = response.mapped_data;
+      const mapped = (response as any).data.mapped_data;
       
       setFormData({
         ...formData,
@@ -109,8 +111,7 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
     if (!formData.business_name) newErrors.business_name = 'Business name required';
@@ -127,13 +128,36 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
-      return;
+      // Navigate to step with errors
+      if (newErrors.business_name || newErrors.contact_person || newErrors.email || newErrors.phone) {
+        setStep(1);
+      } else if (newErrors.street || newErrors.city || newErrors.state || newErrors.pincode) {
+        setStep(2);
+      } else if (newErrors.gst_number) {
+        setStep(3);
+      }
+      return false;
     }
 
+    return true;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validate and show preview instead of directly saving
+    if (validateForm()) {
+      // Close form modal and open preview dialog
+      onOpenChange(false);
+      setPreviewOpen(true);
+    }
+  };
+
+  const handlePreviewConfirm = async (data: CreateVendorRequest) => {
     setLoading(true);
     try {
-      await createVendor(formData);
-      onOpenChange(false);
+      await createVendor(data);
+      setPreviewOpen(false);
       setFormData({
         business_name: '',
         contact_person: '',
@@ -148,6 +172,7 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
       setStep(1);
     } catch (error) {
       // Error handled by hook
+      throw error;
     } finally {
       setLoading(false);
     }
@@ -168,18 +193,36 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
 
             {/* Steps */}
             <div className="flex gap-2 mb-6">
-              <div className={`flex-1 rounded-lg p-2 text-center text-sm font-medium ${step >= 1 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className={`flex-1 rounded-lg p-2 text-center text-sm font-medium transition-colors ${
+                  step >= 1 ? 'bg-primary/20 text-primary' : 'bg-muted hover:bg-muted/80'
+                }`}
+              >
                 1. Basic Info
-              </div>
-              <div className={`flex-1 rounded-lg p-2 text-center text-sm font-medium ${step >= 2 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className={`flex-1 rounded-lg p-2 text-center text-sm font-medium transition-colors ${
+                  step >= 2 ? 'bg-primary/20 text-primary' : 'bg-muted hover:bg-muted/80'
+                }`}
+              >
                 2. Address
-              </div>
-              <div className={`flex-1 rounded-lg p-2 text-center text-sm font-medium ${step >= 3 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep(3)}
+                className={`flex-1 rounded-lg p-2 text-center text-sm font-medium transition-colors ${
+                  step >= 3 ? 'bg-primary/20 text-primary' : 'bg-muted hover:bg-muted/80'
+                }`}
+              >
                 3. Business Details
-              </div>
+              </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={(e) => { e.preventDefault(); handleSubmit(e); }} className="space-y-4">
               {step === 1 && (
                 <div className="space-y-4">
                   <div>
@@ -211,7 +254,7 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
                         type="email"
                         value={formData.email}
                         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ringлим transition focus:border-primary"
+                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                       />
                       {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
                     </div>
@@ -219,11 +262,11 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className=" retrospect-sm font-medium mb-1.5 block">Phone *</label>
+                      <label className="text-sm font-medium mb-1.5 block">Phone *</label>
                       <input
                         type="tel"
                         value={formData.phone}
-                        onChange={(e) => setFormData({ ... vede, phone: e.target.value })}
+                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                         className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                       />
                       {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone}</p>}
@@ -374,8 +417,13 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
                     <button type="button" onClick={() => {/* Skip */}} className="btn-secondary">
                       Skip Bank Details
                     </button>
-                    <button type="submit" disabled={loading} className="btn-primary flex-1">
-                      {loading ? 'Creating...' : 'Create Vendor'}
+                    <button 
+                      type="button" 
+                      onClick={handleSubmit}
+                      disabled={loading}
+                      className="btn-primary flex-1"
+                    >
+                      Create Vendor
                     </button>
                   </div>
                 </div>
@@ -384,6 +432,20 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
           </div>
         </Dialog.Content>
       </Dialog.Portal>
+      
+      {/* Preview Dialog */}
+      <VendorPreviewDialog
+        open={previewOpen}
+        onOpenChange={(open) => {
+          setPreviewOpen(open);
+          if (!open) {
+            // If preview is closed without confirming, optionally reopen the form
+            // For now, we'll just close it
+          }
+        }}
+        formData={formData}
+        onConfirm={handlePreviewConfirm}
+      />
     </Dialog.Root>
   );
 }

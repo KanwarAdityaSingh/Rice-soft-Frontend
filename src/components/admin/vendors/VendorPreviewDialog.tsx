@@ -1,0 +1,206 @@
+import * as Dialog from '@radix-ui/react-dialog';
+import { useState } from 'react';
+import { motion } from 'framer-motion';
+import { X, CheckCircle2, Building2, MapPin, FileText, Briefcase, Package, UserCheck } from 'lucide-react';
+import { LoadingSpinner } from '../shared/LoadingSpinner';
+import type { CreateVendorRequest } from '../../../types/entities';
+
+interface VendorPreviewDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  formData: CreateVendorRequest;
+  onConfirm: (data: CreateVendorRequest) => Promise<void>;
+}
+
+export function VendorPreviewDialog({ open, onOpenChange, formData, onConfirm }: VendorPreviewDialogProps) {
+  const [loading, setLoading] = useState(false);
+
+  const handleConfirm = async () => {
+    setLoading(true);
+    try {
+      await onConfirm(formData);
+      onOpenChange(false);
+    } catch (error) {
+      console.error('Failed to create vendor:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getTypeLabel = (type: string | undefined): string => {
+    if (!type) return 'Not set';
+    switch (type) {
+      case 'purchaser':
+        return 'Purchaser';
+      case 'seller':
+        return 'Seller';
+      case 'both':
+        return 'Both';
+      default:
+        return type;
+    }
+  };
+
+  const InfoSection = ({ title, icon: Icon, children }: { title: string; icon: any; children: React.ReactNode }) => (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+        <Icon className="h-4 w-4" />
+        <span>{title}</span>
+      </div>
+      <div className="pl-6 space-y-2 text-sm text-muted-foreground">
+        {children}
+      </div>
+    </div>
+  );
+
+  const InfoRow = ({ label, value }: { label: string; value: string | null | undefined }) => {
+    if (!value) return null;
+    return (
+      <div className="flex justify-between items-start">
+        <span className="text-muted-foreground min-w-[120px]">{label}:</span>
+        <span className="text-foreground font-medium text-right flex-1">{value}</span>
+      </div>
+    );
+  };
+
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" />
+        <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-[95vw] sm:w-[90vw] md:w-full max-w-4xl translate-x-[-50%] translate-y-[-50%]">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+            className="glass rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 shadow-2xl max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-primary/20 rounded-lg">
+                  <CheckCircle2 className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <Dialog.Title className="text-xl sm:text-2xl font-semibold">
+                    Review Vendor Details
+                  </Dialog.Title>
+                  <Dialog.Description className="text-sm text-muted-foreground mt-1">
+                    Please review all the details before creating the vendor
+                  </Dialog.Description>
+                </div>
+              </div>
+              <button 
+                onClick={() => onOpenChange(false)} 
+                className="rounded-lg p-1 hover:bg-muted/50 transition-colors"
+                disabled={loading}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {/* Basic Information */}
+              <InfoSection title="Basic Information" icon={Building2}>
+                <InfoRow label="Business Name" value={formData.business_name} />
+                <InfoRow label="Contact Person" value={formData.contact_person} />
+                <InfoRow label="Email" value={formData.email} />
+                <InfoRow label="Phone" value={formData.phone} />
+                <InfoRow label="Type" value={getTypeLabel(formData.type)} />
+                <InfoRow 
+                  label="Status" 
+                  value={formData.is_active !== false ? 'Active' : 'Inactive'} 
+                />
+              </InfoSection>
+
+              {/* Address Information */}
+              {formData.address && (
+                <InfoSection title="Address Information" icon={MapPin}>
+                  <InfoRow label="Street" value={formData.address.street} />
+                  <InfoRow label="City" value={formData.address.city} />
+                  <InfoRow label="State" value={formData.address.state} />
+                  <InfoRow label="Pincode" value={formData.address.pincode} />
+                  <InfoRow label="Country" value={formData.address.country} />
+                </InfoSection>
+              )}
+
+              {/* Business Details */}
+              {formData.business_details && (
+                <InfoSection title="Business Details" icon={Briefcase}>
+                  <InfoRow 
+                    label="GST Number" 
+                    value={formData.business_details.gst_number || undefined} 
+                  />
+                  <InfoRow 
+                    label="PAN Number" 
+                    value={formData.business_details.pan_number || undefined} 
+                  />
+                  <InfoRow 
+                    label="Registration Number" 
+                    value={formData.business_details.registration_number || undefined} 
+                  />
+                </InfoSection>
+              )}
+
+              {/* Bank Details */}
+              {formData.bank_details && Object.keys(formData.bank_details).length > 0 && (
+                <InfoSection title="Bank Details" icon={FileText}>
+                  <InfoRow 
+                    label="Bank Name" 
+                    value={formData.bank_details.bank_name || undefined} 
+                  />
+                  <InfoRow 
+                    label="Account Number" 
+                    value={formData.bank_details.account_number || undefined} 
+                  />
+                  <InfoRow 
+                    label="IFSC Code" 
+                    value={formData.bank_details.ifsc_code || undefined} 
+                  />
+                  <InfoRow 
+                    label="Account Holder Name" 
+                    value={formData.bank_details.account_holder_name || undefined} 
+                  />
+                  <InfoRow 
+                    label="Branch" 
+                    value={formData.bank_details.branch || undefined} 
+                  />
+                </InfoSection>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 mt-8 pt-6 border-t border-border">
+              <button
+                type="button"
+                onClick={() => onOpenChange(false)}
+                disabled={loading}
+                className="btn-secondary flex-1"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirm}
+                disabled={loading}
+                className="btn-primary flex-1 flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <>
+                    <LoadingSpinner size="sm" />
+                    <span>Creating Vendor...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>Create Vendor</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </motion.div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+

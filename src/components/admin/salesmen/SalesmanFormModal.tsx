@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { X } from 'lucide-react';
 import { useSalesmen } from '../../../hooks/useSalesmen';
 import { validateEmail } from '../../../utils/validation';
+import { SalespersonPreviewDialog } from './SalespersonPreviewDialog';
 import type { CreateSalesmanRequest } from '../../../types/entities';
 
 interface SalesmanFormModalProps {
@@ -19,9 +20,9 @@ export function SalesmanFormModal({ open, onOpenChange }: SalesmanFormModalProps
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
     if (!formData.name) newErrors.name = 'Name is required';
@@ -30,17 +31,33 @@ export function SalesmanFormModal({ open, onOpenChange }: SalesmanFormModalProps
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
-      return;
+      return false;
     }
 
+    return true;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validate and show preview instead of directly saving
+    if (validateForm()) {
+      // Close form modal and open preview dialog
+      onOpenChange(false);
+      setPreviewOpen(true);
+    }
+  };
+
+  const handlePreviewConfirm = async (data: CreateSalesmanRequest) => {
     setLoading(true);
     try {
-      await createSalesman(formData);
-      onOpenChange(false);
+      await createSalesman(data);
+      setPreviewOpen(false);
       setFormData({ name: '', email: '', phone: '' });
       setErrors({});
     } catch (error) {
       // Error handled by hook
+      throw error;
     } finally {
       setLoading(false);
     }
@@ -59,7 +76,7 @@ export function SalesmanFormModal({ open, onOpenChange }: SalesmanFormModalProps
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={(e) => { e.preventDefault(); handleSubmit(e); }} className="space-y-4">
               <div>
                 <label className="text-sm font-medium mb-1.5 block">Name *</label>
                 <input
@@ -97,14 +114,33 @@ export function SalesmanFormModal({ open, onOpenChange }: SalesmanFormModalProps
                 <button type="button" onClick={() => onOpenChange(false)} className="flex-1 rounded-lg border border-border bg-background/60 px-4 py-2 text-sm font-medium hover:bg-muted transition-colors">
                   Cancel
                 </button>
-                <button type="submit" disabled={loading} className="btn-primary flex-1">
-                  {loading ? 'Creating...' : 'Create Salesperson'}
+                <button 
+                  type="button" 
+                  onClick={handleSubmit}
+                  disabled={loading}
+                  className="btn-primary flex-1"
+                >
+                  Create Salesperson
                 </button>
               </div>
             </form>
           </div>
         </Dialog.Content>
       </Dialog.Portal>
+      
+      {/* Preview Dialog */}
+      <SalespersonPreviewDialog
+        open={previewOpen}
+        onOpenChange={(open) => {
+          setPreviewOpen(open);
+          if (!open) {
+            // If preview is closed without confirming, optionally reopen the form
+            // For now, we'll just close it
+          }
+        }}
+        formData={formData}
+        onConfirm={handlePreviewConfirm}
+      />
     </Dialog.Root>
   );
 }

@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { validateEmail, validatePAN, validateAadhaar } from '../../../utils/validation';
+import { BrokerPreviewDialog } from './BrokerPreviewDialog';
 import type { CreateBrokerRequest } from '../../../types/entities';
 
 interface BrokerFormModalProps {
@@ -33,7 +34,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
     broker_details: {
       commission_rate: 0,
       specialization: '',
-      experience_years: 0,
+      experience_years: '',
     },
     type: 'both',
     is_active: true,
@@ -42,9 +43,9 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(1);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
     // Basic validation
@@ -70,13 +71,34 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
-      return;
+      // Navigate to step with errors
+      if (newErrors.business_name || newErrors.contact_person || newErrors.email || newErrors.phone) {
+        setStep(1);
+      } else if (newErrors.pan_number || newErrors.aadhaar_number || newErrors.business_details) {
+        setStep(2);
+      }
+      return false;
     }
 
+    return true;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validate and show preview instead of directly saving
+    if (validateForm()) {
+      // Close form modal and open preview dialog
+      onOpenChange(false);
+      setPreviewOpen(true);
+    }
+  };
+
+  const handlePreviewConfirm = async (data: CreateBrokerRequest) => {
     setLoading(true);
     try {
-      await createBroker(formData);
-      onOpenChange(false);
+      await createBroker(data);
+      setPreviewOpen(false);
       setFormData({
         business_name: '',
         contact_person: '',
@@ -84,7 +106,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         phone: '',
         address: { street: '', city: '', state: '', pincode: '', country: 'India' },
         business_details: { pan_number: '', aadhaar_number: '', registration_number: '' },
-        broker_details: { commission_rate: 0, specialization: '', experience_years: 0 },
+        broker_details: { commission_rate: 0, specialization: '', experience_years: '' },
         type: 'both',
         is_active: true,
       });
@@ -92,6 +114,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       setStep(1);
     } catch (error) {
       // Error handled by hook
+      throw error;
     } finally {
       setLoading(false);
     }
@@ -112,18 +135,36 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
 
             {/* Steps */}
             <div className="flex gap-2 mb-6">
-              <div className={`flex-1 rounded-lg p-2 text-center text-sm font-medium ${step >= 1 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className={`flex-1 rounded-lg p-2 text-center text-sm font-medium transition-colors ${
+                  step >= 1 ? 'bg-primary/20 text-primary' : 'bg-muted hover:bg-muted/80'
+                }`}
+              >
                 1. Basic Info
-              </div>
-              <div className={`flex-1 rounded-lg p-2 text-center text-sm font-medium ${step >= 2 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className={`flex-1 rounded-lg p-2 text-center text-sm font-medium transition-colors ${
+                  step >= 2 ? 'bg-primary/20 text-primary' : 'bg-muted hover:bg-muted/80'
+                }`}
+              >
                 2. Address & Business
-              </div>
-              <div className={`flex-1 rounded-lg p-2 text-center text-sm font-medium ${step >= 3 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep(3)}
+                className={`flex-1 rounded-lg p-2 text-center text-sm font-medium transition-colors ${
+                  step >= 3 ? 'bg-primary/20 text-primary' : 'bg-muted hover:bg-muted/80'
+                }`}
+              >
                 3. Broker Details
-              </div>
+              </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={(e) => { e.preventDefault(); handleSubmit(e); }} className="space-y-4">
               {/* Step 1: Basic Info */}
               {step === 1 && (
                 <div className="space-y-4">
@@ -310,11 +351,11 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                   </div>
 
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block">Experience (Years)</label>
+                    <label className="text-sm font-medium mb-1.5 block">State</label>
                     <input
-                      type="number"
+                      type="text"
                       value={formData.broker_details?.experience_years || ''}
-                      onChange={(e) => setFormData({ ...formData, broker_details: { ...formData.broker_details!, experience_years: parseInt(e.target.value) || 0 } })}
+                      onChange={(e) => setFormData({ ...formData, broker_details: { ...formData.broker_details!, experience_years: e.target.value } })}
                       className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                     />
                   </div>
@@ -323,8 +364,13 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                     <button type="button" onClick={() => setStep(2)} className="btn-secondary flex-1">
                       Back
                     </button>
-                    <button type="submit" disabled={loading} className="btn-primary flex-1">
-                      {loading ? 'Creating...' : 'Create Broker'}
+                    <button 
+                      type="button" 
+                      onClick={handleSubmit}
+                      disabled={loading}
+                      className="btn-primary flex-1"
+                    >
+                      Create Broker
                     </button>
                   </div>
                 </div>
@@ -333,6 +379,20 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
           </div>
         </Dialog.Content>
       </Dialog.Portal>
+      
+      {/* Preview Dialog */}
+      <BrokerPreviewDialog
+        open={previewOpen}
+        onOpenChange={(open) => {
+          setPreviewOpen(open);
+          if (!open) {
+            // If preview is closed without confirming, optionally reopen the form
+            // For now, we'll just close it
+          }
+        }}
+        formData={formData}
+        onConfirm={handlePreviewConfirm}
+      />
     </Dialog.Root>
   );
 }

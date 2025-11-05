@@ -129,7 +129,7 @@ export interface BrokerBusinessDetails {
 export interface BrokerDetails {
   commission_rate?: number;
   specialization?: string;
-  experience_years?: number;
+  experience_years?: string;
 }
 
 export interface Broker {
