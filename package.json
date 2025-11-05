@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "npm exec vite",
     "build": "tsc -b && npm exec vite build",
+    "build:deploy": "npm exec vite build",
     "lint": "eslint .",
     "preview": "npm exec vite preview"
   },

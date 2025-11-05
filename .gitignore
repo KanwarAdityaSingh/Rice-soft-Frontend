@@ -1,3 +1,18 @@
+# Dependencies and build
+node_modules/
+dist/
+
+# Environment files
+.env*
+!.env.example
+
+# Keys and secrets
+*.pem
+*.key
+*.crt
+
+# Misc
+.DS_Store
 # Logs
 logs
 *.log

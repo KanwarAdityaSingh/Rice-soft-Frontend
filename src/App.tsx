@@ -28,7 +28,7 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <BrowserRouter>
+        <BrowserRouter basename={(import.meta as any).env?.BASE_URL ? (import.meta as any).env.BASE_URL.replace(/\/$/, '') : '/riceops'}>
           <AnimatedRoutes />
         </BrowserRouter>
       </AuthProvider>
