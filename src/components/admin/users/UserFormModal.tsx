@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { usersAPI } from '../../../services/users.api';
 import { validateEmail, validateUsername, validatePassword } from '../../../utils/validation';
+import { AlertDialog } from '../../shared/AlertDialog';
 import type { CreateUserRequest, UpdateUserRequest, User } from '../../../types/entities';
 
 interface UserFormModalProps {
@@ -24,6 +25,10 @@ export function UserFormModal({ open, onOpenChange, user }: UserFormModalProps) 
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
+  const [alertTitle, setAlertTitle] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
 
   // Reset form when modal opens/closes or user changes
   useEffect(() => {
@@ -99,6 +104,13 @@ export function UserFormModal({ open, onOpenChange, user }: UserFormModalProps) 
         }
         
         await usersAPI.updateUser(user.id, updateData);
+        
+        // Show success alert
+        setAlertType('success');
+        setAlertTitle('User Updated Successfully');
+        setAlertMessage('The user has been updated successfully.');
+        setAlertOpen(true);
+        onOpenChange(false);
       } else {
         // Create user - only include email if provided
         const createData: CreateUserRequest = {
@@ -115,9 +127,15 @@ export function UserFormModal({ open, onOpenChange, user }: UserFormModalProps) 
         }
         
         await usersAPI.createUser(createData);
+        
+        // Show success alert
+        setAlertType('success');
+        setAlertTitle('User Created Successfully');
+        setAlertMessage('The user has been created successfully.');
+        setAlertOpen(true);
+        onOpenChange(false);
       }
       
-      onOpenChange(false);
       setFormData({
         username: '',
         email: '',
@@ -127,8 +145,18 @@ export function UserFormModal({ open, onOpenChange, user }: UserFormModalProps) 
         user_type: 'admin',
       });
       setErrors({});
-    } catch (error) {
-      console.error('Error saving user:', error);
+    } catch (error: any) {
+      // Show error alert with API response
+      setAlertType('error');
+      setAlertTitle(isEdit ? 'Failed to Update User' : 'Failed to Create User');
+      // Extract error message from various possible locations
+      const errorMessage = 
+        error?.message || 
+        error?.data?.message || 
+        error?.response?.data?.message || 
+        (isEdit ? 'An error occurred while updating the user. Please try again.' : 'An error occurred while creating the user. Please try again.');
+      setAlertMessage(errorMessage);
+      setAlertOpen(true);
     } finally {
       setLoading(false);
     }
@@ -248,6 +276,16 @@ export function UserFormModal({ open, onOpenChange, user }: UserFormModalProps) 
           </div>
         </Dialog.Content>
       </Dialog.Portal>
+
+      {/* Alert Dialog for API Response */}
+      <AlertDialog
+        open={alertOpen}
+        onOpenChange={setAlertOpen}
+        type={alertType}
+        title={alertTitle}
+        message={alertMessage}
+        buttonText="OK"
+      />
     </Dialog.Root>
   );
 }

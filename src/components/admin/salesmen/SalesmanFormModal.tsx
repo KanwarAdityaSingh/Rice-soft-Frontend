@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import { useSalesmen } from '../../../hooks/useSalesmen';
 import { validateEmail } from '../../../utils/validation';
 import { SalespersonPreviewDialog } from './SalespersonPreviewDialog';
+import { AlertDialog } from '../../shared/AlertDialog';
 import type { CreateSalesmanRequest } from '../../../types/entities';
 
 interface SalesmanFormModalProps {
@@ -21,6 +22,10 @@ export function SalesmanFormModal({ open, onOpenChange }: SalesmanFormModalProps
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
+  const [alertTitle, setAlertTitle] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -56,9 +61,26 @@ export function SalesmanFormModal({ open, onOpenChange }: SalesmanFormModalProps
       setPreviewOpen(false);
       setFormData({ name: '', email: '', phone: '' });
       setErrors({});
-    } catch (error) {
-      // Error handled by hook
-      throw error;
+      // Show success alert
+      setAlertType('success');
+      setAlertTitle('Salesperson Created Successfully');
+      setAlertMessage('The salesperson has been created successfully.');
+      setAlertOpen(true);
+      // Close the form modal after success
+      onOpenChange(false);
+    } catch (error: any) {
+      // Show error alert with API response
+      setAlertType('error');
+      setAlertTitle('Failed to Create Salesperson');
+      // Extract error message from various possible locations
+      const errorMessage = 
+        error?.message || 
+        error?.data?.message || 
+        error?.response?.data?.message || 
+        'An error occurred while creating the salesperson. Please try again.';
+      setAlertMessage(errorMessage);
+      setAlertOpen(true);
+      setPreviewOpen(false);
     } finally {
       setLoading(false);
     }
@@ -146,6 +168,16 @@ export function SalesmanFormModal({ open, onOpenChange }: SalesmanFormModalProps
         }}
         formData={formData}
         onConfirm={handlePreviewConfirm}
+      />
+
+      {/* Alert Dialog for API Response */}
+      <AlertDialog
+        open={alertOpen}
+        onOpenChange={setAlertOpen}
+        type={alertType}
+        title={alertTitle}
+        message={alertMessage}
+        buttonText="OK"
       />
     </Dialog.Root>
   );
