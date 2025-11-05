@@ -60,7 +60,8 @@ export function UserFormModal({ open, onOpenChange, user }: UserFormModalProps) 
     if (!validateUsername(formData.username)) {
       newErrors.username = 'Invalid username';
     }
-    if (!validateEmail(formData.email)) {
+    // Email is optional, but if provided, it must be valid
+    if (formData.email && !validateEmail(formData.email)) {
       newErrors.email = 'Invalid email';
     }
     // Only validate password for create mode or if password is provided in edit mode
@@ -82,11 +83,15 @@ export function UserFormModal({ open, onOpenChange, user }: UserFormModalProps) 
         // Update user - only include password if it's provided
         const updateData: UpdateUserRequest = {
           username: formData.username,
-          email: formData.email,
           full_name: formData.full_name,
-          phone: formData.phone,
+          phone: formData.phone || undefined,
           user_type: formData.user_type,
         };
+        
+        // Only include email if it's provided (not empty)
+        if (formData.email?.trim()) {
+          updateData.email = formData.email.trim();
+        }
         
         // Only include password if it's provided (not empty)
         if (formData.password.trim()) {
@@ -95,8 +100,21 @@ export function UserFormModal({ open, onOpenChange, user }: UserFormModalProps) 
         
         await usersAPI.updateUser(user.id, updateData);
       } else {
-        // Create user
-        await usersAPI.createUser(formData);
+        // Create user - only include email if provided
+        const createData: CreateUserRequest = {
+          username: formData.username,
+          password: formData.password,
+          full_name: formData.full_name,
+          phone: formData.phone || undefined,
+          user_type: formData.user_type,
+        };
+        
+        // Only include email if it's provided (not empty)
+        if (formData.email?.trim()) {
+          createData.email = formData.email.trim();
+        }
+        
+        await usersAPI.createUser(createData);
       }
       
       onOpenChange(false);
@@ -162,13 +180,13 @@ export function UserFormModal({ open, onOpenChange, user }: UserFormModalProps) 
               </div>
 
               <div>
-                <label className="text-sm font-medium mb-1.5 block">Email *</label>
+                <label className="text-sm font-medium mb-1.5 block">Email</label>
                 <input
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                  placeholder="john@example.com"
+                  placeholder="john@example.com (optional)"
                 />
                 {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
               </div>
