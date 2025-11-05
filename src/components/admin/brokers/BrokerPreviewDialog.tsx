@@ -63,6 +63,12 @@ export function BrokerPreviewDialog({ open, onOpenChange, formData, onConfirm }:
     );
   };
 
+  // Extract first name from contact person
+  const getFirstName = (contactPerson: string | undefined): string => {
+    if (!contactPerson) return '';
+    return contactPerson.split(' ')[0];
+  };
+
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
@@ -159,6 +165,13 @@ export function BrokerPreviewDialog({ open, onOpenChange, formData, onConfirm }:
                 </InfoSection>
               )}
             </div>
+
+            {/* User Account Information */}
+            {formData.contact_person && (
+              <div className="bg-primary/10 border border-primary/20 rounded-lg p-3 text-sm whitespace-nowrap">
+                A user account for this broker will be created with username {getFirstName(formData.contact_person)} and password defaultPassword123
+              </div>
+            )}
 
             {/* Action Buttons */}
             <div className="flex gap-3 mt-8 pt-6 border-t border-border">

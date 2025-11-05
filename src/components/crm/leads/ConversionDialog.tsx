@@ -3,6 +3,9 @@ import { useState } from 'react';
 import { X } from 'lucide-react';
 import { leadsAPI } from '../../../services/leads.api';
 import type { Lead } from '../../../types/entities';
+import { useVendors } from '../../../hooks/useVendors';
+import { CustomSelect } from '../../shared/CustomSelect';
+import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 
 interface ConversionDialogProps {
   open: boolean;
@@ -14,6 +17,7 @@ interface ConversionDialogProps {
 export function ConversionDialog({ open, onOpenChange, lead, onSuccess }: ConversionDialogProps) {
   const [mode, setMode] = useState<'automatic' | 'manual'>('automatic');
   const [loading, setLoading] = useState(false);
+  const { vendors, loading: vendorsLoading } = useVendors();
   const [formData, setFormData] = useState({
     vendor_id: '',
     broker_id: '',
@@ -103,22 +107,30 @@ export function ConversionDialog({ open, onOpenChange, lead, onSuccess }: Conver
 
             <form onSubmit={handleSubmit} className="space-y-4">
               {mode === 'automatic' && (
-                <div className="bg-primary/10 border border-primary/20 rounded-lg p-3 text-sm mb-4">
-                  This will create a new vendor account with email {lead.email} and a default password
+                <div className="bg-primary/10 border border-primary/20 rounded-lg p-3 text-sm mb-4 whitespace-nowrap">
+                  This will create a new vendor account with default password: defaultPassword123
                 </div>
               )}
 
               {mode === 'manual' && (
                 <div>
                   <label className="text-sm font-medium mb-1.5 block">Select Vendor *</label>
-                  <input
-                    type="text"
-                    value={formData.vendor_id}
-                    onChange={(e) => setFormData({ ...formData, vendor_id: e.target.value })}
-                    className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                    placeholder="Search or enter vendor ID"
-                    required
-                  />
+                  {vendorsLoading ? (
+                    <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm flex items-center gap-2">
+                      <LoadingSpinner size="sm" />
+                      <span className="text-muted-foreground">Loading vendors...</span>
+                    </div>
+                  ) : (
+                    <CustomSelect
+                      value={formData.vendor_id || null}
+                      onChange={(value) => setFormData({ ...formData, vendor_id: value || '' })}
+                      options={vendors.map((vendor) => ({
+                        value: vendor.id,
+                        label: `${vendor.business_name}${vendor.contact_person ? ` (${vendor.contact_person})` : ''}`
+                      }))}
+                      placeholder="Select a vendor"
+                    />
+                  )}
                 </div>
               )}
 

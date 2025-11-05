@@ -1,11 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { ArrowRight, ArrowLeft, Search } from 'lucide-react';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { salesmenAPI } from '../../../services/salesmen.api';
+import { vendorsAPI } from '../../../services/vendors.api';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
+import { validateGST, validatePAN } from '../../../utils/validation';
 import type { CreateLeadRequest, Salesman, RiceCode, RiceType } from '../../../types/entities';
 
 interface LeadFormStepsProps {
@@ -37,6 +39,7 @@ export function LeadFormSteps({
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
   const [loadingRiceCodes, setLoadingRiceCodes] = useState(false);
   const [loadingRiceTypes, setLoadingRiceTypes] = useState(false);
+  const [lookupLoading, setLookupLoading] = useState(false);
   
   // Filter to only active brokers for dropdown
   const brokers = allBrokers.filter(b => b.is_active);
@@ -96,6 +99,126 @@ export function LeadFormSteps({
       ...formData,
       business_details: { ...(formData.business_details || {}), [field]: value }
     });
+  };
+
+  const handleGSTLookup = async () => {
+    const gstNumber = formData.business_details?.gst_number || '';
+    if (!gstNumber) {
+      setErrors({ ...errors, gst_number: 'Please enter a GST number' });
+      return;
+    }
+    
+    if (!validateGST(gstNumber)) {
+      setErrors({ ...errors, gst_number: 'Invalid GST format' });
+      return;
+    }
+
+    setLookupLoading(true);
+    setErrors({ ...errors, gst_number: '' });
+    
+    try {
+      const response = await vendorsAPI.lookupGST(gstNumber);
+      
+      // The API service returns response.data, which is { gst_data: {...}, mapped_data: {...} }
+      const mapped = response.mapped_data;
+      
+      // Update form data with fetched details
+      const updates: CreateLeadRequest = {
+        ...formData,
+        company_name: mapped?.business_name || formData.company_name,
+      };
+
+      // Populate address fields (only fill non-empty values)
+      if (mapped?.address) {
+        updates.address = {
+          ...(formData.address || {}),
+          ...(mapped.address.street ? { street: mapped.address.street } : {}),
+          ...(mapped.address.city ? { city: mapped.address.city } : {}),
+          ...(mapped.address.state ? { state: mapped.address.state } : {}),
+          ...(mapped.address.pincode ? { pincode: mapped.address.pincode } : {}),
+          ...(mapped.address.country ? { country: mapped.address.country } : {}),
+        };
+      }
+
+      // Update business details
+      if (mapped?.business_details) {
+        updates.business_details = {
+          ...(formData.business_details || {}),
+          ...(mapped.business_details.gst_number ? { gst_number: mapped.business_details.gst_number } : {}),
+          ...(mapped.business_details.pan_number ? { pan_number: mapped.business_details.pan_number } : {}),
+          ...(mapped.business_details.registration_number ? { registration_number: mapped.business_details.registration_number } : {}),
+          ...(mapped.business_details.business_type ? { business_type: mapped.business_details.business_type } : {}),
+        };
+      }
+
+      setFormData(updates);
+      setErrors({ ...errors, gst_number: '' });
+    } catch (error: any) {
+      console.error('GST lookup error:', error);
+      setErrors({ ...errors, gst_number: error?.message || 'Failed to lookup GST details' });
+    } finally {
+      setLookupLoading(false);
+    }
+  };
+
+  const handlePANLookup = async () => {
+    const panNumber = formData.business_details?.pan_number || '';
+    if (!panNumber) {
+      setErrors({ ...errors, pan_number: 'Please enter a PAN number' });
+      return;
+    }
+    
+    if (!validatePAN(panNumber)) {
+      setErrors({ ...errors, pan_number: 'Invalid PAN format' });
+      return;
+    }
+
+    setLookupLoading(true);
+    setErrors({ ...errors, pan_number: '' });
+    
+    try {
+      const response = await vendorsAPI.lookupPAN(panNumber);
+      
+      // The API service returns response.data, which is { pan_data: {...}, mapped_data: {...} }
+      const mapped = response.mapped_data;
+      const panData = response.pan_data;
+      
+      // Update form data with fetched details
+      const updates: CreateLeadRequest = {
+        ...formData,
+        company_name: mapped?.business_name || formData.company_name,
+        contact_person: panData?.category === 'person' && panData?.name ? panData.name : formData.contact_person,
+      };
+
+      // Populate address fields (only fill non-empty values)
+      if (mapped?.address) {
+        updates.address = {
+          ...(formData.address || {}),
+          ...(mapped.address.street ? { street: mapped.address.street } : {}),
+          ...(mapped.address.city ? { city: mapped.address.city } : {}),
+          ...(mapped.address.state ? { state: mapped.address.state } : {}),
+          ...(mapped.address.pincode ? { pincode: mapped.address.pincode } : {}),
+          ...(mapped.address.country ? { country: mapped.address.country } : {}),
+        };
+      }
+
+      // Update business details
+      if (mapped?.business_details) {
+        updates.business_details = {
+          ...(formData.business_details || {}),
+          ...(mapped.business_details.pan_number ? { pan_number: mapped.business_details.pan_number } : {}),
+          ...(mapped.business_details.business_type ? { business_type: mapped.business_details.business_type } : {}),
+        };
+      }
+
+      setFormData(updates);
+      setErrors({ ...errors, pan_number: '' });
+    } catch (error: any) {
+      console.error('PAN lookup error:', error);
+      setErrors({ ...errors, pan_number: error?.message || 'Failed to lookup PAN details' });
+    } finally {
+      setLookupLoading(false);
+    }
   };
 
   return (
@@ -354,6 +477,46 @@ export function LeadFormSteps({
       {/* EDIT/PRE-CONVERSION MODE - Step 1: Basic Information */}
       {(mode === 'edit' || mode === 'pre-conversion') && step === 1 && (
         <div className="space-y-4">
+          <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 mb-2">
+            <p className="text-sm text-primary/90">
+              <span className="font-medium">Note:</span> One of the fields (either GST Number or PAN Number) is recommended.
+            </p>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">GST Number</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={formData.business_details?.gst_number || ''}
+                onChange={(e) => updateBusinessField('gst_number', e.target.value.toUpperCase())}
+                className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                placeholder="27ABCDE1234F1Z5"
+              />
+              <button type="button" onClick={handleGSTLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
+                {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+              </button>
+            </div>
+            {errors.gst_number && <p className="mt-1 text-xs text-red-600">{errors.gst_number}</p>}
+          </div>
+
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">PAN Number</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={formData.business_details?.pan_number || ''}
+                onChange={(e) => updateBusinessField('pan_number', e.target.value.toUpperCase())}
+                className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                placeholder="ABCDE1234F"
+              />
+              <button type="button" onClick={handlePANLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
+                {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+              </button>
+            </div>
+            {errors.pan_number && <p className="mt-1 text-xs text-red-600">{errors.pan_number}</p>}
+          </div>
+
           <div>
             <label className="text-sm font-medium mb-1.5 block">Business Name *</label>
             <input
@@ -574,29 +737,7 @@ export function LeadFormSteps({
 
           <h3 className="text-lg font-semibold mb-4 mt-6">Business Details</h3>
 
-          <div>
-            <label className="text-sm font-medium mb-1.5 block">GST Number</label>
-            <input
-              type="text"
-              value={formData.business_details?.gst_number || ''}
-              onChange={(e) => updateBusinessField('gst_number', e.target.value.toUpperCase())}
-              className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-              placeholder="27ABCDE1234F1Z5"
-            />
-          </div>
-
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">PAN Number</label>
-              <input
-                type="text"
-                value={formData.business_details?.pan_number || ''}
-                onChange={(e) => updateBusinessField('pan_number', e.target.value.toUpperCase())}
-                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                placeholder="ABCDE1234F"
-              />
-            </div>
-
             <div>
               <label className="text-sm font-medium mb-1.5 block">Industry</label>
               <input
@@ -798,13 +939,10 @@ interface LocationCaptureProps {
 function LocationCapture({ latitude, longitude, onLocationChange, onAddressChange }: LocationCaptureProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [addressError, setAddressError] = useState<string | null>(null);
   const [addressLoading, setAddressLoading] = useState(false);
-  const [hasAttemptedGeocode, setHasAttemptedGeocode] = useState(false);
 
-  const reverseGeocode = useCallback(async (lat: number, lng: number, showError = true) => {
+  const reverseGeocode = async (lat: number, lng: number) => {
     setAddressLoading(true);
-    setAddressError(null);
     try {
       const response = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`,
@@ -838,41 +976,18 @@ function LocationCapture({ latitude, longitude, onLocationChange, onAddressChang
           pincode,
           country
         });
-        setAddressError(null); // Clear error on success
-      } else if (!address) {
-        throw new Error('No address data found');
       }
     } catch (err) {
       console.error('Reverse geocoding failed:', err);
-      if (showError) {
-        setAddressError('Could not fetch address from location. Please enter manually.');
-      }
+      setError('Could not fetch address from location. Please enter manually.');
     } finally {
       setAddressLoading(false);
     }
-  }, [onAddressChange]);
-
-  // Auto-reverse geocode when lat/long is available but we haven't attempted yet
-  useEffect(() => {
-    if (latitude != null && longitude != null && !hasAttemptedGeocode && onAddressChange) {
-      setHasAttemptedGeocode(true);
-      reverseGeocode(latitude, longitude, false); // Don't show error on initial attempt
-    }
-  }, [latitude, longitude, hasAttemptedGeocode, onAddressChange, reverseGeocode]);
-
-  // Reset geocode attempt flag when location changes
-  useEffect(() => {
-    if (latitude == null && longitude == null) {
-      setHasAttemptedGeocode(false);
-      setAddressError(null);
-    }
-  }, [latitude, longitude]);
+  };
 
   const captureLocation = () => {
     setLoading(true);
     setError(null);
-    setAddressError(null);
-    setHasAttemptedGeocode(false);
 
     if (!navigator.geolocation) {
       setError('Geolocation is not supported by your browser');
@@ -887,8 +1002,8 @@ function LocationCapture({ latitude, longitude, onLocationChange, onAddressChang
         
         onLocationChange(lat, lng);
         
-        // Fetch address from coordinates - always attempt even if address is filled
-        await reverseGeocode(lat, lng, true);
+        // Fetch address from coordinates
+        await reverseGeocode(lat, lng);
         
         setLoading(false);
       },
@@ -919,8 +1034,6 @@ function LocationCapture({ latitude, longitude, onLocationChange, onAddressChang
   const clearLocation = () => {
     onLocationChange(null, null);
     setError(null);
-    setAddressError(null);
-    setHasAttemptedGeocode(false);
   };
 
   return (
@@ -976,18 +1089,18 @@ function LocationCapture({ latitude, longitude, onLocationChange, onAddressChang
           <button
             type="button"
             onClick={captureLocation}
-            disabled={loading || addressLoading}
+            disabled={loading}
             className="mt-3 w-full text-sm btn-secondary flex items-center justify-center gap-2"
           >
-            {(loading || addressLoading) ? (
+            {loading ? (
               <>
                 <LoadingSpinner size="sm" />
-                <span>Capturing Location & Address...</span>
+                <span>Updating Location & Address...</span>
               </>
             ) : (
               <>
                 <Search className="h-4 w-4" />
-                <span>Capture My Location</span>
+                <span>Recapture Location</span>
               </>
             )}
           </button>
@@ -1006,24 +1119,6 @@ function LocationCapture({ latitude, longitude, onLocationChange, onAddressChang
       {error && (
         <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
           <p className="text-sm text-destructive">{error}</p>
-        </div>
-      )}
-
-      {addressError && (
-        <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-500/50 rounded-lg">
-          <div className="flex items-start justify-between gap-2">
-            <p className="text-sm text-yellow-600 dark:text-yellow-400">{addressError}</p>
-            {latitude != null && longitude != null && onAddressChange && (
-              <button
-                type="button"
-                onClick={() => reverseGeocode(latitude, longitude, true)}
-                disabled={addressLoading}
-                className="text-xs text-yellow-600 dark:text-yellow-400 hover:text-yellow-700 dark:hover:text-yellow-300 underline"
-              >
-                Retry
-              </button>
-            )}
-          </div>
         </div>
       )}
 
