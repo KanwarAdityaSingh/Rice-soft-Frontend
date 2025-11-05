@@ -99,7 +99,8 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
     // Step 1 validations
     if (!formData.company_name) newErrors.company_name = 'Business name required';
     if (!formData.contact_person) newErrors.contact_person = 'Contact person required';
-    if (!validateEmail(formData.email)) newErrors.email = 'Valid email required';
+    // Email is optional, but if provided, it must be valid
+    if (formData.email && !validateEmail(formData.email)) newErrors.email = 'Valid email required';
     
     // Step 2 validations (Address is required)
     if (!formData.address?.street?.trim()) newErrors.street = 'Street is required';

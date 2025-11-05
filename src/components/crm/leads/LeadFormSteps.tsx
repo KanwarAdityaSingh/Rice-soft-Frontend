@@ -138,7 +138,7 @@ export function LeadFormSteps({
           </div>
 
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Email *</label>
+            <label className="text-sm font-medium mb-1.5 block">Email</label>
             <input
               type="email"
               value={formData.email}
