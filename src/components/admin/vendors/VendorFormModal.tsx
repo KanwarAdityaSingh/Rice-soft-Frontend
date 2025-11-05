@@ -303,6 +303,11 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
             <form onSubmit={(e) => { e.preventDefault(); handleSubmit(e); }} className="space-y-4">
               {step === 1 && (
                 <div className="space-y-4">
+                  <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 mb-2">
+                    <p className="text-sm text-primary/90">
+                      <span className="font-medium">Note:</span> One of the fields (either GST Number or PAN Number) is mandatory.
+                    </p>
+                  </div>
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">GST Number</label>
                     <div className="flex gap-2">

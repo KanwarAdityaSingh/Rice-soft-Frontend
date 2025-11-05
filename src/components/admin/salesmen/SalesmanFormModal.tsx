@@ -26,7 +26,8 @@ export function SalesmanFormModal({ open, onOpenChange }: SalesmanFormModalProps
     const newErrors: Record<string, string> = {};
 
     if (!formData.name) newErrors.name = 'Name is required';
-    if (!validateEmail(formData.email)) newErrors.email = 'Invalid email';
+    // Email is optional, but if provided, must be valid
+    if (formData.email && !validateEmail(formData.email)) newErrors.email = 'Invalid email';
     if (!formData.phone) newErrors.phone = 'Phone is required';
 
     if (Object.keys(newErrors).length > 0) {
@@ -89,7 +90,7 @@ export function SalesmanFormModal({ open, onOpenChange }: SalesmanFormModalProps
               </div>
 
               <div>
-                <label className="text-sm font-medium mb-1.5 block">Email *</label>
+                <label className="text-sm font-medium mb-1.5 block">Email</label>
                 <input
                   type="email"
                   value={formData.email}
