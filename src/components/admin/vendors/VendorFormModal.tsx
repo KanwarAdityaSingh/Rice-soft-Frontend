@@ -59,19 +59,60 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
     
     try {
       const response = await vendorsAPI.lookupGST(formData.business_details.gst_number);
-      const mapped = response.data.mapped_data;
+      
+      // The API service returns response.data, which is { gst_data: {...}, mapped_data: {...} }
+      const mapped = response.mapped_data;
+      
+      // Populate business name if available
+      const businessName = mapped?.business_name || formData.business_name;
+      
+      // Populate address fields (only fill non-empty values)
+      const addressUpdate: any = { ...formData.address };
+      if (mapped?.address) {
+        if (mapped.address.street) addressUpdate.street = mapped.address.street;
+        if (mapped.address.city) addressUpdate.city = mapped.address.city;
+        if (mapped.address.state) addressUpdate.state = mapped.address.state;
+        if (mapped.address.pincode) addressUpdate.pincode = mapped.address.pincode;
+        if (mapped.address.country) addressUpdate.country = mapped.address.country;
+      }
+      
+      // Update business details
+      const businessDetailsUpdate: any = {
+        ...formData.business_details,
+      };
+      
+      // Set GST number if available
+      if (mapped?.business_details?.gst_number) {
+        businessDetailsUpdate.gst_number = mapped.business_details.gst_number;
+      }
+      
+      // Set PAN number if available
+      if (mapped?.business_details?.pan_number) {
+        businessDetailsUpdate.pan_number = mapped.business_details.pan_number;
+      }
+      
+      // Set registration number if available
+      if (mapped?.business_details?.registration_number) {
+        businessDetailsUpdate.registration_number = mapped.business_details.registration_number;
+      }
+      
+      // Set business type if available
+      if (mapped?.business_details?.business_type) {
+        businessDetailsUpdate.business_type = mapped.business_details.business_type;
+      }
       
       setFormData({
         ...formData,
-        business_name: mapped.business_name || formData.business_name,
-        address: { ...formData.address, ...mapped.address },
-        business_details: {
-          ...formData.business_details,
-          ...mapped.business_details,
-        },
+        business_name: businessName,
+        address: addressUpdate,
+        business_details: businessDetailsUpdate,
       });
+      
+      // Clear any previous errors
+      setErrors({ ...errors, gst_number: '' });
     } catch (error: any) {
-      setErrors({ ...errors, gst_number: 'Failed to lookup GST details' });
+      console.error('GST lookup error:', error);
+      setErrors({ ...errors, gst_number: error?.message || 'Failed to lookup GST details' });
     } finally {
       setLookupLoading(false);
     }
@@ -93,19 +134,57 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
     
     try {
       const response = await vendorsAPI.lookupPAN(formData.business_details.pan_number);
-      const mapped = (response as any).data.mapped_data;
+      
+      // The API service returns response.data, which is { pan_data: {...}, mapped_data: {...} }
+      const mapped = response.mapped_data;
+      const panData = response.pan_data;
+      
+      // Populate business name if available
+      const businessName = mapped?.business_name || formData.business_name;
+      
+      // Populate contact person if PAN is for a person (individual)
+      const contactPerson = panData?.category === 'person' && panData?.name 
+        ? panData.name 
+        : formData.contact_person;
+      
+      // Populate address fields (only fill non-empty values)
+      const addressUpdate: any = { ...formData.address };
+      if (mapped?.address) {
+        if (mapped.address.street) addressUpdate.street = mapped.address.street;
+        if (mapped.address.city) addressUpdate.city = mapped.address.city;
+        if (mapped.address.state) addressUpdate.state = mapped.address.state;
+        if (mapped.address.pincode) addressUpdate.pincode = mapped.address.pincode;
+        if (mapped.address.country) addressUpdate.country = mapped.address.country;
+      }
+      
+      // Update business details
+      const businessDetailsUpdate: any = {
+        ...formData.business_details,
+      };
+      
+      // Ensure PAN number is set
+      if (mapped?.business_details?.pan_number) {
+        businessDetailsUpdate.pan_number = mapped.business_details.pan_number;
+      }
+      
+      // Set business type if available
+      if (mapped?.business_details?.business_type) {
+        businessDetailsUpdate.business_type = mapped.business_details.business_type;
+      }
       
       setFormData({
         ...formData,
-        business_name: mapped.business_name || formData.business_name,
-        address: { ...formData.address, ...mapped.address },
-        business_details: {
-          ...formData.business_details,
-          ...mapped.business_details,
-        },
+        business_name: businessName,
+        contact_person: contactPerson,
+        address: addressUpdate,
+        business_details: businessDetailsUpdate,
       });
+      
+      // Clear any previous errors
+      setErrors({ ...errors, pan_number: '' });
     } catch (error: any) {
-      setErrors({ ...errors, pan_number: 'Failed to lookup PAN details' });
+      console.error('PAN lookup error:', error);
+      setErrors({ ...errors, pan_number: error?.message || 'Failed to lookup PAN details' });
     } finally {
       setLookupLoading(false);
     }
@@ -116,7 +195,8 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
 
     if (!formData.business_name) newErrors.business_name = 'Business name required';
     if (!formData.contact_person) newErrors.contact_person = 'Contact person required';
-    if (!validateEmail(formData.email)) newErrors.email = 'Valid email required';
+    // Email is optional, but if provided, must be valid
+    if (formData.email && !validateEmail(formData.email)) newErrors.email = 'Valid email required';
     if (!formData.phone) newErrors.phone = 'Phone required';
     if (!formData.address.street) newErrors.street = 'Street required';
     if (!formData.address.city) newErrors.city = 'City required';
@@ -129,12 +209,10 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       // Navigate to step with errors
-      if (newErrors.business_name || newErrors.contact_person || newErrors.email || newErrors.phone) {
+      if (newErrors.business_name || newErrors.contact_person || newErrors.email || newErrors.phone || newErrors.gst_number || newErrors.pan_number) {
         setStep(1);
       } else if (newErrors.street || newErrors.city || newErrors.state || newErrors.pincode) {
         setStep(2);
-      } else if (newErrors.gst_number) {
-        setStep(3);
       }
       return false;
     }
@@ -226,6 +304,40 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
               {step === 1 && (
                 <div className="space-y-4">
                   <div>
+                    <label className="text-sm font-medium mb-1.5 block">GST Number</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={formData.business_details.gst_number}
+                        onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, gst_number: e.target.value.toUpperCase() } })}
+                        className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                        placeholder="27ABCDE1234F1Z5"
+                      />
+                      <button type="button" onClick={handleGSTLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
+                        {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    {errors.gst_number && <p className="mt-1 text-xs text-red-600">{errors.gst_number}</p>}
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">PAN Number</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={formData.business_details.pan_number}
+                        onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, pan_number: e.target.value.toUpperCase() } })}
+                        className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                        placeholder="ABCDE1234F"
+                      />
+                      <button type="button" onClick={handlePANLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
+                        {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    {errors.pan_number && <p className="mt-1 text-xs text-red-600">{errors.pan_number}</p>}
+                  </div>
+
+                  <div>
                     <label className="text-sm font-medium mb-1.5 block">Business Name *</label>
                     <input
                       type="text"
@@ -249,7 +361,7 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
                     </div>
 
                     <div>
-                      <label className="text-sm font-medium mb-1.5 block">Email *</label>
+                      <label className="text-sm font-medium mb-1.5 block">Email</label>
                       <input
                         type="email"
                         value={formData.email}
@@ -366,40 +478,6 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
 
               {step === 3 && (
                 <div className="space-y-4">
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">GST Number</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={formData.business_details.gst_number}
-                        onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, gst_number: e.target.value.toUpperCase() } })}
-                        className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                        placeholder="27ABCDE1234F1Z5"
-                      />
-                      <button type="button" onClick={handleGSTLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
-                        {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
-                      </button>
-                    </div>
-                    {errors.gst_number && <p className="mt-1 text-xs text-red-600">{errors.gst_number}</p>}
-                  </div>
-
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">PAN Number</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={formData.business_details.pan_number}
-                        onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, pan_number: e.target.value.toUpperCase() } })}
-                        className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                        placeholder="ABCDE1234F"
-                      />
-                      <button type="button" onClick={handlePANLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
-                        {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
-                      </button>
-                    </div>
-                    {errors.pan_number && <p className="mt-1 text-xs text-red-600">{errors.pan_number}</p>}
-                  </div>
-
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Registration Number</label>
                     <input

@@ -174,6 +174,42 @@ export interface GSTLookupResponse {
   };
 }
 
+export interface GSTLookupResponseData {
+  gst_data: {
+    gstin: string;
+    legalName: string;
+    tradeName: string;
+    registrationDate: string;
+    constitutionOfBusiness: string;
+    taxpayerType: string;
+    gstinStatus: string;
+    lastUpdateDate: string;
+    principalPlaceOfBusiness: {
+      buildingName?: string;
+      buildingNumber?: string;
+      floorNumber?: string;
+      street: string;
+      location: string;
+      district: string;
+      city: string;
+      state: string;
+      pincode: string;
+      latitude?: string;
+      longitude?: string;
+    };
+    additionalPlacesOfBusiness?: any[];
+    filingStatus?: any[];
+  };
+  mapped_data: {
+    business_name: string;
+    legal_name?: string;
+    address: VendorAddress;
+    business_details: Partial<VendorBusinessDetails>;
+    registration_date?: string;
+    status?: string;
+  };
+}
+
 export interface PANLookupResponse {
   success: boolean;
   data: {
@@ -183,6 +219,22 @@ export interface PANLookupResponse {
       address: VendorAddress;
       business_details: Partial<VendorBusinessDetails>;
     };
+  };
+}
+
+export interface PANLookupResponseData {
+  pan_data: {
+    pan: string;
+    name: string;
+    category: string;
+    status: string;
+    lastUpdated?: string;
+  };
+  mapped_data: {
+    business_name: string;
+    address: VendorAddress;
+    business_details: Partial<VendorBusinessDetails>;
+    status?: string;
   };
 }
 

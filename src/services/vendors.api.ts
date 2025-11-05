@@ -1,5 +1,5 @@
 import { apiService } from './api';
-import type { Vendor, CreateVendorRequest, UpdateVendorRequest, GSTLookupResponse } from '../types/entities';
+import type { Vendor, CreateVendorRequest, UpdateVendorRequest, GSTLookupResponseData, PANLookupResponseData } from '../types/entities';
 
 export const vendorsAPI = {
   // Get all vendors
@@ -34,12 +34,12 @@ export const vendorsAPI = {
 
   // Lookup GST
   lookupGST: (gstNumber: string) => {
-    return apiService.get<GSTLookupResponse>(`/vendors/lookupGST?gst_number=${gstNumber}`);
+    return apiService.get<GSTLookupResponseData>(`/vendors/lookupGST?gst_number=${gstNumber}`);
   },
 
   // Lookup PAN
   lookupPAN: (panNumber: string) => {
-    return apiService.get(`/vendors/lookupPAN?pan_number=${panNumber}`);
+    return apiService.get<PANLookupResponseData>(`/vendors/lookupPAN?pan_number=${panNumber}`);
   },
 
   // Quick create from GST
