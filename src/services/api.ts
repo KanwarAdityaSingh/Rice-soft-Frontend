@@ -48,9 +48,15 @@ class ApiError extends Error {
 
 class ApiService {
   private baseURL: string;
+  private logoutCallback: (() => void) | null = null;
 
   constructor(baseURL: string = API_BASE_URL) {
     this.baseURL = baseURL;
+  }
+
+  // Allow AuthProvider to register logout callback
+  setLogoutCallback(callback: () => void) {
+    this.logoutCallback = callback;
   }
 
   private async request<T>(
@@ -81,6 +87,32 @@ class ApiService {
       const data = await response.json();
 
       if (!response.ok) {
+        // Handle 401 Unauthorized - session expired or invalid token
+        // Only trigger logout if this is an authenticated request (not login endpoint)
+        if (response.status === 401 && endpoint !== '/auth/loginUser') {
+          // Clear auth data from localStorage
+          localStorage.removeItem('auth:token');
+          localStorage.removeItem('auth:user');
+          localStorage.removeItem('auth:permissions');
+          
+          // Call logout callback if registered (to update React state)
+          if (this.logoutCallback) {
+            this.logoutCallback();
+          }
+          
+          // Redirect to login page (respecting basename if configured)
+          const basename = (import.meta as any).env?.BASE_URL 
+            ? (import.meta as any).env.BASE_URL.replace(/\/$/, '') 
+            : '/riceops';
+          const loginPath = `${basename}/login`;
+          const currentPath = window.location.pathname;
+          
+          // Only redirect if not already on login page
+          if (!currentPath.endsWith('/login') && currentPath !== loginPath) {
+            window.location.href = loginPath;
+          }
+        }
+        
         console.error('API Error:', { url, status: response.status, data });
         throw new ApiError(
           data.message || data.error || 'An error occurred',

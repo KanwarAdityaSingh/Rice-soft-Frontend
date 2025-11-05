@@ -36,6 +36,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  const logout = useCallback(() => {
+    setUser(null)
+    localStorage.removeItem('auth:token')
+    localStorage.removeItem('auth:user')
+    localStorage.removeItem('auth:permissions')
+  }, [])
+
+  useEffect(() => {
+    // Register logout callback with API service for 401 handling
+    apiService.setLogoutCallback(logout)
+  }, [logout])
+
   useEffect(() => {
     // Initialize auth from storage or fetch profile with token
     const init = async () => {
@@ -106,13 +118,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false)
     }
-  }, [])
-
-  const logout = useCallback(() => {
-    setUser(null)
-    localStorage.removeItem('auth:token')
-    localStorage.removeItem('auth:user')
-    localStorage.removeItem('auth:permissions')
   }, [])
 
   const value = useMemo(() => ({ 
