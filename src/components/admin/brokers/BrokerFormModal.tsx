@@ -7,6 +7,7 @@ import { brokersAPI } from '../../../services/brokers.api';
 import { validateEmail, validatePAN, validateAadhaar } from '../../../utils/validation';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { BrokerPreviewDialog } from './BrokerPreviewDialog';
+import { AlertDialog } from '../../shared/AlertDialog';
 import type { CreateBrokerRequest } from '../../../types/entities';
 
 interface BrokerFormModalProps {
@@ -47,6 +48,10 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
   const [lookupLoading, setLookupLoading] = useState(false);
   const [step, setStep] = useState(1);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
+  const [alertTitle, setAlertTitle] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -245,9 +250,26 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       });
       setErrors({});
       setStep(1);
-    } catch (error) {
-      // Error handled by hook
-      throw error;
+      // Show success alert
+      setAlertType('success');
+      setAlertTitle('Broker Created Successfully');
+      setAlertMessage('The broker has been created successfully.');
+      setAlertOpen(true);
+      // Close the form modal after success
+      onOpenChange(false);
+    } catch (error: any) {
+      // Show error alert with API response
+      setAlertType('error');
+      setAlertTitle('Failed to Create Broker');
+      // Extract error message from various possible locations
+      const errorMessage = 
+        error?.message || 
+        error?.data?.message || 
+        error?.response?.data?.message || 
+        'An error occurred while creating the broker. Please try again.';
+      setAlertMessage(errorMessage);
+      setAlertOpen(true);
+      setPreviewOpen(false);
     } finally {
       setLoading(false);
     }
@@ -539,6 +561,16 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         }}
         formData={formData}
         onConfirm={handlePreviewConfirm}
+      />
+
+      {/* Alert Dialog for API Response */}
+      <AlertDialog
+        open={alertOpen}
+        onOpenChange={setAlertOpen}
+        type={alertType}
+        title={alertTitle}
+        message={alertMessage}
+        buttonText="OK"
       />
     </Dialog.Root>
   );
