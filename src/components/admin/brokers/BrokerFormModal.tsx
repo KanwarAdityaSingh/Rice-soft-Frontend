@@ -1,9 +1,11 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState } from 'react';
-import { X } from 'lucide-react';
+import { X, Search } from 'lucide-react';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { useBrokers } from '../../../hooks/useBrokers';
+import { brokersAPI } from '../../../services/brokers.api';
 import { validateEmail, validatePAN, validateAadhaar } from '../../../utils/validation';
+import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { BrokerPreviewDialog } from './BrokerPreviewDialog';
 import type { CreateBrokerRequest } from '../../../types/entities';
 
@@ -42,6 +44,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [lookupLoading, setLookupLoading] = useState(false);
   const [step, setStep] = useState(1);
   const [previewOpen, setPreviewOpen] = useState(false);
 
@@ -72,15 +75,145 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       // Navigate to step with errors
-      if (newErrors.business_name || newErrors.contact_person || newErrors.email || newErrors.phone) {
+      if (newErrors.business_name || newErrors.contact_person || newErrors.email || newErrors.phone || newErrors.pan_number || newErrors.aadhaar_number || newErrors.business_details) {
         setStep(1);
-      } else if (newErrors.pan_number || newErrors.aadhaar_number || newErrors.business_details) {
+      } else if (newErrors.street || newErrors.city || newErrors.state || newErrors.pincode) {
         setStep(2);
       }
       return false;
     }
 
     return true;
+  };
+
+  const handlePANLookup = async () => {
+    if (!formData.business_details.pan_number) {
+      setErrors({ ...errors, pan_number: 'Please enter a PAN number' });
+      return;
+    }
+    
+    if (!validatePAN(formData.business_details.pan_number)) {
+      setErrors({ ...errors, pan_number: 'Invalid PAN format' });
+      return;
+    }
+
+    setLookupLoading(true);
+    setErrors({ ...errors, pan_number: '' });
+    
+    try {
+      const response = await brokersAPI.lookupPAN(formData.business_details.pan_number);
+      
+      // The API service returns response.data, which is { pan_data: {...}, mapped_data: {...} }
+      const mapped = response.mapped_data;
+      const panData = response.pan_data;
+      
+      // Populate business name if available
+      const businessName = mapped?.business_name || formData.business_name;
+      
+      // Populate contact person if PAN is for a person (individual)
+      const contactPerson = panData?.category === 'person' && panData?.name 
+        ? panData.name 
+        : formData.contact_person;
+      
+      // Populate address fields (only fill non-empty values)
+      const addressUpdate: any = { ...formData.address };
+      if (mapped?.address) {
+        if (mapped.address.street) addressUpdate.street = mapped.address.street;
+        if (mapped.address.city) addressUpdate.city = mapped.address.city;
+        if (mapped.address.state) addressUpdate.state = mapped.address.state;
+        if (mapped.address.pincode) addressUpdate.pincode = mapped.address.pincode;
+        if (mapped.address.country) addressUpdate.country = mapped.address.country;
+      }
+      
+      // Update business details
+      const businessDetailsUpdate: any = {
+        ...formData.business_details,
+      };
+      
+      // Ensure PAN number is set
+      if (mapped?.business_details?.pan_number) {
+        businessDetailsUpdate.pan_number = mapped.business_details.pan_number;
+      }
+      
+      // Set business type if available
+      if (mapped?.business_details?.business_type) {
+        businessDetailsUpdate.business_type = mapped.business_details.business_type;
+      }
+      
+      setFormData({
+        ...formData,
+        business_name: businessName,
+        contact_person: contactPerson,
+        address: addressUpdate,
+        business_details: businessDetailsUpdate,
+      });
+      
+      // Clear any previous errors
+      setErrors({ ...errors, pan_number: '' });
+    } catch (error: any) {
+      console.error('PAN lookup error:', error);
+      setErrors({ ...errors, pan_number: error?.message || 'Failed to lookup PAN details' });
+    } finally {
+      setLookupLoading(false);
+    }
+  };
+
+  const handleAadhaarLookup = async () => {
+    if (!formData.business_details.aadhaar_number) {
+      setErrors({ ...errors, aadhaar_number: 'Please enter an Aadhaar number' });
+      return;
+    }
+    
+    if (!validateAadhaar(formData.business_details.aadhaar_number)) {
+      setErrors({ ...errors, aadhaar_number: 'Invalid Aadhaar format' });
+      return;
+    }
+
+    setLookupLoading(true);
+    setErrors({ ...errors, aadhaar_number: '' });
+    
+    try {
+      const response = await brokersAPI.lookupAadhaar(formData.business_details.aadhaar_number);
+      
+      // Aadhaar lookup might return different structure - check if it has mapped_data
+      // For now, we'll handle it similar to PAN if the structure is similar
+      // If the API only returns validation, we'll just clear the error
+      if (response && typeof response === 'object' && 'mapped_data' in response) {
+        const mapped = (response as any).mapped_data;
+        const aadhaarData = (response as any).aadhaar_data;
+        
+        // Populate business name if available
+        const businessName = mapped?.business_name || formData.business_name;
+        
+        // Populate contact person if available
+        const contactPerson = aadhaarData?.name || mapped?.contact_person || formData.contact_person;
+        
+        // Populate address fields (only fill non-empty values)
+        const addressUpdate: any = { ...formData.address };
+        if (mapped?.address) {
+          if (mapped.address.street) addressUpdate.street = mapped.address.street;
+          if (mapped.address.city) addressUpdate.city = mapped.address.city;
+          if (mapped.address.state) addressUpdate.state = mapped.address.state;
+          if (mapped.address.pincode) addressUpdate.pincode = mapped.address.pincode;
+          if (mapped.address.country) addressUpdate.country = mapped.address.country;
+        }
+        
+        setFormData({
+          ...formData,
+          business_name: businessName,
+          contact_person: contactPerson,
+          address: addressUpdate,
+        });
+      }
+      
+      // Clear any previous errors
+      setErrors({ ...errors, aadhaar_number: '' });
+    } catch (error: any) {
+      console.error('Aadhaar lookup error:', error);
+      setErrors({ ...errors, aadhaar_number: error?.message || 'Failed to lookup Aadhaar details' });
+    } finally {
+      setLookupLoading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -168,6 +301,47 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
               {/* Step 1: Basic Info */}
               {step === 1 && (
                 <div className="space-y-4">
+                  <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 mb-2">
+                    <p className="text-sm text-primary/90">
+                      <span className="font-medium">Note:</span> One of the fields (either PAN Number or Aadhaar Number) is mandatory.
+                    </p>
+                  </div>
+                  
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">PAN Number</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={formData.business_details.pan_number}
+                        onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, pan_number: e.target.value.toUpperCase() } })}
+                        className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                        placeholder="ABCDE1234F"
+                      />
+                      <button type="button" onClick={handlePANLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
+                        {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    {errors.pan_number && <p className="mt-1 text-xs text-red-600">{errors.pan_number}</p>}
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Aadhaar Number</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={formData.business_details.aadhaar_number}
+                        onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, aadhaar_number: e.target.value } })}
+                        className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                        placeholder="234567890123"
+                        maxLength={12}
+                      />
+                      <button type="button" onClick={handleAadhaarLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
+                        {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    {errors.aadhaar_number && <p className="mt-1 text-xs text-red-600">{errors.aadhaar_number}</p>}
+                  </div>
+
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Business Name *</label>
                     <input
@@ -268,33 +442,6 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                         onChange={(e) => setFormData({ ...formData, address: { ...formData.address, state: e.target.value } })}
                         className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                       />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">PAN Number</label>
-                      <input
-                        type="text"
-                        value={formData.business_details.pan_number}
-                        onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, pan_number: e.target.value.toUpperCase() } })}
-                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                        placeholder="ABCDE1234F"
-                      />
-                      {errors.pan_number && <p className="mt-1 text-xs text-red-600">{errors.pan_number}</p>}
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">Aadhaar Number</label>
-                      <input
-                        type="text"
-                        value={formData.business_details.aadhaar_number}
-                        onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, aadhaar_number: e.target.value } })}
-                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                        placeholder="234567890123"
-                        maxLength={12}
-                      />
-                      {errors.aadhaar_number && <p className="mt-1 text-xs text-red-600">{errors.aadhaar_number}</p>}
                     </div>
                   </div>
 

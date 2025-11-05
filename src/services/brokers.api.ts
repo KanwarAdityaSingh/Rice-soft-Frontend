@@ -1,5 +1,5 @@
 import { apiService } from './api';
-import type { Broker, CreateBrokerRequest, UpdateBrokerRequest } from '../types/entities';
+import type { Broker, CreateBrokerRequest, UpdateBrokerRequest, PANLookupResponseData } from '../types/entities';
 
 export const brokersAPI = {
   // Get all brokers
@@ -34,7 +34,7 @@ export const brokersAPI = {
 
   // Lookup PAN
   lookupPAN: (panNumber: string) => {
-    return apiService.get(`/brokers/lookupPAN?pan_number=${panNumber}`);
+    return apiService.get<PANLookupResponseData>(`/brokers/lookupPAN?pan_number=${panNumber}`);
   },
 
   // Lookup Aadhaar
