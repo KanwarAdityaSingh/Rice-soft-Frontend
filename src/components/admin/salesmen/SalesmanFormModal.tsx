@@ -78,6 +78,11 @@ export function SalesmanFormModal({ open, onOpenChange }: SalesmanFormModalProps
             </div>
 
             <form onSubmit={(e) => { e.preventDefault(); handleSubmit(e); }} className="space-y-4">
+              <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 mb-2">
+                <p className="text-sm text-primary/90">
+                  <span className="font-medium">Note:</span> The user will be created with password: <span className="font-mono font-semibold">defaultPassword123</span>
+                </p>
+              </div>
               <div>
                 <label className="text-sm font-medium mb-1.5 block">Name *</label>
                 <input
