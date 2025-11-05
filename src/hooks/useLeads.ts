@@ -27,7 +27,8 @@ export function useLeads(filters?: LeadFilters) {
   const createLead = async (data: CreateLeadRequest) => {
     try {
       const newLead = await leadsAPI.createLead(data);
-      setLeads([...leads, newLead]);
+      // Refetch all leads to ensure we have the latest data from the server
+      await fetchLeads();
       return newLead;
     } catch (err: any) {
       throw err;

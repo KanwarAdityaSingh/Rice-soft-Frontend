@@ -85,6 +85,7 @@ export default function LeadsPage() {
         setEditingLead(null);
       } else {
         await createLead(data);
+        // refetch is already called inside createLead, but we can call it again to be safe
         await refetch();
       }
       setModalOpen(false);

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { ArrowRight, ArrowLeft, Search } from 'lucide-react';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
@@ -798,10 +798,13 @@ interface LocationCaptureProps {
 function LocationCapture({ latitude, longitude, onLocationChange, onAddressChange }: LocationCaptureProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [addressError, setAddressError] = useState<string | null>(null);
   const [addressLoading, setAddressLoading] = useState(false);
+  const [hasAttemptedGeocode, setHasAttemptedGeocode] = useState(false);
 
-  const reverseGeocode = async (lat: number, lng: number) => {
+  const reverseGeocode = useCallback(async (lat: number, lng: number, showError = true) => {
     setAddressLoading(true);
+    setAddressError(null);
     try {
       const response = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`,
@@ -835,18 +838,41 @@ function LocationCapture({ latitude, longitude, onLocationChange, onAddressChang
           pincode,
           country
         });
+        setAddressError(null); // Clear error on success
+      } else if (!address) {
+        throw new Error('No address data found');
       }
     } catch (err) {
       console.error('Reverse geocoding failed:', err);
-      setError('Could not fetch address from location. Please enter manually.');
+      if (showError) {
+        setAddressError('Could not fetch address from location. Please enter manually.');
+      }
     } finally {
       setAddressLoading(false);
     }
-  };
+  }, [onAddressChange]);
+
+  // Auto-reverse geocode when lat/long is available but we haven't attempted yet
+  useEffect(() => {
+    if (latitude != null && longitude != null && !hasAttemptedGeocode && onAddressChange) {
+      setHasAttemptedGeocode(true);
+      reverseGeocode(latitude, longitude, false); // Don't show error on initial attempt
+    }
+  }, [latitude, longitude, hasAttemptedGeocode, onAddressChange, reverseGeocode]);
+
+  // Reset geocode attempt flag when location changes
+  useEffect(() => {
+    if (latitude == null && longitude == null) {
+      setHasAttemptedGeocode(false);
+      setAddressError(null);
+    }
+  }, [latitude, longitude]);
 
   const captureLocation = () => {
     setLoading(true);
     setError(null);
+    setAddressError(null);
+    setHasAttemptedGeocode(false);
 
     if (!navigator.geolocation) {
       setError('Geolocation is not supported by your browser');
@@ -861,8 +887,8 @@ function LocationCapture({ latitude, longitude, onLocationChange, onAddressChang
         
         onLocationChange(lat, lng);
         
-        // Fetch address from coordinates
-        await reverseGeocode(lat, lng);
+        // Fetch address from coordinates - always attempt even if address is filled
+        await reverseGeocode(lat, lng, true);
         
         setLoading(false);
       },
@@ -893,6 +919,8 @@ function LocationCapture({ latitude, longitude, onLocationChange, onAddressChang
   const clearLocation = () => {
     onLocationChange(null, null);
     setError(null);
+    setAddressError(null);
+    setHasAttemptedGeocode(false);
   };
 
   return (
@@ -948,18 +976,18 @@ function LocationCapture({ latitude, longitude, onLocationChange, onAddressChang
           <button
             type="button"
             onClick={captureLocation}
-            disabled={loading}
+            disabled={loading || addressLoading}
             className="mt-3 w-full text-sm btn-secondary flex items-center justify-center gap-2"
           >
-            {loading ? (
+            {(loading || addressLoading) ? (
               <>
                 <LoadingSpinner size="sm" />
-                <span>Updating Location & Address...</span>
+                <span>Capturing Location & Address...</span>
               </>
             ) : (
               <>
                 <Search className="h-4 w-4" />
-                <span>Recapture Location</span>
+                <span>Capture My Location</span>
               </>
             )}
           </button>
@@ -978,6 +1006,24 @@ function LocationCapture({ latitude, longitude, onLocationChange, onAddressChang
       {error && (
         <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
           <p className="text-sm text-destructive">{error}</p>
+        </div>
+      )}
+
+      {addressError && (
+        <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-500/50 rounded-lg">
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-sm text-yellow-600 dark:text-yellow-400">{addressError}</p>
+            {latitude != null && longitude != null && onAddressChange && (
+              <button
+                type="button"
+                onClick={() => reverseGeocode(latitude, longitude, true)}
+                disabled={addressLoading}
+                className="text-xs text-yellow-600 dark:text-yellow-400 hover:text-yellow-700 dark:hover:text-yellow-300 underline"
+              >
+                Retry
+              </button>
+            )}
+          </div>
         </div>
       )}
 
