@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { useRiceCodes } from '../../../hooks/useRiceCodes';
 import { type CreateRiceCodeRequest, type UpdateRiceCodeRequest } from '../../../services/riceCodes.api';
+import { AlertDialog } from '../../shared/AlertDialog';
 import type { RiceCode } from '../../../types/entities';
 
 interface RiceCodeFormModalProps {
@@ -24,6 +25,10 @@ export function RiceCodeFormModal({ open, onOpenChange, riceCode, onCreate, onUp
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
+  const [alertTitle, setAlertTitle] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
 
   useEffect(() => {
     if (riceCode) {
@@ -55,14 +60,35 @@ export function RiceCodeFormModal({ open, onOpenChange, riceCode, onCreate, onUp
     try {
       if (riceCode) {
         await updateRiceCode(riceCode.rice_code_id, formData as UpdateRiceCodeRequest);
+        // Show success alert
+        setAlertType('success');
+        setAlertTitle('Rice Code Updated Successfully');
+        setAlertMessage('The rice code has been updated successfully.');
+        setAlertOpen(true);
+        onOpenChange(false);
       } else {
         await createRiceCode(formData);
+        // Show success alert
+        setAlertType('success');
+        setAlertTitle('Rice Code Created Successfully');
+        setAlertMessage('The rice code has been created successfully.');
+        setAlertOpen(true);
+        onOpenChange(false);
       }
-      onOpenChange(false);
       setFormData({ rice_code_name: '' });
       setErrors({});
     } catch (error: any) {
-      setErrors({ submit: error.message || 'Failed to save rice code' });
+      // Show error alert with API response
+      setAlertType('error');
+      setAlertTitle(riceCode ? 'Failed to Update Rice Code' : 'Failed to Create Rice Code');
+      // Extract error message from various possible locations
+      const errorMessage = 
+        error?.message || 
+        error?.data?.message || 
+        error?.response?.data?.message || 
+        (riceCode ? 'An error occurred while updating the rice code. Please try again.' : 'An error occurred while creating the rice code. Please try again.');
+      setAlertMessage(errorMessage);
+      setAlertOpen(true);
     } finally {
       setLoading(false);
     }
@@ -99,8 +125,6 @@ export function RiceCodeFormModal({ open, onOpenChange, riceCode, onCreate, onUp
                 {errors.rice_code_name && <p className="mt-1 text-xs text-red-600">{errors.rice_code_name}</p>}
               </div>
 
-              {errors.submit && <p className="text-xs text-red-600">{errors.submit}</p>}
-
               <div className="flex gap-3 pt-4">
                 <button
                   type="button"
@@ -117,6 +141,16 @@ export function RiceCodeFormModal({ open, onOpenChange, riceCode, onCreate, onUp
           </div>
         </Dialog.Content>
       </Dialog.Portal>
+
+      {/* Alert Dialog for API Response */}
+      <AlertDialog
+        open={alertOpen}
+        onOpenChange={setAlertOpen}
+        type={alertType}
+        title={alertTitle}
+        message={alertMessage}
+        buttonText="OK"
+      />
     </Dialog.Root>
   );
 }
