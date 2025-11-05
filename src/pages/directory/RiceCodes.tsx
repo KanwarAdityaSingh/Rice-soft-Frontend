@@ -11,7 +11,7 @@ import { RiceTypesModal } from '../../components/admin/rice-codes/RiceTypesModal
 import type { RiceCode } from '../../types/entities'
 
 export default function RiceCodesPage() {
-  const { riceCodes, loading, deleteRiceCode, createRiceCode, updateRiceCode } = useRiceCodes()
+  const { riceCodes, loading, deleteRiceCode, createRiceCode, updateRiceCode, refetch } = useRiceCodes()
   const [searchQuery, setSearchQuery] = useState('')
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -133,6 +133,8 @@ export default function RiceCodesPage() {
           setCreateOpen(open)
           if (!open) {
             setEditRiceCode(null)
+            // Refetch rice codes when modal closes to ensure we have the latest data
+            refetch()
           }
         }}
         riceCode={editRiceCode}

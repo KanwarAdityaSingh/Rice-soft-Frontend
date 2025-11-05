@@ -5,6 +5,7 @@ import { X } from 'lucide-react';
 import { validateEmail } from '../../../utils/validation';
 import { LeadFormSteps } from './LeadFormSteps';
 import { LeadPreviewDialog } from './LeadPreviewDialog';
+import { AlertDialog } from '../../shared/AlertDialog';
 import type { CreateLeadRequest, UpdateLeadRequest, Lead } from '../../../types/entities';
 
 interface LeadFormModalProps {
@@ -21,6 +22,10 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
   const [step, setStep] = useState(1);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
+  const [alertTitle, setAlertTitle] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
   const [formData, setFormData] = useState<CreateLeadRequest>({
     company_name: '',
     contact_person: '',
@@ -167,10 +172,30 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
       
       // Submit the cleaned form data
       await onSave(cleanedFormData);
+      
+      // Show success alert for edit mode
+      if (isEdit) {
+        setAlertType('success');
+        setAlertTitle(mode === 'pre-conversion' ? 'Pre-Conversion Details Updated Successfully' : 'Lead Updated Successfully');
+        setAlertMessage(mode === 'pre-conversion' ? 'The pre-conversion details have been updated successfully.' : 'The lead has been updated successfully.');
+        setAlertOpen(true);
+      }
+      
       onOpenChange(false);
       setErrors({});
-    } catch (error) {
-      // Error handled by parent
+    } catch (error: any) {
+      // Show error alert for edit mode
+      if (isEdit) {
+        setAlertType('error');
+        setAlertTitle(mode === 'pre-conversion' ? 'Failed to Update Pre-Conversion Details' : 'Failed to Update Lead');
+        const errorMessage = 
+          error?.message || 
+          error?.data?.message || 
+          error?.response?.data?.message || 
+          (mode === 'pre-conversion' ? 'An error occurred while updating the pre-conversion details. Please try again.' : 'An error occurred while updating the lead. Please try again.');
+        setAlertMessage(errorMessage);
+        setAlertOpen(true);
+      }
     }
   };
 
@@ -194,10 +219,27 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
       
       // Submit the cleaned form data
       await onSave(cleanedFormData);
+      
+      // Show success alert for create mode
+      setAlertType('success');
+      setAlertTitle('Lead Created Successfully');
+      setAlertMessage('The lead has been created successfully.');
+      setAlertOpen(true);
+      
       setPreviewOpen(false);
       setErrors({});
-    } catch (error) {
-      // Error handled by parent
+    } catch (error: any) {
+      // Show error alert for create mode
+      setAlertType('error');
+      setAlertTitle('Failed to Create Lead');
+      const errorMessage = 
+        error?.message || 
+        error?.data?.message || 
+        error?.response?.data?.message || 
+        'An error occurred while creating the lead. Please try again.';
+      setAlertMessage(errorMessage);
+      setAlertOpen(true);
+      setPreviewOpen(false);
       throw error;
     }
   };
@@ -328,6 +370,16 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
         }}
         formData={formData}
         onConfirm={handlePreviewConfirm}
+      />
+
+      {/* Alert Dialog for API Response */}
+      <AlertDialog
+        open={alertOpen}
+        onOpenChange={setAlertOpen}
+        type={alertType}
+        title={alertTitle}
+        message={alertMessage}
+        buttonText="OK"
       />
     </Dialog.Root>
   );

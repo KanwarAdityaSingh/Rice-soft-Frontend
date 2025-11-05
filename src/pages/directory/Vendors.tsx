@@ -10,7 +10,7 @@ import { useVendors } from '../../hooks/useVendors'
 import { VendorFormModal } from '../../components/admin/vendors/VendorFormModal'
 
 export default function VendorsPage() {
-  const { vendors, loading, deleteVendor } = useVendors()
+  const { vendors, loading, deleteVendor, refetch } = useVendors()
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string | undefined>()
   const [typeFilter, setTypeFilter] = useState<string | undefined>()
@@ -138,7 +138,16 @@ export default function VendorsPage() {
         confirmText="Delete"
       />
 
-      <VendorFormModal open={createOpen} onOpenChange={setCreateOpen} />
+      <VendorFormModal 
+        open={createOpen} 
+        onOpenChange={(open) => {
+          setCreateOpen(open);
+          // Refetch vendors when modal closes to ensure we have the latest data
+          if (!open) {
+            refetch();
+          }
+        }} 
+      />
     </div>
   )
 }

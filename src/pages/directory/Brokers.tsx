@@ -10,7 +10,7 @@ import { useBrokers } from '../../hooks/useBrokers'
 import { BrokerFormModal } from '../../components/admin/brokers/BrokerFormModal'
 
 export default function BrokersPage() {
-  const { brokers, loading, deleteBroker } = useBrokers()
+  const { brokers, loading, deleteBroker, refetch } = useBrokers()
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string | undefined>()
   const [typeFilter, setTypeFilter] = useState<string | undefined>()
@@ -138,7 +138,16 @@ export default function BrokersPage() {
         confirmText="Delete"
       />
 
-      <BrokerFormModal open={createOpen} onOpenChange={setCreateOpen} />
+      <BrokerFormModal 
+        open={createOpen} 
+        onOpenChange={(open) => {
+          setCreateOpen(open);
+          // Refetch brokers when modal closes to ensure we have the latest data
+          if (!open) {
+            refetch();
+          }
+        }} 
+      />
     </div>
   )
 }

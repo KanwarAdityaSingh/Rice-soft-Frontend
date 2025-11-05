@@ -10,7 +10,7 @@ import { useSalesmen } from '../../hooks/useSalesmen'
 import { SalesmanFormModal } from '../../components/admin/salesmen/SalesmanFormModal'
 
 export default function SalesmenPage() {
-  const { salesmen, loading, deleteSalesman } = useSalesmen()
+  const { salesmen, loading, deleteSalesman, refetch } = useSalesmen()
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string | undefined>()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -123,7 +123,16 @@ export default function SalesmenPage() {
         confirmText="Delete"
       />
 
-      <SalesmanFormModal open={createOpen} onOpenChange={setCreateOpen} />
+      <SalesmanFormModal 
+        open={createOpen} 
+        onOpenChange={(open) => {
+          setCreateOpen(open);
+          // Refetch salesmen when modal closes to ensure we have the latest data
+          if (!open) {
+            refetch();
+          }
+        }} 
+      />
     </div>
   )
 }

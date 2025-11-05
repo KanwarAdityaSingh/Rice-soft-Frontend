@@ -6,6 +6,7 @@ import type { Lead } from '../../../types/entities';
 import { useVendors } from '../../../hooks/useVendors';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
+import { AlertDialog } from '../../shared/AlertDialog';
 
 interface ConversionDialogProps {
   open: boolean;
@@ -18,6 +19,10 @@ export function ConversionDialog({ open, onOpenChange, lead, onSuccess }: Conver
   const [mode, setMode] = useState<'automatic' | 'manual'>('automatic');
   const [loading, setLoading] = useState(false);
   const { vendors, loading: vendorsLoading } = useVendors();
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
+  const [alertTitle, setAlertTitle] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
   const [formData, setFormData] = useState({
     vendor_id: '',
     broker_id: '',
@@ -54,10 +59,25 @@ export function ConversionDialog({ open, onOpenChange, lead, onSuccess }: Conver
         });
       }
       
+      // Show success alert
+      setAlertType('success');
+      setAlertTitle('Lead Converted Successfully');
+      setAlertMessage(mode === 'automatic' ? 'The lead has been converted and a new vendor has been created successfully.' : 'The lead has been converted and linked to the selected vendor successfully.');
+      setAlertOpen(true);
+      
       onSuccess();
       onOpenChange(false);
-    } catch (error) {
-      console.error('Conversion failed:', error);
+    } catch (error: any) {
+      // Show error alert with API response
+      setAlertType('error');
+      setAlertTitle('Failed to Convert Lead');
+      const errorMessage = 
+        error?.message || 
+        error?.data?.message || 
+        error?.response?.data?.message || 
+        'An error occurred while converting the lead. Please try again.';
+      setAlertMessage(errorMessage);
+      setAlertOpen(true);
     } finally {
       setLoading(false);
     }
@@ -188,6 +208,16 @@ export function ConversionDialog({ open, onOpenChange, lead, onSuccess }: Conver
           </div>
         </Dialog.Content>
       </Dialog.Portal>
+
+      {/* Alert Dialog for API Response */}
+      <AlertDialog
+        open={alertOpen}
+        onOpenChange={setAlertOpen}
+        type={alertType}
+        title={alertTitle}
+        message={alertMessage}
+        buttonText="OK"
+      />
     </Dialog.Root>
   );
 }
