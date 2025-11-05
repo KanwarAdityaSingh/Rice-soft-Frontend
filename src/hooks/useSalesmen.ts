@@ -29,8 +29,8 @@ export function useSalesmen() {
   const createSalesman = async (data: CreateSalesmanRequest) => {
     try {
       const newSalesman = await salesmenAPI.createSalesman(data);
-      setSalesmen([...salesmen, newSalesman]);
-      // success('Salesman created successfully');
+      // Refetch all salesmen to ensure we have the latest data from the server
+      await fetchSalesmen();
       return newSalesman;
     } catch (err: any) {
       // showError(err.message || 'Failed to create salesman');

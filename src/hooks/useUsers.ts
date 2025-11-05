@@ -27,7 +27,8 @@ export function useUsers() {
   const createUser = async (data: CreateUserRequest) => {
     try {
       const newUser = await usersAPI.createUser(data);
-      setUsers([...users, newUser]);
+      // Refetch all users to ensure we have the latest data from the server
+      await fetchUsers();
       return newUser;
     } catch (err: any) {
       throw err;
