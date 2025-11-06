@@ -91,6 +91,12 @@ export interface CreateVendorRequest {
 
 export interface UpdateVendorRequest extends Partial<CreateVendorRequest> {}
 
+// Vendor Check Types
+export interface VendorCheckResponse {
+  exists: boolean;
+  vendor: Vendor | null;
+}
+
 // Salesman Types
 export interface Salesman {
   id: string;

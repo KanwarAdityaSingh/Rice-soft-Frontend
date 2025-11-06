@@ -1,5 +1,5 @@
 import { apiService } from './api';
-import type { Vendor, CreateVendorRequest, UpdateVendorRequest, GSTLookupResponseData, PANLookupResponseData } from '../types/entities';
+import type { Vendor, CreateVendorRequest, UpdateVendorRequest, GSTLookupResponseData, PANLookupResponseData, VendorCheckResponse } from '../types/entities';
 
 export const vendorsAPI = {
   // Get all vendors
@@ -50,6 +50,14 @@ export const vendorsAPI = {
   // Quick create from PAN
   quickCreateFromPAN: (data: any) => {
     return apiService.post<Vendor>('/vendors/quickCreateFromPAN', data);
+  },
+
+  // Check if vendor exists by GST or PAN
+  checkVendorExists: (params: { gst_number?: string; pan_number?: string }) => {
+    const queryParams = new URLSearchParams();
+    if (params.gst_number) queryParams.append('gst_number', params.gst_number);
+    if (params.pan_number) queryParams.append('pan_number', params.pan_number);
+    return apiService.get<VendorCheckResponse>(`/vendors/checkExists?${queryParams.toString()}`);
   },
 };
 

@@ -173,15 +173,19 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
       // Submit the cleaned form data
       await onSave(cleanedFormData);
       
-      // Show success alert for edit mode
-      if (isEdit) {
+      // Show success alert for edit mode (but not for pre-conversion mode, as it will open conversion dialog)
+      if (isEdit && mode !== 'pre-conversion') {
         setAlertType('success');
-        setAlertTitle(mode === 'pre-conversion' ? 'Pre-Conversion Details Updated Successfully' : 'Lead Updated Successfully');
-        setAlertMessage(mode === 'pre-conversion' ? 'The pre-conversion details have been updated successfully.' : 'The lead has been updated successfully.');
+        setAlertTitle('Lead Updated Successfully');
+        setAlertMessage('The lead has been updated successfully.');
         setAlertOpen(true);
       }
       
-      onOpenChange(false);
+      // For pre-conversion mode, don't close here - let the parent handle it
+      // The parent will open the conversion dialog after successful update
+      if (mode !== 'pre-conversion') {
+        onOpenChange(false);
+      }
       setErrors({});
     } catch (error: any) {
       // Show error alert for edit mode

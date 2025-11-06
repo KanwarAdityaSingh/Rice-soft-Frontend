@@ -57,8 +57,8 @@ export function AlertDialog({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" />
-        <Dialog.Content className="fixed left-[50%] top-[50%] z-50 max-w-md w-[90vw] translate-x-[-50%] translate-y-[-50%]">
+        <Dialog.Overlay className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm" />
+        <Dialog.Content className="fixed left-[50%] top-[50%] z-[70] max-w-md w-[90vw] translate-x-[-50%] translate-y-[-50%]">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}

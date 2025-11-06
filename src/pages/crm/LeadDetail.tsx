@@ -42,12 +42,14 @@ export default function LeadDetailPage() {
   }, [id]);
 
   const refetchLead = async () => {
-    if (!id) return;
+    if (!id) return null;
     try {
       const data = await leadsAPI.getLeadById(id);
       setLead(data);
+      return data;
     } catch (error) {
       // no-op
+      return null;
     }
   };
 
@@ -65,9 +67,11 @@ export default function LeadDetailPage() {
     if (!id) return;
     try {
       await leadsAPI.updateLead(id, data);
+      // Refetch lead to get updated data with GST/PAN
       await refetchLead();
       setPreConversionOpen(false);
       // After successful update, open the conversion dialog
+      // The lead will be updated with the latest data including GST/PAN
       setConversionOpen(true);
     } catch (error) {
       console.error('Failed to update lead:', error);
