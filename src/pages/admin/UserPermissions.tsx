@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { usersAPI } from '../../services/users.api';
 import type { User, PermissionsMap } from '../../types/entities';
@@ -36,8 +36,6 @@ export default function UserPermissionsPage() {
     };
     void load();
   }, [id]);
-
-  const isCustom = useMemo(() => user?.user_type === 'custom', [user?.user_type]);
 
   const handleSave = async () => {
     if (!id) return;
@@ -99,11 +97,6 @@ export default function UserPermissionsPage() {
           </div>
           <div className="flex items-center gap-2">
             <span className="px-2 py-1 rounded-md text-xs capitalize bg-muted text-muted-foreground">{user.user_type}</span>
-            {!isCustom && (
-              <span className="px-2 py-1 rounded-md text-xs bg-orange-500/10 text-orange-700 dark:text-orange-300">
-                Permissions applicable only to system users
-              </span>
-            )}
           </div>
         </div>
 
@@ -119,7 +112,7 @@ export default function UserPermissionsPage() {
             <X className="h-4 w-4" />
             Cancel
           </button>
-          <button type="button" className="btn-primary inline-flex items-center gap-2" onClick={handleSave} disabled={saving || !isCustom}>
+          <button type="button" className="btn-primary inline-flex items-center gap-2" onClick={handleSave} disabled={saving}>
             <CheckCircle2 className="h-4 w-4" />
             {saving ? 'Saving...' : 'Save Permissions'}
           </button>

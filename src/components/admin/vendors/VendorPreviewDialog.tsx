@@ -22,6 +22,8 @@ export function VendorPreviewDialog({ open, onOpenChange, formData, onConfirm }:
       onOpenChange(false);
     } catch (error) {
       console.error('Failed to create vendor:', error);
+      // Re-throw error so parent component can handle it
+      throw error;
     } finally {
       setLoading(false);
     }

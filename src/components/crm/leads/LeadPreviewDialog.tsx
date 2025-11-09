@@ -86,6 +86,8 @@ export function LeadPreviewDialog({ open, onOpenChange, formData, onConfirm }: L
       onOpenChange(false);
     } catch (error) {
       console.error('Failed to create lead:', error);
+      // Re-throw error so parent component can handle it
+      throw error;
     } finally {
       setLoading(false);
     }

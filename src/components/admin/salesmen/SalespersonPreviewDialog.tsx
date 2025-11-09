@@ -22,6 +22,8 @@ export function SalespersonPreviewDialog({ open, onOpenChange, formData, onConfi
       onOpenChange(false);
     } catch (error) {
       console.error('Failed to create salesperson:', error);
+      // Re-throw error so parent component can handle it
+      throw error;
     } finally {
       setLoading(false);
     }

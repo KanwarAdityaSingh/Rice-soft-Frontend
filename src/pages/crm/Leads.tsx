@@ -91,6 +91,8 @@ export default function LeadsPage() {
       setModalOpen(false);
     } catch (error) {
       console.error('Failed to save lead:', error);
+      // Re-throw error so form modal can handle it
+      throw error;
     }
   };
 

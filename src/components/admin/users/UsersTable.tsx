@@ -19,7 +19,7 @@ export function UsersTable({ onEditUser }: UsersTableProps) {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
-  const [typeFilter, setTypeFilter] = useState<string | undefined>('custom');
+  const [typeFilter, setTypeFilter] = useState<string | undefined>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<{ id: string; full_name?: string; username?: string } | null>(null);
 
@@ -102,7 +102,7 @@ export function UsersTable({ onEditUser }: UsersTableProps) {
                     <td className="py-3 px-4 text-sm">
                       {user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never'}
                     </td>
-                  <td className="py-3 px-4 text-right">
+                    <td className="py-3 px-4 text-right">
                       <ActionButtons
                         isActive={user.is_active}
                         onEdit={onEditUser ? () => onEditUser(user) : undefined}
@@ -111,7 +111,7 @@ export function UsersTable({ onEditUser }: UsersTableProps) {
                           setSelectedUser(user);
                           setDeleteDialogOpen(true);
                         }}
-                      onPermissions={user.user_type === 'custom' ? () => navigate(`/admin/users/${user.id}/permissions`) : undefined}
+                        onPermissions={() => navigate(`/admin/users/${user.id}/permissions`)}
                       />
                     </td>
                   </tr>
@@ -174,7 +174,7 @@ export function UsersTable({ onEditUser }: UsersTableProps) {
                       setSelectedUser(user);
                       setDeleteDialogOpen(true);
                     }}
-                    onPermissions={user.user_type === 'custom' ? () => navigate(`/admin/users/${user.id}/permissions`) : undefined}
+                    onPermissions={() => navigate(`/admin/users/${user.id}/permissions`)}
                   />
                 </div>
               </div>
@@ -204,4 +204,6 @@ export function UsersTable({ onEditUser }: UsersTableProps) {
     </div>
   );
 }
+
+
 

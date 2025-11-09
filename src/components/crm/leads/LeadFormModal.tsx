@@ -26,6 +26,76 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+
+  // Function to convert API error messages to user-friendly messages
+  const formatErrorMessage = (errorMessage: string): string => {
+    if (!errorMessage) return 'An error occurred. Please try again.';
+    
+    // Remove quotes from field names for easier matching
+    const cleanMessage = errorMessage.replace(/"/g, '');
+    
+    // Check for broker_id errors
+    if (cleanMessage.includes('broker_id') && (cleanMessage.includes('must be a string') || cleanMessage.includes('required'))) {
+      // If this is the only error, return simple message
+      if (!cleanMessage.includes(',')) {
+        return 'Broker is required. Please select a broker.';
+      }
+    }
+    
+    // Check for location errors (latitude/longitude)
+    const hasLocationError = cleanMessage.includes('salesman_latitude') || cleanMessage.includes('salesman_longitude');
+    const hasLocationNumberError = hasLocationError && cleanMessage.includes('must be a number');
+    const hasLocationRequiredError = hasLocationError && cleanMessage.includes('required');
+    
+    // If multiple errors, format them nicely
+    if (cleanMessage.includes(',')) {
+      const errors = cleanMessage.split(',').map(e => e.trim());
+      const formattedErrors: string[] = [];
+      let hasBrokerError = false;
+      let hasLocationErrorInList = false;
+      
+      errors.forEach(err => {
+        if (err.includes('broker_id') && (err.includes('must be a string') || err.includes('required'))) {
+          if (!hasBrokerError) {
+            formattedErrors.push('Broker is required');
+            hasBrokerError = true;
+          }
+        } else if (err.includes('salesman_latitude') || err.includes('salesman_longitude')) {
+          if (!hasLocationErrorInList) {
+            if (err.includes('must be a number')) {
+              formattedErrors.push('Please capture your location');
+            } else if (err.includes('required')) {
+              formattedErrors.push('Location is required');
+            } else {
+              formattedErrors.push('Please capture your location');
+            }
+            hasLocationErrorInList = true;
+          }
+        } else {
+          // Keep original error for unknown cases
+          formattedErrors.push(err);
+        }
+      });
+      
+      return formattedErrors.join('. ') + '.';
+    }
+    
+    // Single error cases
+    if (cleanMessage.includes('broker_id') && (cleanMessage.includes('must be a string') || cleanMessage.includes('required'))) {
+      return 'Broker is required. Please select a broker.';
+    }
+    
+    if (hasLocationNumberError) {
+      return 'Please capture your location for latitude and longitude.';
+    }
+    
+    if (hasLocationRequiredError) {
+      return 'Location is required. Please capture your location.';
+    }
+    
+    // Return original message if no specific mapping found
+    return errorMessage;
+  };
   const [formData, setFormData] = useState<CreateLeadRequest>({
     company_name: '',
     contact_person: '',
@@ -192,12 +262,14 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
       if (isEdit) {
         setAlertType('error');
         setAlertTitle(mode === 'pre-conversion' ? 'Failed to Update Pre-Conversion Details' : 'Failed to Update Lead');
-        const errorMessage = 
+        const rawErrorMessage = 
           error?.message || 
+          error?.data?.error ||
           error?.data?.message || 
+          error?.response?.data?.error ||
           error?.response?.data?.message || 
           (mode === 'pre-conversion' ? 'An error occurred while updating the pre-conversion details. Please try again.' : 'An error occurred while updating the lead. Please try again.');
-        setAlertMessage(errorMessage);
+        setAlertMessage(formatErrorMessage(rawErrorMessage));
         setAlertOpen(true);
       }
     }
@@ -236,12 +308,14 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
       // Show error alert for create mode
       setAlertType('error');
       setAlertTitle('Failed to Create Lead');
-      const errorMessage = 
+      const rawErrorMessage = 
         error?.message || 
+        error?.data?.error ||
         error?.data?.message || 
+        error?.response?.data?.error ||
         error?.response?.data?.message || 
         'An error occurred while creating the lead. Please try again.';
-      setAlertMessage(errorMessage);
+      setAlertMessage(formatErrorMessage(rawErrorMessage));
       setAlertOpen(true);
       setPreviewOpen(false);
       throw error;
