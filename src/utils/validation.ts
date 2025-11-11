@@ -34,6 +34,26 @@ export const validatePassword = (password: string): boolean => {
   return password.length >= 6;
 };
 
+// Google Maps link or Plus Code validation (lenient)
+export const validateGoogleLocationLink = (value: string): boolean => {
+  if (!value) return true;
+  if (value.length > 500) return false;
+  const trimmed = value.trim();
+  // Try URL validation (http/https)
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      return true;
+    }
+  } catch {
+    // not a URL, fall back to plus code check
+  }
+  // Basic Plus Code pattern: contains a '+' and at least 4 chars before it
+  // Reference: Plus codes are typically 6-8 chars + '+' + 2 chars, may include locality after space/comma
+  const plusCodePattern = /^[0-9A-Z]{4,}\+[0-9A-Z]{2,}([\s,].+)?$/i;
+  return plusCodePattern.test(trimmed);
+};
+
 // Username validation (alphanumeric with underscore)
 export const validateUsername = (username: string): boolean => {
   const usernameRegex = /^[a-zA-Z0-9_]+$/;
@@ -73,6 +93,8 @@ export const getValidationError = (field: string, value: string): string | null 
       return validatePincode(value) ? null : 'Pincode must be 6 digits';
     case 'ifsc_code':
       return validateIFSC(value) ? null : 'Invalid IFSC format (e.g., ABCD0123456)';
+    case 'google_location_link':
+      return validateGoogleLocationLink(value) ? null : 'Invalid Google Maps link format';
     default:
       return null;
   }

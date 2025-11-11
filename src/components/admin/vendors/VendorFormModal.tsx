@@ -4,7 +4,7 @@ import { X, Search } from 'lucide-react';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { useVendors } from '../../../hooks/useVendors';
 import { vendorsAPI } from '../../../services/vendors.api';
-import { validateEmail, validateGST, validatePAN } from '../../../utils/validation';
+import { validateEmail, validateGST, validatePAN, validateGoogleLocationLink } from '../../../utils/validation';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { VendorPreviewDialog } from './VendorPreviewDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
@@ -36,6 +36,7 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
     },
     type: 'both',
     is_active: true,
+    google_location_link: null,
   });
   
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -210,6 +211,14 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
     if (!formData.business_details.pan_number && !formData.business_details.gst_number) {
       newErrors.gst_number = 'Either GST or PAN required';
     }
+    if (formData.google_location_link) {
+      const val = formData.google_location_link.trim();
+      if (!validateGoogleLocationLink(val)) {
+        newErrors.google_location_link = 'Invalid Google Maps link format';
+      } else if (val.length > 500) {
+        newErrors.google_location_link = 'Link must be at most 500 characters';
+      }
+    }
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -239,7 +248,13 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
   const handlePreviewConfirm = async (data: CreateVendorRequest) => {
     setLoading(true);
     try {
-      await createVendor(data);
+      const cleaned: CreateVendorRequest = {
+        ...data,
+        google_location_link: data.google_location_link && data.google_location_link.trim()
+          ? data.google_location_link.trim().slice(0, 500)
+          : null
+      };
+      await createVendor(cleaned);
       setPreviewOpen(false);
       setFormData({
         business_name: '',
@@ -490,6 +505,36 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
                         className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                       />
                     </div>
+                  </div>
+
+                  {/* Google Maps Location Link */}
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Google Maps Location Link</label>
+                    <input
+                      type="text"
+                      value={formData.google_location_link || ''}
+                      onChange={(e) => {
+                        setFormData({ ...formData, google_location_link: e.target.value });
+                        if (errors.google_location_link) setErrors({ ...errors, google_location_link: '' });
+                      }}
+                      onBlur={() => {
+                        const val = (formData.google_location_link || '').trim();
+                        if (val) {
+                          if (!validateGoogleLocationLink(val)) {
+                            setErrors({ ...errors, google_location_link: 'Invalid Google Maps link format' });
+                          } else {
+                            setErrors({ ...errors, google_location_link: '' });
+                          }
+                        }
+                      }}
+                      placeholder="Paste Google Maps link or Plus Code"
+                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                      maxLength={500}
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Paste a Google Maps share link or Plus Code. Link will be stored with the vendor.
+                    </p>
+                    {errors.google_location_link && <p className="mt-1 text-xs text-red-600">{errors.google_location_link}</p>}
                   </div>
 
                   <div className="flex gap-3">

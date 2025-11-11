@@ -119,6 +119,19 @@ export function LeadInfoCards({ lead }: LeadInfoCardsProps) {
               {lead.address.city}, {lead.address.state} {lead.address.pincode}
             </div>
             <div>{lead.address.country}</div>
+            {/* {lead.google_location_link && (
+              <div className="pt-2">
+                <a
+                  href={lead.google_location_link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-secondary text-xs inline-flex items-center gap-2"
+                >
+                  <MapPin className="h-4 w-4" />
+                  Open Location in Google Maps
+                </a>
+              </div>
+            )} */}
           </div>
         </div>
       )}

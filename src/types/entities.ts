@@ -72,6 +72,7 @@ export interface Vendor {
   bank_details?: VendorBankDetails;
   type: 'purchaser' | 'seller' | 'both';
   is_active: boolean;
+  google_location_link?: string | null;
   created_at: string;
   updated_at: string;
   last_enquiry_date?: string;
@@ -87,6 +88,7 @@ export interface CreateVendorRequest {
   bank_details?: VendorBankDetails;
   type: 'purchaser' | 'seller' | 'both';
   is_active?: boolean;
+  google_location_link?: string | null;
 }
 
 export interface UpdateVendorRequest extends Partial<CreateVendorRequest> {}
@@ -297,6 +299,7 @@ export interface Lead {
   rice_type?: string | null;
   salesman_latitude?: number | null;
   salesman_longitude?: number | null;
+  google_location_link?: string | null;
 }
 
 export interface CreateLeadRequest {
@@ -320,6 +323,7 @@ export interface CreateLeadRequest {
   rice_type?: string | null;
   salesman_latitude?: number | null;
   salesman_longitude?: number | null;
+  google_location_link?: string | null;
 }
 
 export interface UpdateLeadRequest extends Partial<CreateLeadRequest> {}

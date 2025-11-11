@@ -111,6 +111,7 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
     business_details: {},
     lead_status: 'new',
     priority: 'medium',
+    google_location_link: null,
   });
 
   useEffect(() => {
@@ -168,6 +169,7 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
         rice_type: lead.rice_type || null,
         salesman_latitude: lead.salesman_latitude || null,
         salesman_longitude: lead.salesman_longitude || null,
+        google_location_link: lead.google_location_link || null,
       });
       setStep(1);
     } else if (!lead && open) {
@@ -191,6 +193,7 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
         rice_type: null,
         salesman_latitude: null,
         salesman_longitude: null,
+        google_location_link: null,
       });
       setStep(1);
     }
@@ -323,6 +326,11 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
       } else {
         cleanedFormData.salesman_longitude = null;
       }
+      // Trim google location link and limit length
+      if (formData.google_location_link != null && formData.google_location_link !== undefined) {
+        const trimmed = formData.google_location_link?.trim();
+        cleanedFormData.google_location_link = trimmed ? trimmed.slice(0, 500) : null;
+      }
       
       // Submit the cleaned form data
       await onSave(cleanedFormData);
@@ -386,6 +394,11 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
         cleanedFormData.salesman_longitude = Number(data.salesman_longitude);
       } else {
         cleanedFormData.salesman_longitude = null;
+      }
+      // Trim google location link and limit length
+      if (data.google_location_link != null && data.google_location_link !== undefined) {
+        const trimmed = data.google_location_link?.trim();
+        cleanedFormData.google_location_link = trimmed ? trimmed.slice(0, 500) : null;
       }
       
       // Submit the cleaned form data

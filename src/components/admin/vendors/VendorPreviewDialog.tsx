@@ -128,6 +128,18 @@ export function VendorPreviewDialog({ open, onOpenChange, formData, onConfirm }:
                   <InfoRow label="State" value={formData.address.state} />
                   <InfoRow label="Pincode" value={formData.address.pincode} />
                   <InfoRow label="Country" value={formData.address.country} />
+                  {formData.google_location_link && (
+                    <div className="pl-6">
+                      <a
+                        href={formData.google_location_link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline text-xs"
+                      >
+                        Open Location in Google Maps
+                      </a>
+                    </div>
+                  )}
                 </InfoSection>
               )}
 

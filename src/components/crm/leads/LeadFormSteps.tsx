@@ -7,7 +7,7 @@ import { salesmenAPI } from '../../../services/salesmen.api';
 import { vendorsAPI } from '../../../services/vendors.api';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
-import { validateGST, validatePAN, validateEmail, validatePhone } from '../../../utils/validation';
+import { validateGST, validatePAN, validateEmail, validatePhone, validateGoogleLocationLink } from '../../../utils/validation';
 import type { CreateLeadRequest, Salesman, RiceCode, RiceType } from '../../../types/entities';
 
 interface LeadFormStepsProps {
@@ -99,6 +99,32 @@ export function LeadFormSteps({
       ...formData,
       business_details: { ...(formData.business_details || {}), [field]: value }
     });
+  };
+
+  const parseCoordsFromLink = (link?: string): { lat?: number; lng?: number } => {
+    if (!link) return {};
+    const trimmed = link.trim();
+    try {
+      const url = new URL(trimmed.startsWith('http') ? trimmed : `https://maps.google.com/?q=${encodeURIComponent(trimmed)}`);
+      const q = url.searchParams.get('q');
+      if (q) {
+        const parts = q.split(',');
+        if (parts.length >= 2) {
+          const lat = Number(parts[0]);
+          const lng = Number(parts[1]);
+          if (!Number.isNaN(lat) && !Number.isNaN(lng)) return { lat, lng };
+        }
+      }
+      const atMatch = url.href.match(/@(-?\d+(\.\d+)?),\s*(-?\d+(\.\d+)?)/);
+      if (atMatch) {
+        const lat = Number(atMatch[1]);
+        const lng = Number(atMatch[3]);
+        if (!Number.isNaN(lat) && !Number.isNaN(lng)) return { lat, lng };
+      }
+    } catch {
+      // ignore
+    }
+    return {};
   };
 
   const handleGSTLookup = async () => {
@@ -635,6 +661,47 @@ export function LeadFormSteps({
               />
               {errors.country && <p className="mt-1 text-xs text-red-600">{errors.country}</p>}
             </div>
+          </div>
+
+          {/* Google Maps Location Link */}
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Google Maps Location Link</label>
+            <input
+              type="text"
+              value={formData.google_location_link || ''}
+              onChange={(e) => {
+                setFormData({ ...formData, google_location_link: e.target.value });
+                if (errors.google_location_link) setErrors({ ...errors, google_location_link: '' });
+              }}
+              onBlur={() => {
+                const val = (formData.google_location_link || '').trim();
+                if (val) {
+                  if (!validateGoogleLocationLink(val)) {
+                    setErrors({ ...errors, google_location_link: 'Invalid Google Maps link format' });
+                  } else {
+                    setErrors({ ...errors, google_location_link: '' });
+                  }
+                }
+              }}
+              placeholder="Paste Google Maps link or Plus Code"
+              className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+              maxLength={500}
+            />
+            {formData.google_location_link && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Coordinates will be automatically extracted from the link.{' '}
+                {(() => {
+                  const p = parseCoordsFromLink(formData.google_location_link || '');
+                  return p.lat != null && p.lng != null
+                    ? `Detected coordinates: ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`
+                    : '';
+                })()}
+                {formData.salesman_latitude != null && formData.salesman_longitude != null && (
+                  <>. Manual coordinates will take priority.</>
+                )}
+              </p>
+            )}
+            {errors.google_location_link && <p className="mt-1 text-xs text-red-600">{errors.google_location_link}</p>}
           </div>
 
           <h3 className="text-lg font-semibold mb-4 mt-6">Capture Location</h3>
@@ -1268,6 +1335,47 @@ export function LeadFormSteps({
           <p className="text-sm text-muted-foreground mb-4">
             Capture your current GPS location to automatically update the address in Step 2.
           </p>
+
+          {/* Google Maps Location Link */}
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Google Maps Location Link</label>
+            <input
+              type="text"
+              value={formData.google_location_link || ''}
+              onChange={(e) => {
+                setFormData({ ...formData, google_location_link: e.target.value });
+                if (errors.google_location_link) setErrors({ ...errors, google_location_link: '' });
+              }}
+              onBlur={() => {
+                const val = (formData.google_location_link || '').trim();
+                if (val) {
+                  if (!validateGoogleLocationLink(val)) {
+                    setErrors({ ...errors, google_location_link: 'Invalid Google Maps link format' });
+                  } else {
+                    setErrors({ ...errors, google_location_link: '' });
+                  }
+                }
+              }}
+              placeholder="Paste Google Maps link or Plus Code"
+              className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+              maxLength={500}
+            />
+            {formData.google_location_link && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Coordinates will be automatically extracted from the link.{' '}
+                {(() => {
+                  const p = parseCoordsFromLink(formData.google_location_link || '');
+                  return p.lat != null && p.lng != null
+                    ? `Detected coordinates: ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`
+                    : '';
+                })()}
+                {formData.salesman_latitude != null && formData.salesman_longitude != null && (
+                  <>. Manual coordinates will take priority.</>
+                )}
+              </p>
+            )}
+            {errors.google_location_link && <p className="mt-1 text-xs text-red-600">{errors.google_location_link}</p>}
+          </div>
 
           <LocationCapture
             latitude={formData.salesman_latitude}
