@@ -34,6 +34,10 @@ export interface LoginResponse {
   permissions?: PermissionsMap | null;
 }
 
+export interface RequestOtpData {
+  sent: boolean;
+}
+
 class ApiError extends Error {
   public status: number;
   public data?: any;
@@ -144,6 +148,33 @@ class ApiService {
       body: JSON.stringify(credentials),
     });
     return response.data;
+  }
+
+  // OTP: Request an OTP for a phone number
+  async requestOtp(phone: string): Promise<RequestOtpData> {
+    const normalizedPhone = phone.replace(/\D/g, '');
+    if (normalizedPhone.length !== 10) {
+      throw new ApiError('Phone must be 10 digits', 400);
+    }
+    const data = await this.post<RequestOtpData>('/auth/requestOtp', { phone: normalizedPhone });
+    return data;
+  }
+
+  // OTP: Verify OTP and receive the same LoginResponse as password login
+  async verifyOtp(phone: string, otp: string): Promise<LoginResponse> {
+    const normalizedPhone = phone.replace(/\D/g, '');
+    const normalizedOtp = otp.replace(/\D/g, '').slice(0, 6);
+    if (normalizedPhone.length !== 10) {
+      throw new ApiError('Phone must be 10 digits', 400);
+    }
+    if (normalizedOtp.length !== 6) {
+      throw new ApiError('OTP must be 6 digits', 400);
+    }
+    const data = await this.post<LoginResponse>('/auth/verifyOtp', {
+      phone: normalizedPhone,
+      otp: normalizedOtp,
+    });
+    return data;
   }
 
   async logout(): Promise<void> {

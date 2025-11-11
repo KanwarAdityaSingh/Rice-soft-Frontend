@@ -1,8 +1,10 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { Moon, Sun, User, LogOut, Settings, Menu } from 'lucide-react'
+import { Moon, Sun, User, LogOut, Settings, Menu, KeyRound } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../hooks/useTheme'
 import { useAuth } from '../hooks/useAuth'
+import { useState } from 'react'
+import { UpdatePasswordDialog } from './shared/UpdatePasswordDialog'
 
 interface NavbarProps {
   onMobileMenuToggle?: () => void
@@ -12,6 +14,7 @@ export function Navbar({ onMobileMenuToggle }: NavbarProps) {
   const { theme, setTheme } = useTheme()
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false)
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border/60 backdrop-blur supports-[backdrop-filter]:bg-background/70">
@@ -90,6 +93,12 @@ export function Navbar({ onMobileMenuToggle }: NavbarProps) {
                   )}
                   <DropdownMenu.Item
                     className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+                    onSelect={() => setPasswordDialogOpen(true)}
+                  >
+                    <KeyRound className="h-4 w-4" /> Update Password
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
                     onSelect={() => logout()}
                   >
                     <LogOut className="h-4 w-4" /> Logout
@@ -100,6 +109,12 @@ export function Navbar({ onMobileMenuToggle }: NavbarProps) {
           )}
         </div>
       </div>
+      {user && (
+        <UpdatePasswordDialog
+          open={passwordDialogOpen}
+          onOpenChange={setPasswordDialogOpen}
+        />
+      )}
     </header>
   )
 }

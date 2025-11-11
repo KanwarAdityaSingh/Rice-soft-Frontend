@@ -17,6 +17,7 @@ interface UserProfile {
 interface AuthContextValue {
   user: UserProfile | null
   login: (username: string, password: string) => Promise<void>
+  loginWithOtp: (phone: string, otp: string) => Promise<void>
   logout: () => void
   isLoading: boolean
   error: string | null
@@ -25,6 +26,7 @@ interface AuthContextValue {
 export const AuthContext = createContext<AuthContextValue>({
   user: null,
   login: async () => {},
+  loginWithOtp: async () => {},
   logout: () => {},
   isLoading: false,
   error: null,
@@ -120,13 +122,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  const loginWithOtp = useCallback(async (phone: string, otp: string) => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      const response = await apiService.verifyOtp(phone, otp)
+      localStorage.setItem('auth:token', response.token)
+      localStorage.setItem('auth:user', JSON.stringify(response.user))
+      try {
+        localStorage.setItem('auth:permissions', JSON.stringify(response.permissions ?? null))
+      } catch {}
+      setUser(response.user)
+    } catch (error) {
+      let errorMessage = 'Login failed. Please try again.'
+      if (error instanceof ApiError) {
+        if (error.status === 401) {
+          // Specific OTP-related errors are handled by caller UI; surface message too
+          errorMessage = error.data?.error || 'Invalid OTP'
+        } else if (error.status === 429) {
+          errorMessage = error.message || 'Too many requests. Please try again later.'
+        } else if (error.status === 400) {
+          errorMessage = error.message || 'Validation failed'
+        } else {
+          errorMessage = error.message || 'Login failed'
+        }
+      } else if (error instanceof Error) {
+        errorMessage = error.message
+      }
+      setError(errorMessage)
+      throw error
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
   const value = useMemo(() => ({ 
     user, 
     login, 
+    loginWithOtp,
     logout, 
     isLoading, 
     error 
-  }), [user, login, logout, isLoading, error])
+  }), [user, login, loginWithOtp, logout, isLoading, error])
   
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
