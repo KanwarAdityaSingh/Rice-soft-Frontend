@@ -115,7 +115,18 @@ export default function LeadDetailPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gradient">{lead.company_name}</h1>
-            <p className="mt-2 text-muted-foreground">{lead.contact_person}</p>
+            {lead.contact_persons && lead.contact_persons.length > 0 && (
+              <div className="mt-2 text-muted-foreground space-y-1">
+                {lead.contact_persons.map((cp, idx) => (
+                  <p key={idx}>
+                    {cp.name}
+                    {cp.phones && cp.phones.length > 0 && cp.phones.filter(p => p && p.trim()).length > 0 && (
+                      <span> - {cp.phones.filter(p => p && p.trim()).join(', ')}</span>
+                    )}
+                  </p>
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <LeadStatusBadge status={lead.lead_status} />

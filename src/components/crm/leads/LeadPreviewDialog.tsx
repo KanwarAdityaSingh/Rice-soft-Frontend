@@ -172,7 +172,21 @@ export function LeadPreviewDialog({ open, onOpenChange, formData, onConfirm }: L
               {/* Basic Information */}
               <InfoSection title="Basic Information" icon={Building2}>
                 <InfoRow label="Business Name" value={formData.company_name} />
-                <InfoRow label="Contact Person" value={formData.contact_person} />
+                {formData.contact_persons && formData.contact_persons.length > 0 && (
+                  <div className="flex justify-between items-start">
+                    <span className="text-muted-foreground min-w-[120px]">Contact Persons:</span>
+                    <div className="text-foreground font-medium text-right flex-1 space-y-1">
+                      {formData.contact_persons.map((cp, idx) => (
+                        <div key={idx}>
+                          {cp.name}
+                          {cp.phones && cp.phones.length > 0 && cp.phones.filter(p => p && p.trim()).length > 0 && (
+                            <span className="text-muted-foreground"> - {cp.phones.filter(p => p && p.trim()).join(', ')}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <InfoRow label="Email" value={formData.email} />
                 <InfoRow label="Phone" value={formData.phone || undefined} />
               </InfoSection>

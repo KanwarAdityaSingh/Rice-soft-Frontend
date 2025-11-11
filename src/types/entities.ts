@@ -262,12 +262,18 @@ export interface LeadBusinessDetails {
   business_keyword?: string;
 }
 
+export interface ContactPerson {
+  name: string;
+  phones: string[];
+}
+
 export interface Lead {
   id: string;
   company_name: string;
-  contact_person: string;
+  contact_person: string; // Legacy field, kept for backward compatibility
   email: string;
-  phone: string;
+  phone: string; // Legacy field, kept for backward compatibility
+  contact_persons?: ContactPerson[]; // New field with phones array
   address: LeadAddress;
   business_details: LeadBusinessDetails;
   is_existing_customer: boolean;
@@ -293,7 +299,7 @@ export interface Lead {
 
 export interface CreateLeadRequest {
   company_name: string;
-  contact_person: string;
+  contact_persons: ContactPerson[];
   email: string;
   phone?: string;
   address?: Partial<LeadAddress>;

@@ -88,9 +88,21 @@ export function LeadInfoCards({ lead }: LeadInfoCardsProps) {
             <div>
               <span className="text-muted-foreground">Phone:</span> {lead.phone}
             </div>
-            <div>
-              <span className="text-muted-foreground">Contact:</span> {lead.contact_person}
-            </div>
+            {lead.contact_persons && lead.contact_persons.length > 0 && (
+              <div>
+                <span className="text-muted-foreground">Contact Persons:</span>
+                <div className="mt-1 space-y-1">
+                  {lead.contact_persons.map((cp, idx) => (
+                    <div key={idx} className="pl-2">
+                      {cp.name}
+                      {cp.phones && cp.phones.length > 0 && cp.phones.filter(p => p && p.trim()).length > 0 && (
+                        <span className="text-muted-foreground"> - {cp.phones.filter(p => p && p.trim()).join(', ')}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

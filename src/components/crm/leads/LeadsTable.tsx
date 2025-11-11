@@ -37,9 +37,13 @@ export function LeadsTable({
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const filteredLeads = leads.filter((lead) => {
+    const contactPersonsText = (lead.contact_persons || [])
+      .map(cp => `${cp.name} ${(cp.phones || []).join(' ')}`)
+      .join(' ')
+      .toLowerCase();
     const matchesSearch =
       lead.company_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      lead.contact_person.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      contactPersonsText.includes(searchQuery.toLowerCase()) ||
       lead.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
       lead.business_details?.business_keyword?.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesSearch;
@@ -160,7 +164,18 @@ export function LeadsTable({
                   </div>
                 </td>
                 <td className="py-3 px-4 text-sm font-medium">{lead.company_name}</td>
-                <td className="py-3 px-4 text-sm">{lead.contact_person}</td>
+                <td className="py-3 px-4 text-sm">
+                  {lead.contact_persons && lead.contact_persons.length > 0
+                    ? lead.contact_persons.map((cp, idx) => (
+                        <div key={idx}>
+                          {cp.name}
+                          {cp.phones && cp.phones.length > 0 && cp.phones.filter(p => p && p.trim()).length > 0 && (
+                            <span className="text-muted-foreground"> ({cp.phones.filter(p => p && p.trim()).join(', ')})</span>
+                          )}
+                        </div>
+                      ))
+                    : '-'}
+                </td>
                 <td className="py-3 px-4 text-sm">{lead.email}</td>
                 <td className="py-3 px-4 text-sm">{lead.phone}</td>
                 <td className="py-3 px-4 text-sm">
@@ -221,7 +236,21 @@ export function LeadsTable({
             <div className="flex items-start justify-between gap-2">
               <div className="flex-1 min-w-0">
                 <h3 className="font-semibold text-base truncate">{lead.company_name}</h3>
-                <p className="text-sm text-muted-foreground truncate">{lead.contact_person}</p>
+                {lead.contact_persons && lead.contact_persons.length > 0 && (
+                  <div className="text-sm text-muted-foreground space-y-0.5">
+                    {lead.contact_persons.slice(0, 2).map((cp, idx) => (
+                      <p key={idx} className="truncate">
+                        {cp.name}
+                        {cp.phones && cp.phones.length > 0 && cp.phones.filter(p => p && p.trim()).length > 0 && (
+                          <span> ({cp.phones.filter(p => p && p.trim()).join(', ')})</span>
+                        )}
+                      </p>
+                    ))}
+                    {lead.contact_persons.length > 2 && (
+                      <p className="text-xs text-muted-foreground">+{lead.contact_persons.length - 2} more</p>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="flex gap-2">
                 <LeadStatusBadge status={lead.lead_status} />

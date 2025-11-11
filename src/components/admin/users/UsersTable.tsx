@@ -102,7 +102,7 @@ export function UsersTable({ onEditUser }: UsersTableProps) {
                     <td className="py-3 px-4 text-sm">
                       {user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never'}
                     </td>
-                    <td className="py-3 px-4 text-right">
+                  <td className="py-3 px-4 text-right">
                       <ActionButtons
                         isActive={user.is_active}
                         onEdit={onEditUser ? () => onEditUser(user) : undefined}

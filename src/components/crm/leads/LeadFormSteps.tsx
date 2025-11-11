@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import { ArrowRight, ArrowLeft, Search } from 'lucide-react';
+import { ArrowRight, ArrowLeft, Search, Plus, X } from 'lucide-react';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { salesmenAPI } from '../../../services/salesmen.api';
@@ -187,8 +187,18 @@ export function LeadFormSteps({
       const updates: CreateLeadRequest = {
         ...formData,
         company_name: mapped?.business_name || formData.company_name,
-        contact_person: panData?.category === 'person' && panData?.name ? panData.name : formData.contact_person,
       };
+      
+      // If PAN data is for a person, add to contact_persons if not already present
+      if (panData?.category === 'person' && panData?.name) {
+        const existingContact = formData.contact_persons?.find(cp => cp.name === panData.name);
+        if (!existingContact) {
+          updates.contact_persons = [
+            ...(formData.contact_persons || []),
+            { name: panData.name, phones: [''] }
+          ];
+        }
+      }
 
       // Populate address fields (only fill non-empty values)
       if (mapped?.address) {
@@ -237,18 +247,105 @@ export function LeadFormSteps({
             {errors.company_name && <p className="mt-1 text-xs text-red-600">{errors.company_name}</p>}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">Contact Person *</label>
-              <input
-                type="text"
-                value={formData.contact_person}
-                onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })}
-                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-              />
-              {errors.contact_person && <p className="mt-1 text-xs text-red-600">{errors.contact_person}</p>}
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Contact Persons *</label>
+            <div className="space-y-3">
+              {(formData.contact_persons || []).map((contact, index) => (
+                <div key={index} className="space-y-2 p-3 border border-border rounded-lg">
+                  <div className="flex gap-2 items-start">
+                    <input
+                      type="text"
+                      placeholder="Name"
+                      value={contact.name}
+                      onChange={(e) => {
+                        const updated = [...(formData.contact_persons || [])];
+                        updated[index] = { ...updated[index], name: e.target.value };
+                        setFormData({ ...formData, contact_persons: updated });
+                      }}
+                      className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                    />
+                    {(formData.contact_persons || []).length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = (formData.contact_persons || []).filter((_, i) => i !== index);
+                          setFormData({ ...formData, contact_persons: updated });
+                        }}
+                        className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+                        title="Remove contact person"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-2 pl-0">
+                    <label className="text-xs text-muted-foreground">Phone Numbers *</label>
+                    {(contact.phones || ['']).map((phone, phoneIndex) => (
+                      <div key={phoneIndex} className="flex gap-2 items-center">
+                        <input
+                          type="tel"
+                          placeholder="Phone"
+                          value={phone}
+                          onChange={(e) => {
+                            const updated = [...(formData.contact_persons || [])];
+                            const updatedPhones = [...(updated[index].phones || [''])];
+                            updatedPhones[phoneIndex] = e.target.value;
+                            updated[index] = { ...updated[index], phones: updatedPhones };
+                            setFormData({ ...formData, contact_persons: updated });
+                          }}
+                          className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                          maxLength={20}
+                        />
+                        {(contact.phones || ['']).length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...(formData.contact_persons || [])];
+                              const updatedPhones = updated[index].phones.filter((_, i) => i !== phoneIndex);
+                              updated[index] = { ...updated[index], phones: updatedPhones.length > 0 ? updatedPhones : [''] };
+                              setFormData({ ...formData, contact_persons: updated });
+                            }}
+                            className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+                            title="Remove phone number"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = [...(formData.contact_persons || [])];
+                        updated[index] = { ...updated[index], phones: [...(updated[index].phones || ['']), ''] };
+                        setFormData({ ...formData, contact_persons: updated });
+                      }}
+                      className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
+                    >
+                      <Plus className="h-3 w-3" />
+                      Add Phone Number
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData({
+                    ...formData,
+                    contact_persons: [...(formData.contact_persons || []), { name: '', phones: [''] }]
+                  });
+                }}
+                className="w-full flex items-center justify-center gap-2 py-2 text-sm text-primary hover:bg-primary/10 rounded-lg border border-dashed border-primary/50 transition-colors"
+              >
+                <Plus className="h-4 w-4" />
+                Add Contact Person
+              </button>
             </div>
+            {errors.contact_persons && <p className="mt-1 text-xs text-red-600">{errors.contact_persons}</p>}
+          </div>
 
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-sm font-medium mb-1.5 block">Phone *</label>
               <input
@@ -256,19 +353,21 @@ export function LeadFormSteps({
                 value={formData.phone || ''}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                 className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                required
               />
+              {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone}</p>}
             </div>
-          </div>
 
-          <div>
-            <label className="text-sm font-medium mb-1.5 block">Email</label>
-            <input
-              type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-            />
-            {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Email</label>
+              <input
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+              />
+              {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
+            </div>
           </div>
 
           <div>
@@ -528,16 +627,115 @@ export function LeadFormSteps({
             {errors.company_name && <p className="mt-1 text-xs text-red-600">{errors.company_name}</p>}
           </div>
 
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Contact Persons *</label>
+            <div className="space-y-3">
+              {(formData.contact_persons || []).map((contact, index) => (
+                <div key={index} className="space-y-2 p-3 border border-border rounded-lg">
+                  <div className="flex gap-2 items-start">
+                    <input
+                      type="text"
+                      placeholder="Name"
+                      value={contact.name}
+                      onChange={(e) => {
+                        const updated = [...(formData.contact_persons || [])];
+                        updated[index] = { ...updated[index], name: e.target.value };
+                        setFormData({ ...formData, contact_persons: updated });
+                      }}
+                      className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                    />
+                    {(formData.contact_persons || []).length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = (formData.contact_persons || []).filter((_, i) => i !== index);
+                          setFormData({ ...formData, contact_persons: updated });
+                        }}
+                        className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+                        title="Remove contact person"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-2 pl-0">
+                    <label className="text-xs text-muted-foreground">Phone Numbers *</label>
+                    {(contact.phones || ['']).map((phone, phoneIndex) => (
+                      <div key={phoneIndex} className="flex gap-2 items-center">
+                        <input
+                          type="tel"
+                          placeholder="Phone"
+                          value={phone}
+                          onChange={(e) => {
+                            const updated = [...(formData.contact_persons || [])];
+                            const updatedPhones = [...(updated[index].phones || [''])];
+                            updatedPhones[phoneIndex] = e.target.value;
+                            updated[index] = { ...updated[index], phones: updatedPhones };
+                            setFormData({ ...formData, contact_persons: updated });
+                          }}
+                          className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                          maxLength={20}
+                        />
+                        {(contact.phones || ['']).length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...(formData.contact_persons || [])];
+                              const updatedPhones = updated[index].phones.filter((_, i) => i !== phoneIndex);
+                              updated[index] = { ...updated[index], phones: updatedPhones.length > 0 ? updatedPhones : [''] };
+                              setFormData({ ...formData, contact_persons: updated });
+                            }}
+                            className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+                            title="Remove phone number"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = [...(formData.contact_persons || [])];
+                        updated[index] = { ...updated[index], phones: [...(updated[index].phones || ['']), ''] };
+                        setFormData({ ...formData, contact_persons: updated });
+                      }}
+                      className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
+                    >
+                      <Plus className="h-3 w-3" />
+                      Add Phone Number
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData({
+                    ...formData,
+                    contact_persons: [...(formData.contact_persons || []), { name: '', phones: [''] }]
+                  });
+                }}
+                className="w-full flex items-center justify-center gap-2 py-2 text-sm text-primary hover:bg-primary/10 rounded-lg border border-dashed border-primary/50 transition-colors"
+              >
+                <Plus className="h-4 w-4" />
+                Add Contact Person
+              </button>
+            </div>
+            {errors.contact_persons && <p className="mt-1 text-xs text-red-600">{errors.contact_persons}</p>}
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-sm font-medium mb-1.5 block">Contact Person *</label>
+              <label className="text-sm font-medium mb-1.5 block">Phone *</label>
               <input
-                type="text"
-                value={formData.contact_person}
-                onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })}
+                type="tel"
+                value={formData.phone || ''}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                 className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                required
               />
-              {errors.contact_person && <p className="mt-1 text-xs text-red-600">{errors.contact_person}</p>}
+              {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone}</p>}
             </div>
 
             <div>
@@ -552,17 +750,7 @@ export function LeadFormSteps({
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">Phone</label>
-              <input
-                type="tel"
-                value={formData.phone || ''}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-              />
-            </div>
-
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-sm font-medium mb-1.5 block">Status</label>
               <CustomSelect
@@ -1130,3 +1318,4 @@ function LocationCapture({ latitude, longitude, onLocationChange, onAddressChang
     </div>
   );
 }
+

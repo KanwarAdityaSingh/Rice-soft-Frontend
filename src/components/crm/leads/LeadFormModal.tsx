@@ -98,7 +98,7 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
   };
   const [formData, setFormData] = useState<CreateLeadRequest>({
     company_name: '',
-    contact_person: '',
+    contact_persons: [{ name: '', phones: [''] }],
     email: '',
     phone: '',
     address: {
@@ -115,9 +115,37 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
 
   useEffect(() => {
     if (lead && open) {
+      // Handle backward compatibility: if lead has contact_persons, use it; otherwise convert old contact_person
+      let contactPersons = lead.contact_persons || [];
+      
+      // Backward compatibility: convert old format {name, phone} to new format {name, phones: [phone]}
+      contactPersons = contactPersons.map(cp => {
+        // If it has old 'phone' field, convert to 'phones' array
+        if ('phone' in cp && typeof (cp as any).phone === 'string') {
+          return {
+            name: cp.name,
+            phones: (cp as any).phone ? [(cp as any).phone] : ['']
+          };
+        }
+        // If phones array is empty, ensure at least one empty string
+        if (!cp.phones || cp.phones.length === 0) {
+          return { name: cp.name, phones: [''] };
+        }
+        return cp;
+      });
+      
+      if (contactPersons.length === 0 && (lead as any).contact_person) {
+        // Backward compatibility: convert old contact_person string to array
+        contactPersons = [{ name: (lead as any).contact_person, phones: lead.phone ? [lead.phone] : [''] }];
+      }
+      // Ensure at least one contact person exists
+      if (contactPersons.length === 0) {
+        contactPersons = [{ name: '', phones: [''] }];
+      }
+      
       setFormData({
         company_name: lead.company_name,
-        contact_person: lead.contact_person,
+        contact_persons: contactPersons,
         email: lead.email,
         phone: lead.phone,
         address: {
@@ -145,7 +173,7 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
     } else if (!lead && open) {
       setFormData({
         company_name: '',
-        contact_person: '',
+        contact_persons: [{ name: '', phones: [''] }],
         email: '',
         phone: '',
         address: {
@@ -173,7 +201,36 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
     
     // Step 1 validations
     if (!formData.company_name) newErrors.company_name = 'Business name required';
-    if (!formData.contact_person) newErrors.contact_person = 'Contact person required';
+    
+    // Validate contact_persons: must have at least one with name and at least one phone
+    if (!formData.contact_persons || formData.contact_persons.length === 0) {
+      newErrors.contact_persons = 'At least one contact person is required';
+    } else {
+      const invalidContacts = formData.contact_persons.filter(cp => !cp.name || cp.name.trim().length < 2);
+      if (invalidContacts.length > 0) {
+        newErrors.contact_persons = 'Each contact person must have a name (minimum 2 characters)';
+      }
+      // Validate that each contact person has at least one phone number
+      const contactsWithoutPhones = formData.contact_persons.filter(cp => 
+        !cp.phones || cp.phones.length === 0 || cp.phones.every(p => !p || p.trim().length === 0)
+      );
+      if (contactsWithoutPhones.length > 0) {
+        newErrors.contact_persons = 'Each contact person must have at least one phone number';
+      }
+      // Validate phone number lengths (max 20 characters each)
+      const invalidPhones = formData.contact_persons.some(cp => 
+        cp.phones && cp.phones.some(phone => phone && phone.length > 20)
+      );
+      if (invalidPhones) {
+        newErrors.contact_persons = 'Contact person phone numbers must be 20 characters or less';
+      }
+    }
+    
+    // Phone field is required
+    if (!formData.phone || !formData.phone.trim()) {
+      newErrors.phone = 'Phone is required';
+    }
+    
     // Email is optional, but if provided, it must be valid
     if (formData.email && !validateEmail(formData.email)) newErrors.email = 'Valid email required';
     
@@ -187,7 +244,7 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       // Go to the step with errors
-      if (newErrors.company_name || newErrors.contact_person || newErrors.email) {
+      if (newErrors.company_name || newErrors.contact_persons || newErrors.phone || newErrors.email) {
         setStep(1);
       } else if (newErrors.street || newErrors.city || newErrors.state || newErrors.pincode || newErrors.country) {
         setStep(2);
@@ -226,6 +283,17 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
     try {
       // All validations passed, clean up form data before submission
       const cleanedFormData: CreateLeadRequest | UpdateLeadRequest = { ...formData };
+      
+      // Filter out empty contact persons (ones with no name) and clean up phones arrays
+      if (cleanedFormData.contact_persons) {
+        cleanedFormData.contact_persons = cleanedFormData.contact_persons
+          .filter(cp => cp.name && cp.name.trim().length > 0)
+          .map(cp => ({
+            name: cp.name.trim(),
+            phones: cp.phones.filter(phone => phone && phone.trim().length > 0)
+          }))
+          .filter(cp => cp.phones.length > 0); // Remove contact persons with no valid phones
+      }
       
       // Ensure latitude and longitude are proper numbers when present, null otherwise
       if (formData.salesman_latitude != null) {
@@ -279,6 +347,17 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
     try {
       // Clean up form data before submission
       const cleanedFormData: CreateLeadRequest = { ...data };
+      
+      // Filter out empty contact persons (ones with no name) and clean up phones arrays
+      if (cleanedFormData.contact_persons) {
+        cleanedFormData.contact_persons = cleanedFormData.contact_persons
+          .filter(cp => cp.name && cp.name.trim().length > 0)
+          .map(cp => ({
+            name: cp.name.trim(),
+            phones: cp.phones.filter(phone => phone && phone.trim().length > 0)
+          }))
+          .filter(cp => cp.phones.length > 0); // Remove contact persons with no valid phones
+      }
       
       // Ensure latitude and longitude are proper numbers when present, null otherwise
       if (data.salesman_latitude != null) {
