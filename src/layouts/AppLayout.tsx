@@ -4,10 +4,38 @@ import { Footer } from '../components/Footer'
 import { PageTransition } from '../components/shared/PageTransition'
 import { ToastContainer } from '../components/shared/ToastContainer'
 import { Sidebar } from '../components/Sidebar'
+import { SessionTimeoutDialog } from '../components/shared/SessionTimeoutDialog'
+import { useIdleTimeout } from '../hooks/useIdleTimeout'
+import { useAuth } from '../hooks/useAuth'
+import { useNavigate } from 'react-router-dom'
+import { apiService } from '../services/api'
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
+
+  function SessionTimeoutManager() {
+    const { logout } = useAuth()
+    const navigate = useNavigate()
+
+    const { isWarning, remainingSeconds, acknowledgeAndReset } = useIdleTimeout({
+      idleMs: 5 * 60 * 1000,
+      warningMs: 30 * 1000,
+      onTimeout: () => {
+        apiService.logout().catch(() => {})
+        logout()
+        navigate('/login', { replace: true })
+      },
+    })
+
+    return (
+      <SessionTimeoutDialog
+        open={isWarning}
+        secondsLeft={remainingSeconds}
+        onStaySignedIn={acknowledgeAndReset}
+      />
+    )
+  }
 
   return (
     <div className="relative flex min-h-screen flex-col bg-background">
@@ -34,6 +62,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           {children}
         </div>
       </PageTransition>
+      <SessionTimeoutManager />
       <div 
         className={`relative z-10 transition-all duration-300 ${
           sidebarCollapsed ? 'md:pl-16' : 'md:pl-[260px]'
