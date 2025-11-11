@@ -141,9 +141,10 @@ export interface BrokerDetails {
 export interface Broker {
   id: string;
   business_name: string;
-  contact_person: string;
+  contact_person: string; // Legacy field, kept for backward compatibility
   email: string;
-  phone: string;
+  phone: string; // Legacy field, kept for backward compatibility
+  contact_persons?: ContactPerson[]; // New field with phones array
   address: BrokerAddress;
   business_details: BrokerBusinessDetails;
   broker_details?: BrokerDetails;
@@ -155,9 +156,10 @@ export interface Broker {
 
 export interface CreateBrokerRequest {
   business_name: string;
-  contact_person: string;
+  contact_person?: string; // Optional for backward compatibility
+  contact_persons?: ContactPerson[]; // New field with phones array
   email: string;
-  phone: string;
+  phone: string; // Mandatory field, separate from contact_persons
   address: BrokerAddress;
   business_details: BrokerBusinessDetails;
   broker_details?: BrokerDetails;

@@ -2,7 +2,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { X } from 'lucide-react';
-import { validateEmail } from '../../../utils/validation';
+import { validateEmail, validatePhone } from '../../../utils/validation';
 import { LeadFormSteps } from './LeadFormSteps';
 import { LeadPreviewDialog } from './LeadPreviewDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
@@ -217,22 +217,38 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
       if (contactsWithoutPhones.length > 0) {
         newErrors.contact_persons = 'Each contact person must have at least one phone number';
       }
-      // Validate phone number lengths (max 20 characters each)
+      // Validate phone number format (must be exactly 10 digits)
       const invalidPhones = formData.contact_persons.some(cp => 
-        cp.phones && cp.phones.some(phone => phone && phone.length > 20)
+        cp.phones && cp.phones.some(phone => phone && phone.trim().length > 0 && !validatePhone(phone))
       );
       if (invalidPhones) {
-        newErrors.contact_persons = 'Contact person phone numbers must be 20 characters or less';
+        newErrors.contact_persons = 'Contact person phone numbers must be exactly 10 digits';
       }
     }
     
-    // Phone field is required
+    // Phone field is required and must be 10 digits
     if (!formData.phone || !formData.phone.trim()) {
       newErrors.phone = 'Phone is required';
+    } else if (formData.phone.trim().length < 10) {
+      newErrors.phone = 'Phone must be exactly 10 digits';
+    } else if (!validatePhone(formData.phone.trim())) {
+      newErrors.phone = 'Invalid phone number format';
     }
     
-    // Email is optional, but if provided, it must be valid
-    if (formData.email && !validateEmail(formData.email)) newErrors.email = 'Valid email required';
+    // Email validation - optional in create mode, required in edit mode
+    if (mode === 'edit' || mode === 'pre-conversion') {
+      // Email is required in edit mode
+      if (!formData.email || !formData.email.trim()) {
+        newErrors.email = 'Email is required';
+      } else if (!validateEmail(formData.email.trim())) {
+        newErrors.email = 'Please enter a valid email address';
+      }
+    } else {
+      // Email is optional in create mode, but if provided, it must be valid
+      if (formData.email && formData.email.trim().length > 0 && !validateEmail(formData.email.trim())) {
+        newErrors.email = 'Please enter a valid email address';
+      }
+    }
     
     // Step 2 validations (Address is required)
     if (!formData.address?.street?.trim()) newErrors.street = 'Street is required';

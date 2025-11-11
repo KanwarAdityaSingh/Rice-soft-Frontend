@@ -21,9 +21,15 @@ export default function BrokersPage() {
   const filtered = useMemo(() => {
     return brokers.filter((b) => {
       const q = searchQuery.toLowerCase()
+      
+      // Search in contact_persons if available, otherwise fall back to contact_person
+      const contactPersonMatch = b.contact_persons && b.contact_persons.length > 0
+        ? b.contact_persons.some(cp => cp.name?.toLowerCase().includes(q) || cp.phones?.some(p => p?.includes(searchQuery)))
+        : (b.contact_person?.toLowerCase().includes(q) || false)
+      
       const matchesSearch =
         b.business_name.toLowerCase().includes(q) ||
-        b.contact_person.toLowerCase().includes(q) ||
+        contactPersonMatch ||
         b.email.toLowerCase().includes(q) ||
         b.phone.includes(searchQuery)
 
@@ -105,9 +111,19 @@ export default function BrokersPage() {
                 <span className={`whitespace-nowrap px-2 py-1 rounded-md text-[10px] ${b.is_active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground'}`}>{b.is_active ? 'Active' : 'Inactive'}</span>
               </div>
               <div className="mt-3 grid gap-1.5 text-xs">
-                <div className="inline-flex items-center gap-2 text-foreground/90"><span className="text-muted-foreground w-16">Contact</span><span className="font-medium">{b.contact_person.trim()}</span></div>
-                <div className="inline-flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" /><span className="truncate">{b.email.trim()}</span></div>
-                <div className="inline-flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><span>{b.phone.trim()}</span></div>
+                <div className="inline-flex items-center gap-2 text-foreground/90">
+                  <span className="text-muted-foreground w-16">Contact</span>
+                  <span className="font-medium">
+                    {b.contact_persons && b.contact_persons.length > 0
+                      ? b.contact_persons
+                          .filter(cp => cp.name && cp.name.trim().length > 0)
+                          .map(cp => cp.name.trim())
+                          .join(', ') || (b.contact_person?.trim() || 'N/A')
+                      : (b.contact_person?.trim() || 'N/A')}
+                  </span>
+                </div>
+                <div className="inline-flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" /><span className="truncate">{b.email?.trim() || 'N/A'}</span></div>
+                <div className="inline-flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><span>{b.phone?.trim() || 'N/A'}</span></div>
               </div>
               <div className="mt-3 flex items-center justify-end">
                 <ActionButtons

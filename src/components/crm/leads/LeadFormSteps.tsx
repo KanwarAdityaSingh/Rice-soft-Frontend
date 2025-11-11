@@ -7,7 +7,7 @@ import { salesmenAPI } from '../../../services/salesmen.api';
 import { vendorsAPI } from '../../../services/vendors.api';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
-import { validateGST, validatePAN } from '../../../utils/validation';
+import { validateGST, validatePAN, validateEmail, validatePhone } from '../../../utils/validation';
 import type { CreateLeadRequest, Salesman, RiceCode, RiceType } from '../../../types/entities';
 
 interface LeadFormStepsProps {
@@ -236,6 +236,46 @@ export function LeadFormSteps({
       {/* CREATE MODE - Step 1: Essential Info Only */}
       {mode === 'create' && step === 1 && (
         <div className="space-y-4">
+          <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 mb-2">
+            <p className="text-sm text-primary/90">
+              <span className="font-medium">Note:</span> GST Number and PAN Number are optional. You can use the lookup feature to automatically fill in business details.
+            </p>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">GST Number</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={formData.business_details?.gst_number || ''}
+                onChange={(e) => updateBusinessField('gst_number', e.target.value.toUpperCase())}
+                className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                placeholder="27ABCDE1234F1Z5"
+              />
+              <button type="button" onClick={handleGSTLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
+                {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+              </button>
+            </div>
+            {errors.gst_number && <p className="mt-1 text-xs text-red-600">{errors.gst_number}</p>}
+          </div>
+
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">PAN Number</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={formData.business_details?.pan_number || ''}
+                onChange={(e) => updateBusinessField('pan_number', e.target.value.toUpperCase())}
+                className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                placeholder="ABCDE1234F"
+              />
+              <button type="button" onClick={handlePANLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
+                {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+              </button>
+            </div>
+            {errors.pan_number && <p className="mt-1 text-xs text-red-600">{errors.pan_number}</p>}
+          </div>
+
           <div>
             <label className="text-sm font-medium mb-1.5 block">Business Name *</label>
             <input
@@ -281,35 +321,62 @@ export function LeadFormSteps({
                   <div className="space-y-2 pl-0">
                     <label className="text-xs text-muted-foreground">Phone Numbers *</label>
                     {(contact.phones || ['']).map((phone, phoneIndex) => (
-                      <div key={phoneIndex} className="flex gap-2 items-center">
-                        <input
-                          type="tel"
-                          placeholder="Phone"
-                          value={phone}
-                          onChange={(e) => {
-                            const updated = [...(formData.contact_persons || [])];
-                            const updatedPhones = [...(updated[index].phones || [''])];
-                            updatedPhones[phoneIndex] = e.target.value;
-                            updated[index] = { ...updated[index], phones: updatedPhones };
-                            setFormData({ ...formData, contact_persons: updated });
-                          }}
-                          className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                          maxLength={20}
-                        />
-                        {(contact.phones || ['']).length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => {
+                      <div key={phoneIndex} className="space-y-1">
+                        <div className="flex gap-2 items-center">
+                          <input
+                            type="tel"
+                            placeholder="Phone (10 digits)"
+                            value={phone}
+                            onChange={(e) => {
+                              // Only allow digits and limit to 10 digits
+                              const value = e.target.value.replace(/\D/g, '').slice(0, 10);
                               const updated = [...(formData.contact_persons || [])];
-                              const updatedPhones = updated[index].phones.filter((_, i) => i !== phoneIndex);
-                              updated[index] = { ...updated[index], phones: updatedPhones.length > 0 ? updatedPhones : [''] };
+                              const updatedPhones = [...(updated[index].phones || [''])];
+                              updatedPhones[phoneIndex] = value;
+                              updated[index] = { ...updated[index], phones: updatedPhones };
                               setFormData({ ...formData, contact_persons: updated });
+                              // Validate and set error immediately
+                              const errorKey = `contact_person_${index}_phone_${phoneIndex}`;
+                              if (value.length > 0 && value.length < 10) {
+                                setErrors({ ...errors, [errorKey]: 'Phone must be exactly 10 digits' });
+                              } else if (value.length === 10 && !validatePhone(value)) {
+                                setErrors({ ...errors, [errorKey]: 'Invalid phone number format' });
+                              } else {
+                                const newErrors = { ...errors };
+                                delete newErrors[errorKey];
+                                setErrors(newErrors);
+                              }
                             }}
-                            className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-                            title="Remove phone number"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
+                            onBlur={(e) => {
+                              const value = e.target.value.trim();
+                              const errorKey = `contact_person_${index}_phone_${phoneIndex}`;
+                              if (value.length > 0 && value.length < 10) {
+                                setErrors({ ...errors, [errorKey]: 'Phone must be exactly 10 digits' });
+                              } else if (value.length === 10 && !validatePhone(value)) {
+                                setErrors({ ...errors, [errorKey]: 'Invalid phone number format' });
+                              }
+                            }}
+                            className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                            maxLength={10}
+                          />
+                          {(contact.phones || ['']).length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = [...(formData.contact_persons || [])];
+                                const updatedPhones = updated[index].phones.filter((_, i) => i !== phoneIndex);
+                                updated[index] = { ...updated[index], phones: updatedPhones.length > 0 ? updatedPhones : [''] };
+                                setFormData({ ...formData, contact_persons: updated });
+                              }}
+                              className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+                              title="Remove phone number"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                        {errors[`contact_person_${index}_phone_${phoneIndex}`] && (
+                          <p className="text-xs text-red-600 ml-0.5">{errors[`contact_person_${index}_phone_${phoneIndex}`]}</p>
                         )}
                       </div>
                     ))}
@@ -350,10 +417,38 @@ export function LeadFormSteps({
               <label className="text-sm font-medium mb-1.5 block">Phone *</label>
               <input
                 type="tel"
+                placeholder="10 digits only"
                 value={formData.phone || ''}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                onChange={(e) => {
+                  // Only allow digits and limit to 10 digits
+                  const value = e.target.value.replace(/\D/g, '').slice(0, 10);
+                  setFormData({ ...formData, phone: value });
+                  // Validate and set error immediately
+                  if (value.length > 0 && value.length < 10) {
+                    setErrors({ ...errors, phone: 'Phone must be exactly 10 digits' });
+                  } else if (value.length === 10 && !validatePhone(value)) {
+                    setErrors({ ...errors, phone: 'Invalid phone number format' });
+                  } else if (value.length === 10 && validatePhone(value)) {
+                    const newErrors = { ...errors };
+                    delete newErrors.phone;
+                    setErrors(newErrors);
+                  } else if (value.length === 0) {
+                    setErrors({ ...errors, phone: 'Phone is required' });
+                  }
+                }}
+                onBlur={(e) => {
+                  const value = e.target.value.trim();
+                  if (value.length === 0) {
+                    setErrors({ ...errors, phone: 'Phone is required' });
+                  } else if (value.length < 10) {
+                    setErrors({ ...errors, phone: 'Phone must be exactly 10 digits' });
+                  } else if (!validatePhone(value)) {
+                    setErrors({ ...errors, phone: 'Invalid phone number format' });
+                  }
+                }}
                 className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                 required
+                maxLength={10}
               />
               {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone}</p>}
             </div>
@@ -362,8 +457,31 @@ export function LeadFormSteps({
               <label className="text-sm font-medium mb-1.5 block">Email</label>
               <input
                 type="email"
+                placeholder="example@email.com"
                 value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setFormData({ ...formData, email: value });
+                  // Validate and set error immediately (email is optional in create mode)
+                  if (value.trim().length > 0 && !validateEmail(value.trim())) {
+                    setErrors({ ...errors, email: 'Please enter a valid email address' });
+                  } else {
+                    const newErrors = { ...errors };
+                    delete newErrors.email;
+                    setErrors(newErrors);
+                  }
+                }}
+                onBlur={(e) => {
+                  const value = e.target.value.trim();
+                  setFormData({ ...formData, email: value });
+                  if (value.length > 0 && !validateEmail(value)) {
+                    setErrors({ ...errors, email: 'Please enter a valid email address' });
+                  } else {
+                    const newErrors = { ...errors };
+                    delete newErrors.email;
+                    setErrors(newErrors);
+                  }
+                }}
                 className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
               />
               {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
@@ -578,7 +696,7 @@ export function LeadFormSteps({
         <div className="space-y-4">
           <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 mb-2">
             <p className="text-sm text-primary/90">
-              <span className="font-medium">Note:</span> One of the fields (either GST Number or PAN Number) is recommended.
+              <span className="font-medium">Note:</span> GST Number and PAN Number are optional. You can use the lookup feature to automatically fill in business details.
             </p>
           </div>
 
@@ -661,35 +779,62 @@ export function LeadFormSteps({
                   <div className="space-y-2 pl-0">
                     <label className="text-xs text-muted-foreground">Phone Numbers *</label>
                     {(contact.phones || ['']).map((phone, phoneIndex) => (
-                      <div key={phoneIndex} className="flex gap-2 items-center">
-                        <input
-                          type="tel"
-                          placeholder="Phone"
-                          value={phone}
-                          onChange={(e) => {
-                            const updated = [...(formData.contact_persons || [])];
-                            const updatedPhones = [...(updated[index].phones || [''])];
-                            updatedPhones[phoneIndex] = e.target.value;
-                            updated[index] = { ...updated[index], phones: updatedPhones };
-                            setFormData({ ...formData, contact_persons: updated });
-                          }}
-                          className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                          maxLength={20}
-                        />
-                        {(contact.phones || ['']).length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => {
+                      <div key={phoneIndex} className="space-y-1">
+                        <div className="flex gap-2 items-center">
+                          <input
+                            type="tel"
+                            placeholder="Phone (10 digits)"
+                            value={phone}
+                            onChange={(e) => {
+                              // Only allow digits and limit to 10 digits
+                              const value = e.target.value.replace(/\D/g, '').slice(0, 10);
                               const updated = [...(formData.contact_persons || [])];
-                              const updatedPhones = updated[index].phones.filter((_, i) => i !== phoneIndex);
-                              updated[index] = { ...updated[index], phones: updatedPhones.length > 0 ? updatedPhones : [''] };
+                              const updatedPhones = [...(updated[index].phones || [''])];
+                              updatedPhones[phoneIndex] = value;
+                              updated[index] = { ...updated[index], phones: updatedPhones };
                               setFormData({ ...formData, contact_persons: updated });
+                              // Validate and set error immediately
+                              const errorKey = `contact_person_${index}_phone_${phoneIndex}`;
+                              if (value.length > 0 && value.length < 10) {
+                                setErrors({ ...errors, [errorKey]: 'Phone must be exactly 10 digits' });
+                              } else if (value.length === 10 && !validatePhone(value)) {
+                                setErrors({ ...errors, [errorKey]: 'Invalid phone number format' });
+                              } else {
+                                const newErrors = { ...errors };
+                                delete newErrors[errorKey];
+                                setErrors(newErrors);
+                              }
                             }}
-                            className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-                            title="Remove phone number"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
+                            onBlur={(e) => {
+                              const value = e.target.value.trim();
+                              const errorKey = `contact_person_${index}_phone_${phoneIndex}`;
+                              if (value.length > 0 && value.length < 10) {
+                                setErrors({ ...errors, [errorKey]: 'Phone must be exactly 10 digits' });
+                              } else if (value.length === 10 && !validatePhone(value)) {
+                                setErrors({ ...errors, [errorKey]: 'Invalid phone number format' });
+                              }
+                            }}
+                            className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                            maxLength={10}
+                          />
+                          {(contact.phones || ['']).length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = [...(formData.contact_persons || [])];
+                                const updatedPhones = updated[index].phones.filter((_, i) => i !== phoneIndex);
+                                updated[index] = { ...updated[index], phones: updatedPhones.length > 0 ? updatedPhones : [''] };
+                                setFormData({ ...formData, contact_persons: updated });
+                              }}
+                              className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+                              title="Remove phone number"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                        {errors[`contact_person_${index}_phone_${phoneIndex}`] && (
+                          <p className="text-xs text-red-600 ml-0.5">{errors[`contact_person_${index}_phone_${phoneIndex}`]}</p>
                         )}
                       </div>
                     ))}
@@ -730,10 +875,38 @@ export function LeadFormSteps({
               <label className="text-sm font-medium mb-1.5 block">Phone *</label>
               <input
                 type="tel"
+                placeholder="10 digits only"
                 value={formData.phone || ''}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                onChange={(e) => {
+                  // Only allow digits and limit to 10 digits
+                  const value = e.target.value.replace(/\D/g, '').slice(0, 10);
+                  setFormData({ ...formData, phone: value });
+                  // Validate and set error immediately
+                  if (value.length > 0 && value.length < 10) {
+                    setErrors({ ...errors, phone: 'Phone must be exactly 10 digits' });
+                  } else if (value.length === 10 && !validatePhone(value)) {
+                    setErrors({ ...errors, phone: 'Invalid phone number format' });
+                  } else if (value.length === 10 && validatePhone(value)) {
+                    const newErrors = { ...errors };
+                    delete newErrors.phone;
+                    setErrors(newErrors);
+                  } else if (value.length === 0) {
+                    setErrors({ ...errors, phone: 'Phone is required' });
+                  }
+                }}
+                onBlur={(e) => {
+                  const value = e.target.value.trim();
+                  if (value.length === 0) {
+                    setErrors({ ...errors, phone: 'Phone is required' });
+                  } else if (value.length < 10) {
+                    setErrors({ ...errors, phone: 'Phone must be exactly 10 digits' });
+                  } else if (!validatePhone(value)) {
+                    setErrors({ ...errors, phone: 'Invalid phone number format' });
+                  }
+                }}
                 className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                 required
+                maxLength={10}
               />
               {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone}</p>}
             </div>
@@ -742,8 +915,35 @@ export function LeadFormSteps({
               <label className="text-sm font-medium mb-1.5 block">Email *</label>
               <input
                 type="email"
+                placeholder="example@email.com"
                 value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setFormData({ ...formData, email: value });
+                  // Validate and set error immediately (email is required in edit mode)
+                  if (value.length === 0) {
+                    setErrors({ ...errors, email: 'Email is required' });
+                  } else if (value.trim().length > 0 && !validateEmail(value.trim())) {
+                    setErrors({ ...errors, email: 'Please enter a valid email address' });
+                  } else if (value.trim().length > 0 && validateEmail(value.trim())) {
+                    const newErrors = { ...errors };
+                    delete newErrors.email;
+                    setErrors(newErrors);
+                  }
+                }}
+                onBlur={(e) => {
+                  const value = e.target.value.trim();
+                  setFormData({ ...formData, email: value });
+                  if (value.length === 0) {
+                    setErrors({ ...errors, email: 'Email is required' });
+                  } else if (!validateEmail(value)) {
+                    setErrors({ ...errors, email: 'Please enter a valid email address' });
+                  } else {
+                    const newErrors = { ...errors };
+                    delete newErrors.email;
+                    setErrors(newErrors);
+                  }
+                }}
                 className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
               />
               {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}

@@ -110,7 +110,28 @@ export function BrokerPreviewDialog({ open, onOpenChange, formData, onConfirm }:
               {/* Basic Information */}
               <InfoSection title="Basic Information" icon={Building2}>
                 <InfoRow label="Business Name" value={formData.business_name} />
-                <InfoRow label="Contact Person" value={formData.contact_person} />
+                {formData.contact_persons && formData.contact_persons.length > 0 && (
+                  <div className="flex justify-between items-start">
+                    <span className="text-muted-foreground min-w-[120px]">Contact Persons:</span>
+                    <div className="text-foreground font-medium text-right flex-1">
+                      {formData.contact_persons
+                        .filter(cp => cp.name && cp.name.trim().length > 0)
+                        .map((cp, idx) => (
+                          <div key={idx} className="mb-1">
+                            <div className="font-semibold">{cp.name}</div>
+                            {cp.phones && cp.phones.length > 0 && (
+                              <div className="text-xs text-muted-foreground mt-0.5">
+                                {cp.phones.filter(p => p && p.trim().length > 0).join(', ')}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+                {(!formData.contact_persons || formData.contact_persons.length === 0) && formData.contact_person && (
+                  <InfoRow label="Contact Person" value={formData.contact_person} />
+                )}
                 <InfoRow label="Email" value={formData.email} />
                 <InfoRow label="Phone" value={formData.phone} />
                 <InfoRow label="Type" value={getTypeLabel(formData.type)} />

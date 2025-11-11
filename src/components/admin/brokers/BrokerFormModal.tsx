@@ -1,10 +1,10 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState } from 'react';
-import { X, Search } from 'lucide-react';
+import { X, Search, Plus } from 'lucide-react';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { brokersAPI } from '../../../services/brokers.api';
-import { validateEmail, validatePAN, validateAadhaar } from '../../../utils/validation';
+import { validateEmail, validatePAN, validateAadhaar, validatePhone } from '../../../utils/validation';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { BrokerPreviewDialog } from './BrokerPreviewDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
@@ -20,6 +20,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
   const [formData, setFormData] = useState<CreateBrokerRequest>({
     business_name: '',
     contact_person: '',
+    contact_persons: [{ name: '', phones: [''] }],
     email: '',
     phone: '',
     address: {
@@ -58,9 +59,46 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
 
     // Basic validation
     if (!formData.business_name) newErrors.business_name = 'Business name required';
-    if (!formData.contact_person) newErrors.contact_person = 'Contact person required';
-    if (!validateEmail(formData.email)) newErrors.email = 'Valid email required';
-    if (!formData.phone) newErrors.phone = 'Phone required';
+    
+    // Validate contact_persons: must have at least one with name and at least one phone
+    if (!formData.contact_persons || formData.contact_persons.length === 0) {
+      newErrors.contact_persons = 'At least one contact person is required';
+    } else {
+      const invalidContacts = formData.contact_persons.filter(cp => !cp.name || cp.name.trim().length < 2);
+      if (invalidContacts.length > 0) {
+        newErrors.contact_persons = 'Each contact person must have a name (minimum 2 characters)';
+      }
+      // Validate that each contact person has at least one phone number
+      const contactsWithoutPhones = formData.contact_persons.filter(cp => 
+        !cp.phones || cp.phones.length === 0 || cp.phones.every(p => !p || p.trim().length === 0)
+      );
+      if (contactsWithoutPhones.length > 0) {
+        newErrors.contact_persons = 'Each contact person must have at least one phone number';
+      }
+      // Validate phone number format (must be exactly 10 digits)
+      const invalidPhones = formData.contact_persons.some(cp => 
+        cp.phones && cp.phones.some(phone => phone && phone.trim().length > 0 && !validatePhone(phone))
+      );
+      if (invalidPhones) {
+        newErrors.contact_persons = 'Contact person phone numbers must be exactly 10 digits';
+      }
+    }
+    
+    // Phone field is required and must be 10 digits
+    if (!formData.phone || !formData.phone.trim()) {
+      newErrors.phone = 'Phone is required';
+    } else if (formData.phone.trim().length < 10) {
+      newErrors.phone = 'Phone must be exactly 10 digits';
+    } else if (!validatePhone(formData.phone.trim())) {
+      newErrors.phone = 'Invalid phone number format';
+    }
+    
+    // Email is required and must be valid
+    if (!formData.email || !formData.email.trim()) {
+      newErrors.email = 'Email is required';
+    } else if (!validateEmail(formData.email.trim())) {
+      newErrors.email = 'Please enter a valid email address';
+    }
 
     // Validate PAN format if provided
     if (formData.business_details.pan_number && !validatePAN(formData.business_details.pan_number)) {
@@ -80,7 +118,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       // Navigate to step with errors
-      if (newErrors.business_name || newErrors.contact_person || newErrors.email || newErrors.phone || newErrors.pan_number || newErrors.aadhaar_number || newErrors.business_details) {
+      if (newErrors.business_name || newErrors.contact_persons || newErrors.email || newErrors.phone || newErrors.pan_number || newErrors.aadhaar_number || newErrors.business_details) {
         setStep(1);
       } else if (newErrors.street || newErrors.city || newErrors.state || newErrors.pincode) {
         setStep(2);
@@ -115,10 +153,17 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       // Populate business name if available
       const businessName = mapped?.business_name || formData.business_name;
       
-      // Populate contact person if PAN is for a person (individual)
-      const contactPerson = panData?.category === 'person' && panData?.name 
-        ? panData.name 
-        : formData.contact_person;
+      // If PAN data is for a person, add to contact_persons if not already present
+      let contactPersons = [...(formData.contact_persons || [])];
+      if (panData?.category === 'person' && panData?.name) {
+        const existingContact = contactPersons.find(cp => cp.name === panData.name);
+        if (!existingContact) {
+          contactPersons = [
+            ...contactPersons,
+            { name: panData.name, phones: [''] }
+          ];
+        }
+      }
       
       // Populate address fields (only fill non-empty values)
       const addressUpdate: any = { ...formData.address };
@@ -148,7 +193,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       setFormData({
         ...formData,
         business_name: businessName,
-        contact_person: contactPerson,
+        contact_persons: contactPersons,
         address: addressUpdate,
         business_details: businessDetailsUpdate,
       });
@@ -190,8 +235,18 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         // Populate business name if available
         const businessName = mapped?.business_name || formData.business_name;
         
-        // Populate contact person if available
-        const contactPerson = aadhaarData?.name || mapped?.contact_person || formData.contact_person;
+        // If Aadhaar data has a name, add to contact_persons if not already present
+        let contactPersons = [...(formData.contact_persons || [])];
+        const aadhaarName = aadhaarData?.name || mapped?.contact_person;
+        if (aadhaarName) {
+          const existingContact = contactPersons.find(cp => cp.name === aadhaarName);
+          if (!existingContact) {
+            contactPersons = [
+              ...contactPersons,
+              { name: aadhaarName, phones: [''] }
+            ];
+          }
+        }
         
         // Populate address fields (only fill non-empty values)
         const addressUpdate: any = { ...formData.address };
@@ -206,7 +261,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         setFormData({
           ...formData,
           business_name: businessName,
-          contact_person: contactPerson,
+          contact_persons: contactPersons,
           address: addressUpdate,
         });
       }
@@ -235,11 +290,26 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
   const handlePreviewConfirm = async (data: CreateBrokerRequest) => {
     setLoading(true);
     try {
-      await createBroker(data);
+      // Clean up form data before submission
+      const cleanedFormData: CreateBrokerRequest = { ...data };
+      
+      // Filter out empty contact persons (ones with no name) and clean up phones arrays
+      if (cleanedFormData.contact_persons) {
+        cleanedFormData.contact_persons = cleanedFormData.contact_persons
+          .filter(cp => cp.name && cp.name.trim().length > 0)
+          .map(cp => ({
+            name: cp.name.trim(),
+            phones: cp.phones.filter(phone => phone && phone.trim().length > 0)
+          }))
+          .filter(cp => cp.phones.length > 0); // Remove contact persons with no valid phones
+      }
+      
+      await createBroker(cleanedFormData);
       setPreviewOpen(false);
       setFormData({
         business_name: '',
         contact_person: '',
+        contact_persons: [{ name: '', phones: [''] }],
         email: '',
         phone: '',
         address: { street: '', city: '', state: '', pincode: '', country: 'India' },
@@ -375,28 +445,127 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                     {errors.business_name && <p className="mt-1 text-xs text-red-600">{errors.business_name}</p>}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">Contact Person *</label>
-                      <input
-                        type="text"
-                        value={formData.contact_person}
-                        onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })}
-                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                      />
-                      {errors.contact_person && <p className="mt-1 text-xs text-red-600">{errors.contact_person}</p>}
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Contact Persons *</label>
+                    <div className="space-y-3">
+                      {(formData.contact_persons || []).map((contact, index) => (
+                        <div key={index} className="space-y-2 p-3 border border-border rounded-lg">
+                          <div className="flex gap-2 items-start">
+                            <input
+                              type="text"
+                              placeholder="Name"
+                              value={contact.name}
+                              onChange={(e) => {
+                                const updated = [...(formData.contact_persons || [])];
+                                updated[index] = { ...updated[index], name: e.target.value };
+                                setFormData({ ...formData, contact_persons: updated });
+                              }}
+                              className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                            />
+                            {(formData.contact_persons || []).length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = (formData.contact_persons || []).filter((_, i) => i !== index);
+                                  setFormData({ ...formData, contact_persons: updated });
+                                }}
+                                className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+                                title="Remove contact person"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                          <div className="space-y-2 pl-0">
+                            <label className="text-xs text-muted-foreground">Phone Numbers *</label>
+                            {(contact.phones || ['']).map((phone, phoneIndex) => (
+                              <div key={phoneIndex} className="flex gap-2 items-center">
+                                <input
+                                  type="tel"
+                                  placeholder="Phone (10 digits)"
+                                  value={phone}
+                                  onChange={(e) => {
+                                    // Only allow digits and limit to 10 digits
+                                    const value = e.target.value.replace(/\D/g, '').slice(0, 10);
+                                    const updated = [...(formData.contact_persons || [])];
+                                    const updatedPhones = [...(updated[index].phones || [''])];
+                                    updatedPhones[phoneIndex] = value;
+                                    updated[index] = { ...updated[index], phones: updatedPhones };
+                                    setFormData({ ...formData, contact_persons: updated });
+                                    // Validate and set error immediately
+                                    const errorKey = `contact_person_${index}_phone_${phoneIndex}`;
+                                    if (value.length > 0 && value.length < 10) {
+                                      setErrors({ ...errors, [errorKey]: 'Phone must be exactly 10 digits' });
+                                    } else if (value.length === 10 && !validatePhone(value)) {
+                                      setErrors({ ...errors, [errorKey]: 'Invalid phone number format' });
+                                    } else {
+                                      const newErrors = { ...errors };
+                                      delete newErrors[errorKey];
+                                      setErrors(newErrors);
+                                    }
+                                  }}
+                                  onBlur={(e) => {
+                                    const value = e.target.value.trim();
+                                    const errorKey = `contact_person_${index}_phone_${phoneIndex}`;
+                                    if (value.length > 0 && value.length < 10) {
+                                      setErrors({ ...errors, [errorKey]: 'Phone must be exactly 10 digits' });
+                                    } else if (value.length === 10 && !validatePhone(value)) {
+                                      setErrors({ ...errors, [errorKey]: 'Invalid phone number format' });
+                                    }
+                                  }}
+                                  className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                                  maxLength={10}
+                                />
+                                {errors[`contact_person_${index}_phone_${phoneIndex}`] && (
+                                  <p className="text-xs text-red-600 mt-0.5">{errors[`contact_person_${index}_phone_${phoneIndex}`]}</p>
+                                )}
+                                {(contact.phones || ['']).length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = [...(formData.contact_persons || [])];
+                                      const updatedPhones = updated[index].phones.filter((_, i) => i !== phoneIndex);
+                                      updated[index] = { ...updated[index], phones: updatedPhones.length > 0 ? updatedPhones : [''] };
+                                      setFormData({ ...formData, contact_persons: updated });
+                                    }}
+                                    className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+                                    title="Remove phone number"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = [...(formData.contact_persons || [])];
+                                updated[index] = { ...updated[index], phones: [...(updated[index].phones || ['']), ''] };
+                                setFormData({ ...formData, contact_persons: updated });
+                              }}
+                              className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
+                            >
+                              <Plus className="h-3 w-3" />
+                              Add Phone Number
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormData({
+                            ...formData,
+                            contact_persons: [...(formData.contact_persons || []), { name: '', phones: [''] }]
+                          });
+                        }}
+                        className="w-full flex items-center justify-center gap-2 py-2 text-sm text-primary hover:bg-primary/10 rounded-lg border border-dashed border-primary/50 transition-colors"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Add Contact Person
+                      </button>
                     </div>
-
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">Email *</label>
-                      <input
-                        type="email"
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                      />
-                      {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
-                    </div>
+                    {errors.contact_persons && <p className="mt-1 text-xs text-red-600">{errors.contact_persons}</p>}
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
@@ -404,26 +573,93 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                       <label className="text-sm font-medium mb-1.5 block">Phone *</label>
                       <input
                         type="tel"
-                        value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                        placeholder="10 digits only"
+                        value={formData.phone || ''}
+                        onChange={(e) => {
+                          // Only allow digits and limit to 10 digits
+                          const value = e.target.value.replace(/\D/g, '').slice(0, 10);
+                          setFormData({ ...formData, phone: value });
+                          // Validate and set error immediately
+                          if (value.length > 0 && value.length < 10) {
+                            setErrors({ ...errors, phone: 'Phone must be exactly 10 digits' });
+                          } else if (value.length === 10 && !validatePhone(value)) {
+                            setErrors({ ...errors, phone: 'Invalid phone number format' });
+                          } else if (value.length === 10 && validatePhone(value)) {
+                            const newErrors = { ...errors };
+                            delete newErrors.phone;
+                            setErrors(newErrors);
+                          } else if (value.length === 0) {
+                            setErrors({ ...errors, phone: 'Phone is required' });
+                          }
+                        }}
+                        onBlur={(e) => {
+                          const value = e.target.value.trim();
+                          if (value.length === 0) {
+                            setErrors({ ...errors, phone: 'Phone is required' });
+                          } else if (value.length < 10) {
+                            setErrors({ ...errors, phone: 'Phone must be exactly 10 digits' });
+                          } else if (!validatePhone(value)) {
+                            setErrors({ ...errors, phone: 'Invalid phone number format' });
+                          }
+                        }}
                         className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                        required
+                        maxLength={10}
                       />
                       {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone}</p>}
                     </div>
 
                     <div>
-                      <label className="text-sm font-medium mb-1.5 block">Type *</label>
-                      <CustomSelect
-                        value={formData.type}
-                        onChange={(value) => setFormData({ ...formData, type: value as any })}
-                        options={[
-                          { value: 'purchase', label: 'Purchase' },
-                          { value: 'sale', label: 'Sale' },
-                          { value: 'both', label: 'Both' }
-                        ]}
-                        placeholder="Select Type"
+                      <label className="text-sm font-medium mb-1.5 block">Email *</label>
+                      <input
+                        type="email"
+                        placeholder="example@email.com"
+                        value={formData.email}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setFormData({ ...formData, email: value });
+                          // Validate and set error immediately (don't trim while typing)
+                          if (value.length === 0) {
+                            setErrors({ ...errors, email: 'Email is required' });
+                          } else if (value.trim().length > 0 && !validateEmail(value.trim())) {
+                            setErrors({ ...errors, email: 'Please enter a valid email address' });
+                          } else if (value.trim().length > 0 && validateEmail(value.trim())) {
+                            const newErrors = { ...errors };
+                            delete newErrors.email;
+                            setErrors(newErrors);
+                          }
+                        }}
+                        onBlur={(e) => {
+                          const value = e.target.value.trim();
+                          setFormData({ ...formData, email: value });
+                          if (value.length === 0) {
+                            setErrors({ ...errors, email: 'Email is required' });
+                          } else if (!validateEmail(value)) {
+                            setErrors({ ...errors, email: 'Please enter a valid email address' });
+                          } else {
+                            const newErrors = { ...errors };
+                            delete newErrors.email;
+                            setErrors(newErrors);
+                          }
+                        }}
+                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                       />
+                      {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
                     </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Type *</label>
+                    <CustomSelect
+                      value={formData.type}
+                      onChange={(value) => setFormData({ ...formData, type: value as any })}
+                      options={[
+                        { value: 'purchase', label: 'Purchase' },
+                        { value: 'sale', label: 'Sale' },
+                        { value: 'both', label: 'Both' }
+                      ]}
+                      placeholder="Select Type"
+                    />
                   </div>
 
                   <button type="button" onClick={() => setStep(2)} className="btn-primary w-full">

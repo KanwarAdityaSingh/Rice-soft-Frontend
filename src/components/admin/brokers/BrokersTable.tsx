@@ -17,10 +17,20 @@ export function BrokersTable() {
   const [selectedBroker, setSelectedBroker] = useState<{ id: string; business_name?: string } | null>(null);
 
   const filteredBrokers = brokers.filter((broker) => {
+    const q = searchQuery.toLowerCase();
+    
+    // Search in contact_persons if available, otherwise fall back to contact_person
+    const contactPersonMatch = broker.contact_persons && broker.contact_persons.length > 0
+      ? broker.contact_persons.some(cp => 
+          cp.name?.toLowerCase().includes(q) || 
+          cp.phones?.some(p => p?.toLowerCase().includes(q))
+        )
+      : (broker.contact_person?.toLowerCase().includes(q) || false);
+    
     const matchesSearch = 
-      broker.business_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      broker.contact_person.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      broker.email.toLowerCase().includes(searchQuery.toLowerCase());
+      broker.business_name.toLowerCase().includes(q) ||
+      contactPersonMatch ||
+      broker.email.toLowerCase().includes(q);
     
     const matchesStatus = statusFilter ? (statusFilter === 'active' ? broker.is_active : !broker.is_active) : true;
     const matchesType = typeFilter ? broker.type === typeFilter : true;
@@ -86,7 +96,14 @@ export function BrokersTable() {
                 {filteredBrokers.map((broker) => (
                   <tr key={broker.id} className="border-b border-border/60 hover:bg-muted/30 transition-colors">
                     <td className="py-3 px-4 text-sm font-medium">{broker.business_name}</td>
-                    <td className="py-3 px-4 text-sm">{broker.contact_person}</td>
+                    <td className="py-3 px-4 text-sm">
+                      {broker.contact_persons && broker.contact_persons.length > 0
+                        ? broker.contact_persons
+                            .filter(cp => cp.name && cp.name.trim().length > 0)
+                            .map(cp => cp.name.trim())
+                            .join(', ') || (broker.contact_person || 'N/A')
+                        : (broker.contact_person || 'N/A')}
+                    </td>
                     <td className="py-3 px-4 text-sm">{broker.email}</td>
                     <td className="py-3 px-4 text-sm">{broker.phone}</td>
                     <td className="py-3 px-4 text-sm capitalize">{broker.type}</td>
@@ -119,7 +136,14 @@ export function BrokersTable() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-base truncate">{broker.business_name}</h3>
-                    <p className="text-sm text-muted-foreground truncate">{broker.contact_person}</p>
+                    <p className="text-sm text-muted-foreground truncate">
+                      {broker.contact_persons && broker.contact_persons.length > 0
+                        ? broker.contact_persons
+                            .filter(cp => cp.name && cp.name.trim().length > 0)
+                            .map(cp => cp.name.trim())
+                            .join(', ') || (broker.contact_person || 'N/A')
+                        : (broker.contact_person || 'N/A')}
+                    </p>
                   </div>
                   <span className={`px-2 py-1 rounded-md text-xs whitespace-nowrap ${
                     broker.is_active 
