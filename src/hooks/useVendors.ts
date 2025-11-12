@@ -41,7 +41,8 @@ export function useVendors() {
   const updateVendor = async (id: string, data: UpdateVendorRequest) => {
     try {
       const updatedVendor = await vendorsAPI.updateVendor(id, data);
-      setVendors(vendors.map((v) => (v.id === id ? updatedVendor : v)));
+      // Refetch all vendors to ensure we have the latest data from the server
+      await fetchVendors();
       // success('Vendor updated successfully');
       return updatedVendor;
     } catch (err: any) {

@@ -7,6 +7,7 @@ import { salesmenAPI } from '../../../services/salesmen.api';
 import { vendorsAPI } from '../../../services/vendors.api';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
+import { pincodeAPI } from '../../../services/pincode.api';
 import { validateGST, validatePAN, validateEmail, validatePhone, validateGoogleLocationLink } from '../../../utils/validation';
 import type { CreateLeadRequest, Salesman, RiceCode, RiceType } from '../../../types/entities';
 
@@ -40,6 +41,7 @@ export function LeadFormSteps({
   const [loadingRiceCodes, setLoadingRiceCodes] = useState(false);
   const [loadingRiceTypes, setLoadingRiceTypes] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
+  const [pincodeLoading, setPincodeLoading] = useState(false);
   
   // Filter to only active brokers for dropdown
   const brokers = allBrokers.filter(b => b.is_active);
@@ -254,6 +256,53 @@ export function LeadFormSteps({
       setErrors({ ...errors, pan_number: error?.message || 'Failed to lookup PAN details' });
     } finally {
       setLookupLoading(false);
+    }
+  };
+
+  const handlePincodeLookup = async (pincode: string) => {
+    // Only lookup if pincode is exactly 6 digits
+    if (!/^\d{6}$/.test(pincode)) {
+      return;
+    }
+
+    setPincodeLoading(true);
+    const errorKey = 'pincode';
+    setErrors({ ...errors, [errorKey]: '' });
+
+    try {
+      const response = await pincodeAPI.lookupPincode(pincode);
+      
+      // Extract post office data from response
+      const postOffice = response.postOffices?.[0];
+      
+      if (!postOffice) {
+        console.warn('No post office data found in pincode lookup response');
+        return;
+      }
+
+      // Update address fields from pincode lookup response
+      const updates: CreateLeadRequest = {
+        ...formData,
+        address: {
+          ...(formData.address || {}),
+          pincode: postOffice.Pincode || pincode,
+          // Use Block as city, fallback to District, then Name
+          city: postOffice.Block || postOffice.District || postOffice.Name || formData.address?.city || '',
+          state: postOffice.State || formData.address?.state || '',
+          country: postOffice.Country || formData.address?.country || 'India',
+          // Keep existing street if present, otherwise leave empty
+          street: formData.address?.street || '',
+        },
+      };
+
+      setFormData(updates);
+      setErrors({ ...errors, [errorKey]: '' });
+    } catch (error: any) {
+      console.error('Pincode lookup error:', error);
+      // Don't show error if pincode is invalid - user might still be typing
+      // Only show error on blur or if it's a clear API error
+    } finally {
+      setPincodeLoading(false);
     }
   };
 
@@ -638,13 +687,36 @@ export function LeadFormSteps({
               <label className="text-sm font-medium mb-1.5 block">
                 Pincode <span className="text-red-500">*</span>
               </label>
-              <input
-                type="text"
-                value={formData.address?.pincode || ''}
-                onChange={(e) => updateAddressField('pincode', e.target.value)}
-                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                required
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={formData.address?.pincode || ''}
+                  onChange={(e) => {
+                    // Only allow digits and limit to 6 digits
+                    const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                    updateAddressField('pincode', value);
+                    // Auto-lookup when 6 digits are entered
+                    if (value.length === 6) {
+                      handlePincodeLookup(value);
+                    }
+                  }}
+                  onBlur={(e) => {
+                    const value = e.target.value.trim();
+                    if (value.length === 6) {
+                      handlePincodeLookup(value);
+                    }
+                  }}
+                  className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                  placeholder="6 digits"
+                  maxLength={6}
+                  required
+                />
+                {pincodeLoading && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <LoadingSpinner size="sm" />
+                  </div>
+                )}
+              </div>
               {errors.pincode && <p className="mt-1 text-xs text-red-600">{errors.pincode}</p>}
             </div>
 
@@ -1165,13 +1237,36 @@ export function LeadFormSteps({
               <label className="text-sm font-medium mb-1.5 block">
                 Pincode <span className="text-red-500">*</span>
               </label>
-              <input
-                type="text"
-                value={formData.address?.pincode || ''}
-                onChange={(e) => updateAddressField('pincode', e.target.value)}
-                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                required
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  value={formData.address?.pincode || ''}
+                  onChange={(e) => {
+                    // Only allow digits and limit to 6 digits
+                    const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                    updateAddressField('pincode', value);
+                    // Auto-lookup when 6 digits are entered
+                    if (value.length === 6) {
+                      handlePincodeLookup(value);
+                    }
+                  }}
+                  onBlur={(e) => {
+                    const value = e.target.value.trim();
+                    if (value.length === 6) {
+                      handlePincodeLookup(value);
+                    }
+                  }}
+                  className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                  placeholder="6 digits"
+                  maxLength={6}
+                  required
+                />
+                {pincodeLoading && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <LoadingSpinner size="sm" />
+                  </div>
+                )}
+              </div>
               {errors.pincode && <p className="mt-1 text-xs text-red-600">{errors.pincode}</p>}
             </div>
 

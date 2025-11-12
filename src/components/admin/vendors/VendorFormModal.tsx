@@ -1,22 +1,28 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { useState } from 'react';
-import { X, Search } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, Search, ExternalLink } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { useVendors } from '../../../hooks/useVendors';
 import { vendorsAPI } from '../../../services/vendors.api';
+import { leadsAPI } from '../../../services/leads.api';
+import { pincodeAPI } from '../../../services/pincode.api';
 import { validateEmail, validateGST, validatePAN, validateGoogleLocationLink } from '../../../utils/validation';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { VendorPreviewDialog } from './VendorPreviewDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
-import type { CreateVendorRequest } from '../../../types/entities';
+import type { CreateVendorRequest, UpdateVendorRequest, Lead } from '../../../types/entities';
 
 interface VendorFormModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  vendorId?: string | null;
 }
 
-export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
-  const { createVendor } = useVendors();
+export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModalProps) {
+  const { createVendor, updateVendor } = useVendors();
+  const navigate = useNavigate();
+  const isEditMode = !!vendorId;
   const [formData, setFormData] = useState<CreateVendorRequest>({
     business_name: '',
     contact_person: '',
@@ -42,12 +48,127 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
+  const [pincodeLoading, setPincodeLoading] = useState(false);
   const [step, setStep] = useState(1);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+  const [loadingVendor, setLoadingVendor] = useState(false);
+  const [originalGstNumber, setOriginalGstNumber] = useState<string>('');
+  const [originalPanNumber, setOriginalPanNumber] = useState<string>('');
+  const [leadData, setLeadData] = useState<Lead | null>(null);
+
+  // Load vendor data when in edit mode
+  useEffect(() => {
+    if (open && vendorId && isEditMode) {
+      loadVendorData();
+    } else if (open && !vendorId) {
+      // Reset form when opening in create mode
+      resetForm();
+    }
+  }, [open, vendorId]);
+
+  // Load lead data when vendor has lead_id
+  useEffect(() => {
+    if (open && vendorId && isEditMode && leadData === null) {
+      loadLeadData();
+    } else if (!open) {
+      setLeadData(null);
+    }
+  }, [open, vendorId, isEditMode]);
+
+  const loadVendorData = async () => {
+    if (!vendorId) return;
+    
+    setLoadingVendor(true);
+    try {
+      const vendor = await vendorsAPI.getVendorById(vendorId);
+      const gstNumber = vendor.business_details?.gst_number || '';
+      const panNumber = vendor.business_details?.pan_number || '';
+      
+      // Store original values to check if they should be disabled
+      setOriginalGstNumber(gstNumber);
+      setOriginalPanNumber(panNumber);
+      
+      setFormData({
+        business_name: vendor.business_name || '',
+        contact_person: vendor.contact_person || '',
+        email: vendor.email || '',
+        phone: vendor.phone || '',
+        address: {
+          street: vendor.address?.street || '',
+          city: vendor.address?.city || '',
+          state: vendor.address?.state || '',
+          pincode: vendor.address?.pincode || '',
+          country: vendor.address?.country || 'India',
+        },
+        business_details: {
+          pan_number: panNumber,
+          gst_number: gstNumber,
+          registration_number: vendor.business_details?.registration_number || '',
+        },
+        type: vendor.type || 'both',
+        is_active: vendor.is_active ?? true,
+        google_location_link: vendor.google_location_link || null,
+      });
+      setStep(1);
+      setErrors({});
+    } catch (error: any) {
+      console.error('Failed to load vendor:', error);
+      setAlertType('error');
+      setAlertTitle('Failed to Load Vendor');
+      setAlertMessage(error?.message || 'Could not load vendor data. Please try again.');
+      setAlertOpen(true);
+      onOpenChange(false);
+    } finally {
+      setLoadingVendor(false);
+    }
+  };
+
+  const loadLeadData = async () => {
+    if (!vendorId) return;
+    
+    try {
+      const vendor = await vendorsAPI.getVendorById(vendorId);
+      if (vendor.lead_id) {
+        const lead = await leadsAPI.getLeadById(vendor.lead_id);
+        setLeadData(lead);
+      }
+    } catch (error: any) {
+      console.error('Failed to load lead data:', error);
+      // Don't show error, just log it
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      business_name: '',
+      contact_person: '',
+      email: '',
+      phone: '',
+      address: {
+        street: '',
+        city: '',
+        state: '',
+        pincode: '',
+        country: 'India',
+      },
+      business_details: {
+        pan_number: '',
+        gst_number: '',
+        registration_number: '',
+      },
+      type: 'both',
+      is_active: true,
+      google_location_link: null,
+    });
+    setStep(1);
+    setErrors({});
+    setOriginalGstNumber('');
+    setOriginalPanNumber('');
+  };
 
   const handleGSTLookup = async () => {
     if (!formData.business_details.gst_number) {
@@ -196,6 +317,49 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
     }
   };
 
+  const handlePincodeLookup = async (pincode: string) => {
+    // Only lookup if pincode is exactly 6 digits
+    if (!/^\d{6}$/.test(pincode)) {
+      return;
+    }
+
+    setPincodeLoading(true);
+    const errorKey = 'pincode';
+    setErrors({ ...errors, [errorKey]: '' });
+
+    try {
+      const response = await pincodeAPI.lookupPincode(pincode);
+      
+      // Extract post office data from response
+      const postOffice = response.postOffices?.[0];
+      
+      if (!postOffice) {
+        console.warn('No post office data found in pincode lookup response');
+        return;
+      }
+
+      // Update address fields from pincode lookup response
+      setFormData({
+        ...formData,
+        address: {
+          ...formData.address,
+          pincode: postOffice.Pincode || pincode,
+          // Fill city, state from response
+          city: postOffice.Block || postOffice.District || postOffice.Name || formData.address?.city || '',
+          state: postOffice.State || formData.address?.state || '',
+          country: postOffice.Country || formData.address?.country || 'India',
+        },
+      });
+
+      setErrors({ ...errors, [errorKey]: '' });
+    } catch (error: any) {
+      console.error('Pincode lookup error:', error);
+      // Don't show error if pincode is invalid - user might still be typing
+    } finally {
+      setPincodeLoading(false);
+    }
+  };
+
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
@@ -237,54 +401,70 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate and show preview instead of directly saving
-    if (validateForm()) {
-      // Close form modal and open preview dialog
+    // Validate form
+    if (!validateForm()) {
+      return;
+    }
+
+    // In edit mode, directly update without preview
+    if (isEditMode && vendorId) {
+      setLoading(true);
+      try {
+        await updateVendor(vendorId, formData as UpdateVendorRequest);
+        setAlertType('success');
+        setAlertTitle('Vendor Updated Successfully');
+        setAlertMessage('The vendor has been updated successfully.');
+        setAlertOpen(true);
+        onOpenChange(false);
+      } catch (error: any) {
+        setAlertType('error');
+        setAlertTitle('Failed to Update Vendor');
+        const errorMessage = 
+          error?.message || 
+          error?.data?.message || 
+          error?.response?.data?.message || 
+          'An error occurred while updating the vendor. Please try again.';
+        setAlertMessage(errorMessage);
+        setAlertOpen(true);
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      // In create mode, show preview dialog
       onOpenChange(false);
       setPreviewOpen(true);
     }
   };
 
-  const handlePreviewConfirm = async (data: CreateVendorRequest) => {
+  const handlePreviewConfirm = async (data: CreateVendorRequest | UpdateVendorRequest) => {
     setLoading(true);
     try {
-      const cleaned: CreateVendorRequest = {
-        ...data,
-        google_location_link: data.google_location_link && data.google_location_link.trim()
-          ? data.google_location_link.trim().slice(0, 500)
-          : null
-      };
-      await createVendor(cleaned);
+      if (isEditMode && vendorId) {
+        await updateVendor(vendorId, data as UpdateVendorRequest);
+        setAlertType('success');
+        setAlertTitle('Vendor Updated Successfully');
+        setAlertMessage('The vendor has been updated successfully.');
+      } else {
+        await createVendor(data as CreateVendorRequest);
+        resetForm();
+        setAlertType('success');
+        setAlertTitle('Vendor Created Successfully');
+        setAlertMessage('The vendor has been created successfully.');
+      }
       setPreviewOpen(false);
-      setFormData({
-        business_name: '',
-        contact_person: '',
-        email: '',
-        phone: '',
-        address: { street: '', city: '', state: '', pincode: '', country: 'India' },
-        business_details: { pan_number: '', gst_number: '', registration_number: '' },
-        type: 'both',
-        is_active: true,
-      });
-      setErrors({});
-      setStep(1);
-      // Show success alert
-      setAlertType('success');
-      setAlertTitle('Vendor Created Successfully');
-      setAlertMessage('The vendor has been created successfully.');
       setAlertOpen(true);
       // Close the form modal after success
       onOpenChange(false);
     } catch (error: any) {
       // Show error alert with API response
       setAlertType('error');
-      setAlertTitle('Failed to Create Vendor');
+      setAlertTitle(isEditMode ? 'Failed to Update Vendor' : 'Failed to Create Vendor');
       // Extract error message from various possible locations
       const errorMessage = 
         error?.message || 
         error?.data?.message || 
         error?.response?.data?.message || 
-        'An error occurred while creating the vendor. Please try again.';
+        `An error occurred while ${isEditMode ? 'updating' : 'creating'} the vendor. Please try again.`;
       setAlertMessage(errorMessage);
       setAlertOpen(true);
       setPreviewOpen(false);
@@ -300,11 +480,20 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
         <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-full max-w-3xl translate-x-[-50%] translate-y-[-50%]">
           <div className="glass rounded-2xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
-              <Dialog.Title className="text-xl font-semibold">Create Vendor</Dialog.Title>
+              <Dialog.Title className="text-xl font-semibold">
+                {isEditMode ? 'Update Vendor' : 'Create Vendor'}
+              </Dialog.Title>
               <button onClick={() => onOpenChange(false)} className="rounded-lg p-1 hover:bg-muted/50 transition-colors">
                 <X className="h-5 w-5" />
               </button>
             </div>
+
+            {loadingVendor && (
+              <div className="flex items-center justify-center py-8">
+                <LoadingSpinner />
+                <span className="ml-2 text-sm text-muted-foreground">Loading vendor data...</span>
+              </div>
+            )}
 
             {/* Steps */}
             <div className="flex gap-2 mb-6">
@@ -335,8 +524,20 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
               >
                 3. Business Details
               </button>
+              {isEditMode && leadData && (
+                <button
+                  type="button"
+                  onClick={() => setStep(4)}
+                  className={`flex-1 rounded-lg p-2 text-center text-sm font-medium transition-colors ${
+                    step >= 4 ? 'bg-primary/20 text-primary' : 'bg-muted hover:bg-muted/80'
+                  }`}
+                >
+                  4. Lead Details
+                </button>
+              )}
             </div>
 
+            {!loadingVendor && (
             <form onSubmit={(e) => { e.preventDefault(); handleSubmit(e); }} className="space-y-4">
               {step === 1 && (
                 <div className="space-y-4">
@@ -347,35 +548,57 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
                   </div>
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">GST Number</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={formData.business_details.gst_number}
-                        onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, gst_number: e.target.value.toUpperCase() } })}
-                        className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                        placeholder="27ABCDE1234F1Z5"
-                      />
-                      <button type="button" onClick={handleGSTLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
-                        {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
-                      </button>
-                    </div>
+                    {isEditMode && originalGstNumber && originalGstNumber.trim().length > 0 ? (
+                      <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm pointer-events-none select-none">
+                        {originalGstNumber}
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={formData.business_details.gst_number}
+                          onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, gst_number: e.target.value.toUpperCase() } })}
+                          className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                          placeholder="27ABCDE1234F1Z5"
+                        />
+                        <button 
+                          type="button" 
+                          onClick={handleGSTLookup} 
+                          disabled={lookupLoading} 
+                          className="btn-secondary flex items-center gap-2"
+                        >
+                          {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    )}
                     {errors.gst_number && <p className="mt-1 text-xs text-red-600">{errors.gst_number}</p>}
                   </div>
 
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">PAN Number</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={formData.business_details.pan_number}
-                        onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, pan_number: e.target.value.toUpperCase() } })}
-                        className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                        placeholder="ABCDE1234F"
-                      />
-                      <button type="button" onClick={handlePANLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
-                        {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
-                      </button>
-                    </div>
+                    {isEditMode && originalPanNumber && originalPanNumber.trim().length > 0 ? (
+                      <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm pointer-events-none select-none">
+                        {originalPanNumber}
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={formData.business_details.pan_number}
+                          onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, pan_number: e.target.value.toUpperCase() } })}
+                          className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                          placeholder="ABCDE1234F"
+                        />
+                        <button 
+                          type="button" 
+                          onClick={handlePANLookup} 
+                          disabled={lookupLoading} 
+                          className="btn-secondary flex items-center gap-2"
+                        >
+                          {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    )}
                     {errors.pan_number && <p className="mt-1 text-xs text-red-600">{errors.pan_number}</p>}
                   </div>
 
@@ -487,12 +710,35 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-sm font-medium mb-1.5 block">Pincode *</label>
-                      <input
-                        type="text"
-                        value={formData.address.pincode}
-                        onChange={(e) => setFormData({ ...formData, address: { ...formData.address, pincode: e.target.value } })}
-                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                      />
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={formData.address.pincode}
+                          onChange={(e) => {
+                            // Only allow digits and limit to 6 digits
+                            const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                            setFormData({ ...formData, address: { ...formData.address, pincode: value } });
+                            // Auto-lookup when 6 digits are entered
+                            if (value.length === 6) {
+                              handlePincodeLookup(value);
+                            }
+                          }}
+                          onBlur={(e) => {
+                            const value = e.target.value.trim();
+                            if (value.length === 6) {
+                              handlePincodeLookup(value);
+                            }
+                          }}
+                          className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                          placeholder="6 digits"
+                          maxLength={6}
+                        />
+                        {pincodeLoading && (
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                            <LoadingSpinner size="sm" />
+                          </div>
+                        )}
+                      </div>
                       {errors.pincode && <p className="mt-1 text-xs text-red-600">{errors.pincode}</p>}
                     </div>
 
@@ -514,7 +760,8 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
                       type="text"
                       value={formData.google_location_link || ''}
                       onChange={(e) => {
-                        setFormData({ ...formData, google_location_link: e.target.value });
+                        const value = e.target.value.trim() || null;
+                        setFormData({ ...formData, google_location_link: value });
                         if (errors.google_location_link) setErrors({ ...errors, google_location_link: '' });
                       }}
                       onBlur={() => {
@@ -525,6 +772,8 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
                           } else {
                             setErrors({ ...errors, google_location_link: '' });
                           }
+                        } else {
+                          setFormData({ ...formData, google_location_link: null });
                         }
                       }}
                       placeholder="Paste Google Maps link or Plus Code"
@@ -567,18 +816,127 @@ export function VendorFormModal({ open, onOpenChange }: VendorFormModalProps) {
                     <button type="button" onClick={() => {/* Skip */}} className="btn-secondary">
                       Skip Bank Details
                     </button>
+                    {isEditMode && leadData ? (
+                      <button 
+                        type="button" 
+                        onClick={() => setStep(4)}
+                        className="btn-primary flex-1"
+                      >
+                        Next: Lead Details
+                      </button>
+                    ) : (
+                      <button 
+                        type="button" 
+                        onClick={handleSubmit}
+                        disabled={loading}
+                        className="btn-primary flex-1"
+                      >
+                        {isEditMode ? 'Update Vendor' : 'Create Vendor'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {step === 4 && isEditMode && leadData && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold">Lead Details</h3>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/crm/leads/${leadData.id}`)}
+                      className="text-xs text-primary hover:text-primary/80 inline-flex items-center gap-1 transition-colors"
+                    >
+                      View Lead <ExternalLink className="h-3 w-3" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    {/* Company Name */}
+                    <div>
+                      <label className="text-sm font-medium mb-1.5 block">Company Name</label>
+                      <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm">
+                        {leadData.company_name || '-'}
+                      </div>
+                    </div>
+
+                    {/* GST Number */}
+                    {leadData.business_details?.gst_number && (
+                      <div>
+                        <label className="text-sm font-medium mb-1.5 block">GST Number</label>
+                        <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm">
+                          {leadData.business_details.gst_number}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* PAN Number */}
+                    {leadData.business_details?.pan_number && (
+                      <div>
+                        <label className="text-sm font-medium mb-1.5 block">PAN Number</label>
+                        <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm">
+                          {leadData.business_details.pan_number}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Contact Persons */}
+                    {leadData.contact_persons && leadData.contact_persons.length > 0 && (
+                      <div>
+                        <label className="text-sm font-medium mb-1.5 block">Contact Persons</label>
+                        <div className="space-y-2">
+                          {leadData.contact_persons.map((contact, index) => (
+                            <div key={index} className="rounded-lg border border-border bg-background/60 px-3 py-2 text-sm">
+                              <div className="font-medium">{contact.name}</div>
+                              {contact.phones && contact.phones.length > 0 && (
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  Phones: {contact.phones.filter(p => p && p.trim()).join(', ') || '-'}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Phone */}
+                    {leadData.phone && (
+                      <div>
+                        <label className="text-sm font-medium mb-1.5 block">Phone</label>
+                        <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm">
+                          {leadData.phone}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Email */}
+                    {leadData.email && (
+                      <div>
+                        <label className="text-sm font-medium mb-1.5 block">Email</label>
+                        <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm">
+                          {leadData.email}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex gap-3 pt-4">
+                    <button type="button" onClick={() => setStep(3)} className="btn-secondary flex-1">
+                      Back
+                    </button>
                     <button 
                       type="button" 
                       onClick={handleSubmit}
                       disabled={loading}
                       className="btn-primary flex-1"
                     >
-                      Create Vendor
+                      Update Vendor
                     </button>
                   </div>
                 </div>
               )}
             </form>
+            )}
           </div>
         </Dialog.Content>
       </Dialog.Portal>

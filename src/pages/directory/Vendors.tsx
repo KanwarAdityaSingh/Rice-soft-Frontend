@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
-import { Store, Plus, Mail, Phone, MapPin } from 'lucide-react'
+import { useMemo, useState, useEffect } from 'react'
+import { Store, Plus, Mail, Phone, MapPin, Building2, CreditCard, FileText, Calendar, UserCircle, ExternalLink } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { SearchBar } from '../../components/admin/shared/SearchBar'
 import { FilterDropdown } from '../../components/admin/shared/FilterDropdown'
 import { LoadingSpinner } from '../../components/admin/shared/LoadingSpinner'
@@ -8,15 +9,21 @@ import { ActionButtons } from '../../components/admin/shared/ActionButtons'
 import { ConfirmDialog } from '../../components/admin/shared/ConfirmDialog'
 import { useVendors } from '../../hooks/useVendors'
 import { VendorFormModal } from '../../components/admin/vendors/VendorFormModal'
+import { leadsAPI } from '../../services/leads.api'
+import type { Lead } from '../../types/entities'
 
 export default function VendorsPage() {
   const { vendors, loading, deleteVendor, refetch } = useVendors()
+  const navigate = useNavigate()
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string | undefined>()
   const [typeFilter, setTypeFilter] = useState<string | undefined>()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null)
+  const [leadDetails, setLeadDetails] = useState<Record<string, Lead>>({})
 
   const filtered = useMemo(() => {
     return vendors.filter((v) => {
@@ -33,6 +40,38 @@ export default function VendorsPage() {
       return matchesSearch && matchesStatus && matchesType
     })
   }, [vendors, searchQuery, statusFilter, typeFilter])
+
+  // Fetch lead details for vendors with lead_id
+  useEffect(() => {
+    const fetchLeadDetails = async () => {
+      const vendorsWithLeads = filtered.filter(v => v.lead_id)
+      const leadIds = vendorsWithLeads.map(v => v.lead_id!).filter((id, index, self) => self.indexOf(id) === index)
+      
+      const newLeadDetails: Record<string, Lead> = {}
+      
+      await Promise.all(
+        leadIds.map(async (leadId) => {
+          if (!leadDetails[leadId]) {
+            try {
+              const lead = await leadsAPI.getLeadById(leadId)
+              newLeadDetails[leadId] = lead
+            } catch (error) {
+              console.error(`Failed to fetch lead ${leadId}:`, error)
+            }
+          }
+        })
+      )
+      
+      if (Object.keys(newLeadDetails).length > 0) {
+        setLeadDetails(prev => ({ ...prev, ...newLeadDetails }))
+      }
+    }
+
+    if (filtered.length > 0) {
+      fetchLeadDetails()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered])
 
   return (
     <div className="container mx-auto py-6 sm:py-10 space-y-6 sm:space-y-8 px-4 sm:px-6">
@@ -105,17 +144,147 @@ export default function VendorsPage() {
                 <span className={`whitespace-nowrap px-2 py-1 rounded-md text-[10px] ${v.is_active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground'}`}>{v.is_active ? 'Active' : 'Inactive'}</span>
               </div>
               <div className="mt-3 grid gap-1.5 text-xs">
-                <div className="inline-flex items-center gap-2 text-foreground/90"><span className="text-muted-foreground w-16">Contact</span><span className="font-medium">{v.contact_person.trim()}</span></div>
-                <div className="inline-flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" /><span className="truncate">{v.email.trim()}</span></div>
-                <div className="inline-flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><span>{v.phone.trim()}</span></div>
+                <div className="inline-flex items-center gap-2 text-foreground/90">
+                  <span className="text-muted-foreground w-16">Contact</span>
+                  <span className="font-medium">{v.contact_person.trim()}</span>
+                </div>
+                <div className="inline-flex items-center gap-2">
+                  <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="truncate">{v.email.trim()}</span>
+                </div>
+                <div className="inline-flex items-center gap-2">
+                  <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span>{v.phone.trim()}</span>
+                </div>
+                
+                {/* Address Details */}
+                {v.address?.street && (
+                  <div className="inline-flex items-center gap-2">
+                    <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="truncate">{v.address.street.trim()}</span>
+                  </div>
+                )}
+                {(v.address?.city || v.address?.state || v.address?.pincode) && (
+                  <div className="inline-flex items-center gap-2">
+                    <MapPin className="h-3.5 w-3.5 text-muted-foreground opacity-0" />
+                    <span className="truncate">
+                      {[v.address.city, v.address.state, v.address.pincode].filter(Boolean).join(', ')}
+                    </span>
+                  </div>
+                )}
+                {v.address?.country && v.address.country !== 'India' && (
+                  <div className="inline-flex items-center gap-2">
+                    <MapPin className="h-3.5 w-3.5 text-muted-foreground opacity-0" />
+                    <span>{v.address.country}</span>
+                  </div>
+                )}
+                
+                {/* Business Details */}
+                {v.business_details?.gst_number && (
+                  <div className="inline-flex items-center gap-2">
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="truncate">GST: {v.business_details.gst_number}</span>
+                  </div>
+                )}
+                {v.business_details?.pan_number && (
+                  <div className="inline-flex items-center gap-2">
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="truncate">PAN: {v.business_details.pan_number}</span>
+                  </div>
+                )}
+                {v.business_details?.registration_number && (
+                  <div className="inline-flex items-center gap-2">
+                    <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="truncate">Reg: {v.business_details.registration_number}</span>
+                  </div>
+                )}
+                
+                {/* Bank Details */}
+                {v.bank_details && (
+                  <>
+                    {v.bank_details.account_holder_name && (
+                      <div className="inline-flex items-center gap-2">
+                        <CreditCard className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="truncate">A/C: {v.bank_details.account_holder_name}</span>
+                      </div>
+                    )}
+                    {v.bank_details.bank_name && (
+                      <div className="inline-flex items-center gap-2">
+                        <CreditCard className="h-3.5 w-3.5 text-muted-foreground opacity-0" />
+                        <span className="truncate">{v.bank_details.bank_name}</span>
+                      </div>
+                    )}
+                    {v.bank_details.ifsc_code && (
+                      <div className="inline-flex items-center gap-2">
+                        <CreditCard className="h-3.5 w-3.5 text-muted-foreground opacity-0" />
+                        <span className="truncate">IFSC: {v.bank_details.ifsc_code}</span>
+                      </div>
+                    )}
+                  </>
+                )}
+                
+                {/* Last Enquiry Date */}
+                {v.last_enquiry_date && (
+                  <div className="inline-flex items-center gap-2">
+                    <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span>Last Enquiry: {new Date(v.last_enquiry_date).toLocaleDateString()}</span>
+                  </div>
+                )}
               </div>
+
+              {/* Lead Info Section */}
+              {v.lead_id && leadDetails[v.lead_id] && (
+                <div className="mt-3 pt-3 border-t border-border/40">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="inline-flex items-center gap-2 text-primary">
+                      <UserCircle className="h-3.5 w-3.5" />
+                      <span className="text-xs font-semibold">Lead Info</span>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        navigate(`/crm/leads/${v.lead_id}`)
+                      }}
+                      className="text-xs text-primary hover:text-primary/80 inline-flex items-center gap-1 transition-colors"
+                    >
+                      View Lead <ExternalLink className="h-3 w-3" />
+                    </button>
+                  </div>
+                  <div className="grid gap-1.5 text-xs">
+                    {leadDetails[v.lead_id].company_name && (
+                      <div className="inline-flex items-center gap-2">
+                        <span className="text-muted-foreground w-16">Company</span>
+                        <span className="font-medium">{leadDetails[v.lead_id].company_name}</span>
+                      </div>
+                    )}
+                    {leadDetails[v.lead_id].business_details?.gst_number && (
+                      <div className="inline-flex items-center gap-2">
+                        <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="truncate">GST: {leadDetails[v.lead_id].business_details.gst_number}</span>
+                      </div>
+                    )}
+                    {leadDetails[v.lead_id].business_details?.pan_number && (
+                      <div className="inline-flex items-center gap-2">
+                        <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="truncate">PAN: {leadDetails[v.lead_id].business_details.pan_number}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="mt-3 flex items-center justify-end">
                 <ActionButtons
                   isActive={v.is_active}
+                  onEdit={() => {
+                    setSelectedVendorId(v.id)
+                    setEditModalOpen(true)
+                  }}
                   onDelete={() => {
                     setSelectedId(v.id)
                     setDeleteDialogOpen(true)
                   }}
+                  permissionEntity="vendor"
                 />
               </div>
             </article>
@@ -147,6 +316,18 @@ export default function VendorsPage() {
             refetch();
           }
         }} 
+      />
+
+      <VendorFormModal
+        open={editModalOpen}
+        onOpenChange={(open) => {
+          setEditModalOpen(open);
+          if (!open) {
+            setSelectedVendorId(null);
+            refetch();
+          }
+        }}
+        vendorId={selectedVendorId}
       />
     </div>
   )

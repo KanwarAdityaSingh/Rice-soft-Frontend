@@ -7,14 +7,17 @@ import { ActionButtons } from '../shared/ActionButtons';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { Store } from 'lucide-react';
 import { useVendors } from '../../../hooks/useVendors';
+import { VendorFormModal } from './VendorFormModal';
 
 export function VendorsTable() {
-  const { vendors, loading, deleteVendor } = useVendors();
+  const { vendors, loading, deleteVendor, refetch } = useVendors();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [typeFilter, setTypeFilter] = useState<string | undefined>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedVendor, setSelectedVendor] = useState<{ id: string; business_name?: string } | null>(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
 
   const filteredVendors = vendors.filter((vendor) => {
     const matchesSearch = 
@@ -90,7 +93,10 @@ export function VendorsTable() {
                     <td className="py-3 px-4 text-right">
                       <ActionButtons
                         isActive={vendor.is_active}
-                        onEdit={() => console.log('Edit', vendor.id)}
+                        onEdit={() => {
+                          setSelectedVendorId(vendor.id);
+                          setEditModalOpen(true);
+                        }}
                         onDelete={() => {
                           setSelectedVendor(vendor);
                           setDeleteDialogOpen(true);
@@ -123,6 +129,18 @@ export function VendorsTable() {
         title="Delete Vendor"
         description={`Are you sure you want to delete ${selectedVendor?.business_name}? This action cannot be undone.`}
         confirmText="Delete"
+      />
+
+      <VendorFormModal
+        open={editModalOpen}
+        onOpenChange={(open) => {
+          setEditModalOpen(open);
+          if (!open) {
+            setSelectedVendorId(null);
+            refetch();
+          }
+        }}
+        vendorId={selectedVendorId}
       />
     </div>
   );

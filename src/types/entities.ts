@@ -76,6 +76,7 @@ export interface Vendor {
   created_at: string;
   updated_at: string;
   last_enquiry_date?: string;
+  lead_id?: string | null;
 }
 
 export interface CreateVendorRequest {
@@ -521,5 +522,35 @@ export interface RiceCode {
 export interface RiceType {
   value: string;
   label: string;
+}
+
+// Pincode Lookup Types
+export interface PostOffice {
+  Name: string;
+  Description?: string | null;
+  BranchType: string;
+  DeliveryStatus: string;
+  Circle: string;
+  District: string;
+  Division: string;
+  Region: string;
+  Block: string;
+  State: string;
+  Country: string;
+  Pincode: string;
+}
+
+export interface PincodeLookupData {
+  pincode: string;
+  status: string;
+  message: string;
+  postOffices: PostOffice[];
+}
+
+export interface PincodeLookupResponse {
+  success: boolean;
+  message: string;
+  data: PincodeLookupData;
+  timestamp?: string;
 }
 
