@@ -5,6 +5,8 @@ export interface ApiResponse<T = any> {
   success: boolean;
   data: T;
   message: string;
+  timestamp?: string;
+  isSessionValid?: boolean;
 }
 
 export interface LoginRequest {
@@ -63,6 +65,48 @@ class ApiService {
     this.logoutCallback = callback;
   }
 
+  // Prevent duplicate handling when multiple requests detect invalidation
+  private static isHandlingInvalidSession = false;
+
+  private handleSessionInvalidation() {
+    if (ApiService.isHandlingInvalidSession) return;
+    ApiService.isHandlingInvalidSession = true;
+
+    // Clear auth data from localStorage
+    localStorage.removeItem('auth:token');
+    localStorage.removeItem('auth:user');
+    localStorage.removeItem('auth:permissions');
+
+    // Notify React auth state if registered
+    if (this.logoutCallback) {
+      try {
+        this.logoutCallback();
+      } catch {
+        // ignore
+      }
+    }
+
+    // Notify UI layer to show custom popup
+    try {
+      window.dispatchEvent(new CustomEvent('riceops:session-invalid'));
+    } catch {
+      // ignore
+    }
+
+    // Redirect to login (respecting basename if configured)
+    const basename = (import.meta as any).env?.BASE_URL 
+      ? (import.meta as any).env.BASE_URL.replace(/\/$/, '') 
+      : '/riceops';
+    const loginPath = `${basename}/login`;
+
+    setTimeout(() => {
+      const currentPath = window.location.pathname;
+      if (!currentPath.endsWith('/login') && currentPath !== loginPath) {
+        window.location.href = loginPath;
+      }
+    }, 1500);
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
@@ -89,6 +133,11 @@ class ApiService {
     try {
       const response = await fetch(url, config);
       const data = await response.json();
+
+      // Global check: session validity (applies to both success and error responses)
+      if (data?.isSessionValid === false) {
+        this.handleSessionInvalidation();
+      }
 
       if (!response.ok) {
         // Handle 401 Unauthorized - session expired or invalid token

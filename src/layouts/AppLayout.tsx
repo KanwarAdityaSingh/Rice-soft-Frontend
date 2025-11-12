@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Navbar } from '../components/Navbar'
 import { Footer } from '../components/Footer'
 import { PageTransition } from '../components/shared/PageTransition'
 import { ToastContainer } from '../components/shared/ToastContainer'
 import { Sidebar } from '../components/Sidebar'
 import { SessionTimeoutDialog } from '../components/shared/SessionTimeoutDialog'
+import { SessionInvalidationDialog } from '../components/shared/SessionInvalidationDialog'
 import { useIdleTimeout } from '../hooks/useIdleTimeout'
 import { useAuth } from '../hooks/useAuth'
 import { useNavigate } from 'react-router-dom'
@@ -13,6 +14,7 @@ import { apiService } from '../services/api'
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
+  const [showInvalidDialog, setShowInvalidDialog] = useState(false)
 
   function SessionTimeoutManager() {
     const { logout } = useAuth()
@@ -33,6 +35,20 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         open={isWarning}
         secondsLeft={remainingSeconds}
         onStaySignedIn={acknowledgeAndReset}
+      />
+    )
+  }
+
+  function SessionInvalidationManager() {
+    useEffect(() => {
+      const handler = () => setShowInvalidDialog(true)
+      window.addEventListener('riceops:session-invalid', handler)
+      return () => window.removeEventListener('riceops:session-invalid', handler)
+    }, [])
+    return (
+      <SessionInvalidationDialog
+        open={showInvalidDialog}
+        onClose={() => setShowInvalidDialog(false)}
       />
     )
   }
@@ -63,6 +79,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </PageTransition>
       <SessionTimeoutManager />
+      <SessionInvalidationManager />
       <div 
         className={`relative z-10 transition-all duration-300 ${
           sidebarCollapsed ? 'md:pl-16' : 'md:pl-[260px]'
