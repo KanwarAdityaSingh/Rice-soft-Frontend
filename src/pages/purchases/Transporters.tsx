@@ -76,18 +76,18 @@ export default function TransportersPage() {
             Back to Purchases
           </button>
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold">
-                <span className="text-gradient">Transporters</span>
-              </h1>
-              <p className="mt-1 sm:mt-2 text-sm sm:text-base text-muted-foreground">
-                Manage transportation service providers
-              </p>
-            </div>
-            <button onClick={() => setCreateModalOpen(true)} className="btn-primary flex items-center gap-2">
-              <Plus className="h-4 w-4" />
-              New Transporter
-            </button>
+          <div>
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold">
+              <span className="text-gradient">Transporters</span>
+            </h1>
+            <p className="mt-1 sm:mt-2 text-sm sm:text-base text-muted-foreground">
+              Manage transportation service providers
+            </p>
+          </div>
+          <button onClick={() => setCreateModalOpen(true)} className="btn-primary flex items-center gap-2">
+            <Plus className="h-4 w-4" />
+            New Transporter
+          </button>
           </div>
         </div>
       </header>

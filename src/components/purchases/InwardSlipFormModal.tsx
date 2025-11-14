@@ -65,22 +65,22 @@ export function InwardSlipFormModal({ open, onOpenChange, saudaId, inwardSlipId,
               setAlertMessage('An inward slip already exists for this sauda. Only one inward slip is allowed per sauda.');
               setAlertOpen(true);
               onOpenChange(false);
-            } else {
-              setFormData({
-                sauda_id: saudaId,
-                slip_number: '',
-                date: new Date().toISOString().split('T')[0],
-                vehicle_number: '',
-                party_name: '',
-                party_address: '',
-                party_gst_number: null,
-                status: 'pending',
-              });
-              setLots([]);
-              setErrors({});
-              setLotErrors({});
-              setPendingBill(null);
-            }
+      } else {
+      setFormData({
+        sauda_id: saudaId,
+        slip_number: '',
+        date: new Date().toISOString().split('T')[0],
+        vehicle_number: '',
+        party_name: '',
+        party_address: '',
+        party_gst_number: null,
+        status: 'pending',
+      });
+      setLots([]);
+      setErrors({});
+      setLotErrors({});
+      setPendingBill(null);
+      }
           })
           .catch((error) => {
             console.error('Error checking for existing inward slip:', error);

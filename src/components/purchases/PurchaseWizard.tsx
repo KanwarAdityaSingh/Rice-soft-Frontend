@@ -398,7 +398,7 @@ export function PurchaseWizard({ open, onOpenChange, initialSaudaId, initialInwa
                       setStep(s.number);
                     }
                   };
-
+                  
                   return (
                     <div key={s.number} className="flex flex-col items-center flex-1 relative z-10">
                       {/* Step Circle */}
@@ -540,14 +540,14 @@ export function PurchaseWizard({ open, onOpenChange, initialSaudaId, initialInwa
                       <ArrowLeft className="h-4 w-4" /> Back
                     </button>
                     {!existingSauda && (
-                      <button
-                        type="button"
-                        onClick={() => setSaudaModalOpen(true)}
-                        className="btn-primary flex-1 flex items-center justify-center gap-2 py-3 text-sm font-semibold"
-                      >
-                        <FileText className="h-4 w-4" />
-                        Create Sauda
-                      </button>
+                    <button
+                      type="button"
+                      onClick={() => setSaudaModalOpen(true)}
+                      className="btn-primary flex-1 flex items-center justify-center gap-2 py-3 text-sm font-semibold"
+                    >
+                      <FileText className="h-4 w-4" />
+                      Create Sauda
+                    </button>
                     )}
                     {existingSauda && (
                       <button
@@ -613,14 +613,14 @@ export function PurchaseWizard({ open, onOpenChange, initialSaudaId, initialInwa
                       <ArrowLeft className="h-4 w-4" /> Back
                     </button>
                     {!flowState?.hasInwardSlip && (
-                      <button
-                        type="button"
-                        onClick={() => setInwardSlipModalOpen(true)}
-                        className="btn-primary flex-1 flex items-center justify-center gap-2 py-3 text-sm font-semibold"
-                      >
-                        <Package className="h-4 w-4" />
-                        Create Inward Slip Pass
-                      </button>
+                    <button
+                      type="button"
+                      onClick={() => setInwardSlipModalOpen(true)}
+                      className="btn-primary flex-1 flex items-center justify-center gap-2 py-3 text-sm font-semibold"
+                    >
+                      <Package className="h-4 w-4" />
+                      Create Inward Slip Pass
+                    </button>
                     )}
                     {flowState?.hasInwardSlip && (
                       <button
@@ -672,14 +672,14 @@ export function PurchaseWizard({ open, onOpenChange, initialSaudaId, initialInwa
                       <ArrowLeft className="h-4 w-4" /> Back
                     </button>
                     {!flowState?.hasPurchase && (
-                      <button
-                        type="button"
-                        onClick={() => setPurchaseModalOpen(true)}
-                        className="btn-primary flex-1 flex items-center justify-center gap-2 py-3 text-sm font-semibold"
-                      >
-                        <ShoppingCart className="h-4 w-4" />
-                        Create Purchase
-                      </button>
+                    <button
+                      type="button"
+                      onClick={() => setPurchaseModalOpen(true)}
+                      className="btn-primary flex-1 flex items-center justify-center gap-2 py-3 text-sm font-semibold"
+                    >
+                      <ShoppingCart className="h-4 w-4" />
+                      Create Purchase
+                    </button>
                     )}
                     {flowState?.hasPurchase && (
                       <button
@@ -736,14 +736,14 @@ export function PurchaseWizard({ open, onOpenChange, initialSaudaId, initialInwa
                       <ArrowLeft className="h-4 w-4" /> Back
                     </button>
                     {!flowState?.hasPaymentAdvice && (
-                      <button
-                        type="button"
-                        onClick={() => setPaymentAdviceModalOpen(true)}
-                        className="btn-primary flex-1 flex items-center justify-center gap-2 py-3 text-sm font-semibold"
-                      >
-                        <DollarSign className="h-4 w-4" />
-                        Create Payment Advice
-                      </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentAdviceModalOpen(true)}
+                      className="btn-primary flex-1 flex items-center justify-center gap-2 py-3 text-sm font-semibold"
+                    >
+                      <DollarSign className="h-4 w-4" />
+                      Create Payment Advice
+                    </button>
                     )}
                     {flowState?.hasPaymentAdvice && (
                       <div className="flex-1 flex items-center justify-center">

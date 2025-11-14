@@ -143,25 +143,25 @@ export function PaymentAdviceFormModal({
       try {
         // Load purchase data to pre-fill fields
         const purchase = await purchasesAPI.getPurchaseById(preselectedPurchaseId);
-        const amount = purchase.total_amount || 0;
-        const vendorId = purchase.vendor_id || preselectedVendorId || '';
-        
-        // Load vendor details to get party name and address
-        let partyName = null;
-        let partyAddress = null;
-        if (vendorId) {
-          try {
-            const vendor = vendors.find(v => v.id === vendorId);
-            if (vendor) {
-              partyName = vendor.business_name;
-              partyAddress = vendor.address 
-                ? `${vendor.address.street}, ${vendor.address.city}, ${vendor.address.state} - ${vendor.address.pincode}`
-                : null;
+          const amount = purchase.total_amount || 0;
+          const vendorId = purchase.vendor_id || preselectedVendorId || '';
+          
+          // Load vendor details to get party name and address
+          let partyName = null;
+          let partyAddress = null;
+          if (vendorId) {
+            try {
+              const vendor = vendors.find(v => v.id === vendorId);
+              if (vendor) {
+                partyName = vendor.business_name;
+                partyAddress = vendor.address 
+                  ? `${vendor.address.street}, ${vendor.address.city}, ${vendor.address.state} - ${vendor.address.pincode}`
+                  : null;
+              }
+            } catch (error) {
+              console.log('Could not load vendor details:', error);
             }
-          } catch (error) {
-            console.log('Could not load vendor details:', error);
           }
-        }
         
         // Load inward slip data to prefill additional fields
         let truckNumber = purchase.truck_number || null;
@@ -217,62 +217,62 @@ export function PaymentAdviceFormModal({
             console.error('Failed to load sauda or inward slip data:', error);
           }
         }
-        
-        setFormData({
-          purchase_id: preselectedPurchaseId,
-          payer_id: user?.id || '',
-          recipient_id: vendorId,
-          sr_number: null,
-          party_name: partyName,
-          party_address: partyAddress,
+          
+          setFormData({
+            purchase_id: preselectedPurchaseId,
+            payer_id: user?.id || '',
+            recipient_id: vendorId,
+            sr_number: null,
+            party_name: partyName,
+            party_address: partyAddress,
           broker_name: brokerName,
-          invoice_number: purchase.invoice_number || null,
-          invoice_date: purchase.invoice_date || null,
+            invoice_number: purchase.invoice_number || null,
+            invoice_date: purchase.invoice_date || null,
           truck_number: truckNumber,
           item: item,
           total_bags: totalBags,
-          due_date: null,
+            due_date: null,
           bill_weight: billWeight,
           kanta_weight: kantaWeight,
           final_weight: finalWeight,
-          rate: purchase.rate || null,
-          amount: amount,
-          date_of_payment: new Date().toISOString().split('T')[0],
-          status: 'pending',
-          transaction_id: null,
-          payment_slip_image_url: null,
-          notes: null,
-        });
+            rate: purchase.rate || null,
+            amount: amount,
+            date_of_payment: new Date().toISOString().split('T')[0],
+            status: 'pending',
+            transaction_id: null,
+            payment_slip_image_url: null,
+            notes: null,
+          });
       } catch (error) {
-        console.error('Failed to load purchase:', error);
-        // Fallback to default form
-        setFormData({
-          purchase_id: preselectedPurchaseId || null,
-          payer_id: user?.id || '',
-          recipient_id: preselectedVendorId || '',
-          sr_number: null,
-          party_name: null,
-          party_address: null,
-          broker_name: null,
-          invoice_number: null,
-          invoice_date: null,
-          truck_number: null,
-          item: null,
-          total_bags: null,
-          due_date: null,
-          bill_weight: null,
-          kanta_weight: null,
-          final_weight: null,
-          rate: null,
-          amount: 0,
-          date_of_payment: new Date().toISOString().split('T')[0],
-          status: 'pending',
-          transaction_id: null,
-          payment_slip_image_url: null,
-          notes: null,
-        });
+          console.error('Failed to load purchase:', error);
+          // Fallback to default form
+          setFormData({
+            purchase_id: preselectedPurchaseId || null,
+            payer_id: user?.id || '',
+            recipient_id: preselectedVendorId || '',
+            sr_number: null,
+            party_name: null,
+            party_address: null,
+            broker_name: null,
+            invoice_number: null,
+            invoice_date: null,
+            truck_number: null,
+            item: null,
+            total_bags: null,
+            due_date: null,
+            bill_weight: null,
+            kanta_weight: null,
+            final_weight: null,
+            rate: null,
+            amount: 0,
+            date_of_payment: new Date().toISOString().split('T')[0],
+            status: 'pending',
+            transaction_id: null,
+            payment_slip_image_url: null,
+            notes: null,
+          });
       }
-    } else {
+      } else {
         // Reset form for create mode without preselected purchase
         setFormData({
           purchase_id: preselectedPurchaseId || null,

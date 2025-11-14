@@ -153,10 +153,10 @@ export default function PurchaseDetailPage() {
               Continue Purchase Flow
             </button>
           )}
-          <button onClick={() => setEditModalOpen(true)} className="btn-secondary flex items-center gap-2">
-            <Edit className="h-4 w-4" />
-            Edit
-          </button>
+        <button onClick={() => setEditModalOpen(true)} className="btn-secondary flex items-center gap-2">
+          <Edit className="h-4 w-4" />
+          Edit
+        </button>
         </div>
       </div>
 
@@ -377,13 +377,13 @@ export default function PurchaseDetailPage() {
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">Payment Advices</h2>
               {paymentAdvices.length === 0 && (
-                <button
-                  onClick={() => setPaymentModalOpen(true)}
-                  className="btn-primary flex items-center gap-2 text-sm"
-                >
-                  <Plus className="h-4 w-4" />
-                  Add Payment Advice
-                </button>
+              <button
+                onClick={() => setPaymentModalOpen(true)}
+                className="btn-primary flex items-center gap-2 text-sm"
+              >
+                <Plus className="h-4 w-4" />
+                Add Payment Advice
+              </button>
               )}
             </div>
             {paymentAdvices.length === 0 ? (

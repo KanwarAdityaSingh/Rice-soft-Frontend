@@ -142,9 +142,9 @@ export default function SaudaDetailPage() {
             </button>
           )}
           <button onClick={() => setEditModalOpen(true)} className="btn-secondary flex items-center gap-2">
-            <Edit className="h-4 w-4" />
-            Edit Sauda
-          </button>
+          <Edit className="h-4 w-4" />
+          Edit Sauda
+        </button>
         </div>
       </div>
 

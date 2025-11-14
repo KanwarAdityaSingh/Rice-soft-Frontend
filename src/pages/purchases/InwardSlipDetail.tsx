@@ -107,9 +107,9 @@ export default function InwardSlipDetailPage() {
             Continue Purchase Flow
           </button>
           <button onClick={() => setEditModalOpen(true)} className="btn-secondary flex items-center gap-2">
-            <Edit className="h-4 w-4" />
-            Edit Inward Slip
-          </button>
+          <Edit className="h-4 w-4" />
+          Edit Inward Slip
+        </button>
         </div>
       </div>
 

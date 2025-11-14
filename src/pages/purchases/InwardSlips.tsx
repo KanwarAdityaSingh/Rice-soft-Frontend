@@ -113,13 +113,13 @@ export default function InwardSlipsPage() {
             Back to Purchases
           </button>
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold">
-                <span className="text-gradient">Inward Slip Passes</span>
-              </h1>
-              <p className="mt-1 sm:mt-2 text-sm sm:text-base text-muted-foreground">
-                Manage goods receipt documents and lots
-              </p>
+          <div>
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold">
+              <span className="text-gradient">Inward Slip Passes</span>
+            </h1>
+            <p className="mt-1 sm:mt-2 text-sm sm:text-base text-muted-foreground">
+              Manage goods receipt documents and lots
+            </p>
             </div>
           </div>
         </div>
