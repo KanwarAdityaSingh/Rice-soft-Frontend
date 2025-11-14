@@ -554,3 +554,312 @@ export interface PincodeLookupResponse {
   timestamp?: string;
 }
 
+// Purchase Flow Types
+
+// Transporter Types
+export interface Transporter {
+  id: string;
+  business_name: string;
+  contact_person: string;
+  phone: string;
+  email?: string;
+  address: {
+    street: string;
+    city: string;
+    state: string;
+    pincode: string;
+    country: string;
+  };
+  gst_number?: string;
+  pan_number?: string;
+  vehicle_numbers?: string[];
+  bank_details?: {
+    bank_name?: string;
+    ifsc_code?: string;
+    account_number?: string;
+    branch?: string;
+  };
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateTransporterRequest {
+  business_name: string;
+  contact_person: string;
+  phone: string;
+  email?: string;
+  address: {
+    street: string;
+    city: string;
+    state: string;
+    pincode: string;
+    country: string;
+  };
+  gst_number?: string;
+  pan_number?: string;
+  vehicle_numbers?: string[];
+  bank_details?: {
+    bank_name?: string;
+    ifsc_code?: string;
+    account_number?: string;
+    branch?: string;
+  };
+  is_active?: boolean;
+}
+
+export interface UpdateTransporterRequest extends Partial<CreateTransporterRequest> {}
+
+// Sauda Types
+export type SaudaType = 'xgodown' | 'for';
+export type SaudaStatus = 'draft' | 'active' | 'completed' | 'cancelled';
+
+export interface Sauda {
+  id: string;
+  sauda_type: SaudaType;
+  rice_quality: string;
+  rice_code_id?: string | null;
+  rate: number;
+  broker_id?: string | null;
+  broker_commission?: number;
+  quantity: number;
+  transporter_id?: string | null;
+  transportation_cost?: number;
+  cash_discount?: number;
+  estimated_delivery_time: number;
+  purchaser_id: string;
+  cooked_rice_image_url?: string | null;
+  uncooked_rice_image_url?: string | null;
+  status: SaudaStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSaudaRequest {
+  sauda_type: SaudaType;
+  rice_quality: string;
+  rice_code_id?: string | null;
+  rate: number;
+  broker_id?: string | null;
+  broker_commission?: number;
+  quantity: number;
+  transporter_id?: string | null;
+  transportation_cost?: number;
+  cash_discount?: number;
+  estimated_delivery_time: number;
+  purchaser_id: string;
+  cooked_rice_image_url?: string | null;
+  uncooked_rice_image_url?: string | null;
+  status?: SaudaStatus;
+}
+
+export interface UpdateSaudaRequest extends Partial<CreateSaudaRequest> {}
+
+// Inward Slip Pass Types
+export type InwardSlipPassStatus = 'pending' | 'completed';
+
+export interface InwardSlipLot {
+  id: string;
+  lot_number: string;
+  item_name: string;
+  no_of_bags: number;
+  bag_weight: number;
+  bill_weight: number;
+  received_weight: number;
+  bardana: string;
+  rate: number;
+  total_weight: number; // Auto-calculated: no_of_bags × bag_weight
+  amount: number; // Auto-calculated: received_weight × rate
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateInwardSlipLotRequest {
+  lot_number: string;
+  item_name: string;
+  no_of_bags: number;
+  bag_weight: number;
+  bill_weight: number;
+  received_weight: number;
+  bardana: string;
+  rate: number;
+}
+
+export interface UpdateInwardSlipLotRequest {
+  lot_number?: string;
+  item_name?: string;
+  no_of_bags?: number;
+  bag_weight?: number;
+  bill_weight?: number;
+  received_weight?: number;
+  bardana?: string;
+  rate?: number;
+}
+
+export interface InwardSlipPass {
+  id: string;
+  sauda_id: string;
+  slip_number: string;
+  date: string;
+  vehicle_number: string;
+  party_name: string;
+  party_address: string;
+  party_gst_number?: string | null;
+  status: InwardSlipPassStatus;
+  inward_slip_bill_image_url?: string | null;
+  lots: InwardSlipLot[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateInwardSlipPassRequest {
+  sauda_id: string;
+  slip_number: string;
+  date: string;
+  vehicle_number: string;
+  party_name: string;
+  party_address: string;
+  party_gst_number?: string | null;
+  status?: InwardSlipPassStatus;
+  inward_slip_bill_image_url?: string | null;
+  lots: CreateInwardSlipLotRequest[];
+}
+
+export interface UpdateInwardSlipPassRequest extends Partial<Omit<CreateInwardSlipPassRequest, 'lots'>> {
+  lots?: CreateInwardSlipLotRequest[];
+}
+
+// Purchase Types
+export type FreightStatus = 'PAID' | 'UNPAID' | 'PARTIAL';
+
+export interface Purchase {
+  id: string;
+  vendor_id: string;
+  sauda_id: string;
+  broker_id?: string | null;
+  broker_commission?: number;
+  invoice_number?: string | null;
+  invoice_date?: string | null;
+  rate: number;
+  total_weight?: number | null;
+  total_amount?: number | null;
+  igst_amount?: number | null;
+  igst_percentage?: number | null;
+  freight_status?: FreightStatus | null;
+  truck_number?: string | null;
+  transport_name?: string | null;
+  goods_dispatched_from?: string | null;
+  goods_dispatched_to?: string | null;
+  purchase_date: string;
+  expected_quantity?: number | null;
+  notes?: string | null;
+  transportation_bill_image_url?: string | null;
+  purchase_bill_image_url?: string | null;
+  bilti_image_url?: string | null;
+  eway_bill_image_url?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePurchaseRequest {
+  vendor_id: string;
+  sauda_id: string;
+  broker_id?: string | null;
+  broker_commission?: number;
+  invoice_number?: string | null;
+  invoice_date?: string | null;
+  rate?: number;
+  total_weight?: number | null;
+  total_amount?: number | null;
+  igst_amount?: number | null;
+  igst_percentage?: number | null;
+  freight_status?: FreightStatus | null;
+  truck_number?: string | null;
+  transport_name?: string | null;
+  goods_dispatched_from?: string | null;
+  goods_dispatched_to?: string | null;
+  purchase_date: string;
+  expected_quantity?: number | null;
+  notes?: string | null;
+}
+
+export interface UpdatePurchaseRequest extends Partial<CreatePurchaseRequest> {}
+
+// Payment Advice Types
+export type PaymentAdviceStatus = 'pending' | 'completed' | 'failed';
+
+export interface PaymentAdviceCharge {
+  id: string;
+  charge_name: string;
+  charge_value: number;
+  charge_type: 'percentage' | 'fixed';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePaymentAdviceChargeRequest {
+  charge_name: string;
+  charge_value: number;
+  charge_type: 'percentage' | 'fixed';
+}
+
+export interface PaymentAdvice {
+  id: string;
+  purchase_id?: string | null;
+  payer_id: string;
+  recipient_id: string;
+  sr_number?: string | null;
+  party_name?: string | null;
+  party_address?: string | null;
+  broker_name?: string | null;
+  invoice_number?: string | null;
+  invoice_date?: string | null;
+  truck_number?: string | null;
+  item?: string | null;
+  total_bags?: number | null;
+  due_date?: string | null;
+  bill_weight?: number | null;
+  kanta_weight?: number | null;
+  final_weight?: number | null;
+  rate?: number | null;
+  amount: number;
+  net_payable: number; // Auto-calculated: amount - SUM(charges.charge_value)
+  date_of_payment: string;
+  status: PaymentAdviceStatus;
+  transaction_id?: string | null;
+  payment_slip_image_url?: string | null;
+  notes?: string | null;
+  charges: PaymentAdviceCharge[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePaymentAdviceRequest {
+  purchase_id?: string | null;
+  payer_id: string;
+  recipient_id: string;
+  sr_number?: string | null;
+  party_name?: string | null;
+  party_address?: string | null;
+  broker_name?: string | null;
+  invoice_number?: string | null;
+  invoice_date?: string | null;
+  truck_number?: string | null;
+  item?: string | null;
+  total_bags?: number | null;
+  due_date?: string | null;
+  bill_weight?: number | null;
+  kanta_weight?: number | null;
+  final_weight?: number | null;
+  rate?: number | null;
+  amount: number;
+  date_of_payment: string;
+  status?: PaymentAdviceStatus;
+  transaction_id?: string | null;
+  payment_slip_image_url?: string | null;
+  notes?: string | null;
+  charges?: CreatePaymentAdviceChargeRequest[];
+}
+
+export interface UpdatePaymentAdviceRequest extends Partial<CreatePaymentAdviceRequest> {}
+

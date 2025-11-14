@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Users, BarChart3, Trophy, Store, UserCheck, UserCircle, ChevronRight, Settings, LogOut, X, Sprout } from 'lucide-react'
+import { Users, BarChart3, Trophy, Store, UserCheck, UserCircle, ChevronRight, Settings, LogOut, X, Sprout, ShoppingCart } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { canRead, isCustomUser } from '../utils/permissions'
 import { Tooltip } from '@mui/material'
@@ -38,6 +38,7 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
     { to: '/crm/leads', label: 'Leads', icon: Users, key: 'leads' as const },
     { to: '/crm/analytics', label: 'Analytics', icon: BarChart3, key: null as any },
     { to: '/crm/leaderboard', label: 'Leaderboard', icon: Trophy, key: null as any },
+    { to: '/purchases', label: 'Purchases', icon: ShoppingCart, key: null as any },
     { to: '/directory/vendors', label: 'Vendors', icon: Store, key: 'vendor' as const },
     { to: '/directory/salesmen', label: 'Salesperson', icon: UserCheck, key: 'salesman' as const },
     { to: '/directory/brokers', label: 'Brokers', icon: UserCircle, key: 'broker' as const },

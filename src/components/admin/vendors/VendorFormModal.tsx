@@ -447,9 +447,9 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
       } else {
         await createVendor(data as CreateVendorRequest);
         resetForm();
-        setAlertType('success');
-        setAlertTitle('Vendor Created Successfully');
-        setAlertMessage('The vendor has been created successfully.');
+      setAlertType('success');
+      setAlertTitle('Vendor Created Successfully');
+      setAlertMessage('The vendor has been created successfully.');
       }
       setPreviewOpen(false);
       setAlertOpen(true);
@@ -553,23 +553,23 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
                         {originalGstNumber}
                       </div>
                     ) : (
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={formData.business_details.gst_number}
-                          onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, gst_number: e.target.value.toUpperCase() } })}
-                          className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                          placeholder="27ABCDE1234F1Z5"
-                        />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={formData.business_details.gst_number}
+                        onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, gst_number: e.target.value.toUpperCase() } })}
+                        className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                        placeholder="27ABCDE1234F1Z5"
+                      />
                         <button 
                           type="button" 
                           onClick={handleGSTLookup} 
                           disabled={lookupLoading} 
                           className="btn-secondary flex items-center gap-2"
                         >
-                          {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
-                        </button>
-                      </div>
+                        {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                      </button>
+                    </div>
                     )}
                     {errors.gst_number && <p className="mt-1 text-xs text-red-600">{errors.gst_number}</p>}
                   </div>
@@ -581,23 +581,23 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
                         {originalPanNumber}
                       </div>
                     ) : (
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={formData.business_details.pan_number}
-                          onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, pan_number: e.target.value.toUpperCase() } })}
-                          className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                          placeholder="ABCDE1234F"
-                        />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={formData.business_details.pan_number}
+                        onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, pan_number: e.target.value.toUpperCase() } })}
+                        className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                        placeholder="ABCDE1234F"
+                      />
                         <button 
                           type="button" 
                           onClick={handlePANLookup} 
                           disabled={lookupLoading} 
                           className="btn-secondary flex items-center gap-2"
                         >
-                          {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
-                        </button>
-                      </div>
+                        {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                      </button>
+                    </div>
                     )}
                     {errors.pan_number && <p className="mt-1 text-xs text-red-600">{errors.pan_number}</p>}
                   </div>
@@ -711,9 +711,9 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
                     <div>
                       <label className="text-sm font-medium mb-1.5 block">Pincode *</label>
                       <div className="relative">
-                        <input
-                          type="text"
-                          value={formData.address.pincode}
+                      <input
+                        type="text"
+                        value={formData.address.pincode}
                           onChange={(e) => {
                             // Only allow digits and limit to 6 digits
                             const value = e.target.value.replace(/\D/g, '').slice(0, 6);
@@ -729,7 +729,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
                               handlePincodeLookup(value);
                             }
                           }}
-                          className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                           placeholder="6 digits"
                           maxLength={6}
                         />
