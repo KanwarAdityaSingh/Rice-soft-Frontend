@@ -893,11 +893,6 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
                                   Phones: {contact.phones.filter(p => p && p.trim()).join(', ') || '-'}
                                 </div>
                               )}
-                              {contact.emails && contact.emails.length > 0 && (
-                                <div className="text-xs text-muted-foreground mt-1">
-                                  Emails: {contact.emails.filter(e => e && e.trim()).join(', ') || '-'}
-                                </div>
-                              )}
                             </div>
                           ))}
                         </div>

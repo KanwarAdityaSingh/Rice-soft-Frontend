@@ -177,17 +177,10 @@ export function LeadPreviewDialog({ open, onOpenChange, formData, onConfirm }: L
                     <span className="text-muted-foreground min-w-[120px]">Contact Persons:</span>
                     <div className="text-foreground font-medium text-right flex-1 space-y-1">
                       {formData.contact_persons.map((cp, idx) => (
-                        <div key={idx} className="mb-1">
-                          <div className="font-semibold">{cp.name}</div>
+                        <div key={idx}>
+                          {cp.name}
                           {cp.phones && cp.phones.length > 0 && cp.phones.filter(p => p && p.trim()).length > 0 && (
-                            <div className="text-xs text-muted-foreground mt-0.5">
-                              Phones: {cp.phones.filter(p => p && p.trim()).join(', ')}
-                            </div>
-                          )}
-                          {cp.emails && cp.emails.length > 0 && cp.emails.filter(e => e && e.trim()).length > 0 && (
-                            <div className="text-xs text-muted-foreground mt-0.5">
-                              Emails: {cp.emails.filter(e => e && e.trim()).join(', ')}
-                            </div>
+                            <span className="text-muted-foreground"> - {cp.phones.filter(p => p && p.trim()).join(', ')}</span>
                           )}
                         </div>
                       ))}

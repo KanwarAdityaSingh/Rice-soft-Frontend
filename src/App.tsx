@@ -8,7 +8,6 @@ import ManageUsers from './pages/admin/ManageUsers'
 import BrokersPage from './pages/directory/Brokers.tsx'
 import SalesmenPage from './pages/directory/Salesmen.tsx'
 import VendorsPage from './pages/directory/Vendors.tsx'
-import TransportersPage from './pages/directory/Transporters.tsx'
 import RiceCodesPage from './pages/directory/RiceCodes.tsx'
 import LeadsPage from './pages/crm/Leads'
 import LeadDetailPage from './pages/crm/LeadDetail'
@@ -17,12 +16,6 @@ import LeaderboardPage from './pages/crm/Leaderboard'
 import { AppLayout } from './layouts/AppLayout'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import UserPermissionsPage from './pages/admin/UserPermissions'
-import SaudasPage from './pages/purchases/Saudas'
-import InwardSlipPassesPage from './pages/purchases/InwardSlipPasses'
-import LotsPage from './pages/purchases/Lots'
-import PurchasesPage from './pages/purchases/Purchases'
-import PurchaseDetailPage from './pages/purchases/PurchaseDetail'
-import PaymentAdvicesPage from './pages/purchases/PaymentAdvices'
 
 export default function App() {
   // Global error handler
@@ -150,81 +143,11 @@ function AnimatedRoutes() {
           }
         />
         <Route
-          path="/directory/transporters"
-          element={
-            <ProtectedRoute>
-              <AppLayout>
-                <TransportersPage />
-              </AppLayout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
           path="/directory/rice-codes"
           element={
             <ProtectedRoute entity="riceCode" action="read">
               <AppLayout>
                 <RiceCodesPage />
-              </AppLayout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/purchases/saudas"
-          element={
-            <ProtectedRoute>
-              <AppLayout>
-                <SaudasPage />
-              </AppLayout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/purchases/inward-slip-passes"
-          element={
-            <ProtectedRoute>
-              <AppLayout>
-                <InwardSlipPassesPage />
-              </AppLayout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/purchases/lots"
-          element={
-            <ProtectedRoute>
-              <AppLayout>
-                <LotsPage />
-              </AppLayout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/purchases"
-          element={
-            <ProtectedRoute>
-              <AppLayout>
-                <PurchasesPage />
-              </AppLayout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/purchases/:id"
-          element={
-            <ProtectedRoute>
-              <AppLayout>
-                <PurchaseDetailPage />
-              </AppLayout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/purchases/payment-advices"
-          element={
-            <ProtectedRoute>
-              <AppLayout>
-                <PaymentAdvicesPage />
               </AppLayout>
             </ProtectedRoute>
           }

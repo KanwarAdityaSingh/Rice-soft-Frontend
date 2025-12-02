@@ -20,7 +20,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
   const [formData, setFormData] = useState<CreateBrokerRequest>({
     business_name: '',
     contact_person: '',
-    contact_persons: [{ name: '', phones: [''], emails: [''] }],
+    contact_persons: [{ name: '', phones: [''] }],
     email: '',
     phone: '',
     address: {
@@ -243,7 +243,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
           if (!existingContact) {
             contactPersons = [
               ...contactPersons,
-              { name: aadhaarName, phones: [''], emails: [''] }
+              { name: aadhaarName, phones: [''] }
             ];
           }
         }
@@ -293,14 +293,13 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       // Clean up form data before submission
       const cleanedFormData: CreateBrokerRequest = { ...data };
       
-      // Filter out empty contact persons (ones with no name) and clean up phones and emails arrays
+      // Filter out empty contact persons (ones with no name) and clean up phones arrays
       if (cleanedFormData.contact_persons) {
         cleanedFormData.contact_persons = cleanedFormData.contact_persons
           .filter(cp => cp.name && cp.name.trim().length > 0)
           .map(cp => ({
             name: cp.name.trim(),
-            phones: cp.phones.filter(phone => phone && phone.trim().length > 0),
-            emails: cp.emails ? cp.emails.filter(email => email && email.trim().length > 0) : []
+            phones: cp.phones.filter(phone => phone && phone.trim().length > 0)
           }))
           .filter(cp => cp.phones.length > 0); // Remove contact persons with no valid phones
       }
@@ -310,7 +309,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       setFormData({
         business_name: '',
         contact_person: '',
-        contact_persons: [{ name: '', phones: [''], emails: [''] }],
+        contact_persons: [{ name: '', phones: [''] }],
         email: '',
         phone: '',
         address: { street: '', city: '', state: '', pincode: '', country: 'India' },
@@ -550,73 +549,6 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                               Add Phone Number
                             </button>
                           </div>
-                          <div className="space-y-2 pl-0">
-                            <label className="text-xs text-muted-foreground">Email Addresses</label>
-                            {(contact.emails || ['']).map((email, emailIndex) => (
-                              <div key={emailIndex} className="flex gap-2 items-center">
-                                <input
-                                  type="email"
-                                  placeholder="Email"
-                                  value={email}
-                                  onChange={(e) => {
-                                    const value = e.target.value;
-                                    const updated = [...(formData.contact_persons || [])];
-                                    const updatedEmails = [...(updated[index].emails || [''])];
-                                    updatedEmails[emailIndex] = value;
-                                    updated[index] = { ...updated[index], emails: updatedEmails };
-                                    setFormData({ ...formData, contact_persons: updated });
-                                    // Validate email format
-                                    const errorKey = `contact_person_${index}_email_${emailIndex}`;
-                                    if (value.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-                                      setErrors({ ...errors, [errorKey]: 'Invalid email format' });
-                                    } else {
-                                      const newErrors = { ...errors };
-                                      delete newErrors[errorKey];
-                                      setErrors(newErrors);
-                                    }
-                                  }}
-                                  onBlur={(e) => {
-                                    const value = e.target.value.trim();
-                                    const errorKey = `contact_person_${index}_email_${emailIndex}`;
-                                    if (value.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-                                      setErrors({ ...errors, [errorKey]: 'Invalid email format' });
-                                    }
-                                  }}
-                                  className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                                />
-                                {errors[`contact_person_${index}_email_${emailIndex}`] && (
-                                  <p className="text-xs text-red-600 mt-0.5">{errors[`contact_person_${index}_email_${emailIndex}`]}</p>
-                                )}
-                                {(contact.emails || ['']).length > 1 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const updated = [...(formData.contact_persons || [])];
-                                      const updatedEmails = updated[index].emails?.filter((_, i) => i !== emailIndex) || [];
-                                      updated[index] = { ...updated[index], emails: updatedEmails.length > 0 ? updatedEmails : [''] };
-                                      setFormData({ ...formData, contact_persons: updated });
-                                    }}
-                                    className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-                                    title="Remove email"
-                                  >
-                                    <X className="h-3 w-3" />
-                                  </button>
-                                )}
-                              </div>
-                            ))}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const updated = [...(formData.contact_persons || [])];
-                                updated[index] = { ...updated[index], emails: [...(updated[index].emails || ['']), ''] };
-                                setFormData({ ...formData, contact_persons: updated });
-                              }}
-                              className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
-                            >
-                              <Plus className="h-3 w-3" />
-                              Add Email
-                            </button>
-                          </div>
                         </div>
                       ))}
                       <button
@@ -624,7 +556,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                         onClick={() => {
                           setFormData({
                             ...formData,
-                            contact_persons: [...(formData.contact_persons || []), { name: '', phones: [''], emails: [''] }]
+                            contact_persons: [...(formData.contact_persons || []), { name: '', phones: [''] }]
                           });
                         }}
                         className="w-full flex items-center justify-center gap-2 py-2 text-sm text-primary hover:bg-primary/10 rounded-lg border border-dashed border-primary/50 transition-colors"
