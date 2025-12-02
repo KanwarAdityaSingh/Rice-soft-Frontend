@@ -100,6 +100,53 @@ export interface VendorCheckResponse {
   vendor: Vendor | null;
 }
 
+// Transporter Types
+export interface TransporterAddress {
+  street: string;
+  city: string;
+  state: string;
+  pincode: string;
+  country: string;
+}
+
+export interface TransporterBankDetails {
+  bank_name?: string;
+  ifsc_code?: string;
+  account_number?: string;
+  branch?: string;
+}
+
+export interface Transporter {
+  id: string;
+  business_name: string;
+  contact_person: string;
+  phone: string;
+  email: string | null;
+  address: TransporterAddress;
+  gst_number: string | null;
+  pan_number: string | null;
+  vehicle_numbers: string[];
+  bank_details?: TransporterBankDetails;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateTransporterRequest {
+  business_name: string;
+  contact_person: string;
+  phone: string;
+  email?: string | null;
+  address: TransporterAddress;
+  gst_number?: string | null;
+  pan_number?: string | null;
+  vehicle_numbers?: string[];
+  bank_details?: TransporterBankDetails;
+  is_active?: boolean;
+}
+
+export interface UpdateTransporterRequest extends Partial<CreateTransporterRequest> {}
+
 // Salesman Types
 export interface Salesman {
   id: string;
@@ -270,6 +317,7 @@ export interface LeadBusinessDetails {
 export interface ContactPerson {
   name: string;
   phones: string[];
+  emails?: string[];
 }
 
 export interface Lead {
@@ -552,5 +600,280 @@ export interface PincodeLookupResponse {
   message: string;
   data: PincodeLookupData;
   timestamp?: string;
+}
+
+// Purchase Flow Types
+
+// Sauda Types
+export interface Sauda {
+  id: string;
+  sauda_type: 'xgodown' | 'for';
+  rice_quality: string;
+  rate: number;
+  broker_id?: string | null;
+  broker_commission?: number | null;
+  cash_discount?: number | null;
+  purchaser_id: string;
+  quantity?: number | null;
+  status: 'draft' | 'active' | 'completed' | 'cancelled';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSaudaRequest {
+  sauda_type: 'xgodown' | 'for';
+  rice_quality: string;
+  rate: number;
+  purchaser_id: string;
+  broker_id?: string | null;
+  broker_commission?: number | null;
+  cash_discount?: number | null;
+  quantity?: number | null;
+}
+
+export interface UpdateSaudaRequest {
+  sauda_type?: 'xgodown' | 'for';
+  rice_quality?: string;
+  rate?: number;
+  purchaser_id?: string;
+  broker_id?: string | null;
+  broker_commission?: number | null;
+  cash_discount?: number | null;
+  quantity?: number | null;
+}
+
+export interface SaudaFilters {
+  include_inactive?: boolean;
+  status?: 'draft' | 'active' | 'completed' | 'cancelled';
+  sauda_type?: 'xgodown' | 'for';
+  purchaser_id?: string;
+}
+
+// Inward Slip Pass Types
+export interface InwardSlipPass {
+  id: string;
+  sauda_ids: string[];
+  slip_number: string;
+  date: string;
+  vehicle_number: string;
+  party_name: string;
+  party_address?: string | null;
+  party_gst_number?: string | null;
+  transporter_id?: string | null;
+  transportation_cost?: number | null;
+  status: 'pending' | 'completed';
+  inward_slip_bill_image_url?: string | null;
+  transportation_bill_image_url?: string | null;
+  bill_pdf_url?: string | null;
+  bilti_image_url?: string | null;
+  bilti_pdf_url?: string | null;
+  eway_bill_number?: string | null;
+  eway_bill_url?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateInwardSlipPassRequest {
+  sauda_ids: string[];
+  slip_number: string;
+  date: string;
+  vehicle_number: string;
+  party_name: string;
+  party_address?: string | null;
+  party_gst_number?: string | null;
+  transporter_id?: string | null;
+  transportation_cost?: number | null;
+  notes?: string | null;
+}
+
+export interface UpdateInwardSlipPassRequest {
+  sauda_ids?: string[];
+  slip_number?: string;
+  date?: string;
+  vehicle_number?: string;
+  party_name?: string;
+  party_address?: string | null;
+  party_gst_number?: string | null;
+  transporter_id?: string | null;
+  transportation_cost?: number | null;
+  notes?: string | null;
+}
+
+// Lot Types
+export interface Lot {
+  id: string;
+  sauda_id: string;
+  lot_number: string;
+  item_name: string;
+  no_of_bags: number;
+  bag_weight?: number | null;
+  total_weight?: number | null;
+  bill_weight: number;
+  received_weight: number;
+  bardana?: string | null;
+  rate: number;
+  amount: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateLotRequest {
+  sauda_id: string;
+  lot_number: string;
+  item_name: string;
+  no_of_bags: number;
+  bill_weight: number;
+  received_weight: number;
+  rate: number;
+  bag_weight?: number | null;
+  bardana?: string | null;
+}
+
+export interface UpdateLotRequest {
+  lot_number?: string;
+  item_name?: string;
+  no_of_bags?: number;
+  bill_weight?: number;
+  received_weight?: number;
+  rate?: number;
+  bag_weight?: number | null;
+  bardana?: string | null;
+}
+
+// Purchase Types
+export interface Purchase {
+  id: string;
+  vendor_id: string;
+  broker_id?: string | null;
+  broker_commission?: number | null;
+  payment_advice_id?: string | null;
+  cash_discount?: number | null;
+  transportation_cost?: number | null;
+  invoice_number?: string | null;
+  invoice_date?: string | null;
+  rate?: number | null;
+  total_weight: number;
+  total_amount: number;
+  igst_amount: number;
+  igst_percentage: number;
+  purchase_date: string;
+  truck_number?: string | null;
+  transport_name?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePurchaseRequest {
+  vendor_id: string;
+  purchase_date: string;
+  sauda_ids?: string[];
+  inward_slip_pass_ids?: string[];
+  lot_ids?: string[];
+  broker_id?: string | null;
+  broker_commission?: number | null;
+  cash_discount?: number | null;
+  transportation_cost?: number | null;
+  rate?: number | null;
+  igst_percentage?: number | null;
+  invoice_number?: string | null;
+  invoice_date?: string | null;
+  truck_number?: string | null;
+  transport_name?: string | null;
+  notes?: string | null;
+}
+
+export interface UpdatePurchaseRequest {
+  vendor_id?: string;
+  purchase_date?: string;
+  broker_id?: string | null;
+  broker_commission?: number | null;
+  cash_discount?: number | null;
+  transportation_cost?: number | null;
+  rate?: number | null;
+  igst_percentage?: number | null;
+  invoice_number?: string | null;
+  invoice_date?: string | null;
+  truck_number?: string | null;
+  transport_name?: string | null;
+  notes?: string | null;
+}
+
+export interface LinkedEntitiesResponse {
+  sauda_ids: string[];
+  inward_slip_pass_ids: string[];
+  lot_ids: string[];
+}
+
+export interface LinkSaudasRequest {
+  sauda_ids: string[];
+}
+
+export interface LinkInwardSlipPassesRequest {
+  inward_slip_pass_ids: string[];
+}
+
+export interface LinkLotsRequest {
+  lot_ids: string[];
+}
+
+// Payment Advice Types
+export interface Charge {
+  id: string;
+  charge_name: string;
+  charge_value: number;
+  charge_type: 'fixed' | 'percentage';
+}
+
+export interface PaymentAdvice {
+  id: string;
+  purchase_id?: string | null;
+  payer_id: string;
+  recipient_id: string;
+  amount: number;
+  net_payable: number;
+  date_of_payment: string;
+  status: 'pending' | 'completed' | 'failed';
+  transaction_id?: string | null;
+  payment_slip_url?: string | null;
+  charges: Charge[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePaymentAdviceRequest {
+  purchase_id?: string | null;
+  payer_id: string;
+  recipient_id: string;
+  amount: number;
+  date_of_payment: string;
+  status?: 'pending' | 'completed' | 'failed';
+  transaction_id?: string | null;
+  charges?: Array<{
+    charge_name: string;
+    charge_value: number;
+    charge_type: 'fixed' | 'percentage';
+  }>;
+}
+
+export interface UpdatePaymentAdviceRequest {
+  purchase_id?: string | null;
+  payer_id?: string;
+  recipient_id?: string;
+  amount?: number;
+  date_of_payment?: string;
+  status?: 'pending' | 'completed' | 'failed';
+  transaction_id?: string | null;
+}
+
+export interface AddChargeRequest {
+  charge_name: string;
+  charge_value: number;
+  charge_type: 'fixed' | 'percentage';
+}
+
+export interface NetPayableResponse {
+  net_payable: number;
 }
 

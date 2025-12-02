@@ -98,7 +98,7 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
   };
   const [formData, setFormData] = useState<CreateLeadRequest>({
     company_name: '',
-    contact_persons: [{ name: '', phones: [''] }],
+    contact_persons: [{ name: '', phones: [''], emails: [''] }],
     email: '',
     phone: '',
     address: {
@@ -125,19 +125,21 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
         if ('phone' in cp && typeof (cp as any).phone === 'string') {
           return {
             name: cp.name,
-            phones: (cp as any).phone ? [(cp as any).phone] : ['']
+            phones: (cp as any).phone ? [(cp as any).phone] : [''],
+            emails: cp.emails || ['']
           };
         }
         // If phones array is empty, ensure at least one empty string
         if (!cp.phones || cp.phones.length === 0) {
-          return { name: cp.name, phones: [''] };
+          return { name: cp.name, phones: [''], emails: cp.emails || [''] };
         }
-        return cp;
+        // Ensure emails array exists
+        return { ...cp, emails: cp.emails || [''] };
       });
       
       if (contactPersons.length === 0 && (lead as any).contact_person) {
         // Backward compatibility: convert old contact_person string to array
-        contactPersons = [{ name: (lead as any).contact_person, phones: lead.phone ? [lead.phone] : [''] }];
+        contactPersons = [{ name: (lead as any).contact_person, phones: lead.phone ? [lead.phone] : [''], emails: [''] }];
       }
       // Ensure at least one contact person exists
       if (contactPersons.length === 0) {
@@ -175,7 +177,7 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
     } else if (!lead && open) {
       setFormData({
         company_name: '',
-        contact_persons: [{ name: '', phones: [''] }],
+        contact_persons: [{ name: '', phones: [''], emails: [''] }],
         email: '',
         phone: '',
         address: {
@@ -229,28 +231,18 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
       }
     }
     
-    // Phone field is required and must be 10 digits
-    if (!formData.phone || !formData.phone.trim()) {
-      newErrors.phone = 'Phone is required';
-    } else if (formData.phone.trim().length < 10) {
-      newErrors.phone = 'Phone must be exactly 10 digits';
-    } else if (!validatePhone(formData.phone.trim())) {
-      newErrors.phone = 'Invalid phone number format';
+    // Phone field validation - optional, but if provided, must be valid
+    if (formData.phone && formData.phone.trim().length > 0) {
+      if (formData.phone.trim().length < 10) {
+        newErrors.phone = 'Phone must be exactly 10 digits';
+      } else if (!validatePhone(formData.phone.trim())) {
+        newErrors.phone = 'Invalid phone number format';
+      }
     }
     
-    // Email validation - optional in create mode, required in edit mode
-    if (mode === 'edit' || mode === 'pre-conversion') {
-      // Email is required in edit mode
-      if (!formData.email || !formData.email.trim()) {
-        newErrors.email = 'Email is required';
-      } else if (!validateEmail(formData.email.trim())) {
-        newErrors.email = 'Please enter a valid email address';
-      }
-    } else {
-      // Email is optional in create mode, but if provided, it must be valid
-      if (formData.email && formData.email.trim().length > 0 && !validateEmail(formData.email.trim())) {
-        newErrors.email = 'Please enter a valid email address';
-      }
+    // Email validation - optional in both create and edit mode, but if provided, must be valid
+    if (formData.email && formData.email.trim().length > 0 && !validateEmail(formData.email.trim())) {
+      newErrors.email = 'Please enter a valid email address';
     }
     
     // Step 2 validations (Address is required)
@@ -303,13 +295,14 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
       // All validations passed, clean up form data before submission
       const cleanedFormData: CreateLeadRequest | UpdateLeadRequest = { ...formData };
       
-      // Filter out empty contact persons (ones with no name) and clean up phones arrays
+      // Filter out empty contact persons (ones with no name) and clean up phones and emails arrays
       if (cleanedFormData.contact_persons) {
         cleanedFormData.contact_persons = cleanedFormData.contact_persons
           .filter(cp => cp.name && cp.name.trim().length > 0)
           .map(cp => ({
             name: cp.name.trim(),
-            phones: cp.phones.filter(phone => phone && phone.trim().length > 0)
+            phones: cp.phones.filter(phone => phone && phone.trim().length > 0),
+            emails: cp.emails ? cp.emails.filter(email => email && email.trim().length > 0) : []
           }))
           .filter(cp => cp.phones.length > 0); // Remove contact persons with no valid phones
       }
@@ -372,13 +365,14 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
       // Clean up form data before submission
       const cleanedFormData: CreateLeadRequest = { ...data };
       
-      // Filter out empty contact persons (ones with no name) and clean up phones arrays
+      // Filter out empty contact persons (ones with no name) and clean up phones and emails arrays
       if (cleanedFormData.contact_persons) {
         cleanedFormData.contact_persons = cleanedFormData.contact_persons
           .filter(cp => cp.name && cp.name.trim().length > 0)
           .map(cp => ({
             name: cp.name.trim(),
-            phones: cp.phones.filter(phone => phone && phone.trim().length > 0)
+            phones: cp.phones.filter(phone => phone && phone.trim().length > 0),
+            emails: cp.emails ? cp.emails.filter(email => email && email.trim().length > 0) : []
           }))
           .filter(cp => cp.phones.length > 0); // Remove contact persons with no valid phones
       }

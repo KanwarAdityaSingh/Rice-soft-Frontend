@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Users, BarChart3, Trophy, Store, UserCheck, UserCircle, ChevronRight, Settings, LogOut, X, Sprout } from 'lucide-react'
+import { Users, BarChart3, Trophy, Store, UserCheck, UserCircle, ChevronRight, Settings, LogOut, X, Sprout, ShoppingCart, Package, FileText, CreditCard, Truck } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
-import { canRead, isCustomUser } from '../utils/permissions'
+import { canRead, isCustomUser, getPermissions } from '../utils/permissions'
 import { Tooltip } from '@mui/material'
 
 interface SidebarProps {
@@ -17,6 +17,8 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
   const navigate = useNavigate()
   const { user, logout } = useAuth()
   const [collapsed, setCollapsed] = useState<boolean>(collapsedDefault)
+  const activeLinkRef = useRef<HTMLDivElement | null>(null)
+  const navRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     const persisted = localStorage.getItem('sidebar_collapsed')
@@ -39,14 +41,25 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
     { to: '/crm/analytics', label: 'Analytics', icon: BarChart3, key: null as any },
     { to: '/crm/leaderboard', label: 'Leaderboard', icon: Trophy, key: null as any },
     { to: '/directory/vendors', label: 'Vendors', icon: Store, key: 'vendor' as const },
+    { to: '/directory/transporters', label: 'Transporters', icon: Truck, key: null as any },
     { to: '/directory/salesmen', label: 'Salesperson', icon: UserCheck, key: 'salesman' as const },
     { to: '/directory/brokers', label: 'Brokers', icon: UserCircle, key: 'broker' as const },
     { to: '/directory/rice-codes', label: 'Rice Codes', icon: Sprout, key: 'riceCode' as const },
+    { to: '/purchases/saudas', label: 'Saudas', icon: Package, key: null as any },
+    { to: '/purchases/inward-slip-passes', label: 'Inward Slip Passes', icon: FileText, key: null as any },
+    { to: '/purchases/lots', label: 'Lots', icon: Package, key: null as any },
+    { to: '/purchases', label: 'Purchases', icon: ShoppingCart, key: null as any },
+    { to: '/purchases/payment-advices', label: 'Payment Advices', icon: CreditCard, key: null as any },
   ]
 
   const links = baseLinks.filter((l) => {
     if (!l.key) return true; // non-entity routes always visible
-    // Only apply permission filtering for custom users
+    // Check if permissions exist - if they do, check them regardless of user type
+    const permissions = getPermissions();
+    if (permissions && typeof permissions === 'object' && l.key && permissions[l.key as keyof typeof permissions]) {
+      return canRead(l.key);
+    }
+    // If no permissions stored, only filter for custom users (legacy behavior)
     return !isCustomUser() || canRead(l.key)
   }) as Array<{ to: string; label: string; icon: any }>
 
@@ -56,6 +69,27 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
       onMobileClose()
     }
   }, [location.pathname])
+
+  // Scroll to active link when route changes
+  useEffect(() => {
+    if (activeLinkRef.current && navRef.current) {
+      const activeElement = activeLinkRef.current
+      const navElement = navRef.current
+      
+      // Get the position of the active element relative to the nav container
+      const activeRect = activeElement.getBoundingClientRect()
+      const navRect = navElement.getBoundingClientRect()
+      
+      // Check if the active element is below the visible area
+      if (activeRect.bottom > navRect.bottom) {
+        // Scroll the active element into view with some padding
+        activeElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      } else if (activeRect.top < navRect.top) {
+        // Check if the active element is above the visible area
+        activeElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }
+    }
+  }, [location.pathname, collapsed])
 
   // On mobile, always show expanded. On desktop, use collapsed state
   const isCollapsed = collapsed
@@ -111,9 +145,21 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
           </div>
 
         {/* Links */}
-        <nav className="flex-1 px-2 space-y-1 overflow-y-auto">
+        <nav ref={navRef} className="flex-1 px-2 space-y-1 overflow-y-auto">
           {links.map(({ to, label, icon: Icon }) => {
-            const active = location.pathname.startsWith(to)
+            // More precise matching: exact match or path starts with route + '/'
+            // But only if no more specific route also matches
+            const pathMatches = location.pathname === to || location.pathname.startsWith(to + '/')
+            
+            // Check if there's a more specific route that also matches
+            const hasMoreSpecificMatch = pathMatches && links.some(otherLink => {
+              if (otherLink.to === to) return false
+              // Check if otherLink is more specific (longer path) and also matches
+              return otherLink.to.length > to.length && 
+                     (location.pathname.startsWith(otherLink.to + '/') || location.pathname === otherLink.to)
+            })
+            
+            const active = pathMatches && !hasMoreSpecificMatch
             const linkContent = (
               <Link
                 to={to}
@@ -153,10 +199,10 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
                   },
                 }}
               >
-                <div className="w-full">{linkContent}</div>
+                <div ref={active ? activeLinkRef : null} className="w-full">{linkContent}</div>
               </Tooltip>
             ) : (
-              <div key={to}>{linkContent}</div>
+              <div key={to} ref={active ? activeLinkRef : null}>{linkContent}</div>
             )
           })}
         </nav>

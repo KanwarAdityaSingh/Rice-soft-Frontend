@@ -121,7 +121,12 @@ export function BrokerPreviewDialog({ open, onOpenChange, formData, onConfirm }:
                             <div className="font-semibold">{cp.name}</div>
                             {cp.phones && cp.phones.length > 0 && (
                               <div className="text-xs text-muted-foreground mt-0.5">
-                                {cp.phones.filter(p => p && p.trim().length > 0).join(', ')}
+                                Phones: {cp.phones.filter(p => p && p.trim().length > 0).join(', ')}
+                              </div>
+                            )}
+                            {cp.emails && cp.emails.length > 0 && (
+                              <div className="text-xs text-muted-foreground mt-0.5">
+                                Emails: {cp.emails.filter(e => e && e.trim().length > 0).join(', ')}
                               </div>
                             )}
                           </div>

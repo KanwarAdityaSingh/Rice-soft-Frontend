@@ -94,9 +94,16 @@ export function LeadInfoCards({ lead }: LeadInfoCardsProps) {
                 <div className="mt-1 space-y-1">
                   {lead.contact_persons.map((cp, idx) => (
                     <div key={idx} className="pl-2">
-                      {cp.name}
+                      <div className="font-medium">{cp.name}</div>
                       {cp.phones && cp.phones.length > 0 && cp.phones.filter(p => p && p.trim()).length > 0 && (
-                        <span className="text-muted-foreground"> - {cp.phones.filter(p => p && p.trim()).join(', ')}</span>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          Phones: {cp.phones.filter(p => p && p.trim()).join(', ')}
+                        </div>
+                      )}
+                      {cp.emails && cp.emails.length > 0 && cp.emails.filter(e => e && e.trim()).length > 0 && (
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          Emails: {cp.emails.filter(e => e && e.trim()).join(', ')}
+                        </div>
                       )}
                     </div>
                   ))}

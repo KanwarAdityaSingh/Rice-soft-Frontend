@@ -468,6 +468,75 @@ export function LeadFormSteps({
                       Add Phone Number
                     </button>
                   </div>
+                  <div className="space-y-2 pl-0">
+                    <label className="text-xs text-muted-foreground">Email Addresses</label>
+                    {(contact.emails || ['']).map((email, emailIndex) => (
+                      <div key={emailIndex} className="space-y-1">
+                        <div className="flex gap-2 items-center">
+                          <input
+                            type="email"
+                            placeholder="Email"
+                            value={email}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const updated = [...(formData.contact_persons || [])];
+                              const updatedEmails = [...(updated[index].emails || [''])];
+                              updatedEmails[emailIndex] = value;
+                              updated[index] = { ...updated[index], emails: updatedEmails };
+                              setFormData({ ...formData, contact_persons: updated });
+                              // Validate email format
+                              const errorKey = `contact_person_${index}_email_${emailIndex}`;
+                              if (value.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+                                setErrors({ ...errors, [errorKey]: 'Invalid email format' });
+                              } else {
+                                const newErrors = { ...errors };
+                                delete newErrors[errorKey];
+                                setErrors(newErrors);
+                              }
+                            }}
+                            onBlur={(e) => {
+                              const value = e.target.value.trim();
+                              const errorKey = `contact_person_${index}_email_${emailIndex}`;
+                              if (value.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+                                setErrors({ ...errors, [errorKey]: 'Invalid email format' });
+                              }
+                            }}
+                            className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                          />
+                          {(contact.emails || ['']).length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = [...(formData.contact_persons || [])];
+                                const updatedEmails = updated[index].emails?.filter((_, i) => i !== emailIndex) || [];
+                                updated[index] = { ...updated[index], emails: updatedEmails.length > 0 ? updatedEmails : [''] };
+                                setFormData({ ...formData, contact_persons: updated });
+                              }}
+                              className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+                              title="Remove email"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                        {errors[`contact_person_${index}_email_${emailIndex}`] && (
+                          <p className="text-xs text-red-600 ml-0.5">{errors[`contact_person_${index}_email_${emailIndex}`]}</p>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = [...(formData.contact_persons || [])];
+                        updated[index] = { ...updated[index], emails: [...(updated[index].emails || ['']), ''] };
+                        setFormData({ ...formData, contact_persons: updated });
+                      }}
+                      className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
+                    >
+                      <Plus className="h-3 w-3" />
+                      Add Email
+                    </button>
+                  </div>
                 </div>
               ))}
               <button
@@ -475,7 +544,7 @@ export function LeadFormSteps({
                 onClick={() => {
                   setFormData({
                     ...formData,
-                    contact_persons: [...(formData.contact_persons || []), { name: '', phones: [''] }]
+                    contact_persons: [...(formData.contact_persons || []), { name: '', phones: [''], emails: [''] }]
                   });
                 }}
                 className="w-full flex items-center justify-center gap-2 py-2 text-sm text-primary hover:bg-primary/10 rounded-lg border border-dashed border-primary/50 transition-colors"
@@ -489,7 +558,7 @@ export function LeadFormSteps({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-sm font-medium mb-1.5 block">Phone *</label>
+              <label className="text-sm font-medium mb-1.5 block">Phone</label>
               <input
                 type="tel"
                 placeholder="10 digits only"
@@ -498,31 +567,37 @@ export function LeadFormSteps({
                   // Only allow digits and limit to 10 digits
                   const value = e.target.value.replace(/\D/g, '').slice(0, 10);
                   setFormData({ ...formData, phone: value });
-                  // Validate and set error immediately
+                  // Validate and set error immediately (only if value is provided)
                   if (value.length > 0 && value.length < 10) {
                     setErrors({ ...errors, phone: 'Phone must be exactly 10 digits' });
                   } else if (value.length === 10 && !validatePhone(value)) {
                     setErrors({ ...errors, phone: 'Invalid phone number format' });
-                  } else if (value.length === 10 && validatePhone(value)) {
+                  } else {
                     const newErrors = { ...errors };
                     delete newErrors.phone;
                     setErrors(newErrors);
-                  } else if (value.length === 0) {
-                    setErrors({ ...errors, phone: 'Phone is required' });
                   }
                 }}
                 onBlur={(e) => {
                   const value = e.target.value.trim();
-                  if (value.length === 0) {
-                    setErrors({ ...errors, phone: 'Phone is required' });
-                  } else if (value.length < 10) {
-                    setErrors({ ...errors, phone: 'Phone must be exactly 10 digits' });
-                  } else if (!validatePhone(value)) {
-                    setErrors({ ...errors, phone: 'Invalid phone number format' });
+                  if (value.length > 0) {
+                    if (value.length < 10) {
+                      setErrors({ ...errors, phone: 'Phone must be exactly 10 digits' });
+                    } else if (!validatePhone(value)) {
+                      setErrors({ ...errors, phone: 'Invalid phone number format' });
+                    } else {
+                      const newErrors = { ...errors };
+                      delete newErrors.phone;
+                      setErrors(newErrors);
+                    }
+                  } else {
+                    // Clear error if field is empty (optional field)
+                    const newErrors = { ...errors };
+                    delete newErrors.phone;
+                    setErrors(newErrors);
                   }
                 }}
                 className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                required
                 maxLength={10}
               />
               {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone}</p>}
@@ -990,6 +1065,75 @@ export function LeadFormSteps({
                       Add Phone Number
                     </button>
                   </div>
+                  <div className="space-y-2 pl-0">
+                    <label className="text-xs text-muted-foreground">Email Addresses</label>
+                    {(contact.emails || ['']).map((email, emailIndex) => (
+                      <div key={emailIndex} className="space-y-1">
+                        <div className="flex gap-2 items-center">
+                          <input
+                            type="email"
+                            placeholder="Email"
+                            value={email}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const updated = [...(formData.contact_persons || [])];
+                              const updatedEmails = [...(updated[index].emails || [''])];
+                              updatedEmails[emailIndex] = value;
+                              updated[index] = { ...updated[index], emails: updatedEmails };
+                              setFormData({ ...formData, contact_persons: updated });
+                              // Validate email format
+                              const errorKey = `contact_person_${index}_email_${emailIndex}`;
+                              if (value.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+                                setErrors({ ...errors, [errorKey]: 'Invalid email format' });
+                              } else {
+                                const newErrors = { ...errors };
+                                delete newErrors[errorKey];
+                                setErrors(newErrors);
+                              }
+                            }}
+                            onBlur={(e) => {
+                              const value = e.target.value.trim();
+                              const errorKey = `contact_person_${index}_email_${emailIndex}`;
+                              if (value.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+                                setErrors({ ...errors, [errorKey]: 'Invalid email format' });
+                              }
+                            }}
+                            className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                          />
+                          {(contact.emails || ['']).length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = [...(formData.contact_persons || [])];
+                                const updatedEmails = updated[index].emails?.filter((_, i) => i !== emailIndex) || [];
+                                updated[index] = { ...updated[index], emails: updatedEmails.length > 0 ? updatedEmails : [''] };
+                                setFormData({ ...formData, contact_persons: updated });
+                              }}
+                              className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+                              title="Remove email"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                        {errors[`contact_person_${index}_email_${emailIndex}`] && (
+                          <p className="text-xs text-red-600 ml-0.5">{errors[`contact_person_${index}_email_${emailIndex}`]}</p>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = [...(formData.contact_persons || [])];
+                        updated[index] = { ...updated[index], emails: [...(updated[index].emails || ['']), ''] };
+                        setFormData({ ...formData, contact_persons: updated });
+                      }}
+                      className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
+                    >
+                      <Plus className="h-3 w-3" />
+                      Add Email
+                    </button>
+                  </div>
                 </div>
               ))}
               <button
@@ -997,7 +1141,7 @@ export function LeadFormSteps({
                 onClick={() => {
                   setFormData({
                     ...formData,
-                    contact_persons: [...(formData.contact_persons || []), { name: '', phones: [''] }]
+                    contact_persons: [...(formData.contact_persons || []), { name: '', phones: [''], emails: [''] }]
                   });
                 }}
                 className="w-full flex items-center justify-center gap-2 py-2 text-sm text-primary hover:bg-primary/10 rounded-lg border border-dashed border-primary/50 transition-colors"
@@ -1011,7 +1155,7 @@ export function LeadFormSteps({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-sm font-medium mb-1.5 block">Phone *</label>
+              <label className="text-sm font-medium mb-1.5 block">Phone</label>
               <input
                 type="tel"
                 placeholder="10 digits only"
@@ -1020,38 +1164,44 @@ export function LeadFormSteps({
                   // Only allow digits and limit to 10 digits
                   const value = e.target.value.replace(/\D/g, '').slice(0, 10);
                   setFormData({ ...formData, phone: value });
-                  // Validate and set error immediately
+                  // Validate and set error immediately (only if value is provided)
                   if (value.length > 0 && value.length < 10) {
                     setErrors({ ...errors, phone: 'Phone must be exactly 10 digits' });
                   } else if (value.length === 10 && !validatePhone(value)) {
                     setErrors({ ...errors, phone: 'Invalid phone number format' });
-                  } else if (value.length === 10 && validatePhone(value)) {
+                  } else {
                     const newErrors = { ...errors };
                     delete newErrors.phone;
                     setErrors(newErrors);
-                  } else if (value.length === 0) {
-                    setErrors({ ...errors, phone: 'Phone is required' });
                   }
                 }}
                 onBlur={(e) => {
                   const value = e.target.value.trim();
-                  if (value.length === 0) {
-                    setErrors({ ...errors, phone: 'Phone is required' });
-                  } else if (value.length < 10) {
-                    setErrors({ ...errors, phone: 'Phone must be exactly 10 digits' });
-                  } else if (!validatePhone(value)) {
-                    setErrors({ ...errors, phone: 'Invalid phone number format' });
+                  if (value.length > 0) {
+                    if (value.length < 10) {
+                      setErrors({ ...errors, phone: 'Phone must be exactly 10 digits' });
+                    } else if (!validatePhone(value)) {
+                      setErrors({ ...errors, phone: 'Invalid phone number format' });
+                    } else {
+                      const newErrors = { ...errors };
+                      delete newErrors.phone;
+                      setErrors(newErrors);
+                    }
+                  } else {
+                    // Clear error if field is empty (optional field)
+                    const newErrors = { ...errors };
+                    delete newErrors.phone;
+                    setErrors(newErrors);
                   }
                 }}
                 className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                required
                 maxLength={10}
               />
               {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone}</p>}
             </div>
 
             <div>
-              <label className="text-sm font-medium mb-1.5 block">Email *</label>
+              <label className="text-sm font-medium mb-1.5 block">Email</label>
               <input
                 type="email"
                 placeholder="example@email.com"
@@ -1059,12 +1209,10 @@ export function LeadFormSteps({
                 onChange={(e) => {
                   const value = e.target.value;
                   setFormData({ ...formData, email: value });
-                  // Validate and set error immediately (email is required in edit mode)
-                  if (value.length === 0) {
-                    setErrors({ ...errors, email: 'Email is required' });
-                  } else if (value.trim().length > 0 && !validateEmail(value.trim())) {
+                  // Validate and set error immediately (only if value is provided)
+                  if (value.trim().length > 0 && !validateEmail(value.trim())) {
                     setErrors({ ...errors, email: 'Please enter a valid email address' });
-                  } else if (value.trim().length > 0 && validateEmail(value.trim())) {
+                  } else {
                     const newErrors = { ...errors };
                     delete newErrors.email;
                     setErrors(newErrors);
@@ -1073,11 +1221,16 @@ export function LeadFormSteps({
                 onBlur={(e) => {
                   const value = e.target.value.trim();
                   setFormData({ ...formData, email: value });
-                  if (value.length === 0) {
-                    setErrors({ ...errors, email: 'Email is required' });
-                  } else if (!validateEmail(value)) {
-                    setErrors({ ...errors, email: 'Please enter a valid email address' });
+                  if (value.length > 0) {
+                    if (!validateEmail(value)) {
+                      setErrors({ ...errors, email: 'Please enter a valid email address' });
+                    } else {
+                      const newErrors = { ...errors };
+                      delete newErrors.email;
+                      setErrors(newErrors);
+                    }
                   } else {
+                    // Clear error if field is empty (optional field)
                     const newErrors = { ...errors };
                     delete newErrors.email;
                     setErrors(newErrors);
