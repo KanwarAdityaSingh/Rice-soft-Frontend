@@ -4,9 +4,13 @@ import { X } from 'lucide-react';
 import { useLots } from '../../../hooks/useLots';
 import { lotsAPI } from '../../../services/lots.api';
 import { useSaudas } from '../../../hooks/useSaudas';
+import { useVendors } from '../../../hooks/useVendors';
+import { riceCodesAPI } from '../../../services/riceCodes.api';
+import { getRiceTypeLabel } from '../../../utils/riceType';
+import { CustomSelect } from '../../shared/CustomSelect';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
-import type { CreateLotRequest, UpdateLotRequest, Lot } from '../../../types/entities';
+import type { CreateLotRequest, UpdateLotRequest, Lot, RiceCode, RiceType, Sauda } from '../../../types/entities';
 
 interface LotFormModalProps {
   open: boolean;
@@ -17,11 +21,74 @@ interface LotFormModalProps {
 export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
   const { createLot, updateLot } = useLots();
   const { saudas } = useSaudas();
+  const { vendors } = useVendors();
   const isEditMode = !!lotId;
+  const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
+  const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
+  const [loadingRiceCodes, setLoadingRiceCodes] = useState(false);
+  const [loadingRiceTypes, setLoadingRiceTypes] = useState(false);
+
+  useEffect(() => {
+    const fetchRiceCodes = async () => {
+      setLoadingRiceCodes(true);
+      try {
+        const data = await riceCodesAPI.getAllRiceCodes();
+        setRiceCodes(data);
+      } catch (error) {
+        console.error('Failed to fetch rice codes:', error);
+      } finally {
+        setLoadingRiceCodes(false);
+      }
+    };
+    const fetchRiceTypes = async () => {
+      setLoadingRiceTypes(true);
+      try {
+        const data = await riceCodesAPI.getRiceTypes();
+        setRiceTypes(data);
+      } catch (error) {
+        console.error('Failed to fetch rice types:', error);
+      } finally {
+        setLoadingRiceTypes(false);
+      }
+    };
+    if (open) {
+      fetchRiceCodes();
+      fetchRiceTypes();
+    }
+  }, [open]);
+
+  const getRiceCodeName = (riceCodeId: string | null | undefined): string => {
+    if (!riceCodeId) return '';
+    const riceCode = riceCodes.find((rc) => rc.rice_code_id === riceCodeId);
+    return riceCode ? riceCode.rice_code_name : '';
+  };
+
+  const getPurchaserName = (purchaserId: string | null | undefined): string => {
+    if (!purchaserId) return '';
+    const purchaser = vendors.find((v) => v.id === purchaserId);
+    return purchaser ? purchaser.business_name : '';
+  };
+
+  const getSaudaDisplayName = (sauda: Sauda): string => {
+    const parts: string[] = [];
+    
+    const purchaserName = getPurchaserName(sauda.purchaser_id);
+    if (purchaserName) parts.push(purchaserName);
+    
+    const riceCodeName = getRiceCodeName(sauda.rice_code_id);
+    if (riceCodeName) parts.push(riceCodeName);
+    
+    const riceTypeLabel = getRiceTypeLabel(sauda.rice_type, riceTypes);
+    if (riceTypeLabel) parts.push(riceTypeLabel);
+    
+    return parts.join(' - ') || 'Sauda';
+  };
+
   const [formData, setFormData] = useState<CreateLotRequest>({
     sauda_id: '',
     lot_number: '',
-    item_name: '',
+    rice_code_id: null,
+    rice_type: null,
     no_of_bags: 0,
     bill_weight: 0,
     received_weight: 0,
@@ -53,7 +120,8 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
       setFormData({
         sauda_id: lot.sauda_id,
         lot_number: lot.lot_number,
-        item_name: lot.item_name,
+        rice_code_id: lot.rice_code_id || null,
+        rice_type: lot.rice_type || null,
         no_of_bags: lot.no_of_bags,
         bill_weight: lot.bill_weight,
         received_weight: lot.received_weight,
@@ -76,7 +144,8 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
     setFormData({
       sauda_id: '',
       lot_number: '',
-      item_name: '',
+      rice_code_id: null,
+      rice_type: null,
       no_of_bags: 0,
       bill_weight: 0,
       received_weight: 0,
@@ -95,9 +164,6 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
     }
     if (!formData.lot_number.trim()) {
       newErrors.lot_number = 'Lot number is required';
-    }
-    if (!formData.item_name.trim()) {
-      newErrors.item_name = 'Item name is required';
     }
     if (!formData.no_of_bags || formData.no_of_bags <= 0) {
       newErrors.no_of_bags = 'Number of bags must be greater than 0';
@@ -189,9 +255,9 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
                         disabled={isEditMode}
                       >
                         <option value="">Select Sauda</option>
-                        {saudas.filter(s => s.status === 'active').map((s) => (
+                        {saudas.map((s) => (
                           <option key={s.id} value={s.id}>
-                            {s.rice_quality} - ₹{s.rate}
+                            {getSaudaDisplayName(s)} - ₹{s.rate}
                           </option>
                         ))}
                       </select>
@@ -218,21 +284,54 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
                       )}
                     </div>
 
-                    <div className="sm:col-span-2">
+                    <div>
                       <label className="block text-sm font-medium mb-1">
-                        Item Name <span className="text-red-500">*</span>
+                        Rice Code
                       </label>
-                      <input
-                        type="text"
-                        value={formData.item_name}
-                        onChange={(e) => setFormData({ ...formData, item_name: e.target.value })}
-                        className={`w-full px-3 py-2 border rounded-lg bg-background ${
-                          errors.item_name ? 'border-red-500' : 'border-border'
-                        }`}
-                        placeholder="Premium Basmati Rice"
-                      />
-                      {errors.item_name && (
-                        <p className="text-xs text-red-500 mt-1">{errors.item_name}</p>
+                      {loadingRiceCodes ? (
+                        <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm flex items-center gap-2">
+                          <LoadingSpinner size="sm" />
+                          <span className="text-muted-foreground">Loading rice codes...</span>
+                        </div>
+                      ) : (
+                        <CustomSelect
+                          value={formData.rice_code_id || null}
+                          onChange={(value) => setFormData({ ...formData, rice_code_id: value || null })}
+                          options={riceCodes.map((riceCode) => ({
+                            value: riceCode.rice_code_id,
+                            label: riceCode.rice_code_name
+                          }))}
+                          placeholder="Select Rice Code"
+                          allowClear={true}
+                          clearLabel="None"
+                        />
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        Rice Type
+                      </label>
+                      {loadingRiceTypes ? (
+                        <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm flex items-center gap-2">
+                          <LoadingSpinner size="sm" />
+                          <span className="text-muted-foreground">Loading rice types...</span>
+                        </div>
+                      ) : (
+                        <CustomSelect
+                          value={formData.rice_type || null}
+                          onChange={(value) => setFormData({ ...formData, rice_type: value || null })}
+                          options={riceTypes.map((riceType) => ({
+                            value: riceType.value,
+                            label: riceType.label
+                          }))}
+                          placeholder="Select Rice Type"
+                          allowClear={true}
+                          clearLabel="None"
+                        />
+                      )}
+                      {errors.rice_type && (
+                        <p className="text-xs text-red-500 mt-1">{errors.rice_type}</p>
                       )}
                     </div>
 

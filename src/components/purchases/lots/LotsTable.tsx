@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { SearchBar } from '../../admin/shared/SearchBar';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { EmptyState } from '../../admin/shared/EmptyState';
@@ -6,9 +6,11 @@ import { ActionButtons } from '../../admin/shared/ActionButtons';
 import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
 import { Package } from 'lucide-react';
 import { useLots } from '../../../hooks/useLots';
+import { riceCodesAPI } from '../../../services/riceCodes.api';
+import { getRiceTypeLabel } from '../../../utils/riceType';
 import { LotFormModal } from './LotFormModal';
 import { LotPreviewDialog } from './LotPreviewDialog';
-import type { Lot } from '../../../types/entities';
+import type { Lot, RiceCode, RiceType } from '../../../types/entities';
 
 export function LotsTable() {
   const [saudaFilter, setSaudaFilter] = useState<string | undefined>();
@@ -21,23 +23,69 @@ export function LotsTable() {
   const [selectedLotId, setSelectedLotId] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewLot, setPreviewLot] = useState<Lot | null>(null);
+  const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
+  const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
+
+  useEffect(() => {
+    const fetchRiceCodes = async () => {
+      try {
+        const data = await riceCodesAPI.getAllRiceCodes();
+        setRiceCodes(data);
+      } catch (error) {
+        console.error('Failed to fetch rice codes:', error);
+      }
+    };
+    const fetchRiceTypes = async () => {
+      try {
+        const data = await riceCodesAPI.getRiceTypes();
+        setRiceTypes(data);
+      } catch (error) {
+        console.error('Failed to fetch rice types:', error);
+      }
+    };
+    fetchRiceCodes();
+    fetchRiceTypes();
+  }, []);
+
+  const getRiceCodeName = (riceCodeId: string | null | undefined): string => {
+    if (!riceCodeId) return '';
+    const riceCode = riceCodes.find((rc) => rc.rice_code_id === riceCodeId);
+    return riceCode ? riceCode.rice_code_name : '';
+  };
+
+  const getLotDisplayName = (lot: Lot): string => {
+    const parts: string[] = [];
+    
+    const riceCodeName = getRiceCodeName(lot.rice_code_id);
+    if (riceCodeName) parts.push(riceCodeName);
+    
+    const riceTypeLabel = getRiceTypeLabel(lot.rice_type, riceTypes);
+    if (riceTypeLabel) parts.push(riceTypeLabel);
+    
+    return parts.join(' - ') || 'Lot';
+  };
 
   const filtered = useMemo(() => {
     return lots.filter((lot) => {
       const q = searchQuery.toLowerCase();
+      const displayName = getLotDisplayName(lot).toLowerCase();
+      const riceCodeName = getRiceCodeName(lot.rice_code_id).toLowerCase();
+      const riceTypeLabel = getRiceTypeLabel(lot.rice_type, riceTypes).toLowerCase();
       const matchesSearch =
         lot.lot_number.toLowerCase().includes(q) ||
-        lot.item_name.toLowerCase().includes(q);
+        displayName.includes(q) ||
+        riceCodeName.includes(q) ||
+        riceTypeLabel.includes(q);
 
       return matchesSearch;
     });
-  }, [lots, searchQuery]);
+  }, [lots, searchQuery, riceCodes, riceTypes]);
 
   return (
     <div>
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <div className="flex-1 min-w-0">
-          <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search by lot number or item name..." />
+          <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search by lot number, rice code or type..." />
         </div>
         <div className="flex gap-2">
           <button
@@ -68,7 +116,7 @@ export function LotsTable() {
                   <div>
                     <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Lot</div>
                     <h3 className="text-sm font-semibold leading-tight">{lot.lot_number}</h3>
-                    <div className="text-xs text-muted-foreground">{lot.item_name}</div>
+                    <div className="text-xs text-muted-foreground">{getLotDisplayName(lot)}</div>
                   </div>
                 </div>
               </div>

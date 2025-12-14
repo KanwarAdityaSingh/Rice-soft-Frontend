@@ -5,10 +5,13 @@ import { useNavigate } from 'react-router-dom';
 import { useInwardSlipPasses } from '../../../hooks/useInwardSlipPasses';
 import { inwardSlipPassesAPI } from '../../../services/inwardSlipPasses.api';
 import { useSaudas } from '../../../hooks/useSaudas';
+import { useVendors } from '../../../hooks/useVendors';
 import { useTransporters } from '../../../hooks/useTransporters';
+import { riceCodesAPI } from '../../../services/riceCodes.api';
+import { getRiceTypeLabel } from '../../../utils/riceType';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
-import type { CreateInwardSlipPassRequest, UpdateInwardSlipPassRequest, InwardSlipPass } from '../../../types/entities';
+import type { CreateInwardSlipPassRequest, UpdateInwardSlipPassRequest, InwardSlipPass, RiceCode, RiceType, Sauda } from '../../../types/entities';
 
 interface FileUploadState {
   bill_image: File | null;
@@ -28,8 +31,61 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   const navigate = useNavigate();
   const { createInwardSlipPass, updateInwardSlipPass } = useInwardSlipPasses();
   const { saudas } = useSaudas();
+  const { vendors } = useVendors();
   const { transporters } = useTransporters();
   const isEditMode = !!ispId;
+  const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
+  const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
+
+  useEffect(() => {
+    const fetchRiceCodes = async () => {
+      try {
+        const data = await riceCodesAPI.getAllRiceCodes();
+        setRiceCodes(data);
+      } catch (error) {
+        console.error('Failed to fetch rice codes:', error);
+      }
+    };
+    const fetchRiceTypes = async () => {
+      try {
+        const data = await riceCodesAPI.getRiceTypes();
+        setRiceTypes(data);
+      } catch (error) {
+        console.error('Failed to fetch rice types:', error);
+      }
+    };
+    if (open) {
+      fetchRiceCodes();
+      fetchRiceTypes();
+    }
+  }, [open]);
+
+  const getRiceCodeName = (riceCodeId: string | null | undefined): string => {
+    if (!riceCodeId) return '';
+    const riceCode = riceCodes.find((rc) => rc.rice_code_id === riceCodeId);
+    return riceCode ? riceCode.rice_code_name : '';
+  };
+
+  const getPurchaserName = (purchaserId: string | null | undefined): string => {
+    if (!purchaserId) return '';
+    const purchaser = vendors.find((v) => v.id === purchaserId);
+    return purchaser ? purchaser.business_name : '';
+  };
+
+  const getSaudaDisplayName = (sauda: Sauda): string => {
+    const parts: string[] = [];
+    
+    const purchaserName = getPurchaserName(sauda.purchaser_id);
+    if (purchaserName) parts.push(purchaserName);
+    
+    const riceCodeName = getRiceCodeName(sauda.rice_code_id);
+    if (riceCodeName) parts.push(riceCodeName);
+    
+    const riceTypeLabel = getRiceTypeLabel(sauda.rice_type, riceTypes);
+    if (riceTypeLabel) parts.push(riceTypeLabel);
+    
+    return parts.join(' - ') || 'Sauda';
+  };
   const [formData, setFormData] = useState<CreateInwardSlipPassRequest>({
     sauda_ids: [],
     slip_number: '',
@@ -270,9 +326,44 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   const toggleSaudaSelection = (saudaId: string) => {
     setFormData(prev => {
       const currentIds = prev.sauda_ids || [];
-      const newIds = currentIds.includes(saudaId)
-        ? currentIds.filter(id => id !== saudaId)
-        : [...currentIds, saudaId];
+      const isAdding = !currentIds.includes(saudaId);
+      const newIds = isAdding
+        ? [...currentIds, saudaId]
+        : currentIds.filter(id => id !== saudaId);
+      
+      // If adding a sauda and party details are empty, fill from the sauda's vendor
+      if (isAdding) {
+        const selectedSauda = saudas.find(s => s.id === saudaId);
+        if (selectedSauda) {
+          const vendor = vendors.find(v => v.id === selectedSauda.purchaser_id);
+          if (vendor) {
+            // Only fill if party fields are empty
+            const updates: Partial<CreateInwardSlipPassRequest> = { sauda_ids: newIds };
+            
+            if (!prev.party_name || prev.party_name.trim() === '') {
+              updates.party_name = vendor.business_name;
+            }
+            
+            if (!prev.party_address || prev.party_address.trim() === '') {
+              const addressParts = [
+                vendor.address.street,
+                vendor.address.city,
+                vendor.address.state,
+                vendor.address.pincode,
+                vendor.address.country
+              ].filter(Boolean);
+              updates.party_address = addressParts.join(', ') || null;
+            }
+            
+            if (!prev.party_gst_number || prev.party_gst_number.trim() === '') {
+              updates.party_gst_number = vendor.business_details.gst_number || null;
+            }
+            
+            return { ...prev, ...updates };
+          }
+        }
+      }
+      
       return { ...prev, sauda_ids: newIds };
     });
   };
@@ -308,10 +399,10 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                       Saudas <span className="text-red-500">*</span>
                     </label>
                     <div className="max-h-40 overflow-y-auto border border-border rounded-lg p-3 space-y-2">
-                      {saudas.filter(s => s.status === 'active').length === 0 ? (
-                        <p className="text-sm text-muted-foreground">No active saudas available</p>
+                      {saudas.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No saudas available</p>
                       ) : (
-                        saudas.filter(s => s.status === 'active').map((s) => (
+                        saudas.map((s) => (
                           <label key={s.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-2 rounded">
                             <input
                               type="checkbox"
@@ -320,7 +411,9 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                               disabled={isEditMode}
                               className="rounded"
                             />
-                            <span className="text-sm">{s.rice_quality} - ₹{s.rate}</span>
+                            <span className="text-sm">
+                              {getSaudaDisplayName(s)} - ₹{s.rate}
+                            </span>
                           </label>
                         ))
                       )}
@@ -414,31 +507,13 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                           placeholder="27ABCDE1234F1Z5"
                         />
                       </div>
-
-                      <div>
-                        <label className="block text-sm font-medium mb-1">
-                          Vehicle Number <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={formData.vehicle_number}
-                          onChange={(e) => setFormData({ ...formData, vehicle_number: e.target.value })}
-                          className={`w-full px-3 py-2 border rounded-lg bg-background ${
-                            errors.vehicle_number ? 'border-red-500' : 'border-border'
-                          }`}
-                          placeholder="MH01AB1234"
-                        />
-                        {errors.vehicle_number && (
-                          <p className="text-xs text-red-500 mt-1">{errors.vehicle_number}</p>
-                        )}
-                      </div>
                     </div>
                   </div>
 
                   {/* Transporter Details Section */}
                   <div className="space-y-4 pt-2">
                     <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Transporter Details</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-4">
                       <div>
                         <label className="block text-sm font-medium mb-1">Transporter</label>
                         <div className="flex gap-2">
@@ -454,7 +529,23 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                                 }, 0);
                                 return;
                               }
-                              setFormData({ ...formData, transporter_id: e.target.value || null });
+                              
+                              const transporterId = e.target.value || null;
+                              // Auto-fill vehicle number from transporter if available
+                              if (transporterId) {
+                                const selectedTransporter = transporters.find(t => t.id === transporterId);
+                                if (selectedTransporter && selectedTransporter.vehicle_numbers && selectedTransporter.vehicle_numbers.length > 0) {
+                                  // Use first vehicle number if vehicle_number field is empty
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    transporter_id: transporterId,
+                                    vehicle_number: prev.vehicle_number || selectedTransporter.vehicle_numbers[0] || ''
+                                  }));
+                                  return;
+                                }
+                              }
+                              
+                              setFormData({ ...formData, transporter_id: transporterId });
                             }}
                             className="flex-1 px-3 py-2 border border-border rounded-lg bg-background"
                           >
@@ -477,21 +568,41 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                         </div>
                       </div>
 
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Transportation Cost (₹)</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={formData.transportation_cost || ''}
-                          onChange={(e) => setFormData({ ...formData, transportation_cost: parseFloat(e.target.value) || null })}
-                          className={`w-full px-3 py-2 border rounded-lg bg-background ${
-                            errors.transportation_cost ? 'border-red-500' : 'border-border'
-                          }`}
-                          placeholder="0.00"
-                        />
-                        {errors.transportation_cost && (
-                          <p className="text-xs text-red-500 mt-1">{errors.transportation_cost}</p>
-                        )}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-1">
+                            Vehicle Number <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={formData.vehicle_number}
+                            onChange={(e) => setFormData({ ...formData, vehicle_number: e.target.value })}
+                            className={`w-full px-3 py-2 border rounded-lg bg-background ${
+                              errors.vehicle_number ? 'border-red-500' : 'border-border'
+                            }`}
+                            placeholder="MH01AB1234"
+                          />
+                          {errors.vehicle_number && (
+                            <p className="text-xs text-red-500 mt-1">{errors.vehicle_number}</p>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Transportation Cost (₹)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={formData.transportation_cost || ''}
+                            onChange={(e) => setFormData({ ...formData, transportation_cost: parseFloat(e.target.value) || null })}
+                            className={`w-full px-3 py-2 border rounded-lg bg-background ${
+                              errors.transportation_cost ? 'border-red-500' : 'border-border'
+                            }`}
+                            placeholder="0.00"
+                          />
+                          {errors.transportation_cost && (
+                            <p className="text-xs text-red-500 mt-1">{errors.transportation_cost}</p>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>

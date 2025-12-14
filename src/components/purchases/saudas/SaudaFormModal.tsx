@@ -6,9 +6,11 @@ import { useSaudas } from '../../../hooks/useSaudas';
 import { saudasAPI } from '../../../services/saudas.api';
 import { useVendors } from '../../../hooks/useVendors';
 import { useBrokers } from '../../../hooks/useBrokers';
+import { riceCodesAPI } from '../../../services/riceCodes.api';
+import { CustomSelect } from '../../shared/CustomSelect';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
-import type { CreateSaudaRequest, UpdateSaudaRequest, Sauda } from '../../../types/entities';
+import type { CreateSaudaRequest, UpdateSaudaRequest, RiceCode, RiceType } from '../../../types/entities';
 
 interface SaudaFormModalProps {
   open: boolean;
@@ -22,15 +24,24 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
   const { vendors } = useVendors();
   const { brokers } = useBrokers();
   const isEditMode = !!saudaId;
+  const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
+  const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
+  const [loadingRiceCodes, setLoadingRiceCodes] = useState(false);
+  const [loadingRiceTypes, setLoadingRiceTypes] = useState(false);
   const [formData, setFormData] = useState<CreateSaudaRequest>({
     sauda_type: 'xgodown',
-    rice_quality: '',
+    rice_code_id: null,
+    rice_type: null,
     rate: 0,
     purchaser_id: '',
     broker_id: null,
     broker_commission: null,
     cash_discount: null,
     quantity: null,
+    estimated_delivery_time: null,
+    cooked_rice_image_url: null,
+    uncooked_rice_image_url: null,
+    notes: null,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -48,6 +59,40 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
     }
   }, [open, saudaId]);
 
+  useEffect(() => {
+    const fetchRiceCodes = async () => {
+      setLoadingRiceCodes(true);
+      try {
+        const data = await riceCodesAPI.getAllRiceCodes();
+        setRiceCodes(data);
+      } catch (error) {
+        console.error('Failed to fetch rice codes:', error);
+      } finally {
+        setLoadingRiceCodes(false);
+      }
+    };
+    if (open) {
+      fetchRiceCodes();
+    }
+  }, [open]);
+
+  useEffect(() => {
+    const fetchRiceTypes = async () => {
+      setLoadingRiceTypes(true);
+      try {
+        const data = await riceCodesAPI.getRiceTypes();
+        setRiceTypes(data);
+      } catch (error) {
+        console.error('Failed to fetch rice types:', error);
+      } finally {
+        setLoadingRiceTypes(false);
+      }
+    };
+    if (open) {
+      fetchRiceTypes();
+    }
+  }, [open]);
+
   const loadSaudaData = async () => {
     if (!saudaId) return;
     setLoadingSauda(true);
@@ -55,13 +100,18 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
       const sauda = await saudasAPI.getSaudaById(saudaId);
       setFormData({
         sauda_type: sauda.sauda_type,
-        rice_quality: sauda.rice_quality,
+        rice_code_id: sauda.rice_code_id || null,
+        rice_type: sauda.rice_type || null,
         rate: sauda.rate,
         purchaser_id: sauda.purchaser_id,
         broker_id: sauda.broker_id || null,
         broker_commission: sauda.broker_commission || null,
         cash_discount: sauda.cash_discount || null,
         quantity: sauda.quantity || null,
+        estimated_delivery_time: sauda.estimated_delivery_time || null,
+        cooked_rice_image_url: sauda.cooked_rice_image_url || null,
+        uncooked_rice_image_url: sauda.uncooked_rice_image_url || null,
+        notes: sauda.notes || null,
       });
       setErrors({});
     } catch (error: any) {
@@ -77,13 +127,18 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
   const resetForm = () => {
     setFormData({
       sauda_type: 'xgodown',
-      rice_quality: '',
+      rice_code_id: null,
+      rice_type: null,
       rate: 0,
       purchaser_id: '',
       broker_id: null,
       broker_commission: null,
       cash_discount: null,
       quantity: null,
+      estimated_delivery_time: null,
+      cooked_rice_image_url: null,
+      uncooked_rice_image_url: null,
+      notes: null,
     });
     setErrors({});
   };
@@ -91,23 +146,37 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.rice_quality.trim()) {
-      newErrors.rice_quality = 'Rice quality is required';
+    // Required fields
+    if (!formData.rice_type) {
+      newErrors.rice_type = 'Rice type is required';
     }
-    if (!formData.rate || formData.rate <= 0) {
-      newErrors.rate = 'Rate must be greater than 0';
+    if (!formData.rate || formData.rate < 0) {
+      newErrors.rate = 'Rate is required and must be 0 or greater';
     }
     if (!formData.purchaser_id) {
-      newErrors.purchaser_id = 'Purchaser is required';
+      newErrors.purchaser_id = 'Vendor is required';
     }
-    if (formData.broker_commission && (formData.broker_commission < 0 || formData.broker_commission > 100)) {
+
+    // Optional fields with constraints
+    if (formData.broker_commission != null && (formData.broker_commission < 0 || formData.broker_commission > 100)) {
       newErrors.broker_commission = 'Broker commission must be between 0 and 100';
     }
-    if (formData.cash_discount && formData.cash_discount < 0) {
+    if (formData.cash_discount != null && formData.cash_discount < 0) {
       newErrors.cash_discount = 'Cash discount cannot be negative';
     }
-    if (formData.quantity && formData.quantity < 0) {
+    if (formData.quantity != null && formData.quantity < 0) {
       newErrors.quantity = 'Quantity cannot be negative';
+    }
+    if (formData.estimated_delivery_time != null) {
+      if (formData.estimated_delivery_time < 0) {
+        newErrors.estimated_delivery_time = 'Estimated delivery time cannot be negative';
+      }
+      if (!Number.isInteger(formData.estimated_delivery_time)) {
+        newErrors.estimated_delivery_time = 'Estimated delivery time must be a whole number';
+      }
+    }
+    if (formData.notes != null && formData.notes.length > 1000) {
+      newErrors.notes = 'Notes cannot exceed 1000 characters';
     }
 
     setErrors(newErrors);
@@ -191,19 +260,53 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
 
                     <div>
                       <label className="block text-sm font-medium mb-1">
-                        Rice Quality <span className="text-red-500">*</span>
+                        Rice Code
                       </label>
-                      <input
-                        type="text"
-                        value={formData.rice_quality}
-                        onChange={(e) => setFormData({ ...formData, rice_quality: e.target.value })}
-                        className={`w-full px-3 py-2 border rounded-lg bg-background ${
-                          errors.rice_quality ? 'border-red-500' : 'border-border'
-                        }`}
-                        placeholder="e.g., Premium Basmati"
-                      />
-                      {errors.rice_quality && (
-                        <p className="text-xs text-red-500 mt-1">{errors.rice_quality}</p>
+                      {loadingRiceCodes ? (
+                        <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm flex items-center gap-2">
+                          <LoadingSpinner size="sm" />
+                          <span className="text-muted-foreground">Loading rice codes...</span>
+                        </div>
+                      ) : (
+                        <CustomSelect
+                          value={formData.rice_code_id || null}
+                          onChange={(value) => setFormData({ ...formData, rice_code_id: value || null })}
+                          options={riceCodes.map((riceCode) => ({
+                            value: riceCode.rice_code_id,
+                            label: riceCode.rice_code_name
+                          }))}
+                          placeholder="Select Rice Code"
+                          allowClear={true}
+                          clearLabel="None"
+                        />
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        Rice Type <span className="text-red-500">*</span>
+                      </label>
+                      {loadingRiceTypes ? (
+                        <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm flex items-center gap-2">
+                          <LoadingSpinner size="sm" />
+                          <span className="text-muted-foreground">Loading rice types...</span>
+                        </div>
+                      ) : (
+                        <div className={errors.rice_type ? 'border border-red-500 rounded-lg' : ''}>
+                          <CustomSelect
+                            value={formData.rice_type || null}
+                            onChange={(value) => setFormData({ ...formData, rice_type: value || null })}
+                            options={riceTypes.map((riceType) => ({
+                              value: riceType.value,
+                              label: riceType.label
+                            }))}
+                            placeholder="Select Rice Type"
+                            allowClear={false}
+                          />
+                        </div>
+                      )}
+                      {errors.rice_type && (
+                        <p className="text-xs text-red-500 mt-1">{errors.rice_type}</p>
                       )}
                     </div>
 
@@ -214,6 +317,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
                       <input
                         type="number"
                         step="0.01"
+                        min="0"
                         value={formData.rate || ''}
                         onChange={(e) => setFormData({ ...formData, rate: parseFloat(e.target.value) || 0 })}
                         className={`w-full px-3 py-2 border rounded-lg bg-background ${
@@ -228,7 +332,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
 
                     <div>
                       <label className="block text-sm font-medium mb-1">
-                        Purchaser <span className="text-red-500">*</span>
+                        Vendor <span className="text-red-500">*</span>
                       </label>
                       <select
                         value={formData.purchaser_id}
@@ -238,7 +342,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
                         }`}
                         disabled={isEditMode}
                       >
-                        <option value="">Select Purchaser</option>
+                        <option value="">Select Vendor</option>
                         {purchaserVendors.map((v) => (
                           <option key={v.id} value={v.id}>
                             {v.business_name}
@@ -297,6 +401,8 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
                       <input
                         type="number"
                         step="0.01"
+                        min="0"
+                        max="100"
                         value={formData.broker_commission || ''}
                         onChange={(e) => setFormData({ ...formData, broker_commission: parseFloat(e.target.value) || null })}
                         className={`w-full px-3 py-2 border rounded-lg bg-background ${
@@ -314,6 +420,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
                       <input
                         type="number"
                         step="0.01"
+                        min="0"
                         value={formData.cash_discount || ''}
                         onChange={(e) => setFormData({ ...formData, cash_discount: parseFloat(e.target.value) || null })}
                         className={`w-full px-3 py-2 border rounded-lg bg-background ${
@@ -330,6 +437,8 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
                       <label className="block text-sm font-medium mb-1">Quantity</label>
                       <input
                         type="number"
+                        step="0.01"
+                        min="0"
                         value={formData.quantity || ''}
                         onChange={(e) => setFormData({ ...formData, quantity: parseFloat(e.target.value) || null })}
                         className={`w-full px-3 py-2 border rounded-lg bg-background ${
@@ -340,6 +449,52 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
                       {errors.quantity && (
                         <p className="text-xs text-red-500 mt-1">{errors.quantity}</p>
                       )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Estimated Delivery Time (days)</label>
+                      <input
+                        type="number"
+                        step="1"
+                        min="0"
+                        value={formData.estimated_delivery_time || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setFormData({ 
+                            ...formData, 
+                            estimated_delivery_time: value === '' ? null : parseInt(value, 10) 
+                          });
+                        }}
+                        className={`w-full px-3 py-2 border rounded-lg bg-background ${
+                          errors.estimated_delivery_time ? 'border-red-500' : 'border-border'
+                        }`}
+                        placeholder="0"
+                      />
+                      {errors.estimated_delivery_time && (
+                        <p className="text-xs text-red-500 mt-1">{errors.estimated_delivery_time}</p>
+                      )}
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-sm font-medium mb-1">Notes</label>
+                      <textarea
+                        value={formData.notes || ''}
+                        onChange={(e) => setFormData({ ...formData, notes: e.target.value || null })}
+                        className={`w-full px-3 py-2 border rounded-lg bg-background ${
+                          errors.notes ? 'border-red-500' : 'border-border'
+                        }`}
+                        placeholder="Additional notes (max 1000 characters)"
+                        rows={3}
+                        maxLength={1000}
+                      />
+                      <div className="flex justify-between items-center mt-1">
+                        {errors.notes && (
+                          <p className="text-xs text-red-500">{errors.notes}</p>
+                        )}
+                        <p className="text-xs text-muted-foreground ml-auto">
+                          {(formData.notes || '').length}/1000
+                        </p>
+                      </div>
                     </div>
 
                   </div>

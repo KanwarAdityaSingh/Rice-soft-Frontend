@@ -608,38 +608,55 @@ export interface PincodeLookupResponse {
 export interface Sauda {
   id: string;
   sauda_type: 'xgodown' | 'for';
-  rice_quality: string;
+  rice_code_id?: string | null;
+  rice_type?: string | null;
   rate: number;
   broker_id?: string | null;
   broker_commission?: number | null;
   cash_discount?: number | null;
-  purchaser_id: string;
   quantity?: number | null;
+  estimated_delivery_time?: number | null;
+  purchaser_id: string;
+  cooked_rice_image_url?: string | null;
+  uncooked_rice_image_url?: string | null;
   status: 'draft' | 'active' | 'completed' | 'cancelled';
+  notes?: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export interface CreateSaudaRequest {
   sauda_type: 'xgodown' | 'for';
-  rice_quality: string;
+  rice_code_id?: string | null;
+  rice_type?: string | null;
   rate: number;
   purchaser_id: string;
   broker_id?: string | null;
   broker_commission?: number | null;
   cash_discount?: number | null;
   quantity?: number | null;
+  estimated_delivery_time?: number | null;
+  cooked_rice_image_url?: string | null;
+  uncooked_rice_image_url?: string | null;
+  notes?: string | null;
+  status?: 'draft' | 'active' | 'completed' | 'cancelled';
 }
 
 export interface UpdateSaudaRequest {
   sauda_type?: 'xgodown' | 'for';
-  rice_quality?: string;
+  rice_code_id?: string | null;
+  rice_type?: string | null;
   rate?: number;
   purchaser_id?: string;
   broker_id?: string | null;
   broker_commission?: number | null;
   cash_discount?: number | null;
   quantity?: number | null;
+  estimated_delivery_time?: number | null;
+  cooked_rice_image_url?: string | null;
+  uncooked_rice_image_url?: string | null;
+  notes?: string | null;
+  status?: 'draft' | 'active' | 'completed' | 'cancelled';
 }
 
 export interface SaudaFilters {
@@ -705,7 +722,8 @@ export interface Lot {
   id: string;
   sauda_id: string;
   lot_number: string;
-  item_name: string;
+  rice_code_id?: string | null;
+  rice_type?: string | null;
   no_of_bags: number;
   bag_weight?: number | null;
   total_weight?: number | null;
@@ -721,7 +739,8 @@ export interface Lot {
 export interface CreateLotRequest {
   sauda_id: string;
   lot_number: string;
-  item_name: string;
+  rice_code_id?: string | null;
+  rice_type?: string | null;
   no_of_bags: number;
   bill_weight: number;
   received_weight: number;
@@ -732,7 +751,8 @@ export interface CreateLotRequest {
 
 export interface UpdateLotRequest {
   lot_number?: string;
-  item_name?: string;
+  rice_code_id?: string | null;
+  rice_type?: string | null;
   no_of_bags?: number;
   bill_weight?: number;
   received_weight?: number;

@@ -1,6 +1,9 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { X, Package, DollarSign, User, Percent } from 'lucide-react';
-import type { Sauda } from '../../../types/entities';
+import { useState, useEffect } from 'react';
+import { riceCodesAPI } from '../../../services/riceCodes.api';
+import { getRiceTypeLabel } from '../../../utils/riceType';
+import type { Sauda, RiceCode, RiceType } from '../../../types/entities';
 
 interface SaudaPreviewDialogProps {
   open: boolean;
@@ -9,6 +12,38 @@ interface SaudaPreviewDialogProps {
 }
 
 export function SaudaPreviewDialog({ open, onOpenChange, sauda }: SaudaPreviewDialogProps) {
+  const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
+  const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
+
+  useEffect(() => {
+    const fetchRiceCodes = async () => {
+      try {
+        const data = await riceCodesAPI.getAllRiceCodes();
+        setRiceCodes(data);
+      } catch (error) {
+        console.error('Failed to fetch rice codes:', error);
+      }
+    };
+    const fetchRiceTypes = async () => {
+      try {
+        const data = await riceCodesAPI.getRiceTypes();
+        setRiceTypes(data);
+      } catch (error) {
+        console.error('Failed to fetch rice types:', error);
+      }
+    };
+    if (open && sauda) {
+      fetchRiceCodes();
+      fetchRiceTypes();
+    }
+  }, [open, sauda]);
+
+  const getRiceCodeName = (riceCodeId: string | null | undefined): string => {
+    if (!riceCodeId) return '';
+    const riceCode = riceCodes.find((rc) => rc.rice_code_id === riceCodeId);
+    return riceCode ? riceCode.rice_code_name : '';
+  };
+
   if (!sauda) return null;
 
   return (
@@ -45,9 +80,15 @@ export function SaudaPreviewDialog({ open, onOpenChange, sauda }: SaudaPreviewDi
                   <label className="text-xs text-muted-foreground uppercase tracking-wide">Sauda Type</label>
                   <p className="mt-1 text-sm font-medium">{sauda.sauda_type === 'xgodown' ? 'X Godown' : 'FOR'}</p>
                 </div>
+                {sauda.rice_code_id && (
+                  <div className="sm:col-span-2">
+                    <label className="text-xs text-muted-foreground uppercase tracking-wide">Rice Code</label>
+                    <p className="mt-1 text-sm font-medium">{getRiceCodeName(sauda.rice_code_id)}</p>
+                  </div>
+                )}
                 <div className="sm:col-span-2">
-                  <label className="text-xs text-muted-foreground uppercase tracking-wide">Rice Quality</label>
-                  <p className="mt-1 text-sm font-medium">{sauda.rice_quality}</p>
+                  <label className="text-xs text-muted-foreground uppercase tracking-wide">Rice Type</label>
+                  <p className="mt-1 text-sm font-medium">{getRiceTypeLabel(sauda.rice_type, riceTypes) || 'Not specified'}</p>
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground uppercase tracking-wide flex items-center gap-1">

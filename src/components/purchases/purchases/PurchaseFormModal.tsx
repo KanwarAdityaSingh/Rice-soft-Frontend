@@ -7,9 +7,11 @@ import { useVendors } from '../../../hooks/useVendors';
 import { useSaudas } from '../../../hooks/useSaudas';
 import { useInwardSlipPasses } from '../../../hooks/useInwardSlipPasses';
 import { useLots } from '../../../hooks/useLots';
+import { riceCodesAPI } from '../../../services/riceCodes.api';
+import { getRiceTypeLabel } from '../../../utils/riceType';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
-import type { CreatePurchaseRequest, UpdatePurchaseRequest, Purchase } from '../../../types/entities';
+import type { CreatePurchaseRequest, UpdatePurchaseRequest, Purchase, RiceCode, RiceType, Sauda } from '../../../types/entities';
 
 interface PurchaseFormModalProps {
   open: boolean;
@@ -25,6 +27,59 @@ export function PurchaseFormModal({ open, onOpenChange, purchaseId }: PurchaseFo
   const { lots } = useLots();
   const isEditMode = !!purchaseId;
   const [step, setStep] = useState(1);
+  const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
+  const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
+
+  useEffect(() => {
+    const fetchRiceCodes = async () => {
+      try {
+        const data = await riceCodesAPI.getAllRiceCodes();
+        setRiceCodes(data);
+      } catch (error) {
+        console.error('Failed to fetch rice codes:', error);
+      }
+    };
+    const fetchRiceTypes = async () => {
+      try {
+        const data = await riceCodesAPI.getRiceTypes();
+        setRiceTypes(data);
+      } catch (error) {
+        console.error('Failed to fetch rice types:', error);
+      }
+    };
+    if (open) {
+      fetchRiceCodes();
+      fetchRiceTypes();
+    }
+  }, [open]);
+
+  const getRiceCodeName = (riceCodeId: string | null | undefined): string => {
+    if (!riceCodeId) return '';
+    const riceCode = riceCodes.find((rc) => rc.rice_code_id === riceCodeId);
+    return riceCode ? riceCode.rice_code_name : '';
+  };
+
+  const getPurchaserName = (purchaserId: string | null | undefined): string => {
+    if (!purchaserId) return '';
+    const purchaser = vendors.find((v) => v.id === purchaserId);
+    return purchaser ? purchaser.business_name : '';
+  };
+
+  const getSaudaDisplayName = (sauda: Sauda): string => {
+    const parts: string[] = [];
+    
+    const purchaserName = getPurchaserName(sauda.purchaser_id);
+    if (purchaserName) parts.push(purchaserName);
+    
+    const riceCodeName = getRiceCodeName(sauda.rice_code_id);
+    if (riceCodeName) parts.push(riceCodeName);
+    
+    const riceTypeLabel = getRiceTypeLabel(sauda.rice_type, riceTypes);
+    if (riceTypeLabel) parts.push(riceTypeLabel);
+    
+    return parts.join(' - ') || 'Sauda';
+  };
+
   const [formData, setFormData] = useState<CreatePurchaseRequest>({
     vendor_id: '',
     purchase_date: new Date().toISOString().split('T')[0],
@@ -311,7 +366,7 @@ export function PurchaseFormModal({ open, onOpenChange, purchaseId }: PurchaseFo
                         <div>
                           <label className="block text-sm font-medium mb-2">Saudas</label>
                           <div className="max-h-40 overflow-y-auto border border-border rounded-lg p-2 space-y-2">
-                            {saudas.filter(s => s.status === 'active').map((s) => (
+                            {saudas.map((s) => (
                               <label key={s.id} className="flex items-center gap-2 cursor-pointer">
                                 <input
                                   type="checkbox"
@@ -319,7 +374,9 @@ export function PurchaseFormModal({ open, onOpenChange, purchaseId }: PurchaseFo
                                   onChange={() => toggleSelection('sauda', s.id)}
                                   className="rounded"
                                 />
-                                <span className="text-sm">{s.rice_quality} - ₹{s.rate}</span>
+                                <span className="text-sm">
+                                  {getSaudaDisplayName(s)} - ₹{s.rate}
+                                </span>
                               </label>
                             ))}
                           </div>
