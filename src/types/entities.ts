@@ -676,6 +676,7 @@ export interface InwardSlipPass {
   party_name: string;
   party_address?: string | null;
   party_gst_number?: string | null;
+  party_pan_number?: string | null;
   transporter_id?: string | null;
   transportation_cost?: number | null;
   status: 'pending' | 'completed';
@@ -699,6 +700,7 @@ export interface CreateInwardSlipPassRequest {
   party_name: string;
   party_address?: string | null;
   party_gst_number?: string | null;
+  party_pan_number?: string | null;
   transporter_id?: string | null;
   transportation_cost?: number | null;
   notes?: string | null;
@@ -712,6 +714,7 @@ export interface UpdateInwardSlipPassRequest {
   party_name?: string;
   party_address?: string | null;
   party_gst_number?: string | null;
+  party_pan_number?: string | null;
   transporter_id?: string | null;
   transportation_cost?: number | null;
   notes?: string | null;

@@ -94,6 +94,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     party_name: '',
     party_address: null,
     party_gst_number: null,
+    party_pan_number: null,
     transporter_id: null,
     transportation_cost: null,
     notes: null,
@@ -136,6 +137,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
         party_name: isp.party_name,
         party_address: isp.party_address || null,
         party_gst_number: isp.party_gst_number || null,
+        party_pan_number: isp.party_pan_number || null,
         transporter_id: isp.transporter_id || null,
         transportation_cost: isp.transportation_cost || null,
         notes: isp.notes || null,
@@ -160,6 +162,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
       party_name: '',
       party_address: null,
       party_gst_number: null,
+      party_pan_number: null,
       transporter_id: null,
       transportation_cost: null,
       notes: null,
@@ -359,6 +362,10 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
               updates.party_gst_number = vendor.business_details.gst_number || null;
             }
             
+            if (!prev.party_pan_number || prev.party_pan_number.trim() === '') {
+              updates.party_pan_number = vendor.business_details.pan_number || null;
+            }
+            
             return { ...prev, ...updates };
           }
         }
@@ -505,6 +512,17 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                           onChange={(e) => setFormData({ ...formData, party_gst_number: e.target.value || null })}
                           className="w-full px-3 py-2 border border-border rounded-lg bg-background"
                           placeholder="27ABCDE1234F1Z5"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Party PAN Number</label>
+                        <input
+                          type="text"
+                          value={formData.party_pan_number || ''}
+                          onChange={(e) => setFormData({ ...formData, party_pan_number: e.target.value || null })}
+                          className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+                          placeholder="ABCDE1234F"
                         />
                       </div>
                     </div>

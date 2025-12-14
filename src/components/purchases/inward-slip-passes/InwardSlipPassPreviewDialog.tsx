@@ -91,6 +91,12 @@ export function InwardSlipPassPreviewDialog({ open, onOpenChange, isp }: InwardS
                     <p className="mt-1 text-sm font-medium">{isp.party_gst_number}</p>
                   </div>
                 )}
+                {isp.party_pan_number && (
+                  <div>
+                    <label className="text-xs text-muted-foreground uppercase tracking-wide">PAN Number</label>
+                    <p className="mt-1 text-sm font-medium">{isp.party_pan_number}</p>
+                  </div>
+                )}
                 {isp.transporter_id && (
                   <div>
                     <label className="text-xs text-muted-foreground uppercase tracking-wide">Transporter ID</label>
