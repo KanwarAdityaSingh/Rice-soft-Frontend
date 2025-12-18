@@ -110,7 +110,7 @@ export function SaudasTable() {
           <FilterDropdown
             label="Type"
             options={[
-              { label: 'X Godown', value: 'xgodown' },
+              { label: 'Ex Godown', value: 'exgodown' },
               { label: 'FOR', value: 'for' },
             ]}
             value={typeFilter}
@@ -151,16 +151,24 @@ export function SaudasTable() {
                     <span className="font-medium">{s.quantity}</span>
                   </div>
                 )}
-                {s.broker_commission && (
+                {s.broker_commission != null && (
                   <div className="inline-flex items-center gap-2">
                     <span className="text-muted-foreground w-20">Broker Comm:</span>
-                    <span className="font-medium">{s.broker_commission}%</span>
+                    <span className="font-medium">
+                      {s.broker_commission_type === 'rupees' 
+                        ? `₹${s.broker_commission.toFixed(2)}` 
+                        : `${s.broker_commission}%`}
+                    </span>
                   </div>
                 )}
                 {s.cash_discount != null && (
                   <div className="inline-flex items-center gap-2">
                     <span className="text-muted-foreground w-20">Cash Discount:</span>
-                    <span className="font-medium">₹{s.cash_discount.toFixed(2)}</span>
+                    <span className="font-medium">
+                      {s.cash_discount_type === 'percentage' 
+                        ? `${s.cash_discount}%` 
+                        : `₹${s.cash_discount.toFixed(2)}`}
+                    </span>
                   </div>
                 )}
               </div>

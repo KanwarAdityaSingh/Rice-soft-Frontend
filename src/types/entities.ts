@@ -611,16 +611,22 @@ export interface PincodeLookupResponse {
 
 // Purchase Flow Types
 
+// Shared Types for Discount/Commission
+export type CashDiscountType = 'rupees' | 'percentage';
+export type BrokerCommissionType = 'rupees' | 'percentage';
+
 // Sauda Types
 export interface Sauda {
   id: string;
-  sauda_type: 'xgodown' | 'for';
+  sauda_type: 'exgodown' | 'for';
   rice_code_id?: string | null;
   rice_type?: string | null;
   rate: number;
   broker_id?: string | null;
   broker_commission?: number | null;
+  broker_commission_type?: BrokerCommissionType;
   cash_discount?: number | null;
+  cash_discount_type?: CashDiscountType;
   quantity?: number | null;
   estimated_delivery_time?: number | null;
   purchaser_id: string;
@@ -633,14 +639,16 @@ export interface Sauda {
 }
 
 export interface CreateSaudaRequest {
-  sauda_type: 'xgodown' | 'for';
+  sauda_type: 'exgodown' | 'for';
   rice_code_id?: string | null;
   rice_type?: string | null;
   rate: number;
   purchaser_id: string;
   broker_id?: string | null;
   broker_commission?: number | null;
+  broker_commission_type?: BrokerCommissionType;
   cash_discount?: number | null;
+  cash_discount_type?: CashDiscountType;
   quantity?: number | null;
   estimated_delivery_time?: number | null;
   cooked_rice_image_url?: string | null;
@@ -650,14 +658,16 @@ export interface CreateSaudaRequest {
 }
 
 export interface UpdateSaudaRequest {
-  sauda_type?: 'xgodown' | 'for';
+  sauda_type?: 'exgodown' | 'for';
   rice_code_id?: string | null;
   rice_type?: string | null;
   rate?: number;
   purchaser_id?: string;
   broker_id?: string | null;
   broker_commission?: number | null;
+  broker_commission_type?: BrokerCommissionType;
   cash_discount?: number | null;
+  cash_discount_type?: CashDiscountType;
   quantity?: number | null;
   estimated_delivery_time?: number | null;
   cooked_rice_image_url?: string | null;
@@ -669,7 +679,7 @@ export interface UpdateSaudaRequest {
 export interface SaudaFilters {
   include_inactive?: boolean;
   status?: 'draft' | 'active' | 'completed' | 'cancelled';
-  sauda_type?: 'xgodown' | 'for';
+  sauda_type?: 'exgodown' | 'for';
   purchaser_id?: string;
 }
 
@@ -777,8 +787,10 @@ export interface Purchase {
   vendor_id: string;
   broker_id?: string | null;
   broker_commission?: number | null;
+  broker_commission_type?: BrokerCommissionType;
   payment_advice_id?: string | null;
   cash_discount?: number | null;
+  cash_discount_type?: CashDiscountType;
   transportation_cost?: number | null;
   invoice_number?: string | null;
   invoice_date?: string | null;
@@ -803,7 +815,9 @@ export interface CreatePurchaseRequest {
   lot_ids?: string[];
   broker_id?: string | null;
   broker_commission?: number | null;
+  broker_commission_type?: BrokerCommissionType;
   cash_discount?: number | null;
+  cash_discount_type?: CashDiscountType;
   transportation_cost?: number | null;
   rate?: number | null;
   igst_percentage?: number | null;
@@ -819,7 +833,9 @@ export interface UpdatePurchaseRequest {
   purchase_date?: string;
   broker_id?: string | null;
   broker_commission?: number | null;
+  broker_commission_type?: BrokerCommissionType;
   cash_discount?: number | null;
+  cash_discount_type?: CashDiscountType;
   transportation_cost?: number | null;
   rate?: number | null;
   igst_percentage?: number | null;

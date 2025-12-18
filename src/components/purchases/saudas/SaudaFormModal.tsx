@@ -1,7 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import React, { useState, useEffect } from 'react';
-import { X, Plus } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { X, Plus, RefreshCw } from 'lucide-react';
 import { useSaudas } from '../../../hooks/useSaudas';
 import { saudasAPI } from '../../../services/saudas.api';
 import { useVendors } from '../../../hooks/useVendors';
@@ -10,7 +9,7 @@ import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
-import type { CreateSaudaRequest, UpdateSaudaRequest, RiceCode, RiceType } from '../../../types/entities';
+import type { CreateSaudaRequest, UpdateSaudaRequest, RiceCode, RiceType, CashDiscountType, BrokerCommissionType } from '../../../types/entities';
 
 interface SaudaFormModalProps {
   open: boolean;
@@ -19,24 +18,26 @@ interface SaudaFormModalProps {
 }
 
 export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalProps) {
-  const navigate = useNavigate();
   const { createSauda, updateSauda } = useSaudas();
-  const { vendors } = useVendors();
-  const { brokers } = useBrokers();
+  const { vendors, refetch: refetchVendors, loading: loadingVendors } = useVendors();
+  const { brokers, refetch: refetchBrokers, loading: loadingBrokers } = useBrokers();
   const isEditMode = !!saudaId;
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
   const [loadingRiceCodes, setLoadingRiceCodes] = useState(false);
   const [loadingRiceTypes, setLoadingRiceTypes] = useState(false);
+  const [unit, setUnit] = useState<'kg' | 'quintal' | 'ton'>('kg');
   const [formData, setFormData] = useState<CreateSaudaRequest>({
-    sauda_type: 'xgodown',
+    sauda_type: 'exgodown',
     rice_code_id: null,
     rice_type: null,
     rate: 0,
     purchaser_id: '',
     broker_id: null,
     broker_commission: null,
+    broker_commission_type: 'percentage',
     cash_discount: null,
+    cash_discount_type: 'rupees',
     quantity: null,
     estimated_delivery_time: null,
     cooked_rice_image_url: null,
@@ -106,7 +107,9 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
         purchaser_id: sauda.purchaser_id,
         broker_id: sauda.broker_id || null,
         broker_commission: sauda.broker_commission || null,
+        broker_commission_type: sauda.broker_commission_type || 'percentage',
         cash_discount: sauda.cash_discount || null,
+        cash_discount_type: sauda.cash_discount_type || 'rupees',
         quantity: sauda.quantity || null,
         estimated_delivery_time: sauda.estimated_delivery_time || null,
         cooked_rice_image_url: sauda.cooked_rice_image_url || null,
@@ -126,14 +129,16 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
 
   const resetForm = () => {
     setFormData({
-      sauda_type: 'xgodown',
+      sauda_type: 'exgodown',
       rice_code_id: null,
       rice_type: null,
       rate: 0,
       purchaser_id: '',
       broker_id: null,
       broker_commission: null,
+      broker_commission_type: 'percentage',
       cash_discount: null,
+      cash_discount_type: 'rupees',
       quantity: null,
       estimated_delivery_time: null,
       cooked_rice_image_url: null,
@@ -141,6 +146,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
       notes: null,
     });
     setErrors({});
+    setUnit('kg');
   };
 
   const validateForm = (): boolean => {
@@ -158,11 +164,19 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
     }
 
     // Optional fields with constraints
-    if (formData.broker_commission != null && (formData.broker_commission < 0 || formData.broker_commission > 100)) {
-      newErrors.broker_commission = 'Broker commission must be between 0 and 100';
+    if (formData.broker_commission != null) {
+      if (formData.broker_commission < 0) {
+        newErrors.broker_commission = 'Broker commission cannot be negative';
+      } else if (formData.broker_commission_type === 'percentage' && formData.broker_commission > 100) {
+        newErrors.broker_commission = 'Broker commission percentage must be between 0 and 100';
+      }
     }
-    if (formData.cash_discount != null && formData.cash_discount < 0) {
-      newErrors.cash_discount = 'Cash discount cannot be negative';
+    if (formData.cash_discount != null) {
+      if (formData.cash_discount < 0) {
+        newErrors.cash_discount = 'Cash discount cannot be negative';
+      } else if (formData.cash_discount_type === 'percentage' && formData.cash_discount > 100) {
+        newErrors.cash_discount = 'Cash discount percentage must be between 0 and 100';
+      }
     }
     if (formData.quantity != null && formData.quantity < 0) {
       newErrors.quantity = 'Quantity cannot be negative';
@@ -189,13 +203,20 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
 
     setLoading(true);
     try {
+      const factor = (u: 'kg' | 'quintal' | 'ton') => (u === 'kg' ? 1 : u === 'quintal' ? 100 : 1000);
+      const f = factor(unit);
+      const payload: CreateSaudaRequest | UpdateSaudaRequest = {
+        ...formData,
+        rate: (formData.rate || 0) / f,
+        quantity: formData.quantity != null ? (formData.quantity as number) * f : null,
+      };
       if (isEditMode && saudaId) {
-        await updateSauda(saudaId, formData as UpdateSaudaRequest);
+        await updateSauda(saudaId, payload as UpdateSaudaRequest);
         setAlertType('success');
         setAlertTitle('Success');
         setAlertMessage('Sauda updated successfully');
       } else {
-        await createSauda(formData);
+        await createSauda(payload as CreateSaudaRequest);
         setAlertType('success');
         setAlertTitle('Success');
         setAlertMessage('Sauda created successfully');
@@ -241,246 +262,341 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
                   <LoadingSpinner />
                 </div>
               ) : (
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Sauda Type <span className="text-red-500">*</span>
-                      </label>
-                      <select
-                        value={formData.sauda_type}
-                        onChange={(e) => setFormData({ ...formData, sauda_type: e.target.value as 'xgodown' | 'for' })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-background"
-                        disabled={isEditMode}
-                      >
-                        <option value="xgodown">X Godown</option>
-                        <option value="for">FOR</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Rice Code
-                      </label>
-                      {loadingRiceCodes ? (
-                        <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm flex items-center gap-2">
-                          <LoadingSpinner size="sm" />
-                          <span className="text-muted-foreground">Loading rice codes...</span>
-                        </div>
-                      ) : (
-                        <CustomSelect
-                          value={formData.rice_code_id || null}
-                          onChange={(value) => setFormData({ ...formData, rice_code_id: value || null })}
-                          options={riceCodes.map((riceCode) => ({
-                            value: riceCode.rice_code_id,
-                            label: riceCode.rice_code_name
-                          }))}
-                          placeholder="Select Rice Code"
-                          allowClear={true}
-                          clearLabel="None"
-                        />
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Rice Type <span className="text-red-500">*</span>
-                      </label>
-                      {loadingRiceTypes ? (
-                        <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm flex items-center gap-2">
-                          <LoadingSpinner size="sm" />
-                          <span className="text-muted-foreground">Loading rice types...</span>
-                        </div>
-                      ) : (
-                        <div className={errors.rice_type ? 'border border-red-500 rounded-lg' : ''}>
-                          <CustomSelect
-                            value={formData.rice_type || null}
-                            onChange={(value) => setFormData({ ...formData, rice_type: value || null })}
-                            options={riceTypes.map((riceType) => ({
-                              value: riceType.value,
-                              label: riceType.label
-                            }))}
-                            placeholder="Select Rice Type"
-                            allowClear={false}
-                          />
-                        </div>
-                      )}
-                      {errors.rice_type && (
-                        <p className="text-xs text-red-500 mt-1">{errors.rice_type}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Rate (₹) <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={formData.rate || ''}
-                        onChange={(e) => setFormData({ ...formData, rate: parseFloat(e.target.value) || 0 })}
-                        className={`w-full px-3 py-2 border rounded-lg bg-background ${
-                          errors.rate ? 'border-red-500' : 'border-border'
-                        }`}
-                        placeholder="0.00"
-                      />
-                      {errors.rate && (
-                        <p className="text-xs text-red-500 mt-1">{errors.rate}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Vendor <span className="text-red-500">*</span>
-                      </label>
-                      <select
-                        value={formData.purchaser_id}
-                        onChange={(e) => setFormData({ ...formData, purchaser_id: e.target.value })}
-                        className={`w-full px-3 py-2 border rounded-lg bg-background ${
-                          errors.purchaser_id ? 'border-red-500' : 'border-border'
-                        }`}
-                        disabled={isEditMode}
-                      >
-                        <option value="">Select Vendor</option>
-                        {purchaserVendors.map((v) => (
-                          <option key={v.id} value={v.id}>
-                            {v.business_name}
-                          </option>
-                        ))}
-                      </select>
-                      {errors.purchaser_id && (
-                        <p className="text-xs text-red-500 mt-1">{errors.purchaser_id}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Broker</label>
-                      <div className="flex gap-2">
+                <form onSubmit={handleSubmit} className="space-y-6">
+                  {/* Section: Basic Info */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide border-b border-border pb-2">
+                      Basic Information
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Sauda Type <span className="text-red-500">*</span>
+                        </label>
                         <select
-                          value={formData.broker_id || ''}
-                          onChange={(e) => {
-                            if (e.target.value === '__add_new__') {
-                              navigate('/directory/brokers');
-                              // Reset to empty after navigation
-                              setTimeout(() => {
-                                const select = e.target as HTMLSelectElement;
-                                select.value = '';
-                              }, 0);
-                              return;
-                            }
-                            setFormData({ ...formData, broker_id: e.target.value || null });
-                          }}
-                          className="flex-1 px-3 py-2 border border-border rounded-lg bg-background"
+                          value={formData.sauda_type}
+                          onChange={(e) => setFormData({ ...formData, sauda_type: e.target.value as 'exgodown' | 'for' })}
+                          className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+                          disabled={isEditMode}
                         >
-                          <option value="">Select Broker</option>
-                          {brokers.filter(b => b.is_active).map((b) => (
-                            <option key={b.id} value={b.id}>
-                              {b.business_name}
-                            </option>
-                          ))}
-                          <option value="__add_new__" className="text-primary font-medium">+ Add New Broker</option>
+                          <option value="exgodown">Ex Godown</option>
+                          <option value="for">FOR</option>
                         </select>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const basename = (import.meta as any).env?.BASE_URL ? (import.meta as any).env.BASE_URL.replace(/\/$/, '') : '/riceops';
-                            const brokerUrl = `${window.location.origin}${basename}/directory/brokers`;
-                            window.open(brokerUrl, '_blank');
-                          }}
-                          className="px-3 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center"
-                          title="Add New Broker (Opens in new tab)"
-                        >
-                          <Plus className="h-4 w-4" />
-                        </button>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Rice Code</label>
+                        {loadingRiceCodes ? (
+                          <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm flex items-center gap-2">
+                            <LoadingSpinner size="sm" />
+                            <span className="text-muted-foreground">Loading...</span>
+                          </div>
+                        ) : (
+                          <CustomSelect
+                            value={formData.rice_code_id || null}
+                            onChange={(value) => setFormData({ ...formData, rice_code_id: value || null })}
+                            options={riceCodes.map((riceCode) => ({
+                              value: riceCode.rice_code_id,
+                              label: riceCode.rice_code_name
+                            }))}
+                            placeholder="Select Rice Code"
+                            allowClear={true}
+                            clearLabel="None"
+                          />
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Rice Type <span className="text-red-500">*</span>
+                        </label>
+                        {loadingRiceTypes ? (
+                          <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm flex items-center gap-2">
+                            <LoadingSpinner size="sm" />
+                            <span className="text-muted-foreground">Loading...</span>
+                          </div>
+                        ) : (
+                          <div className={errors.rice_type ? 'border border-red-500 rounded-lg' : ''}>
+                            <CustomSelect
+                              value={formData.rice_type || null}
+                              onChange={(value) => setFormData({ ...formData, rice_type: value || null })}
+                              options={riceTypes.map((riceType) => ({
+                                value: riceType.value,
+                                label: riceType.label
+                              }))}
+                              placeholder="Select Rice Type"
+                              allowClear={false}
+                            />
+                          </div>
+                        )}
+                        {errors.rice_type && (
+                          <p className="text-xs text-red-500 mt-1">{errors.rice_type}</p>
+                        )}
                       </div>
                     </div>
+                  </div>
 
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Broker Commission (%)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="100"
-                        value={formData.broker_commission || ''}
-                        onChange={(e) => setFormData({ ...formData, broker_commission: parseFloat(e.target.value) || null })}
-                        className={`w-full px-3 py-2 border rounded-lg bg-background ${
-                          errors.broker_commission ? 'border-red-500' : 'border-border'
-                        }`}
-                        placeholder="0.00"
-                      />
-                      {errors.broker_commission && (
-                        <p className="text-xs text-red-500 mt-1">{errors.broker_commission}</p>
-                      )}
+                  {/* Section: Pricing & Quantity */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide border-b border-border pb-2">
+                      Pricing & Quantity
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Rate (₹ per {unit}) <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={formData.rate || ''}
+                          onChange={(e) => setFormData({ ...formData, rate: parseFloat(e.target.value) || 0 })}
+                          className={`w-full px-3 py-2 border rounded-lg bg-background ${
+                            errors.rate ? 'border-red-500' : 'border-border'
+                          }`}
+                          placeholder="0.00"
+                        />
+                        {errors.rate && (
+                          <p className="text-xs text-red-500 mt-1">{errors.rate}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Quantity</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={formData.quantity || ''}
+                            onChange={(e) => setFormData({ ...formData, quantity: parseFloat(e.target.value) || null })}
+                            className={`flex-1 px-3 py-2 border rounded-lg bg-background ${
+                              errors.quantity ? 'border-red-500' : 'border-border'
+                            }`}
+                            placeholder="0"
+                          />
+                          <select
+                            value={unit}
+                            onChange={(e) => {
+                              const newUnit = e.target.value as 'kg' | 'quintal' | 'ton';
+                              const factor = (u: 'kg' | 'quintal' | 'ton') => (u === 'kg' ? 1 : u === 'quintal' ? 100 : 1000);
+                              const currentFactor = factor(unit);
+                              const nextFactor = factor(newUnit);
+                              const rate = formData.rate || 0;
+                              const quantity = formData.quantity;
+                              const convertedRate = (rate / currentFactor) * nextFactor;
+                              const convertedQty = quantity != null ? (quantity * currentFactor) / nextFactor : null;
+                              setFormData({
+                                ...formData,
+                                rate: Number.isFinite(convertedRate) ? parseFloat(convertedRate.toFixed(4)) : 0,
+                                quantity: convertedQty != null && Number.isFinite(convertedQty) ? parseFloat(convertedQty.toFixed(4)) : null,
+                              });
+                              setUnit(newUnit);
+                            }}
+                            className="w-28 px-2 py-2 border border-border rounded-lg bg-background text-sm"
+                          >
+                            <option value="kg">Kg</option>
+                            <option value="quintal">Quintal</option>
+                            <option value="ton">Ton</option>
+                          </select>
+                        </div>
+                        {errors.quantity && (
+                          <p className="text-xs text-red-500 mt-1">{errors.quantity}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Cash Discount</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max={formData.cash_discount_type === 'percentage' ? 100 : undefined}
+                            value={formData.cash_discount || ''}
+                            onChange={(e) => setFormData({ ...formData, cash_discount: parseFloat(e.target.value) || null })}
+                            className={`flex-1 px-3 py-2 border rounded-lg bg-background ${
+                              errors.cash_discount ? 'border-red-500' : 'border-border'
+                            }`}
+                            placeholder="0.00"
+                          />
+                          <select
+                            value={formData.cash_discount_type || 'rupees'}
+                            onChange={(e) => setFormData({ ...formData, cash_discount_type: e.target.value as CashDiscountType })}
+                            className="w-20 px-2 py-2 border border-border rounded-lg bg-background text-sm"
+                          >
+                            <option value="rupees">₹</option>
+                            <option value="percentage">%</option>
+                          </select>
+                        </div>
+                        {errors.cash_discount && (
+                          <p className="text-xs text-red-500 mt-1">{errors.cash_discount}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Estimated Delivery (days)</label>
+                        <input
+                          type="number"
+                          step="1"
+                          min="0"
+                          value={formData.estimated_delivery_time || ''}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setFormData({ 
+                              ...formData, 
+                              estimated_delivery_time: value === '' ? null : parseInt(value, 10) 
+                            });
+                          }}
+                          className={`w-full px-3 py-2 border rounded-lg bg-background ${
+                            errors.estimated_delivery_time ? 'border-red-500' : 'border-border'
+                          }`}
+                          placeholder="0"
+                        />
+                        {errors.estimated_delivery_time && (
+                          <p className="text-xs text-red-500 mt-1">{errors.estimated_delivery_time}</p>
+                        )}
+                      </div>
                     </div>
+                  </div>
 
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Cash Discount (₹)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={formData.cash_discount || ''}
-                        onChange={(e) => setFormData({ ...formData, cash_discount: parseFloat(e.target.value) || null })}
-                        className={`w-full px-3 py-2 border rounded-lg bg-background ${
-                          errors.cash_discount ? 'border-red-500' : 'border-border'
-                        }`}
-                        placeholder="0.00"
-                      />
-                      {errors.cash_discount && (
-                        <p className="text-xs text-red-500 mt-1">{errors.cash_discount}</p>
-                      )}
+                  {/* Section: Parties */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide border-b border-border pb-2">
+                      Parties
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Vendor <span className="text-red-500">*</span>
+                        </label>
+                        <div className="flex gap-2">
+                          <select
+                            value={formData.purchaser_id}
+                            onChange={(e) => setFormData({ ...formData, purchaser_id: e.target.value })}
+                            className={`flex-1 px-3 py-2 border rounded-lg bg-background ${
+                              errors.purchaser_id ? 'border-red-500' : 'border-border'
+                            }`}
+                            disabled={isEditMode}
+                          >
+                            <option value="">Select Vendor</option>
+                            {purchaserVendors.map((v) => (
+                              <option key={v.id} value={v.id}>
+                                {v.business_name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => refetchVendors()}
+                            disabled={loadingVendors}
+                            className="px-2.5 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center disabled:opacity-50"
+                            title="Refresh Vendors"
+                          >
+                            <RefreshCw className={`h-4 w-4 ${loadingVendors ? 'animate-spin' : ''}`} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const basename = (import.meta as any).env?.BASE_URL ? (import.meta as any).env.BASE_URL.replace(/\/$/, '') : '/riceops';
+                              const vendorUrl = `${window.location.origin}${basename}/directory/vendors`;
+                              window.open(vendorUrl, '_blank');
+                            }}
+                            className="px-2.5 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center"
+                            title="Add New Vendor (Opens in new tab)"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </button>
+                        </div>
+                        {errors.purchaser_id && (
+                          <p className="text-xs text-red-500 mt-1">{errors.purchaser_id}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Broker</label>
+                        <div className="flex gap-2">
+                          <select
+                            value={formData.broker_id || ''}
+                            onChange={(e) => {
+                              setFormData({ ...formData, broker_id: e.target.value || null });
+                            }}
+                            className="flex-1 px-3 py-2 border border-border rounded-lg bg-background"
+                          >
+                            <option value="">Select Broker</option>
+                            {brokers.filter(b => b.is_active).map((b) => (
+                              <option key={b.id} value={b.id}>
+                                {b.business_name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => refetchBrokers()}
+                            disabled={loadingBrokers}
+                            className="px-2.5 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center disabled:opacity-50"
+                            title="Refresh Brokers"
+                          >
+                            <RefreshCw className={`h-4 w-4 ${loadingBrokers ? 'animate-spin' : ''}`} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const basename = (import.meta as any).env?.BASE_URL ? (import.meta as any).env.BASE_URL.replace(/\/$/, '') : '/riceops';
+                              const brokerUrl = `${window.location.origin}${basename}/directory/brokers`;
+                              window.open(brokerUrl, '_blank');
+                            }}
+                            className="px-2.5 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center"
+                            title="Add New Broker (Opens in new tab)"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Broker Commission</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max={formData.broker_commission_type === 'percentage' ? 100 : undefined}
+                            value={formData.broker_commission || ''}
+                            onChange={(e) => setFormData({ ...formData, broker_commission: parseFloat(e.target.value) || null })}
+                            className={`flex-1 px-3 py-2 border rounded-lg bg-background ${
+                              errors.broker_commission ? 'border-red-500' : 'border-border'
+                            }`}
+                            placeholder="0.00"
+                          />
+                          <select
+                            value={formData.broker_commission_type || 'percentage'}
+                            onChange={(e) => setFormData({ ...formData, broker_commission_type: e.target.value as BrokerCommissionType })}
+                            className="w-20 px-2 py-2 border border-border rounded-lg bg-background text-sm"
+                          >
+                            <option value="percentage">%</option>
+                            <option value="rupees">₹</option>
+                          </select>
+                        </div>
+                        {errors.broker_commission && (
+                          <p className="text-xs text-red-500 mt-1">{errors.broker_commission}</p>
+                        )}
+                      </div>
                     </div>
+                  </div>
 
+                  {/* Section: Notes */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide border-b border-border pb-2">
+                      Additional Information
+                    </h3>
                     <div>
-                      <label className="block text-sm font-medium mb-1">Quantity</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={formData.quantity || ''}
-                        onChange={(e) => setFormData({ ...formData, quantity: parseFloat(e.target.value) || null })}
-                        className={`w-full px-3 py-2 border rounded-lg bg-background ${
-                          errors.quantity ? 'border-red-500' : 'border-border'
-                        }`}
-                        placeholder="0"
-                      />
-                      {errors.quantity && (
-                        <p className="text-xs text-red-500 mt-1">{errors.quantity}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Estimated Delivery Time (days)</label>
-                      <input
-                        type="number"
-                        step="1"
-                        min="0"
-                        value={formData.estimated_delivery_time || ''}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          setFormData({ 
-                            ...formData, 
-                            estimated_delivery_time: value === '' ? null : parseInt(value, 10) 
-                          });
-                        }}
-                        className={`w-full px-3 py-2 border rounded-lg bg-background ${
-                          errors.estimated_delivery_time ? 'border-red-500' : 'border-border'
-                        }`}
-                        placeholder="0"
-                      />
-                      {errors.estimated_delivery_time && (
-                        <p className="text-xs text-red-500 mt-1">{errors.estimated_delivery_time}</p>
-                      )}
-                    </div>
-
-                    <div className="sm:col-span-2">
                       <label className="block text-sm font-medium mb-1">Notes</label>
                       <textarea
                         value={formData.notes || ''}
                         onChange={(e) => setFormData({ ...formData, notes: e.target.value || null })}
-                        className={`w-full px-3 py-2 border rounded-lg bg-background ${
+                        className={`w-full px-3 py-2 border rounded-lg bg-background resize-none ${
                           errors.notes ? 'border-red-500' : 'border-border'
                         }`}
                         placeholder="Additional notes (max 1000 characters)"
@@ -496,10 +612,10 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
                         </p>
                       </div>
                     </div>
-
                   </div>
 
-                  <div className="flex justify-end gap-3 pt-4">
+                  {/* Actions */}
+                  <div className="flex justify-end gap-3 pt-4 border-t border-border">
                     <button
                       type="button"
                       onClick={() => onOpenChange(false)}
@@ -510,9 +626,9 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
                     <button
                       type="submit"
                       disabled={loading}
-                      className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+                      className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
                     >
-                      {loading ? 'Saving...' : isEditMode ? 'Update' : 'Create'}
+                      {loading ? 'Saving...' : isEditMode ? 'Update Sauda' : 'Create Sauda'}
                     </button>
                   </div>
                 </form>

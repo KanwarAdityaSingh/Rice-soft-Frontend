@@ -78,7 +78,7 @@ export function SaudaPreviewDialog({ open, onOpenChange, sauda }: SaudaPreviewDi
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs text-muted-foreground uppercase tracking-wide">Sauda Type</label>
-                  <p className="mt-1 text-sm font-medium">{sauda.sauda_type === 'xgodown' ? 'X Godown' : 'FOR'}</p>
+                  <p className="mt-1 text-sm font-medium">{sauda.sauda_type === 'exgodown' ? 'Ex Godown' : 'FOR'}</p>
                 </div>
                 {sauda.rice_code_id && (
                   <div className="sm:col-span-2">
@@ -103,19 +103,30 @@ export function SaudaPreviewDialog({ open, onOpenChange, sauda }: SaudaPreviewDi
                     <p className="mt-1 text-sm font-medium">{sauda.quantity}</p>
                   </div>
                 )}
-                {sauda.broker_commission && (
+                {sauda.broker_commission != null && (
                   <div>
                     <label className="text-xs text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                      <Percent className="h-3 w-3" />
+                      {sauda.broker_commission_type === 'percentage' ? <Percent className="h-3 w-3" /> : <DollarSign className="h-3 w-3" />}
                       Broker Commission
                     </label>
-                    <p className="mt-1 text-sm font-medium">{sauda.broker_commission}%</p>
+                    <p className="mt-1 text-sm font-medium">
+                      {sauda.broker_commission_type === 'rupees' 
+                        ? `₹${sauda.broker_commission.toFixed(2)}` 
+                        : `${sauda.broker_commission}%`}
+                    </p>
                   </div>
                 )}
                 {sauda.cash_discount != null && (
                   <div>
-                    <label className="text-xs text-muted-foreground uppercase tracking-wide">Cash Discount</label>
-                    <p className="mt-1 text-sm font-medium">₹{sauda.cash_discount.toFixed(2)}</p>
+                    <label className="text-xs text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                      {sauda.cash_discount_type === 'percentage' ? <Percent className="h-3 w-3" /> : <DollarSign className="h-3 w-3" />}
+                      Cash Discount
+                    </label>
+                    <p className="mt-1 text-sm font-medium">
+                      {sauda.cash_discount_type === 'percentage' 
+                        ? `${sauda.cash_discount}%` 
+                        : `₹${sauda.cash_discount.toFixed(2)}`}
+                    </p>
                   </div>
                 )}
               </div>

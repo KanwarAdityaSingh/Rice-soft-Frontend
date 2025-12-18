@@ -11,7 +11,7 @@ import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { getRiceTypeLabel } from '../../../utils/riceType';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
-import type { CreatePurchaseRequest, UpdatePurchaseRequest, Purchase, RiceCode, RiceType, Sauda } from '../../../types/entities';
+import type { CreatePurchaseRequest, UpdatePurchaseRequest, Purchase, RiceCode, RiceType, Sauda, CashDiscountType, BrokerCommissionType } from '../../../types/entities';
 
 interface PurchaseFormModalProps {
   open: boolean;
@@ -88,7 +88,9 @@ export function PurchaseFormModal({ open, onOpenChange, purchaseId }: PurchaseFo
     lot_ids: [],
     broker_id: null,
     broker_commission: null,
+    broker_commission_type: 'percentage',
     cash_discount: null,
+    cash_discount_type: 'rupees',
     transportation_cost: null,
     rate: null,
     igst_percentage: null,
@@ -128,7 +130,9 @@ export function PurchaseFormModal({ open, onOpenChange, purchaseId }: PurchaseFo
         lot_ids: linked.lot_ids,
         broker_id: purchase.broker_id || null,
         broker_commission: purchase.broker_commission || null,
+        broker_commission_type: purchase.broker_commission_type || 'percentage',
         cash_discount: purchase.cash_discount || null,
+        cash_discount_type: purchase.cash_discount_type || 'rupees',
         transportation_cost: purchase.transportation_cost || null,
         rate: purchase.rate || null,
         igst_percentage: purchase.igst_percentage || null,
@@ -158,7 +162,9 @@ export function PurchaseFormModal({ open, onOpenChange, purchaseId }: PurchaseFo
       lot_ids: [],
       broker_id: null,
       broker_commission: null,
+      broker_commission_type: 'percentage',
       cash_discount: null,
+      cash_discount_type: 'rupees',
       transportation_cost: null,
       rate: null,
       igst_percentage: null,
@@ -423,15 +429,27 @@ export function PurchaseFormModal({ open, onOpenChange, purchaseId }: PurchaseFo
                       <h3 className="text-lg font-semibold">Accounting Overrides</h3>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium mb-1">Cash Discount (₹)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={formData.cash_discount || ''}
-                            onChange={(e) => setFormData({ ...formData, cash_discount: parseFloat(e.target.value) || null })}
-                            className="w-full px-3 py-2 border border-border rounded-lg bg-background"
-                            placeholder="0.00"
-                          />
+                          <label className="block text-sm font-medium mb-1">Cash Discount</label>
+                          <div className="flex gap-2">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max={formData.cash_discount_type === 'percentage' ? 100 : undefined}
+                              value={formData.cash_discount || ''}
+                              onChange={(e) => setFormData({ ...formData, cash_discount: parseFloat(e.target.value) || null })}
+                              className="flex-1 px-3 py-2 border border-border rounded-lg bg-background"
+                              placeholder="0.00"
+                            />
+                            <select
+                              value={formData.cash_discount_type || 'rupees'}
+                              onChange={(e) => setFormData({ ...formData, cash_discount_type: e.target.value as CashDiscountType })}
+                              className="w-20 px-2 py-2 border border-border rounded-lg bg-background text-sm"
+                            >
+                              <option value="rupees">₹</option>
+                              <option value="percentage">%</option>
+                            </select>
+                          </div>
                         </div>
                         <div>
                           <label className="block text-sm font-medium mb-1">Transportation Cost (₹)</label>
@@ -445,15 +463,27 @@ export function PurchaseFormModal({ open, onOpenChange, purchaseId }: PurchaseFo
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium mb-1">Broker Commission (%)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={formData.broker_commission || ''}
-                            onChange={(e) => setFormData({ ...formData, broker_commission: parseFloat(e.target.value) || null })}
-                            className="w-full px-3 py-2 border border-border rounded-lg bg-background"
-                            placeholder="0.00"
-                          />
+                          <label className="block text-sm font-medium mb-1">Broker Commission</label>
+                          <div className="flex gap-2">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max={formData.broker_commission_type === 'percentage' ? 100 : undefined}
+                              value={formData.broker_commission || ''}
+                              onChange={(e) => setFormData({ ...formData, broker_commission: parseFloat(e.target.value) || null })}
+                              className="flex-1 px-3 py-2 border border-border rounded-lg bg-background"
+                              placeholder="0.00"
+                            />
+                            <select
+                              value={formData.broker_commission_type || 'percentage'}
+                              onChange={(e) => setFormData({ ...formData, broker_commission_type: e.target.value as BrokerCommissionType })}
+                              className="w-20 px-2 py-2 border border-border rounded-lg bg-background text-sm"
+                            >
+                              <option value="percentage">%</option>
+                              <option value="rupees">₹</option>
+                            </select>
+                          </div>
                         </div>
                         <div>
                           <label className="block text-sm font-medium mb-1">IGST Percentage (%)</label>
