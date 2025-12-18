@@ -77,7 +77,7 @@ export function AlertDialog({
                   {title}
                 </Dialog.Title>
                 {message && (
-                  <Dialog.Description className="mt-2 text-sm text-muted-foreground">
+                  <Dialog.Description className="mt-2 text-sm text-muted-foreground whitespace-pre-line">
                     {message}
                   </Dialog.Description>
                 )}

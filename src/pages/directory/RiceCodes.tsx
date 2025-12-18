@@ -89,12 +89,12 @@ export default function RiceCodesPage() {
             return 'This rice code cannot be deleted because it is being used by one or more leads. Please remove the rice code from all leads before deleting it.'
           }
           
-          // Build message with lead names
-          const leadNames = leadsUsingRiceCode.map(lead => lead.company_name).join(', ')
+          // Build message with lead names in list format
           const leadCount = leadsUsingRiceCode.length
           const leadText = leadCount === 1 ? 'lead' : 'leads'
+          const leadList = leadsUsingRiceCode.map((lead, index) => `${index + 1}. ${lead.company_name}`).join('\n')
           
-          return `This rice code cannot be deleted because it is being used by ${leadCount} ${leadText}: ${leadNames}. Please remove the rice code from these leads before deleting it.`
+          return `This rice code cannot be deleted because it is being used by ${leadCount} ${leadText}:\n\n${leadList}\n\nPlease remove the rice code from these leads before deleting it.`
         } catch (fetchError) {
           // If fetching leads fails, return generic message
           return 'This rice code cannot be deleted because it is being used by one or more leads. Please remove the rice code from all leads before deleting it.'
@@ -139,9 +139,10 @@ export default function RiceCodesPage() {
           
           const saudaCount = saudasUsingRiceCode.length
           const saudaText = saudaCount === 1 ? 'sauda' : 'saudas'
-          const saudaNamesList = saudaNames.join(', ')
+          // Format saudas as a list
+          const saudaList = saudaNames.map((name, index) => `${index + 1}. ${name}`).join('\n')
           
-          return `This rice code cannot be deleted because it is being used by ${saudaCount} ${saudaText}: ${saudaNamesList}. Please remove the rice code from these saudas before deleting it.`
+          return `This rice code cannot be deleted because it is being used by ${saudaCount} ${saudaText}:\n\n${saudaList}\n\nPlease remove the rice code from these saudas before deleting it.`
         } catch (fetchError) {
           // If fetching saudas fails, return generic message
           return 'This rice code cannot be deleted because it is being used by one or more saudas. Please remove the rice code from all saudas before deleting it.'
