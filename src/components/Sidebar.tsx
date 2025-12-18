@@ -38,8 +38,8 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
 
   const baseLinks = [
     { to: '/crm/leads', label: 'Leads', icon: Users, key: 'leads' as const },
-    { to: '/crm/analytics', label: 'Analytics', icon: BarChart3, key: null as any },
-    { to: '/crm/leaderboard', label: 'Leaderboard', icon: Trophy, key: null as any },
+    // { to: '/crm/analytics', label: 'Analytics', icon: BarChart3, key: null as any },
+    // { to: '/crm/leaderboard', label: 'Leaderboard', icon: Trophy, key: null as any },
     { to: '/directory/vendors', label: 'Vendors', icon: Store, key: 'vendor' as const },
     { to: '/directory/transporters', label: 'Transporters', icon: Truck, key: null as any },
     { to: '/directory/salesmen', label: 'Salesperson', icon: UserCheck, key: 'salesman' as const },
