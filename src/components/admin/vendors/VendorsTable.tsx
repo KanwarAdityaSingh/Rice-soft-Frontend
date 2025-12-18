@@ -19,6 +19,15 @@ export function VendorsTable() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
 
+  const getTypeLabel = (type: string) => {
+    switch (type) {
+      case 'purchaser': return 'Debtor';
+      case 'seller': return 'Creditor';
+      case 'both': return 'Both';
+      default: return type;
+    }
+  };
+
   const filteredVendors = vendors.filter((vendor) => {
     const matchesSearch = 
       vendor.business_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -88,7 +97,7 @@ export function VendorsTable() {
                     <td className="py-3 px-4 text-sm">{vendor.contact_person}</td>
                     <td className="py-3 px-4 text-sm">{vendor.email}</td>
                     <td className="py-3 px-4 text-sm">{vendor.phone}</td>
-                    <td className="py-3 px-4 text-sm capitalize">{vendor.type}</td>
+                    <td className="py-3 px-4 text-sm">{getTypeLabel(vendor.type)}</td>
                     <td className="py-3 px-4 text-sm">{vendor.address.city}</td>
                     <td className="py-3 px-4 text-right">
                       <ActionButtons
