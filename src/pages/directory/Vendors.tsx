@@ -18,6 +18,15 @@ import { getRiceTypeLabel } from '../../utils/riceType'
 import { isAdmin } from '../../utils/permissions'
 import type { Lead } from '../../types/entities'
 
+const getTypeLabel = (type: string) => {
+  switch (type) {
+    case 'purchaser': return 'Debtor';
+    case 'seller': return 'Creditor';
+    case 'both': return 'Both';
+    default: return type;
+  }
+};
+
 export default function VendorsPage() {
   const { vendors, loading, deleteVendor, refetch } = useVendors()
   const navigate = useNavigate()
@@ -237,7 +246,7 @@ export default function VendorsPage() {
                     <Store className="h-5 w-5" />
                   </div>
                   <div>
-                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{String(v.type).trim()}</div>
+                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{getTypeLabel(v.type)}</div>
                     <h3 className="text-sm font-semibold leading-tight">{v.business_name.trim()}</h3>
                     <div className="text-xs text-muted-foreground inline-flex items-center gap-1"><MapPin className="h-3 w-3" /> {v.address.city.trim()}</div>
                   </div>

@@ -27,6 +27,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
   const [loadingRiceCodes, setLoadingRiceCodes] = useState(false);
   const [loadingRiceTypes, setLoadingRiceTypes] = useState(false);
   const [unit, setUnit] = useState<'kg' | 'quintal' | 'ton'>('kg');
+  const [brokerCommissionUnit, setBrokerCommissionUnit] = useState<'kg' | 'quintal' | 'ton'>('kg');
   const [formData, setFormData] = useState<CreateSaudaRequest>({
     sauda_type: 'exgodown',
     rice_code_id: null,
@@ -147,6 +148,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
     });
     setErrors({});
     setUnit('kg');
+    setBrokerCommissionUnit('kg');
   };
 
   const validateForm = (): boolean => {
@@ -197,10 +199,19 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
     try {
       const factor = (u: 'kg' | 'quintal' | 'ton') => (u === 'kg' ? 1 : u === 'quintal' ? 100 : 1000);
       const f = factor(unit);
+      
+      // Convert broker commission to per-kg if weight type is selected
+      let brokerCommissionInKg = formData.broker_commission;
+      if (formData.broker_commission_type === 'weight' && formData.broker_commission != null) {
+        const commissionFactor = factor(brokerCommissionUnit);
+        brokerCommissionInKg = formData.broker_commission / commissionFactor;
+      }
+      
       const payload: CreateSaudaRequest | UpdateSaudaRequest = {
         ...formData,
         rate: (formData.rate || 0) / f,
         quantity: formData.quantity != null ? (formData.quantity as number) * f : null,
+        broker_commission: brokerCommissionInKg,
       };
       if (isEditMode && saudaId) {
         await updateSauda(saudaId, payload as UpdateSaudaRequest);
@@ -444,7 +455,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
                           <select
                             value={formData.purchaser_id}
                             onChange={(e) => setFormData({ ...formData, purchaser_id: e.target.value })}
-                            className={`flex-1 px-3 py-2 border rounded-lg bg-background ${
+                            className={`flex-1 min-w-0 px-3 py-2 border rounded-lg bg-background ${
                               errors.purchaser_id ? 'border-red-500' : 'border-border'
                             }`}
                             disabled={isEditMode}
@@ -460,7 +471,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
                             type="button"
                             onClick={() => refetchVendors()}
                             disabled={loadingVendors}
-                            className="px-2.5 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center disabled:opacity-50"
+                            className="flex-shrink-0 px-2.5 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center disabled:opacity-50"
                             title="Refresh Vendors"
                           >
                             <RefreshCw className={`h-4 w-4 ${loadingVendors ? 'animate-spin' : ''}`} />
@@ -472,7 +483,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
                               const vendorUrl = `${window.location.origin}${basename}/directory/vendors`;
                               window.open(vendorUrl, '_blank');
                             }}
-                            className="px-2.5 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center"
+                            className="flex-shrink-0 px-2.5 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center"
                             title="Add New Vendor (Opens in new tab)"
                           >
                             <Plus className="h-4 w-4" />
@@ -491,7 +502,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
                             onChange={(e) => {
                               setFormData({ ...formData, broker_id: e.target.value || null });
                             }}
-                            className="flex-1 px-3 py-2 border border-border rounded-lg bg-background"
+                            className="flex-1 min-w-0 px-3 py-2 border border-border rounded-lg bg-background"
                           >
                             <option value="">Select Broker</option>
                             {brokers.filter(b => b.is_active).map((b) => (
@@ -504,7 +515,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
                             type="button"
                             onClick={() => refetchBrokers()}
                             disabled={loadingBrokers}
-                            className="px-2.5 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center disabled:opacity-50"
+                            className="flex-shrink-0 px-2.5 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center disabled:opacity-50"
                             title="Refresh Brokers"
                           >
                             <RefreshCw className={`h-4 w-4 ${loadingBrokers ? 'animate-spin' : ''}`} />
@@ -516,43 +527,60 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
                               const brokerUrl = `${window.location.origin}${basename}/directory/brokers`;
                               window.open(brokerUrl, '_blank');
                             }}
-                            className="px-2.5 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center"
+                            className="flex-shrink-0 px-2.5 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center"
                             title="Add New Broker (Opens in new tab)"
                           >
                             <Plus className="h-4 w-4" />
                           </button>
                         </div>
                       </div>
+                    </div>
 
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Broker Commission</label>
-                        <div className="flex gap-2">
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            max={formData.broker_commission_type === 'percentage' ? 100 : undefined}
-                            value={formData.broker_commission || ''}
-                            onChange={(e) => setFormData({ ...formData, broker_commission: parseFloat(e.target.value) || null })}
-                            className={`flex-1 px-3 py-2 border rounded-lg bg-background ${
-                              errors.broker_commission ? 'border-red-500' : 'border-border'
-                            }`}
-                            placeholder="0.00"
-                          />
+                    {/* Broker Commission - separate row */}
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        Broker Commission
+                        {formData.broker_commission_type === 'weight' && (
+                          <span className="text-muted-foreground font-normal"> (per {brokerCommissionUnit})</span>
+                        )}
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max={formData.broker_commission_type === 'percentage' ? 100 : undefined}
+                          value={formData.broker_commission || ''}
+                          onChange={(e) => setFormData({ ...formData, broker_commission: parseFloat(e.target.value) || null })}
+                          className={`flex-1 min-w-0 px-3 py-2 border rounded-lg bg-background ${
+                            errors.broker_commission ? 'border-red-500' : 'border-border'
+                          }`}
+                          placeholder="0.00"
+                        />
+                        <select
+                          value={formData.broker_commission_type || 'percentage'}
+                          onChange={(e) => setFormData({ ...formData, broker_commission_type: e.target.value as BrokerCommissionType })}
+                          className="flex-shrink-0 w-20 px-2 py-2 border border-border rounded-lg bg-background text-sm"
+                        >
+                          <option value="percentage">%</option>
+                          <option value="rupees">₹</option>
+                          <option value="weight">₹/Wt</option>
+                        </select>
+                        {formData.broker_commission_type === 'weight' && (
                           <select
-                            value={formData.broker_commission_type || 'percentage'}
-                            onChange={(e) => setFormData({ ...formData, broker_commission_type: e.target.value as BrokerCommissionType })}
-                            className="w-24 px-2 py-2 border border-border rounded-lg bg-background text-sm"
+                            value={brokerCommissionUnit}
+                            onChange={(e) => setBrokerCommissionUnit(e.target.value as 'kg' | 'quintal' | 'ton')}
+                            className="flex-shrink-0 w-24 px-2 py-2 border border-border rounded-lg bg-background text-sm"
                           >
-                            <option value="percentage">%</option>
-                            <option value="rupees">₹</option>
-                            <option value="weight">₹/Kg</option>
+                            <option value="kg">Kg</option>
+                            <option value="quintal">Quintal</option>
+                            <option value="ton">Ton</option>
                           </select>
-                        </div>
-                        {errors.broker_commission && (
-                          <p className="text-xs text-red-500 mt-1">{errors.broker_commission}</p>
                         )}
                       </div>
+                      {errors.broker_commission && (
+                        <p className="text-xs text-red-500 mt-1">{errors.broker_commission}</p>
+                      )}
                     </div>
                   </div>
 
