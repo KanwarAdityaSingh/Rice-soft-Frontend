@@ -478,10 +478,11 @@ export function PurchaseFormModal({ open, onOpenChange, purchaseId }: PurchaseFo
                             <select
                               value={formData.broker_commission_type || 'percentage'}
                               onChange={(e) => setFormData({ ...formData, broker_commission_type: e.target.value as BrokerCommissionType })}
-                              className="w-20 px-2 py-2 border border-border rounded-lg bg-background text-sm"
+                              className="w-24 px-2 py-2 border border-border rounded-lg bg-background text-sm"
                             >
                               <option value="percentage">%</option>
                               <option value="rupees">₹</option>
+                              <option value="weight">₹/Kg</option>
                             </select>
                           </div>
                         </div>

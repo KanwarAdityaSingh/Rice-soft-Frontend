@@ -674,8 +674,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
                         value={formData.type}
                         onChange={(value) => setFormData({ ...formData, type: value as any })}
                         options={[
-                          { value: 'purchaser', label: 'Purchaser' },
-                          { value: 'seller', label: 'Seller' },
+                          { value: 'purchaser', label: 'Debtor' },
+                          { value: 'seller', label: 'Creditor' },
                           { value: 'both', label: 'Both' }
                         ]}
                         placeholder="Select Type"

@@ -33,9 +33,9 @@ export function VendorPreviewDialog({ open, onOpenChange, formData, onConfirm }:
     if (!type) return 'Not set';
     switch (type) {
       case 'purchaser':
-        return 'Purchaser';
+        return 'Debtor';
       case 'seller':
-        return 'Seller';
+        return 'Creditor';
       case 'both':
         return 'Both';
       default:

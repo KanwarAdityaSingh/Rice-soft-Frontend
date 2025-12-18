@@ -157,6 +157,8 @@ export function SaudasTable() {
                     <span className="font-medium">
                       {s.broker_commission_type === 'rupees' 
                         ? `₹${s.broker_commission.toFixed(2)}` 
+                        : s.broker_commission_type === 'weight'
+                        ? `₹${s.broker_commission.toFixed(2)}/Kg`
                         : `${s.broker_commission}%`}
                     </span>
                   </div>

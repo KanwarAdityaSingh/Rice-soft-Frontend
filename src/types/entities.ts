@@ -613,7 +613,7 @@ export interface PincodeLookupResponse {
 
 // Shared Types for Discount/Commission
 export type CashDiscountType = 'rupees' | 'percentage';
-export type BrokerCommissionType = 'rupees' | 'percentage';
+export type BrokerCommissionType = 'rupees' | 'percentage' | 'weight';
 
 // Sauda Types
 export interface Sauda {

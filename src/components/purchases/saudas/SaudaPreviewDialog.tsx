@@ -112,6 +112,8 @@ export function SaudaPreviewDialog({ open, onOpenChange, sauda }: SaudaPreviewDi
                     <p className="mt-1 text-sm font-medium">
                       {sauda.broker_commission_type === 'rupees' 
                         ? `₹${sauda.broker_commission.toFixed(2)}` 
+                        : sauda.broker_commission_type === 'weight'
+                        ? `₹${sauda.broker_commission.toFixed(2)}/Kg`
                         : `${sauda.broker_commission}%`}
                     </p>
                   </div>

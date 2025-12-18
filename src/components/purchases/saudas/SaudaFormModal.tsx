@@ -181,14 +181,6 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
     if (formData.quantity != null && formData.quantity < 0) {
       newErrors.quantity = 'Quantity cannot be negative';
     }
-    if (formData.estimated_delivery_time != null) {
-      if (formData.estimated_delivery_time < 0) {
-        newErrors.estimated_delivery_time = 'Estimated delivery time cannot be negative';
-      }
-      if (!Number.isInteger(formData.estimated_delivery_time)) {
-        newErrors.estimated_delivery_time = 'Estimated delivery time must be a whole number';
-      }
-    }
     if (formData.notes != null && formData.notes.length > 1000) {
       newErrors.notes = 'Notes cannot exceed 1000 characters';
     }
@@ -236,7 +228,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
     }
   };
 
-  const purchaserVendors = vendors.filter(v => v.type === 'purchaser' || v.type === 'both');
+  const sellerVendors = vendors.filter(v => v.type === 'seller' || v.type === 'both');
 
   return (
     <>
@@ -435,29 +427,6 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
                         )}
                       </div>
 
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Estimated Delivery (days)</label>
-                        <input
-                          type="number"
-                          step="1"
-                          min="0"
-                          value={formData.estimated_delivery_time || ''}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            setFormData({ 
-                              ...formData, 
-                              estimated_delivery_time: value === '' ? null : parseInt(value, 10) 
-                            });
-                          }}
-                          className={`w-full px-3 py-2 border rounded-lg bg-background ${
-                            errors.estimated_delivery_time ? 'border-red-500' : 'border-border'
-                          }`}
-                          placeholder="0"
-                        />
-                        {errors.estimated_delivery_time && (
-                          <p className="text-xs text-red-500 mt-1">{errors.estimated_delivery_time}</p>
-                        )}
-                      </div>
                     </div>
                   </div>
 
@@ -481,7 +450,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
                             disabled={isEditMode}
                           >
                             <option value="">Select Vendor</option>
-                            {purchaserVendors.map((v) => (
+                            {sellerVendors.map((v) => (
                               <option key={v.id} value={v.id}>
                                 {v.business_name}
                               </option>
@@ -573,10 +542,11 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
                           <select
                             value={formData.broker_commission_type || 'percentage'}
                             onChange={(e) => setFormData({ ...formData, broker_commission_type: e.target.value as BrokerCommissionType })}
-                            className="w-20 px-2 py-2 border border-border rounded-lg bg-background text-sm"
+                            className="w-24 px-2 py-2 border border-border rounded-lg bg-background text-sm"
                           >
                             <option value="percentage">%</option>
                             <option value="rupees">₹</option>
+                            <option value="weight">₹/Kg</option>
                           </select>
                         </div>
                         {errors.broker_commission && (

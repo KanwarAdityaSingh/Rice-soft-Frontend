@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { Sprout, Plus, List } from 'lucide-react'
 import { SearchBar } from '../../components/admin/shared/SearchBar'
 import { LoadingSpinner } from '../../components/admin/shared/LoadingSpinner'
@@ -8,7 +8,10 @@ import { ConfirmDialog } from '../../components/admin/shared/ConfirmDialog'
 import { useRiceCodes } from '../../hooks/useRiceCodes'
 import { RiceCodeFormModal } from '../../components/admin/rice-codes/RiceCodeFormModal'
 import { RiceTypesModal } from '../../components/admin/rice-codes/RiceTypesModal'
-import type { RiceCode } from '../../types/entities'
+import { AlertDialog } from '../../components/shared/AlertDialog'
+import { saudasAPI } from '../../services/saudas.api'
+import { isAdmin } from '../../utils/permissions'
+import type { RiceCode, Sauda } from '../../types/entities'
 
 export default function RiceCodesPage() {
   const { riceCodes, loading, deleteRiceCode, createRiceCode, updateRiceCode, refetch } = useRiceCodes()
@@ -18,6 +21,32 @@ export default function RiceCodesPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editRiceCode, setEditRiceCode] = useState<RiceCode | null>(null)
   const [riceTypesOpen, setRiceTypesOpen] = useState(false)
+  const [saudas, setSaudas] = useState<Sauda[]>([])
+  const [alertOpen, setAlertOpen] = useState(false)
+  const [alertMessage, setAlertMessage] = useState('')
+
+  // Fetch saudas to check rice code usage
+  useEffect(() => {
+    const fetchSaudas = async () => {
+      try {
+        const data = await saudasAPI.getAllSaudas();
+        setSaudas(data);
+      } catch (error) {
+        console.error('Failed to fetch saudas:', error);
+      }
+    };
+    fetchSaudas();
+  }, []);
+
+  // Check if a rice code is used in any sauda
+  const isRiceCodeInUse = (riceCodeId: string): boolean => {
+    return saudas.some(sauda => sauda.rice_code_id === riceCodeId);
+  };
+
+  // Get count of saudas using a rice code
+  const getSaudaCountForRiceCode = (riceCodeId: string): number => {
+    return saudas.filter(sauda => sauda.rice_code_id === riceCodeId).length;
+  };
 
   const filtered = useMemo(() => {
     return riceCodes.filter((rc) => {
@@ -59,15 +88,17 @@ export default function RiceCodesPage() {
           >
             <List className="h-4 w-4" /> View Rice Types
           </button>
-          <button
-            className="btn-primary rounded-xl inline-flex items-center justify-center gap-2"
-            onClick={() => {
-              setEditRiceCode(null)
-              setCreateOpen(true)
-            }}
-          >
-            <Plus className="h-4 w-4" /> Add Rice Code
-          </button>
+          {isAdmin() && (
+            <button
+              className="btn-primary rounded-xl inline-flex items-center justify-center gap-2"
+              onClick={() => {
+                setEditRiceCode(null)
+                setCreateOpen(true)
+              }}
+            >
+              <Plus className="h-4 w-4" /> Add Rice Code
+            </button>
+          )}
         </div>
       </div>
 
@@ -95,17 +126,35 @@ export default function RiceCodesPage() {
                   </div>
                 </div>
               </div>
-              <div className="mt-3 flex items-center justify-end">
-                <ActionButtons
-                  onEdit={() => {
-                    setEditRiceCode(rc)
-                    setCreateOpen(true)
-                  }}
-                  onDelete={() => {
-                    setSelectedId(rc.rice_code_id)
-                    setDeleteDialogOpen(true)
-                  }}
-                />
+              <div className="mt-3 flex items-center justify-between">
+                {isRiceCodeInUse(rc.rice_code_id) && (
+                  <span className="text-xs text-amber-600 dark:text-amber-400">
+                    Used in {getSaudaCountForRiceCode(rc.rice_code_id)} sauda(s)
+                  </span>
+                )}
+                <div className="ml-auto">
+                  <ActionButtons
+                    permissionEntity="riceCode"
+                    onEdit={isAdmin() ? () => {
+                      if (isRiceCodeInUse(rc.rice_code_id)) {
+                        setAlertMessage(`This rice code is currently used in ${getSaudaCountForRiceCode(rc.rice_code_id)} sauda(s). Please remove it from all saudas before editing.`);
+                        setAlertOpen(true);
+                        return;
+                      }
+                      setEditRiceCode(rc)
+                      setCreateOpen(true)
+                    } : undefined}
+                    onDelete={isAdmin() ? () => {
+                      if (isRiceCodeInUse(rc.rice_code_id)) {
+                        setAlertMessage(`This rice code is currently used in ${getSaudaCountForRiceCode(rc.rice_code_id)} sauda(s). Please remove it from all saudas before deleting.`);
+                        setAlertOpen(true);
+                        return;
+                      }
+                      setSelectedId(rc.rice_code_id)
+                      setDeleteDialogOpen(true)
+                    } : undefined}
+                  />
+                </div>
               </div>
             </article>
           ))}
@@ -145,6 +194,14 @@ export default function RiceCodesPage() {
       <RiceTypesModal
         open={riceTypesOpen}
         onOpenChange={setRiceTypesOpen}
+      />
+
+      <AlertDialog
+        open={alertOpen}
+        onOpenChange={setAlertOpen}
+        type="warning"
+        title="Cannot Modify Rice Code"
+        message={alertMessage}
       />
     </div>
   )

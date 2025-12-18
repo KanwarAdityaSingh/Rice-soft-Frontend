@@ -105,8 +105,8 @@ export default function VendorsPage() {
             <FilterDropdown
               label="Type"
               options={[
-                { label: 'Purchaser', value: 'purchaser' },
-                { label: 'Seller', value: 'seller' },
+                { label: 'Debtor', value: 'purchaser' },
+                { label: 'Creditor', value: 'seller' },
                 { label: 'Both', value: 'both' },
               ]}
               value={typeFilter}
