@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
-import { Store, Plus, Mail, Phone, MapPin, Building2, CreditCard, FileText, Calendar, UserCircle, ExternalLink } from 'lucide-react'
+import { Store, Plus, Mail, Phone, MapPin, CreditCard, FileText, Calendar, UserCircle, ExternalLink } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { SearchBar } from '../../components/admin/shared/SearchBar'
 import { FilterDropdown } from '../../components/admin/shared/FilterDropdown'
@@ -7,9 +7,15 @@ import { LoadingSpinner } from '../../components/admin/shared/LoadingSpinner'
 import { EmptyState } from '../../components/admin/shared/EmptyState'
 import { ActionButtons } from '../../components/admin/shared/ActionButtons'
 import { ConfirmDialog } from '../../components/admin/shared/ConfirmDialog'
+import { AlertDialog } from '../../components/shared/AlertDialog'
 import { useVendors } from '../../hooks/useVendors'
 import { VendorFormModal } from '../../components/admin/vendors/VendorFormModal'
 import { leadsAPI } from '../../services/leads.api'
+import { saudasAPI } from '../../services/saudas.api'
+import { vendorsAPI } from '../../services/vendors.api'
+import { riceCodesAPI } from '../../services/riceCodes.api'
+import { getRiceTypeLabel } from '../../utils/riceType'
+import { isAdmin } from '../../utils/permissions'
 import type { Lead } from '../../types/entities'
 
 export default function VendorsPage() {
@@ -24,6 +30,10 @@ export default function VendorsPage() {
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null)
   const [leadDetails, setLeadDetails] = useState<Record<string, Lead>>({})
+  const [alertOpen, setAlertOpen] = useState(false)
+  const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('error')
+  const [alertTitle, setAlertTitle] = useState('')
+  const [alertMessage, setAlertMessage] = useState('')
 
   const filtered = useMemo(() => {
     return vendors.filter((v) => {
@@ -73,6 +83,95 @@ export default function VendorsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtered])
 
+  // Parse error message to detect foreign key constraint errors and fetch related entities
+  const parseVendorForeignKeyError = async (error: any, vendorId: string): Promise<string | null> => {
+    // Check error.data.error first (where the actual constraint error is), then fall back to other fields
+    const errorMessage = error?.data?.error || error?.error || error?.message || ''
+    
+    if (!errorMessage) return null
+    
+    // Check for foreign key constraint violation
+    if (errorMessage.includes('violates foreign key constraint')) {
+      const errorParts: string[] = []
+      
+      // Check for leads constraint - vendors have lead_id, so check if vendor was converted from a lead
+      if (errorMessage.includes('leads') || errorMessage.includes('vendor_id')) {
+        try {
+          const vendor = vendors.find(v => v.id === vendorId)
+          if (vendor?.lead_id) {
+            try {
+              const lead = await leadsAPI.getLeadById(vendor.lead_id)
+              errorParts.push(`1 lead: ${lead.company_name}`)
+            } catch {
+              // Lead not found, skip
+            }
+          }
+        } catch (fetchError) {
+          // If fetching leads fails, continue
+        }
+      }
+      
+      // Check for saudas constraint (purchaser_id in saudas)
+      if (errorMessage.includes('saudas') && (errorMessage.includes('purchaser_id') || errorMessage.includes('vendor_id'))) {
+        try {
+          const allSaudas = await saudasAPI.getAllSaudas()
+          const saudasUsingVendor = allSaudas.filter(sauda => sauda.purchaser_id === vendorId)
+          
+          if (saudasUsingVendor.length > 0) {
+            // Fetch vendors, rice codes, and rice types to build display names
+            const [allVendors, allRiceCodes, allRiceTypes] = await Promise.all([
+              vendorsAPI.getAllVendors(false),
+              riceCodesAPI.getAllRiceCodes(),
+              riceCodesAPI.getRiceTypes()
+            ])
+            
+            // Build sauda display names (Purchaser - Rice Code - Rice Type)
+            const saudaNames = saudasUsingVendor.map(sauda => {
+              const parts: string[] = []
+              
+              // Get purchaser name (should be the vendor we're deleting)
+              const purchaser = allVendors.find(v => v.id === sauda.purchaser_id)
+              if (purchaser?.business_name) parts.push(purchaser.business_name)
+              
+              // Get rice code name
+              const riceCode = allRiceCodes.find(rc => rc.rice_code_id === sauda.rice_code_id)
+              if (riceCode?.rice_code_name) parts.push(riceCode.rice_code_name)
+              
+              // Get rice type label
+              const riceTypeLabel = getRiceTypeLabel(sauda.rice_type, allRiceTypes)
+              if (riceTypeLabel) parts.push(riceTypeLabel)
+              
+              return parts.join(' - ') || 'Sauda'
+            })
+            
+            const saudaCount = saudasUsingVendor.length
+            const saudaText = saudaCount === 1 ? 'sauda' : 'saudas'
+            // Format saudas as a list
+            const saudaList = saudaNames.map((name, index) => `${index + 1}. ${name}`).join('\n')
+            errorParts.push(`${saudaCount} ${saudaText}:\n${saudaList}`)
+          }
+        } catch (fetchError) {
+          // If fetching saudas fails, continue
+        }
+      }
+      
+      // Check for purchases constraint (vendor_id in purchases)
+      if (errorMessage.includes('purchases') && errorMessage.includes('vendor_id')) {
+        errorParts.push('one or more purchases')
+      }
+      
+      if (errorParts.length > 0) {
+        const mainMessage = `This vendor cannot be deleted because it is being used in:\n\n${errorParts.join('\n\n')}\n\nPlease remove the vendor from all references before deleting it.`
+        return mainMessage
+      }
+      
+      // Generic foreign key error
+      return 'This vendor cannot be deleted because it is being used by other records. Please remove all references to this vendor before deleting it.'
+    }
+    
+    return null
+  }
+
   return (
     <div className="container mx-auto py-6 sm:py-10 space-y-6 sm:space-y-8 px-4 sm:px-6">
       <header className="hero-bg rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 relative overflow-hidden">
@@ -113,9 +212,11 @@ export default function VendorsPage() {
               onChange={setTypeFilter}
             />
           </div>
-          <button className="btn-primary rounded-xl inline-flex items-center justify-center gap-2 w-full sm:w-auto" onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4" /> Add Vendor
-          </button>
+          {isAdmin() && (
+            <button className="btn-primary rounded-xl inline-flex items-center justify-center gap-2 w-full sm:w-auto" onClick={() => setCreateOpen(true)}>
+              <Plus className="h-4 w-4" /> Add Vendor
+            </button>
+          )}
         </div>
       </div>
 
@@ -267,20 +368,22 @@ export default function VendorsPage() {
                 </div>
               )}
 
-              <div className="mt-3 flex items-center justify-end">
-                <ActionButtons
-                  isActive={v.is_active}
-                  onEdit={() => {
-                    setSelectedVendorId(v.id)
-                    setEditModalOpen(true)
-                  }}
-                  onDelete={() => {
-                    setSelectedId(v.id)
-                    setDeleteDialogOpen(true)
-                  }}
-                  permissionEntity="vendor"
-                />
-              </div>
+              {isAdmin() && (
+                <div className="mt-3 flex items-center justify-end">
+                  <ActionButtons
+                    isActive={v.is_active}
+                    onEdit={() => {
+                      setSelectedVendorId(v.id)
+                      setEditModalOpen(true)
+                    }}
+                    onDelete={() => {
+                      setSelectedId(v.id)
+                      setDeleteDialogOpen(true)
+                    }}
+                    permissionEntity="vendor"
+                  />
+                </div>
+              )}
             </article>
           ))}
         </div>
@@ -291,14 +394,46 @@ export default function VendorsPage() {
         onOpenChange={setDeleteDialogOpen}
         onConfirm={async () => {
           if (selectedId) {
-            await deleteVendor(selectedId)
-            setSelectedId(null)
-            setDeleteDialogOpen(false)
+            try {
+              await deleteVendor(selectedId)
+              setSelectedId(null)
+              setDeleteDialogOpen(false)
+            } catch (error: any) {
+              // Parse foreign key constraint errors and fetch related leads/saudas
+              const friendlyMessage = await parseVendorForeignKeyError(error, selectedId)
+              
+              if (friendlyMessage) {
+                setAlertType('error')
+                setAlertTitle('Cannot Delete Vendor')
+                setAlertMessage(friendlyMessage)
+                setAlertOpen(true)
+              } else {
+                // Generic error handling
+                setAlertType('error')
+                setAlertTitle('Failed to Delete Vendor')
+                setAlertMessage(
+                  error?.message || 
+                  error?.data?.message || 
+                  error?.error || 
+                  'An error occurred while deleting the vendor. Please try again.'
+                )
+                setAlertOpen(true)
+              }
+              setDeleteDialogOpen(false)
+            }
           }
         }}
         title="Delete Vendor"
         description="Are you sure you want to delete this vendor? This action cannot be undone."
         confirmText="Delete"
+      />
+
+      <AlertDialog
+        open={alertOpen}
+        onOpenChange={setAlertOpen}
+        type={alertType}
+        title={alertTitle}
+        message={alertMessage}
       />
 
       <VendorFormModal 
