@@ -225,6 +225,7 @@ export function SaudasTable() {
             refetch();
           }
         }}
+        onSuccess={refetch}
       />
 
       <SaudaFormModal
@@ -237,6 +238,7 @@ export function SaudasTable() {
           }
         }}
         saudaId={selectedSaudaId}
+        onSuccess={refetch}
       />
 
       <SaudaPreviewDialog

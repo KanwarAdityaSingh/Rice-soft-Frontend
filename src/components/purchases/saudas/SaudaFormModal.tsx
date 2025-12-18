@@ -15,9 +15,10 @@ interface SaudaFormModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   saudaId?: string | null;
+  onSuccess?: () => void;
 }
 
-export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalProps) {
+export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: SaudaFormModalProps) {
   const { createSauda, updateSauda } = useSaudas();
   const { vendors, refetch: refetchVendors, loading: loadingVendors } = useVendors();
   const { brokers, refetch: refetchBrokers, loading: loadingBrokers } = useBrokers();
@@ -225,6 +226,8 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
         setAlertMessage('Sauda created successfully');
       }
       setAlertOpen(true);
+      // Call onSuccess callback immediately after successful save
+      onSuccess?.();
       setTimeout(() => {
         onOpenChange(false);
         resetForm();
