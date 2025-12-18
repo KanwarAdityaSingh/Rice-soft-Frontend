@@ -154,10 +154,6 @@ export function VendorPreviewDialog({ open, onOpenChange, formData, onConfirm }:
                     label="PAN Number" 
                     value={formData.business_details.pan_number || undefined} 
                   />
-                  <InfoRow 
-                    label="Registration Number" 
-                    value={formData.business_details.registration_number || undefined} 
-                  />
                 </InfoSection>
               )}
 

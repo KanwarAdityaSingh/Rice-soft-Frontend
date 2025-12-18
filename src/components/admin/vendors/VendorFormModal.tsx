@@ -11,7 +11,7 @@ import { validateEmail, validateGST, validatePAN, validateGoogleLocationLink } f
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { VendorPreviewDialog } from './VendorPreviewDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
-import type { CreateVendorRequest, UpdateVendorRequest, Lead } from '../../../types/entities';
+import type { CreateVendorRequest, UpdateVendorRequest, Lead, VendorBankDetails } from '../../../types/entities';
 
 interface VendorFormModalProps {
   open: boolean;
@@ -38,8 +38,14 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
     business_details: {
       pan_number: '',
       gst_number: '',
-      registration_number: '',
     },
+    bank_details: {
+      account_holder_name: '',
+      account_number: '',
+      ifsc_code: '',
+      bank_name: '',
+      branch: '',
+    } as VendorBankDetails,
     type: 'both',
     is_active: true,
     google_location_link: null,
@@ -107,7 +113,19 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
         business_details: {
           pan_number: panNumber,
           gst_number: gstNumber,
-          registration_number: vendor.business_details?.registration_number || '',
+        },
+        bank_details: vendor.bank_details ? {
+          account_holder_name: vendor.bank_details.account_holder_name || '',
+          account_number: vendor.bank_details.account_number || '',
+          ifsc_code: vendor.bank_details.ifsc_code || '',
+          bank_name: vendor.bank_details.bank_name || '',
+          branch: vendor.bank_details.branch || '',
+        } : {
+          account_holder_name: '',
+          account_number: '',
+          ifsc_code: '',
+          bank_name: '',
+          branch: '',
         },
         type: vendor.type || 'both',
         is_active: vendor.is_active ?? true,
@@ -158,7 +176,13 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
       business_details: {
         pan_number: '',
         gst_number: '',
-        registration_number: '',
+      },
+      bank_details: {
+        account_holder_name: '',
+        account_number: '',
+        ifsc_code: '',
+        bank_name: '',
+        branch: '',
       },
       type: 'both',
       is_active: true,
@@ -216,11 +240,6 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
       // Set PAN number if available
       if (mapped?.business_details?.pan_number) {
         businessDetailsUpdate.pan_number = mapped.business_details.pan_number;
-      }
-      
-      // Set registration number if available
-      if (mapped?.business_details?.registration_number) {
-        businessDetailsUpdate.registration_number = mapped.business_details.registration_number;
       }
       
       // Set business type if available
@@ -522,7 +541,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
                   step >= 3 ? 'bg-primary/20 text-primary' : 'bg-muted hover:bg-muted/80'
                 }`}
               >
-                3. Business Details
+                3. Bank Details
               </button>
               {isEditMode && leadData && (
                 <button
@@ -791,7 +810,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
                       Back
                     </button>
                     <button type="button" onClick={() => setStep(3)} className="btn-primary flex-1">
-                      Next: Business Details
+                      Next: Bank Details
                     </button>
                   </div>
                 </div>
@@ -800,11 +819,82 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
               {step === 3 && (
                 <div className="space-y-4">
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block">Registration Number</label>
+                    <label className="text-sm font-medium mb-1.5 block">Account Holder Name</label>
                     <input
                       type="text"
-                      value={formData.business_details.registration_number}
-                      onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, registration_number: e.target.value } })}
+                      value={formData.bank_details?.account_holder_name || ''}
+                      onChange={(e) => setFormData({ 
+                        ...formData, 
+                        bank_details: { 
+                          ...formData.bank_details, 
+                          account_holder_name: e.target.value 
+                        } 
+                      })}
+                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Account Number</label>
+                    <input
+                      type="text"
+                      value={formData.bank_details?.account_number || ''}
+                      onChange={(e) => setFormData({ 
+                        ...formData, 
+                        bank_details: { 
+                          ...formData.bank_details, 
+                          account_number: e.target.value 
+                        } 
+                      })}
+                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">IFSC Code</label>
+                    <input
+                      type="text"
+                      value={formData.bank_details?.ifsc_code || ''}
+                      onChange={(e) => setFormData({ 
+                        ...formData, 
+                        bank_details: { 
+                          ...formData.bank_details, 
+                          ifsc_code: e.target.value.toUpperCase() 
+                        } 
+                      })}
+                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                      placeholder="ABCD0123456"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Bank Name</label>
+                    <input
+                      type="text"
+                      value={formData.bank_details?.bank_name || ''}
+                      onChange={(e) => setFormData({ 
+                        ...formData, 
+                        bank_details: { 
+                          ...formData.bank_details, 
+                          bank_name: e.target.value 
+                        } 
+                      })}
+                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Branch</label>
+                    <input
+                      type="text"
+                      value={formData.bank_details?.branch || ''}
+                      onChange={(e) => setFormData({ 
+                        ...formData, 
+                        bank_details: { 
+                          ...formData.bank_details, 
+                          branch: e.target.value 
+                        } 
+                      })}
                       className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                     />
                   </div>

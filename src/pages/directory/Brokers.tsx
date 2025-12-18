@@ -28,10 +28,10 @@ export default function BrokersPage() {
         : (b.contact_person?.toLowerCase().includes(q) || false)
       
       const matchesSearch =
-        b.business_name.toLowerCase().includes(q) ||
+        (b.business_name?.toLowerCase().includes(q) || false) ||
         contactPersonMatch ||
-        b.email.toLowerCase().includes(q) ||
-        b.phone.includes(searchQuery)
+        (b.email?.toLowerCase().includes(q) || false) ||
+        (b.phone?.includes(searchQuery) || false)
 
       const matchesStatus = statusFilter ? (statusFilter === 'active' ? b.is_active : !b.is_active) : true
       const matchesType = typeFilter ? b.type === typeFilter : true
@@ -104,7 +104,7 @@ export default function BrokersPage() {
                   </div>
                   <div>
                     <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{String(b.type).trim()}</div>
-                    <h3 className="text-sm font-semibold leading-tight">{b.business_name.trim()}</h3>
+                    <h3 className="text-sm font-semibold leading-tight">{b.business_name?.trim() || 'N/A'}</h3>
                     <div className="text-xs text-muted-foreground inline-flex items-center gap-1"><MapPin className="h-3 w-3" /> {b.address.city.trim()}</div>
                   </div>
                 </div>

@@ -192,12 +192,6 @@ export default function VendorsPage() {
                     <span className="truncate">PAN: {v.business_details.pan_number}</span>
                   </div>
                 )}
-                {v.business_details?.registration_number && (
-                  <div className="inline-flex items-center gap-2">
-                    <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="truncate">Reg: {v.business_details.registration_number}</span>
-                  </div>
-                )}
                 
                 {/* Bank Details */}
                 {v.bank_details && (

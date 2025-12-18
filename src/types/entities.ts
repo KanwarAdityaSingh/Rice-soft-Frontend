@@ -49,7 +49,6 @@ export interface VendorAddress {
 export interface VendorBusinessDetails {
   pan_number?: string;
   gst_number?: string;
-  registration_number?: string;
   business_type?: string;
 }
 
@@ -179,7 +178,14 @@ export interface BrokerAddress {
 export interface BrokerBusinessDetails {
   pan_number?: string;
   aadhaar_number?: string;
-  registration_number?: string;
+}
+
+export interface BrokerBankDetails {
+  account_holder_name?: string;
+  account_number?: string;
+  ifsc_code?: string;
+  bank_name?: string;
+  branch?: string;
 }
 
 export interface BrokerDetails {
@@ -190,7 +196,7 @@ export interface BrokerDetails {
 
 export interface Broker {
   id: string;
-  business_name: string;
+  business_name?: string | null; // Optional
   contact_person: string; // Legacy field, kept for backward compatibility
   email: string;
   phone: string; // Legacy field, kept for backward compatibility
@@ -205,13 +211,14 @@ export interface Broker {
 }
 
 export interface CreateBrokerRequest {
-  business_name: string;
+  business_name?: string; // Optional
   contact_person?: string; // Optional for backward compatibility
   contact_persons?: ContactPerson[]; // New field with phones array
   email: string;
   phone: string; // Mandatory field, separate from contact_persons
   address: BrokerAddress;
   business_details: BrokerBusinessDetails;
+  bank_details?: BrokerBankDetails;
   broker_details?: BrokerDetails;
   type: 'purchase' | 'sale' | 'both';
   is_active?: boolean;

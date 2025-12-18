@@ -28,7 +28,7 @@ export function BrokersTable() {
       : (broker.contact_person?.toLowerCase().includes(q) || false);
     
     const matchesSearch = 
-      broker.business_name.toLowerCase().includes(q) ||
+      (broker.business_name?.toLowerCase().includes(q) || false) ||
       contactPersonMatch ||
       broker.email.toLowerCase().includes(q);
     
@@ -95,7 +95,7 @@ export function BrokersTable() {
               <tbody>
                 {filteredBrokers.map((broker) => (
                   <tr key={broker.id} className="border-b border-border/60 hover:bg-muted/30 transition-colors">
-                    <td className="py-3 px-4 text-sm font-medium">{broker.business_name}</td>
+                    <td className="py-3 px-4 text-sm font-medium">{broker.business_name || 'N/A'}</td>
                     <td className="py-3 px-4 text-sm">
                       {broker.contact_persons && broker.contact_persons.length > 0
                         ? broker.contact_persons
@@ -135,7 +135,7 @@ export function BrokersTable() {
                 {/* Header */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-base truncate">{broker.business_name}</h3>
+                    <h3 className="font-semibold text-base truncate">{broker.business_name || 'N/A'}</h3>
                     <p className="text-sm text-muted-foreground truncate">
                       {broker.contact_persons && broker.contact_persons.length > 0
                         ? broker.contact_persons
@@ -207,7 +207,7 @@ export function BrokersTable() {
           }
         }}
         title="Delete Broker"
-        description={`Are you sure you want to delete ${selectedBroker?.business_name}? This action cannot be undone.`}
+        description={`Are you sure you want to delete ${selectedBroker?.business_name || 'this broker'}? This action cannot be undone.`}
         confirmText="Delete"
       />
     </div>

@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, CheckCircle2, Building2, MapPin, Briefcase, Percent } from 'lucide-react';
+import { X, CheckCircle2, Building2, MapPin, Briefcase } from 'lucide-react';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import type { CreateBrokerRequest } from '../../../types/entities';
 
@@ -168,30 +168,9 @@ export function BrokerPreviewDialog({ open, onOpenChange, formData, onConfirm }:
                     label="Aadhaar Number" 
                     value={formData.business_details.aadhaar_number || undefined} 
                   />
-                  <InfoRow 
-                    label="Registration Number" 
-                    value={formData.business_details.registration_number || undefined} 
-                  />
                 </InfoSection>
               )}
 
-              {/* Broker Details */}
-              {formData.broker_details && (
-                <InfoSection title="Broker Details" icon={Percent}>
-                  <InfoRow 
-                    label="Commission Rate (%)" 
-                    value={formData.broker_details.commission_rate ? `${formData.broker_details.commission_rate}%` : undefined} 
-                  />
-                  <InfoRow 
-                    label="Specialization" 
-                    value={formData.broker_details.specialization || undefined} 
-                  />
-                  <InfoRow 
-                    label="Experience (Years)" 
-                    value={formData.broker_details.experience_years || undefined} 
-                  />
-                </InfoSection>
-              )}
             </div>
 
             {/* User Account Information */}

@@ -33,12 +33,13 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
     business_details: {
       pan_number: '',
       aadhaar_number: '',
-      registration_number: '',
     },
-    broker_details: {
-      commission_rate: 0,
-      specialization: '',
-      experience_years: '',
+    bank_details: {
+      account_holder_name: '',
+      account_number: '',
+      ifsc_code: '',
+      bank_name: '',
+      branch: '',
     },
     type: 'both',
     is_active: true,
@@ -58,7 +59,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
     const newErrors: Record<string, string> = {};
 
     // Basic validation
-    if (!formData.business_name) newErrors.business_name = 'Business name required';
+    // business_name is now optional, no validation needed
     
     // Validate contact_persons: must have at least one with name and at least one phone
     if (!formData.contact_persons || formData.contact_persons.length === 0) {
@@ -293,6 +294,9 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       // Clean up form data before submission
       const cleanedFormData: CreateBrokerRequest = { ...data };
       
+      // Remove contact_person field (not allowed by backend)
+      delete (cleanedFormData as any).contact_person;
+      
       // Filter out empty contact persons (ones with no name) and clean up phones and emails arrays
       if (cleanedFormData.contact_persons) {
         cleanedFormData.contact_persons = cleanedFormData.contact_persons
@@ -314,8 +318,14 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         email: '',
         phone: '',
         address: { street: '', city: '', state: '', pincode: '', country: 'India' },
-        business_details: { pan_number: '', aadhaar_number: '', registration_number: '' },
-        broker_details: { commission_rate: 0, specialization: '', experience_years: '' },
+        business_details: { pan_number: '', aadhaar_number: '' },
+        bank_details: {
+          account_holder_name: '',
+          account_number: '',
+          ifsc_code: '',
+          bank_name: '',
+          branch: '',
+        },
         type: 'both',
         is_active: true,
       });
@@ -386,7 +396,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                   step >= 3 ? 'bg-primary/20 text-primary' : 'bg-muted hover:bg-muted/80'
                 }`}
               >
-                3. Broker Details
+                3. Bank Details
               </button>
             </div>
 
@@ -436,7 +446,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                   </div>
 
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block">Business Name *</label>
+                    <label className="text-sm font-medium mb-1.5 block">Business Name</label>
                     <input
                       type="text"
                       value={formData.business_name}
@@ -777,58 +787,102 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                     </div>
                   )}
 
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">Registration Number</label>
-                    <input
-                      type="text"
-                      value={formData.business_details.registration_number}
-                      onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, registration_number: e.target.value } })}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                    />
-                  </div>
 
                   <div className="flex gap-3">
                     <button type="button" onClick={() => setStep(1)} className="btn-secondary flex-1">
                       Back
                     </button>
-                    <button type="button" onClick={() => setStep(3)} className="btn-primary flex-1">
-                      Next: Broker Details
+                    <button 
+                      type="button" 
+                      onClick={() => setStep(3)}
+                      className="btn-primary flex-1"
+                    >
+                      Next: Bank Details
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* Step 3: Broker Specific Details */}
+              {/* Step 3: Bank Details */}
               {step === 3 && (
                 <div className="space-y-4">
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block">Commission Rate (%)</label>
+                    <label className="text-sm font-medium mb-1.5 block">Account Holder Name</label>
                     <input
-                      type="number"
-                      step="0.1"
-                      value={formData.broker_details?.commission_rate || ''}
-                      onChange={(e) => setFormData({ ...formData, broker_details: { ...formData.broker_details!, commission_rate: parseFloat(e.target.value) || 0 } })}
+                      type="text"
+                      value={formData.bank_details?.account_holder_name || ''}
+                      onChange={(e) => setFormData({ 
+                        ...formData, 
+                        bank_details: { 
+                          ...formData.bank_details, 
+                          account_holder_name: e.target.value 
+                        } 
+                      })}
                       className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                     />
                   </div>
 
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block">Specialization</label>
+                    <label className="text-sm font-medium mb-1.5 block">Account Number</label>
                     <input
                       type="text"
-                      value={formData.broker_details?.specialization || ''}
-                      onChange={(e) => setFormData({ ...formData, broker_details: { ...formData.broker_details!, specialization: e.target.value } })}
+                      value={formData.bank_details?.account_number || ''}
+                      onChange={(e) => setFormData({ 
+                        ...formData, 
+                        bank_details: { 
+                          ...formData.bank_details, 
+                          account_number: e.target.value 
+                        } 
+                      })}
                       className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                      placeholder="rice, wheat, pulses"
                     />
                   </div>
 
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block">State</label>
+                    <label className="text-sm font-medium mb-1.5 block">IFSC Code</label>
                     <input
                       type="text"
-                      value={formData.broker_details?.experience_years || ''}
-                      onChange={(e) => setFormData({ ...formData, broker_details: { ...formData.broker_details!, experience_years: e.target.value } })}
+                      value={formData.bank_details?.ifsc_code || ''}
+                      onChange={(e) => setFormData({ 
+                        ...formData, 
+                        bank_details: { 
+                          ...formData.bank_details, 
+                          ifsc_code: e.target.value.toUpperCase() 
+                        } 
+                      })}
+                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                      placeholder="ABCD0123456"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Bank Name</label>
+                    <input
+                      type="text"
+                      value={formData.bank_details?.bank_name || ''}
+                      onChange={(e) => setFormData({ 
+                        ...formData, 
+                        bank_details: { 
+                          ...formData.bank_details, 
+                          bank_name: e.target.value 
+                        } 
+                      })}
+                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Branch</label>
+                    <input
+                      type="text"
+                      value={formData.bank_details?.branch || ''}
+                      onChange={(e) => setFormData({ 
+                        ...formData, 
+                        bank_details: { 
+                          ...formData.bank_details, 
+                          branch: e.target.value 
+                        } 
+                      })}
                       className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                     />
                   </div>
@@ -836,6 +890,9 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                   <div className="flex gap-3 pt-4">
                     <button type="button" onClick={() => setStep(2)} className="btn-secondary flex-1">
                       Back
+                    </button>
+                    <button type="button" onClick={() => {/* Skip */}} className="btn-secondary">
+                      Skip Bank Details
                     </button>
                     <button 
                       type="button" 
@@ -848,6 +905,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                   </div>
                 </div>
               )}
+
             </form>
           </div>
         </Dialog.Content>

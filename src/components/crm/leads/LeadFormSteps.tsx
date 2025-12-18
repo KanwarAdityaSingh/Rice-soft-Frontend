@@ -174,7 +174,6 @@ export function LeadFormSteps({
           ...(formData.business_details || {}),
           ...(mapped.business_details.gst_number ? { gst_number: mapped.business_details.gst_number } : {}),
           ...(mapped.business_details.pan_number ? { pan_number: mapped.business_details.pan_number } : {}),
-          ...(mapped.business_details.registration_number ? { registration_number: mapped.business_details.registration_number } : {}),
           ...(mapped.business_details.business_type ? { business_type: mapped.business_details.business_type } : {}),
         };
       }
