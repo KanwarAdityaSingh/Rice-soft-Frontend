@@ -13,6 +13,7 @@ import { ConversionDialog } from '../../components/crm/leads/ConversionDialog';
 import { AddEventDialog } from '../../components/crm/leads/AddEventDialog';
 import { LeadFormModal } from '../../components/crm/leads/LeadFormModal';
 import type { Lead, UpdateLeadRequest } from '../../types/entities';
+import { isAdmin } from '../../utils/permissions';
 
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -143,13 +144,15 @@ export default function LeadDetailPage() {
             <Edit className="h-4 w-4" />
             Edit
           </button>
-          <button
-            onClick={() => setDeleteDialogOpen(true)}
-            className="bg-destructive/10 text-destructive hover:bg-destructive/20 px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
-          >
-            <Trash2 className="h-4 w-4" />
-            Delete
-          </button>
+          {isAdmin() && (
+            <button
+              onClick={() => setDeleteDialogOpen(true)}
+              className="bg-destructive/10 text-destructive hover:bg-destructive/20 px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </button>
+          )}
           {lead.lead_status !== 'converted' && (
             <button
               className="btn-primary flex items-center gap-2"

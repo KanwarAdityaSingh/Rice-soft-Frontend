@@ -207,7 +207,7 @@ export function LeadsTable({
                         <Edit className="h-4 w-4" />
                       </button>
                     )}
-                    {((isAdmin()) || (isCustomUser() ? canDelete('leads') : true)) && (
+                    {isAdmin() && (
                       <button
                         onClick={() => handleDeleteClick(lead)}
                         className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors"
@@ -316,7 +316,7 @@ export function LeadsTable({
                   Edit
                 </button>
               )}
-              {((isAdmin()) || (isCustomUser() ? canDelete('leads') : true)) && (
+              {isAdmin() && (
                 <button
                   onClick={() => handleDeleteClick(lead)}
                   className="p-2 hover:bg-destructive/10 text-destructive rounded-lg transition-colors"
