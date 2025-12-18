@@ -181,8 +181,8 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
     if (formData.quantity != null && formData.quantity < 0) {
       newErrors.quantity = 'Quantity cannot be negative';
     }
-    if (formData.notes != null && formData.notes.length > 1000) {
-      newErrors.notes = 'Notes cannot exceed 1000 characters';
+    if (formData.notes != null && formData.notes.length > 100) {
+      newErrors.notes = 'Notes cannot exceed 100 characters';
     }
 
     setErrors(newErrors);
@@ -569,16 +569,16 @@ export function SaudaFormModal({ open, onOpenChange, saudaId }: SaudaFormModalPr
                         className={`w-full px-3 py-2 border rounded-lg bg-background resize-none ${
                           errors.notes ? 'border-red-500' : 'border-border'
                         }`}
-                        placeholder="Additional notes (max 1000 characters)"
+                        placeholder="Additional notes (max 100 characters)"
                         rows={3}
-                        maxLength={1000}
+                        maxLength={100}
                       />
                       <div className="flex justify-between items-center mt-1">
                         {errors.notes && (
                           <p className="text-xs text-red-500">{errors.notes}</p>
                         )}
                         <p className="text-xs text-muted-foreground ml-auto">
-                          {(formData.notes || '').length}/1000
+                          {(formData.notes || '').length}/100
                         </p>
                       </div>
                     </div>
