@@ -14,7 +14,7 @@ export function BrokersTable() {
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [typeFilter, setTypeFilter] = useState<string | undefined>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [selectedBroker, setSelectedBroker] = useState<{ id: string; business_name?: string } | null>(null);
+  const [selectedBroker, setSelectedBroker] = useState<{ id: string; business_name?: string | undefined  } | null>(null);
 
   const filteredBrokers = brokers.filter((broker) => {
     const q = searchQuery.toLowerCase();
@@ -113,7 +113,7 @@ export function BrokersTable() {
                         isActive={broker.is_active}
                         onEdit={() => console.log('Edit', broker.id)}
                         onDelete={() => {
-                          setSelectedBroker(broker);
+                          setSelectedBroker({ id: broker.id, business_name: broker.business_name || '' });
                           setDeleteDialogOpen(true);
                         }}
                         permissionEntity="broker"
@@ -180,7 +180,7 @@ export function BrokersTable() {
                     isActive={broker.is_active}
                     onEdit={() => console.log('Edit', broker.id)}
                     onDelete={() => {
-                      setSelectedBroker(broker);
+                      setSelectedBroker(broker as { id: string; business_name?: string | undefined });
                       setDeleteDialogOpen(true);
                     }}
                     permissionEntity="broker"
