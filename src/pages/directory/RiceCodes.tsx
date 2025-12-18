@@ -54,6 +54,56 @@ export default function RiceCodesPage() {
     return saudas.filter(sauda => sauda.rice_code_id === riceCodeId).length;
   };
 
+  // Get sauda names for a rice code (for display in warning messages)
+  const getSaudaNamesForRiceCode = async (riceCodeId: string): Promise<string[]> => {
+    const saudasUsingRiceCode = saudas.filter(sauda => sauda.rice_code_id === riceCodeId);
+    
+    if (saudasUsingRiceCode.length === 0) return [];
+    
+    try {
+      // Fetch vendors, rice codes, and rice types to build display names
+      const [allVendors, allRiceCodes, allRiceTypes] = await Promise.all([
+        vendorsAPI.getAllVendors(false),
+        riceCodesAPI.getAllRiceCodes(),
+        riceCodesAPI.getRiceTypes()
+      ]);
+      
+      // Get the rice code being checked (might not be in allRiceCodes if it's being deleted)
+      const currentRiceCode = riceCodes.find(rc => rc.rice_code_id === riceCodeId);
+      
+      // Build sauda display names (Purchaser - Rice Code - Rice Type)
+      const saudaNames = saudasUsingRiceCode.map(sauda => {
+        const parts: string[] = [];
+        
+        // Get purchaser name
+        const purchaser = allVendors.find(v => v.id === sauda.purchaser_id);
+        if (purchaser?.business_name) parts.push(purchaser.business_name);
+        
+        // Get rice code name - use current rice code if not found in allRiceCodes
+        let riceCodeName = '';
+        const riceCode = allRiceCodes.find(rc => rc.rice_code_id === sauda.rice_code_id);
+        if (riceCode?.rice_code_name) {
+          riceCodeName = riceCode.rice_code_name;
+        } else if (sauda.rice_code_id === riceCodeId && currentRiceCode?.rice_code_name) {
+          // If this is the rice code being checked, use it from the current state
+          riceCodeName = currentRiceCode.rice_code_name;
+        }
+        if (riceCodeName) parts.push(riceCodeName);
+        
+        // Get rice type label
+        const riceTypeLabel = getRiceTypeLabel(sauda.rice_type, allRiceTypes);
+        if (riceTypeLabel) parts.push(riceTypeLabel);
+        
+        return parts.join(' - ') || 'Sauda';
+      });
+      
+      return saudaNames;
+    } catch (error) {
+      console.error('Failed to fetch sauda details:', error);
+      return [];
+    }
+  };
+
   const filtered = useMemo(() => {
     return riceCodes.filter((rc) => {
       const q = searchQuery.toLowerCase()
@@ -78,45 +128,38 @@ export default function RiceCodesPage() {
     
     // Check for foreign key constraint violation
     if (errorMessage.includes('violates foreign key constraint')) {
-      // Check for leads constraint
-      if (errorMessage.includes('leads_rice_code_id_fkey')) {
-        try {
-          // Fetch all leads and filter by rice_code_id
-          const allLeads = await leadsAPI.getAllLeads()
-          const leadsUsingRiceCode = allLeads.filter(lead => lead.rice_code_id === riceCodeId)
-          
-          if (leadsUsingRiceCode.length === 0) {
-            return 'This rice code cannot be deleted because it is being used by one or more leads. Please remove the rice code from all leads before deleting it.'
-          }
-          
-          // Build message with lead names in list format
+      const errorParts: string[] = []
+      
+      // Always check for leads usage
+      try {
+        const allLeads = await leadsAPI.getAllLeads()
+        const leadsUsingRiceCode = allLeads.filter(lead => lead.rice_code_id === riceCodeId)
+        
+        if (leadsUsingRiceCode.length > 0) {
           const leadCount = leadsUsingRiceCode.length
           const leadText = leadCount === 1 ? 'lead' : 'leads'
           const leadList = leadsUsingRiceCode.map((lead, index) => `${index + 1}. ${lead.company_name}`).join('\n')
-          
-          return `This rice code cannot be deleted because it is being used by ${leadCount} ${leadText}:\n\n${leadList}\n\nPlease remove the rice code from these leads before deleting it.`
-        } catch (fetchError) {
-          // If fetching leads fails, return generic message
-          return 'This rice code cannot be deleted because it is being used by one or more leads. Please remove the rice code from all leads before deleting it.'
+          errorParts.push(`${leadCount} ${leadText}:\n${leadList}`)
         }
+      } catch (fetchError) {
+        // If fetching leads fails, continue
       }
-      // Check for saudas constraint (if exists)
-      if (errorMessage.includes('saudas_rice_code_id_fkey')) {
-        try {
-          // Fetch all saudas and filter by rice_code_id
-          const allSaudas = await saudasAPI.getAllSaudas()
-          const saudasUsingRiceCode = allSaudas.filter(sauda => sauda.rice_code_id === riceCodeId)
-          
-          if (saudasUsingRiceCode.length === 0) {
-            return 'This rice code cannot be deleted because it is being used by one or more saudas. Please remove the rice code from all saudas before deleting it.'
-          }
-          
+      
+      // Always check for saudas usage
+      try {
+        const allSaudas = await saudasAPI.getAllSaudas()
+        const saudasUsingRiceCode = allSaudas.filter(sauda => sauda.rice_code_id === riceCodeId)
+        
+        if (saudasUsingRiceCode.length > 0) {
           // Fetch vendors, rice codes, and rice types to build display names
           const [allVendors, allRiceCodes, allRiceTypes] = await Promise.all([
             vendorsAPI.getAllVendors(false),
             riceCodesAPI.getAllRiceCodes(),
             riceCodesAPI.getRiceTypes()
           ])
+          
+          // Get the rice code being deleted (might not be in allRiceCodes if it's being deleted)
+          const deletedRiceCode = riceCodes.find(rc => rc.rice_code_id === riceCodeId)
           
           // Build sauda display names (Purchaser - Rice Code - Rice Type)
           const saudaNames = saudasUsingRiceCode.map(sauda => {
@@ -126,9 +169,16 @@ export default function RiceCodesPage() {
             const purchaser = allVendors.find(v => v.id === sauda.purchaser_id)
             if (purchaser?.business_name) parts.push(purchaser.business_name)
             
-            // Get rice code name
+            // Get rice code name - use deleted rice code if not found in allRiceCodes
+            let riceCodeName = ''
             const riceCode = allRiceCodes.find(rc => rc.rice_code_id === sauda.rice_code_id)
-            if (riceCode?.rice_code_name) parts.push(riceCode.rice_code_name)
+            if (riceCode?.rice_code_name) {
+              riceCodeName = riceCode.rice_code_name
+            } else if (sauda.rice_code_id === riceCodeId && deletedRiceCode?.rice_code_name) {
+              // If this is the rice code being deleted, use it from the current state
+              riceCodeName = deletedRiceCode.rice_code_name
+            }
+            if (riceCodeName) parts.push(riceCodeName)
             
             // Get rice type label
             const riceTypeLabel = getRiceTypeLabel(sauda.rice_type, allRiceTypes)
@@ -141,17 +191,21 @@ export default function RiceCodesPage() {
           const saudaText = saudaCount === 1 ? 'sauda' : 'saudas'
           // Format saudas as a list
           const saudaList = saudaNames.map((name, index) => `${index + 1}. ${name}`).join('\n')
-          
-          return `This rice code cannot be deleted because it is being used by ${saudaCount} ${saudaText}:\n\n${saudaList}\n\nPlease remove the rice code from these saudas before deleting it.`
-        } catch (fetchError) {
-          // If fetching saudas fails, return generic message
-          return 'This rice code cannot be deleted because it is being used by one or more saudas. Please remove the rice code from all saudas before deleting it.'
+          errorParts.push(`${saudaCount} ${saudaText}:\n${saudaList}`)
         }
+      } catch (fetchError) {
+        // If fetching saudas fails, continue
       }
+      
       // Check for lots constraint (if exists)
       if (errorMessage.includes('lots_rice_code_id_fkey')) {
-        return 'This rice code cannot be deleted because it is being used by one or more lots. Please remove the rice code from all lots before deleting it.'
+        errorParts.push('one or more lots')
       }
+      
+      if (errorParts.length > 0) {
+        return `This rice code cannot be deleted because it is being used in:\n\n${errorParts.join('\n\n')}\n\nPlease remove the rice code from all references before deleting it.`
+      }
+      
       // Generic foreign key error
       return 'This rice code cannot be deleted because it is being used by other records. Please remove all references to this rice code before deleting it.'
     }
@@ -231,22 +285,32 @@ export default function RiceCodesPage() {
                 <div className="ml-auto">
                   <ActionButtons
                     permissionEntity="riceCode"
-                    onEdit={isAdmin() ? () => {
+                    onEdit={isAdmin() ? async () => {
                       if (isRiceCodeInUse(rc.rice_code_id)) {
+                        const saudaNames = await getSaudaNamesForRiceCode(rc.rice_code_id);
+                        const saudaCount = saudaNames.length;
+                        const saudaText = saudaCount === 1 ? 'sauda' : 'saudas';
+                        const saudaList = saudaNames.map((name, index) => `${index + 1}. ${name}`).join('\n');
+                        
                         setAlertType('warning')
                         setAlertTitle('Cannot Modify Rice Code')
-                        setAlertMessage(`This rice code is currently used in ${getSaudaCountForRiceCode(rc.rice_code_id)} sauda(s). Please remove it from all saudas before editing.`);
+                        setAlertMessage(`This rice code is currently used in ${saudaCount} ${saudaText}:\n\n${saudaList}\n\nPlease remove it from all saudas before editing.`);
                         setAlertOpen(true);
                         return;
                       }
                       setEditRiceCode(rc)
                       setCreateOpen(true)
                     } : undefined}
-                    onDelete={isAdmin() ? () => {
+                    onDelete={isAdmin() ? async () => {
                       if (isRiceCodeInUse(rc.rice_code_id)) {
+                        const saudaNames = await getSaudaNamesForRiceCode(rc.rice_code_id);
+                        const saudaCount = saudaNames.length;
+                        const saudaText = saudaCount === 1 ? 'sauda' : 'saudas';
+                        const saudaList = saudaNames.map((name, index) => `${index + 1}. ${name}`).join('\n');
+                        
                         setAlertType('warning')
                         setAlertTitle('Cannot Modify Rice Code')
-                        setAlertMessage(`This rice code is currently used in ${getSaudaCountForRiceCode(rc.rice_code_id)} sauda(s). Please remove it from all saudas before deleting.`);
+                        setAlertMessage(`This rice code is currently used in ${saudaCount} ${saudaText}:\n\n${saudaList}\n\nPlease remove it from all saudas before deleting.`);
                         setAlertOpen(true);
                         return;
                       }
