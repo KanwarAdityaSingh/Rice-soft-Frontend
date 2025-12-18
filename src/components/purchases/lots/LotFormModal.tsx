@@ -328,7 +328,7 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
                           placeholder="Select Rice Type"
                           allowClear={true}
                           clearLabel="None"
-                        />
+                      />
                       )}
                       {errors.rice_type && (
                         <p className="text-xs text-red-500 mt-1">{errors.rice_type}</p>

@@ -5,9 +5,15 @@ import { LoadingSpinner } from '../../components/admin/shared/LoadingSpinner'
 import { EmptyState } from '../../components/admin/shared/EmptyState'
 import { ActionButtons } from '../../components/admin/shared/ActionButtons'
 import { ConfirmDialog } from '../../components/admin/shared/ConfirmDialog'
+import { AlertDialog } from '../../components/shared/AlertDialog'
 import { useRiceCodes } from '../../hooks/useRiceCodes'
 import { RiceCodeFormModal } from '../../components/admin/rice-codes/RiceCodeFormModal'
 import { RiceTypesModal } from '../../components/admin/rice-codes/RiceTypesModal'
+import { leadsAPI } from '../../services/leads.api'
+import { saudasAPI } from '../../services/saudas.api'
+import { vendorsAPI } from '../../services/vendors.api'
+import { riceCodesAPI } from '../../services/riceCodes.api'
+import { getRiceTypeLabel } from '../../utils/riceType'
 import type { RiceCode } from '../../types/entities'
 
 export default function RiceCodesPage() {
@@ -18,6 +24,10 @@ export default function RiceCodesPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editRiceCode, setEditRiceCode] = useState<RiceCode | null>(null)
   const [riceTypesOpen, setRiceTypesOpen] = useState(false)
+  const [alertOpen, setAlertOpen] = useState(false)
+  const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('error')
+  const [alertTitle, setAlertTitle] = useState('')
+  const [alertMessage, setAlertMessage] = useState('')
 
   const filtered = useMemo(() => {
     return riceCodes.filter((rc) => {
@@ -32,6 +42,95 @@ export default function RiceCodesPage() {
       month: 'short',
       day: 'numeric',
     })
+  }
+
+  // Parse error message to detect foreign key constraint errors and fetch related entities
+  const parseForeignKeyError = async (error: any, riceCodeId: string): Promise<string | null> => {
+    // Check error.data.error first (where the actual constraint error is), then fall back to other fields
+    const errorMessage = error?.data?.error || error?.error || error?.message || ''
+    
+    if (!errorMessage) return null
+    
+    // Check for foreign key constraint violation
+    if (errorMessage.includes('violates foreign key constraint')) {
+      // Check for leads constraint
+      if (errorMessage.includes('leads_rice_code_id_fkey')) {
+        try {
+          // Fetch all leads and filter by rice_code_id
+          const allLeads = await leadsAPI.getAllLeads()
+          const leadsUsingRiceCode = allLeads.filter(lead => lead.rice_code_id === riceCodeId)
+          
+          if (leadsUsingRiceCode.length === 0) {
+            return 'This rice code cannot be deleted because it is being used by one or more leads. Please remove the rice code from all leads before deleting it.'
+          }
+          
+          // Build message with lead names
+          const leadNames = leadsUsingRiceCode.map(lead => lead.company_name).join(', ')
+          const leadCount = leadsUsingRiceCode.length
+          const leadText = leadCount === 1 ? 'lead' : 'leads'
+          
+          return `This rice code cannot be deleted because it is being used by ${leadCount} ${leadText}: ${leadNames}. Please remove the rice code from these leads before deleting it.`
+        } catch (fetchError) {
+          // If fetching leads fails, return generic message
+          return 'This rice code cannot be deleted because it is being used by one or more leads. Please remove the rice code from all leads before deleting it.'
+        }
+      }
+      // Check for saudas constraint (if exists)
+      if (errorMessage.includes('saudas_rice_code_id_fkey')) {
+        try {
+          // Fetch all saudas and filter by rice_code_id
+          const allSaudas = await saudasAPI.getAllSaudas()
+          const saudasUsingRiceCode = allSaudas.filter(sauda => sauda.rice_code_id === riceCodeId)
+          
+          if (saudasUsingRiceCode.length === 0) {
+            return 'This rice code cannot be deleted because it is being used by one or more saudas. Please remove the rice code from all saudas before deleting it.'
+          }
+          
+          // Fetch vendors, rice codes, and rice types to build display names
+          const [allVendors, allRiceCodes, allRiceTypes] = await Promise.all([
+            vendorsAPI.getAllVendors(false),
+            riceCodesAPI.getAllRiceCodes(),
+            riceCodesAPI.getRiceTypes()
+          ])
+          
+          // Build sauda display names (Purchaser - Rice Code - Rice Type)
+          const saudaNames = saudasUsingRiceCode.map(sauda => {
+            const parts: string[] = []
+            
+            // Get purchaser name
+            const purchaser = allVendors.find(v => v.id === sauda.purchaser_id)
+            if (purchaser?.business_name) parts.push(purchaser.business_name)
+            
+            // Get rice code name
+            const riceCode = allRiceCodes.find(rc => rc.rice_code_id === sauda.rice_code_id)
+            if (riceCode?.rice_code_name) parts.push(riceCode.rice_code_name)
+            
+            // Get rice type label
+            const riceTypeLabel = getRiceTypeLabel(sauda.rice_type, allRiceTypes)
+            if (riceTypeLabel) parts.push(riceTypeLabel)
+            
+            return parts.join(' - ') || 'Sauda'
+          })
+          
+          const saudaCount = saudasUsingRiceCode.length
+          const saudaText = saudaCount === 1 ? 'sauda' : 'saudas'
+          const saudaNamesList = saudaNames.join(', ')
+          
+          return `This rice code cannot be deleted because it is being used by ${saudaCount} ${saudaText}: ${saudaNamesList}. Please remove the rice code from these saudas before deleting it.`
+        } catch (fetchError) {
+          // If fetching saudas fails, return generic message
+          return 'This rice code cannot be deleted because it is being used by one or more saudas. Please remove the rice code from all saudas before deleting it.'
+        }
+      }
+      // Check for lots constraint (if exists)
+      if (errorMessage.includes('lots_rice_code_id_fkey')) {
+        return 'This rice code cannot be deleted because it is being used by one or more lots. Please remove the rice code from all lots before deleting it.'
+      }
+      // Generic foreign key error
+      return 'This rice code cannot be deleted because it is being used by other records. Please remove all references to this rice code before deleting it.'
+    }
+    
+    return null
   }
 
   return (
@@ -117,14 +216,46 @@ export default function RiceCodesPage() {
         onOpenChange={setDeleteDialogOpen}
         onConfirm={async () => {
           if (selectedId) {
-            await deleteRiceCode(selectedId)
-            setSelectedId(null)
-            setDeleteDialogOpen(false)
+            try {
+              await deleteRiceCode(selectedId)
+              setSelectedId(null)
+              setDeleteDialogOpen(false)
+            } catch (error: any) {
+              // Parse foreign key constraint errors and fetch related leads
+              const friendlyMessage = await parseForeignKeyError(error, selectedId)
+              
+              if (friendlyMessage) {
+                setAlertType('error')
+                setAlertTitle('Cannot Delete Rice Code')
+                setAlertMessage(friendlyMessage)
+                setAlertOpen(true)
+              } else {
+                // Generic error handling
+                setAlertType('error')
+                setAlertTitle('Failed to Delete Rice Code')
+                setAlertMessage(
+                  error?.message || 
+                  error?.data?.message || 
+                  error?.error || 
+                  'An error occurred while deleting the rice code. Please try again.'
+                )
+                setAlertOpen(true)
+              }
+              setDeleteDialogOpen(false)
+            }
           }
         }}
         title="Delete Rice Code"
         description="Are you sure you want to delete this rice code? This action cannot be undone."
         confirmText="Delete"
+      />
+
+      <AlertDialog
+        open={alertOpen}
+        onOpenChange={setAlertOpen}
+        type={alertType}
+        title={alertTitle}
+        message={alertMessage}
       />
 
       <RiceCodeFormModal
