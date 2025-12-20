@@ -65,10 +65,16 @@ export function VendorPreviewDialog({ open, onOpenChange, formData, onConfirm }:
     );
   };
 
-  // Extract first name from contact person
-  const getFirstName = (contactPerson: string | undefined): string => {
-    if (!contactPerson) return '';
-    return contactPerson.split(' ')[0];
+  // Extract first name from first contact person
+  const getFirstName = (): string => {
+    const firstContact = formData.contact_persons?.[0];
+    if (!firstContact?.name) return '';
+    return firstContact.name.split(' ')[0];
+  };
+
+  // Get primary email from first contact person
+  const getPrimaryEmail = (): string | undefined => {
+    return formData.contact_persons?.[0]?.emails?.[0];
   };
 
   return (
@@ -110,15 +116,29 @@ export function VendorPreviewDialog({ open, onOpenChange, formData, onConfirm }:
               {/* Basic Information */}
               <InfoSection title="Basic Information" icon={Building2}>
                 <InfoRow label="Business Name" value={formData.business_name} />
-                <InfoRow label="Contact Person" value={formData.contact_person} />
-                <InfoRow label="Email" value={formData.email} />
-                <InfoRow label="Phone" value={formData.phone} />
                 <InfoRow label="Type" value={getTypeLabel(formData.type)} />
                 <InfoRow 
                   label="Status" 
                   value={formData.is_active !== false ? 'Active' : 'Inactive'} 
                 />
               </InfoSection>
+
+              {/* Contact Persons */}
+              {formData.contact_persons && formData.contact_persons.length > 0 && (
+                <InfoSection title="Contact Persons" icon={UserCheck}>
+                  {formData.contact_persons.map((contact, idx) => (
+                    <div key={idx} className="mb-3 p-2 bg-muted/30 rounded-lg">
+                      <div className="font-medium text-foreground mb-1">{contact.name}</div>
+                      {contact.phones?.length > 0 && (
+                        <div className="text-xs">📞 {contact.phones.join(', ')}</div>
+                      )}
+                      {contact.emails && contact.emails.length > 0 && (
+                        <div className="text-xs">✉️ {contact.emails.join(', ')}</div>
+                      )}
+                    </div>
+                  ))}
+                </InfoSection>
+              )}
 
               {/* Address Information */}
               {formData.address && (
@@ -185,9 +205,9 @@ export function VendorPreviewDialog({ open, onOpenChange, formData, onConfirm }:
             </div>
 
             {/* User Account Information */}
-            {formData.contact_person && (
-              <div className="bg-primary/10 border border-primary/20 rounded-lg p-3 text-sm whitespace-nowrap">
-                A user account for this vendor will be created with username {getFirstName(formData.contact_person)} and password defaultPassword123
+            {formData.contact_persons?.[0]?.name && getPrimaryEmail() && (
+              <div className="bg-primary/10 border border-primary/20 rounded-lg p-3 text-sm">
+                A user account for this vendor will be created with username {getFirstName()} and email {getPrimaryEmail()}
               </div>
             )}
 

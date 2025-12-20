@@ -29,10 +29,11 @@ export function VendorsTable() {
   };
 
   const filteredVendors = vendors.filter((vendor) => {
+    const primaryContact = vendor.contact_persons?.[0];
     const matchesSearch = 
       vendor.business_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      vendor.contact_person.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      vendor.email.toLowerCase().includes(searchQuery.toLowerCase());
+      (primaryContact?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (primaryContact?.emails?.[0] || '').toLowerCase().includes(searchQuery.toLowerCase());
     
     const matchesStatus = statusFilter ? (statusFilter === 'active' ? vendor.is_active : !vendor.is_active) : true;
     const matchesType = typeFilter ? vendor.type === typeFilter : true;
@@ -94,9 +95,9 @@ export function VendorsTable() {
                 {filteredVendors.map((vendor) => (
                   <tr key={vendor.id} className="border-b border-border/60 hover:bg-muted/30 transition-colors">
                     <td className="py-3 px-4 text-sm font-medium">{vendor.business_name}</td>
-                    <td className="py-3 px-4 text-sm">{vendor.contact_person}</td>
-                    <td className="py-3 px-4 text-sm">{vendor.email}</td>
-                    <td className="py-3 px-4 text-sm">{vendor.phone}</td>
+                    <td className="py-3 px-4 text-sm">{vendor.contact_persons?.[0]?.name || 'N/A'}</td>
+                    <td className="py-3 px-4 text-sm">{vendor.contact_persons?.[0]?.emails?.[0] || 'N/A'}</td>
+                    <td className="py-3 px-4 text-sm">{vendor.contact_persons?.[0]?.phones?.[0] || 'N/A'}</td>
                     <td className="py-3 px-4 text-sm">{getTypeLabel(vendor.type)}</td>
                     <td className="py-3 px-4 text-sm">{vendor.address.city}</td>
                     <td className="py-3 px-4 text-right">

@@ -7,11 +7,12 @@ import { useVendors } from '../../../hooks/useVendors';
 import { vendorsAPI } from '../../../services/vendors.api';
 import { leadsAPI } from '../../../services/leads.api';
 import { pincodeAPI } from '../../../services/pincode.api';
+import { bankAPI } from '../../../services/bank.api';
 import { validateEmail, validateGST, validatePAN, validateGoogleLocationLink } from '../../../utils/validation';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { VendorPreviewDialog } from './VendorPreviewDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
-import type { CreateVendorRequest, UpdateVendorRequest, Lead, VendorBankDetails } from '../../../types/entities';
+import type { CreateVendorRequest, UpdateVendorRequest, Lead, VendorBankDetails, ContactPerson } from '../../../types/entities';
 
 interface VendorFormModalProps {
   open: boolean;
@@ -25,9 +26,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
   const isEditMode = !!vendorId;
   const [formData, setFormData] = useState<CreateVendorRequest>({
     business_name: '',
-    contact_person: '',
-    email: '',
-    phone: '',
+    contact_persons: [{ name: '', phones: [''], emails: [''] }],
     address: {
       street: '',
       city: '',
@@ -100,9 +99,13 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
       
       setFormData({
         business_name: vendor.business_name || '',
-        contact_person: vendor.contact_person || '',
-        email: vendor.email || '',
-        phone: vendor.phone || '',
+        contact_persons: vendor.contact_persons && vendor.contact_persons.length > 0 
+          ? vendor.contact_persons.map(cp => ({
+              name: cp.name || '',
+              phones: cp.phones?.length > 0 ? cp.phones : [''],
+              emails: (cp.emails?.length ?? 0) > 0 ? cp.emails : [''],
+            }))
+          : [{ name: '', phones: [''], emails: [''] }],
         address: {
           street: vendor.address?.street || '',
           city: vendor.address?.city || '',
@@ -163,9 +166,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
   const resetForm = () => {
     setFormData({
       business_name: '',
-      contact_person: '',
-      email: '',
-      phone: '',
+      contact_persons: [{ name: '', phones: [''], emails: [''] }],
       address: {
         street: '',
         city: '',
@@ -192,6 +193,83 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
     setErrors({});
     setOriginalGstNumber('');
     setOriginalPanNumber('');
+  };
+
+  // Contact persons management functions
+  const addContactPerson = () => {
+    setFormData({
+      ...formData,
+      contact_persons: [...formData.contact_persons, { name: '', phones: [''], emails: [''] }]
+    });
+  };
+
+  const removeContactPerson = (index: number) => {
+    if (formData.contact_persons.length > 1) {
+      setFormData({
+        ...formData,
+        contact_persons: formData.contact_persons.filter((_, i) => i !== index)
+      });
+    }
+  };
+
+  const updateContactPerson = (index: number, field: keyof ContactPerson, value: any) => {
+    const updated = [...formData.contact_persons];
+    updated[index] = { ...updated[index], [field]: value };
+    setFormData({ ...formData, contact_persons: updated });
+  };
+
+  const addPhone = (personIndex: number) => {
+    const updated = [...formData.contact_persons];
+    updated[personIndex] = { 
+      ...updated[personIndex], 
+      phones: [...updated[personIndex].phones, ''] 
+    };
+    setFormData({ ...formData, contact_persons: updated });
+  };
+
+  const removePhone = (personIndex: number, phoneIndex: number) => {
+    const updated = [...formData.contact_persons];
+    if (updated[personIndex].phones.length > 1) {
+      updated[personIndex] = {
+        ...updated[personIndex],
+        phones: updated[personIndex].phones.filter((_, i) => i !== phoneIndex)
+      };
+      setFormData({ ...formData, contact_persons: updated });
+    }
+  };
+
+  const updatePhone = (personIndex: number, phoneIndex: number, value: string) => {
+    const updated = [...formData.contact_persons];
+    updated[personIndex].phones[phoneIndex] = value;
+    setFormData({ ...formData, contact_persons: updated });
+  };
+
+  const addEmail = (personIndex: number) => {
+    const updated = [...formData.contact_persons];
+    updated[personIndex] = {
+      ...updated[personIndex],
+      emails: [...(updated[personIndex].emails || []), '']
+    };
+    setFormData({ ...formData, contact_persons: updated });
+  };
+
+  const removeEmail = (personIndex: number, emailIndex: number) => {
+    const updated = [...formData.contact_persons];
+    const emails = updated[personIndex].emails || [];
+    if (emails.length > 0) {
+      updated[personIndex] = {
+        ...updated[personIndex],
+        emails: emails.filter((_, i) => i !== emailIndex)
+      };
+      setFormData({ ...formData, contact_persons: updated });
+    }
+  };
+
+  const updateEmail = (personIndex: number, emailIndex: number, value: string) => {
+    const updated = [...formData.contact_persons];
+    if (!updated[personIndex].emails) updated[personIndex].emails = [];
+    updated[personIndex].emails![emailIndex] = value;
+    setFormData({ ...formData, contact_persons: updated });
   };
 
   const handleGSTLookup = async () => {
@@ -289,9 +367,10 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
       const businessName = mapped?.business_name || formData.business_name;
       
       // Populate contact person if PAN is for a person (individual)
-      const contactPerson = panData?.category === 'person' && panData?.name 
-        ? panData.name 
-        : formData.contact_person;
+      let updatedContactPersons = [...formData.contact_persons];
+      if (panData?.category === 'person' && panData?.name) {
+        updatedContactPersons[0] = { ...updatedContactPersons[0], name: panData.name };
+      }
       
       // Populate address fields (only fill non-empty values)
       const addressUpdate: any = { ...formData.address };
@@ -321,7 +400,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
       setFormData({
         ...formData,
         business_name: businessName,
-        contact_person: contactPerson,
+        contact_persons: updatedContactPersons,
         address: addressUpdate,
         business_details: businessDetailsUpdate,
       });
@@ -379,14 +458,61 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
     }
   };
 
+  const [ifscLoading, setIfscLoading] = useState(false);
+
+  const handleIFSCLookup = async (ifscCode: string) => {
+    // Only lookup if IFSC is exactly 11 characters
+    if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifscCode)) {
+      return;
+    }
+
+    setIfscLoading(true);
+    try {
+      const response = await bankAPI.lookupIFSC(ifscCode);
+      
+      if (response.bank_details) {
+        setFormData({
+          ...formData,
+          bank_details: {
+            ...formData.bank_details,
+            bank_name: response.bank_details.bank_name || formData.bank_details?.bank_name || '',
+            branch: response.bank_details.branch || formData.bank_details?.branch || '',
+            ifsc_code: response.bank_details.ifsc_code || ifscCode,
+          }
+        });
+      }
+    } catch (error: any) {
+      console.error('IFSC lookup error:', error);
+      setErrors({ ...errors, ifsc_code: error?.message || 'IFSC code not found' });
+    } finally {
+      setIfscLoading(false);
+    }
+  };
+
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
     if (!formData.business_name) newErrors.business_name = 'Business name required';
-    if (!formData.contact_person) newErrors.contact_person = 'Contact person required';
-    // Email is optional, but if provided, must be valid
-    if (formData.email && !validateEmail(formData.email)) newErrors.email = 'Valid email required';
-    if (!formData.phone) newErrors.phone = 'Phone required';
+    
+    // Validate contact persons
+    if (!formData.contact_persons || formData.contact_persons.length === 0) {
+      newErrors.contact_persons = 'At least one contact person is required';
+    } else {
+      formData.contact_persons.forEach((cp, idx) => {
+        if (!cp.name || cp.name.trim().length < 2) {
+          newErrors[`contact_person_${idx}_name`] = 'Name required (min 2 chars)';
+        }
+        if (!cp.phones || cp.phones.length === 0 || !cp.phones[0]) {
+          newErrors[`contact_person_${idx}_phone`] = 'At least one phone required';
+        }
+        // Validate emails if provided
+        cp.emails?.forEach((email, emailIdx) => {
+          if (email && !validateEmail(email)) {
+            newErrors[`contact_person_${idx}_email_${emailIdx}`] = 'Valid email required';
+          }
+        });
+      });
+    }
     if (!formData.address.street) newErrors.street = 'Street required';
     if (!formData.address.city) newErrors.city = 'City required';
     if (!formData.address.state) newErrors.state = 'State required';
@@ -632,55 +758,145 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
                     {errors.business_name && <p className="mt-1 text-xs text-red-600">{errors.business_name}</p>}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">Contact Person *</label>
-                      <input
-                        type="text"
-                        value={formData.contact_person}
-                        onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })}
-                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                      />
-                      {errors.contact_person && <p className="mt-1 text-xs text-red-600">{errors.contact_person}</p>}
+                  {/* Contact Persons Section */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-semibold">Contact Persons *</label>
+                      <button
+                        type="button"
+                        onClick={addContactPerson}
+                        className="text-xs text-primary hover:text-primary/80 font-medium"
+                      >
+                        + Add Contact Person
+                      </button>
                     </div>
-
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">Email</label>
-                      <input
-                        type="email"
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                      />
-                      {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
-                    </div>
+                    {errors.contact_persons && <p className="text-xs text-red-600">{errors.contact_persons}</p>}
+                    
+                    {formData.contact_persons.map((contactPerson, personIdx) => (
+                      <div key={personIdx} className="p-3 border border-border rounded-lg space-y-3 bg-muted/20">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-muted-foreground">Contact Person {personIdx + 1}</span>
+                          {formData.contact_persons.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeContactPerson(personIdx)}
+                              className="text-xs text-red-500 hover:text-red-700"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        
+                        {/* Name */}
+                        <div>
+                          <label className="text-xs font-medium mb-1 block">Name *</label>
+                          <input
+                            type="text"
+                            value={contactPerson.name}
+                            onChange={(e) => updateContactPerson(personIdx, 'name', e.target.value)}
+                            className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                            placeholder="Contact person name"
+                          />
+                          {errors[`contact_person_${personIdx}_name`] && (
+                            <p className="mt-1 text-xs text-red-600">{errors[`contact_person_${personIdx}_name`]}</p>
+                          )}
+                        </div>
+                        
+                        {/* Phones */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-xs font-medium">Phone Numbers *</label>
+                            <button
+                              type="button"
+                              onClick={() => addPhone(personIdx)}
+                              className="text-xs text-primary hover:text-primary/80"
+                            >
+                              + Add
+                            </button>
+                          </div>
+                          <div className="space-y-2">
+                            {contactPerson.phones.map((phone, phoneIdx) => (
+                              <div key={phoneIdx} className="flex gap-2">
+                                <input
+                                  type="tel"
+                                  value={phone}
+                                  onChange={(e) => updatePhone(personIdx, phoneIdx, e.target.value)}
+                                  className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                                  placeholder="Phone number"
+                                />
+                                {contactPerson.phones.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => removePhone(personIdx, phoneIdx)}
+                                    className="px-2 text-red-500 hover:text-red-700"
+                                  >
+                                    ×
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                          {errors[`contact_person_${personIdx}_phone`] && (
+                            <p className="mt-1 text-xs text-red-600">{errors[`contact_person_${personIdx}_phone`]}</p>
+                          )}
+                        </div>
+                        
+                        {/* Emails */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-xs font-medium">Email Addresses (optional)</label>
+                            <button
+                              type="button"
+                              onClick={() => addEmail(personIdx)}
+                              className="text-xs text-primary hover:text-primary/80"
+                            >
+                              + Add
+                            </button>
+                          </div>
+                          <div className="space-y-2">
+                            {(contactPerson.emails || []).map((email, emailIdx) => (
+                              <div key={emailIdx} className="flex gap-2">
+                                <input
+                                  type="email"
+                                  value={email}
+                                  onChange={(e) => updateEmail(personIdx, emailIdx, e.target.value)}
+                                  className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                                  placeholder="Email address"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => removeEmail(personIdx, emailIdx)}
+                                  className="px-2 text-red-500 hover:text-red-700"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          {contactPerson.emails?.map((_, emailIdx) => (
+                            errors[`contact_person_${personIdx}_email_${emailIdx}`] && (
+                              <p key={emailIdx} className="mt-1 text-xs text-red-600">
+                                {errors[`contact_person_${personIdx}_email_${emailIdx}`]}
+                              </p>
+                            )
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">Phone *</label>
-                      <input
-                        type="tel"
-                        value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                      />
-                      {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone}</p>}
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">Type *</label>
-                      <CustomSelect
-                        value={formData.type}
-                        onChange={(value) => setFormData({ ...formData, type: value as any })}
-                        options={[
-                          { value: 'purchaser', label: 'Debtor' },
-                          { value: 'seller', label: 'Creditor' },
-                          { value: 'both', label: 'Both' }
-                        ]}
-                        placeholder="Select Type"
-                      />
-                    </div>
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Type *</label>
+                    <CustomSelect
+                      value={formData.type}
+                      onChange={(value) => setFormData({ ...formData, type: value as any })}
+                      options={[
+                        { value: 'purchaser', label: 'Debtor' },
+                        { value: 'seller', label: 'Creditor' },
+                        { value: 'both', label: 'Both' }
+                      ]}
+                      placeholder="Select Type"
+                    />
                   </div>
 
                   <button type="button" onClick={() => setStep(2)} className="btn-primary w-full">
@@ -852,23 +1068,42 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
 
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">IFSC Code</label>
-                    <input
-                      type="text"
-                      value={formData.bank_details?.ifsc_code || ''}
-                      onChange={(e) => setFormData({ 
-                        ...formData, 
-                        bank_details: { 
-                          ...formData.bank_details, 
-                          ifsc_code: e.target.value.toUpperCase() 
-                        } 
-                      })}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                      placeholder="ABCD0123456"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={formData.bank_details?.ifsc_code || ''}
+                        onChange={(e) => {
+                          const value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 11);
+                          setFormData({ 
+                            ...formData, 
+                            bank_details: { 
+                              ...formData.bank_details, 
+                              ifsc_code: value 
+                            } 
+                          });
+                          // Auto-lookup when 11 characters are entered
+                          if (value.length === 11) {
+                            handleIFSCLookup(value);
+                          }
+                        }}
+                        className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                        placeholder="HDFC0001234"
+                        maxLength={11}
+                      />
+                      <button 
+                        type="button" 
+                        onClick={() => handleIFSCLookup(formData.bank_details?.ifsc_code || '')} 
+                        disabled={ifscLoading || !formData.bank_details?.ifsc_code || formData.bank_details.ifsc_code.length !== 11}
+                        className="btn-secondary flex items-center gap-2"
+                      >
+                        {ifscLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    {errors.ifsc_code && <p className="mt-1 text-xs text-red-600">{errors.ifsc_code}</p>}
                   </div>
 
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block">Bank Name</label>
+                    <label className="text-sm font-medium mb-1.5 block">Bank Name (auto-filled)</label>
                     <input
                       type="text"
                       value={formData.bank_details?.bank_name || ''}
@@ -884,7 +1119,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
                   </div>
 
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block">Branch</label>
+                    <label className="text-sm font-medium mb-1.5 block">Branch (auto-filled)</label>
                     <input
                       type="text"
                       value={formData.bank_details?.branch || ''}

@@ -259,7 +259,7 @@ export function ConversionDialog({ open, onOpenChange, lead, onSuccess }: Conver
                       onChange={(value) => setFormData({ ...formData, vendor_id: value || '' })}
                       options={vendors.map((vendor) => ({
                         value: vendor.id,
-                        label: `${vendor.business_name}${vendor.contact_person ? ` (${vendor.contact_person})` : ''}`
+                        label: `${vendor.business_name}${vendor.contact_persons?.[0]?.name ? ` (${vendor.contact_persons[0].name})` : ''}`
                       }))}
                       placeholder="Select a vendor"
                     />

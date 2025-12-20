@@ -46,5 +46,15 @@ export const brokersAPI = {
   quickCreateFromPAN: (data: any) => {
     return apiService.post<Broker>('/brokers/quickCreateFromPAN', data);
   },
+
+  // Lookup GST
+  lookupGST: (gstNumber: string) => {
+    return apiService.get<{ gst_data: any; mapped_data: any }>(`/brokers/lookupGST?gst_number=${gstNumber}`);
+  },
+
+  // Quick create from GST
+  quickCreateFromGST: (data: any) => {
+    return apiService.post<Broker>('/brokers/quickCreateFromGST', data);
+  },
 };
 

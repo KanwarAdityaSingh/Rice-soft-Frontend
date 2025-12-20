@@ -18,19 +18,13 @@ export function BrokersTable() {
 
   const filteredBrokers = brokers.filter((broker) => {
     const q = searchQuery.toLowerCase();
-    
-    // Search in contact_persons if available, otherwise fall back to contact_person
-    const contactPersonMatch = broker.contact_persons && broker.contact_persons.length > 0
-      ? broker.contact_persons.some(cp => 
-          cp.name?.toLowerCase().includes(q) || 
-          cp.phones?.some(p => p?.toLowerCase().includes(q))
-        )
-      : (broker.contact_person?.toLowerCase().includes(q) || false);
+    const primaryContact = broker.contact_persons?.[0];
     
     const matchesSearch = 
       (broker.business_name?.toLowerCase().includes(q) || false) ||
-      contactPersonMatch ||
-      broker.email.toLowerCase().includes(q);
+      (primaryContact?.name?.toLowerCase().includes(q) || false) ||
+      (primaryContact?.emails?.[0]?.toLowerCase().includes(q) || false) ||
+      (primaryContact?.phones?.[0]?.includes(q) || false);
     
     const matchesStatus = statusFilter ? (statusFilter === 'active' ? broker.is_active : !broker.is_active) : true;
     const matchesType = typeFilter ? broker.type === typeFilter : true;
@@ -96,16 +90,9 @@ export function BrokersTable() {
                 {filteredBrokers.map((broker) => (
                   <tr key={broker.id} className="border-b border-border/60 hover:bg-muted/30 transition-colors">
                     <td className="py-3 px-4 text-sm font-medium">{broker.business_name || 'N/A'}</td>
-                    <td className="py-3 px-4 text-sm">
-                      {broker.contact_persons && broker.contact_persons.length > 0
-                        ? broker.contact_persons
-                            .filter(cp => cp.name && cp.name.trim().length > 0)
-                            .map(cp => cp.name.trim())
-                            .join(', ') || (broker.contact_person || 'N/A')
-                        : (broker.contact_person || 'N/A')}
-                    </td>
-                    <td className="py-3 px-4 text-sm">{broker.email}</td>
-                    <td className="py-3 px-4 text-sm">{broker.phone}</td>
+                    <td className="py-3 px-4 text-sm">{broker.contact_persons?.[0]?.name || 'N/A'}</td>
+                    <td className="py-3 px-4 text-sm">{broker.contact_persons?.[0]?.emails?.[0] || 'N/A'}</td>
+                    <td className="py-3 px-4 text-sm">{broker.contact_persons?.[0]?.phones?.[0] || 'N/A'}</td>
                     <td className="py-3 px-4 text-sm capitalize">{broker.type}</td>
                     <td className="py-3 px-4 text-sm">{broker.address.city}</td>
                     <td className="py-3 px-4 text-right">
@@ -137,12 +124,7 @@ export function BrokersTable() {
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-base truncate">{broker.business_name || 'N/A'}</h3>
                     <p className="text-sm text-muted-foreground truncate">
-                      {broker.contact_persons && broker.contact_persons.length > 0
-                        ? broker.contact_persons
-                            .filter(cp => cp.name && cp.name.trim().length > 0)
-                            .map(cp => cp.name.trim())
-                            .join(', ') || (broker.contact_person || 'N/A')
-                        : (broker.contact_person || 'N/A')}
+                      {broker.contact_persons?.[0]?.name || 'N/A'}
                     </p>
                   </div>
                   <span className={`px-2 py-1 rounded-md text-xs whitespace-nowrap ${
@@ -158,11 +140,11 @@ export function BrokersTable() {
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <span className="text-muted-foreground text-xs">Email</span>
-                    <p className="truncate">{broker.email}</p>
+                    <p className="truncate">{broker.contact_persons?.[0]?.emails?.[0] || 'N/A'}</p>
                   </div>
                   <div>
                     <span className="text-muted-foreground text-xs">Phone</span>
-                    <p className="truncate">{broker.phone}</p>
+                    <p className="truncate">{broker.contact_persons?.[0]?.phones?.[0] || 'N/A'}</p>
                   </div>
                   <div>
                     <span className="text-muted-foreground text-xs">Type</span>

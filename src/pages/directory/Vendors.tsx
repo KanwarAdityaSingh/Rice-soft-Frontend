@@ -47,11 +47,12 @@ export default function VendorsPage() {
   const filtered = useMemo(() => {
     return vendors.filter((v) => {
       const q = searchQuery.toLowerCase()
+      const primaryContact = v.contact_persons?.[0]
       const matchesSearch =
         v.business_name.toLowerCase().includes(q) ||
-        v.contact_person.toLowerCase().includes(q) ||
-        v.email.toLowerCase().includes(q) ||
-        v.phone.includes(searchQuery)
+        (primaryContact?.name || '').toLowerCase().includes(q) ||
+        (primaryContact?.emails?.[0] || '').toLowerCase().includes(q) ||
+        (primaryContact?.phones?.[0] || '').includes(searchQuery)
 
       const matchesStatus = statusFilter ? (statusFilter === 'active' ? v.is_active : !v.is_active) : true
       const matchesType = typeFilter ? v.type === typeFilter : true
@@ -254,18 +255,26 @@ export default function VendorsPage() {
                 <span className={`whitespace-nowrap px-2 py-1 rounded-md text-[10px] ${v.is_active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground'}`}>{v.is_active ? 'Active' : 'Inactive'}</span>
               </div>
               <div className="mt-3 grid gap-1.5 text-xs">
-                <div className="inline-flex items-center gap-2 text-foreground/90">
-                  <span className="text-muted-foreground w-16">Contact</span>
-                  <span className="font-medium">{v.contact_person.trim()}</span>
-                </div>
-                <div className="inline-flex items-center gap-2">
-                  <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="truncate">{v.email.trim()}</span>
-                </div>
-                <div className="inline-flex items-center gap-2">
-                  <Phone className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span>{v.phone.trim()}</span>
-                </div>
+                {v.contact_persons?.[0] && (
+                  <>
+                    <div className="inline-flex items-center gap-2 text-foreground/90">
+                      <span className="text-muted-foreground w-16">Contact</span>
+                      <span className="font-medium">{v.contact_persons[0].name?.trim() || 'N/A'}</span>
+                    </div>
+                    {v.contact_persons[0].emails?.[0] && (
+                      <div className="inline-flex items-center gap-2">
+                        <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="truncate">{v.contact_persons[0].emails[0].trim()}</span>
+                      </div>
+                    )}
+                    {v.contact_persons[0].phones?.[0] && (
+                      <div className="inline-flex items-center gap-2">
+                        <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span>{v.contact_persons[0].phones[0].trim()}</span>
+                      </div>
+                    )}
+                  </>
+                )}
                 
                 {/* Address Details */}
                 {v.address?.street && (

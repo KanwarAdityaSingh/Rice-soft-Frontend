@@ -65,10 +65,26 @@ export function BrokerPreviewDialog({ open, onOpenChange, formData, onConfirm }:
     );
   };
 
-  // Extract first name from contact person
-  const getFirstName = (contactPerson: string | undefined): string => {
-    if (!contactPerson) return '';
-    return contactPerson.split(' ')[0];
+  // Extract first name from first contact person
+  const getFirstName = (): string => {
+    const firstContact = formData.contact_persons?.[0];
+    if (!firstContact?.name) return '';
+    return firstContact.name.split(' ')[0];
+  };
+
+  // Get primary email from first contact person
+  const getPrimaryEmail = (): string | undefined => {
+    return formData.contact_persons?.[0]?.emails?.[0];
+  };
+
+  const getBusinessTypeLabel = (type: string | undefined): string => {
+    switch (type) {
+      case 'individual': return 'Individual (Person)';
+      case 'company': return 'Company (Pvt Ltd / Ltd)';
+      case 'partnership': return 'Partnership Firm';
+      case 'llp': return 'LLP (Limited Liability Partnership)';
+      default: return type || 'Not set';
+    }
   };
 
   return (
@@ -110,41 +126,41 @@ export function BrokerPreviewDialog({ open, onOpenChange, formData, onConfirm }:
               {/* Basic Information */}
               <InfoSection title="Basic Information" icon={Building2}>
                 <InfoRow label="Business Name" value={formData.business_name} />
-                {formData.contact_persons && formData.contact_persons.length > 0 && (
-                  <div className="flex justify-between items-start">
-                    <span className="text-muted-foreground min-w-[120px]">Contact Persons:</span>
-                    <div className="text-foreground font-medium text-right flex-1">
-                      {formData.contact_persons
-                        .filter(cp => cp.name && cp.name.trim().length > 0)
-                        .map((cp, idx) => (
-                          <div key={idx} className="mb-1">
-                            <div className="font-semibold">{cp.name}</div>
-                            {cp.phones && cp.phones.length > 0 && (
-                              <div className="text-xs text-muted-foreground mt-0.5">
-                                Phones: {cp.phones.filter(p => p && p.trim().length > 0).join(', ')}
-                              </div>
-                            )}
-                            {cp.emails && cp.emails.length > 0 && (
-                              <div className="text-xs text-muted-foreground mt-0.5">
-                                Emails: {cp.emails.filter(e => e && e.trim().length > 0).join(', ')}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                )}
-                {(!formData.contact_persons || formData.contact_persons.length === 0) && formData.contact_person && (
-                  <InfoRow label="Contact Person" value={formData.contact_person} />
-                )}
-                <InfoRow label="Email" value={formData.email} />
-                <InfoRow label="Phone" value={formData.phone} />
                 <InfoRow label="Type" value={getTypeLabel(formData.type)} />
                 <InfoRow 
                   label="Status" 
                   value={formData.is_active !== false ? 'Active' : 'Inactive'} 
                 />
               </InfoSection>
+
+              {/* Contact Persons */}
+              {formData.contact_persons && formData.contact_persons.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <Building2 className="h-4 w-4" />
+                    <span>Contact Persons</span>
+                  </div>
+                  <div className="pl-6 space-y-2">
+                    {formData.contact_persons
+                      .filter(cp => cp.name && cp.name.trim().length > 0)
+                      .map((cp, idx) => (
+                        <div key={idx} className="p-2 bg-muted/30 rounded-lg">
+                          <div className="font-medium text-foreground">{cp.name}</div>
+                          {cp.phones && cp.phones.filter(p => p?.trim()).length > 0 && (
+                            <div className="text-xs text-muted-foreground mt-1">
+                              📞 {cp.phones.filter(p => p?.trim()).join(', ')}
+                            </div>
+                          )}
+                          {cp.emails && cp.emails.filter(e => e?.trim()).length > 0 && (
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              ✉️ {cp.emails.filter(e => e?.trim()).join(', ')}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
 
               {/* Address Information */}
               {formData.address && (
@@ -161,6 +177,14 @@ export function BrokerPreviewDialog({ open, onOpenChange, formData, onConfirm }:
               {formData.business_details && (
                 <InfoSection title="Business Details" icon={Briefcase}>
                   <InfoRow 
+                    label="Business Type" 
+                    value={getBusinessTypeLabel(formData.business_details.business_type)} 
+                  />
+                  <InfoRow 
+                    label="GST Number" 
+                    value={formData.business_details.gst_number || undefined} 
+                  />
+                  <InfoRow 
                     label="PAN Number" 
                     value={formData.business_details.pan_number || undefined} 
                   />
@@ -174,9 +198,9 @@ export function BrokerPreviewDialog({ open, onOpenChange, formData, onConfirm }:
             </div>
 
             {/* User Account Information */}
-            {formData.contact_person && (
-              <div className="bg-primary/10 border border-primary/20 rounded-lg p-3 text-sm whitespace-nowrap">
-                A user account for this broker will be created with username {getFirstName(formData.contact_person)} and password defaultPassword123
+            {formData.contact_persons?.[0]?.name && getPrimaryEmail() && (
+              <div className="bg-primary/10 border border-primary/20 rounded-lg p-3 text-sm mt-6">
+                A user account for this broker will be created with username {getFirstName()} and email {getPrimaryEmail()}
               </div>
             )}
 

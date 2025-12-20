@@ -21,17 +21,13 @@ export default function BrokersPage() {
   const filtered = useMemo(() => {
     return brokers.filter((b) => {
       const q = searchQuery.toLowerCase()
-      
-      // Search in contact_persons if available, otherwise fall back to contact_person
-      const contactPersonMatch = b.contact_persons && b.contact_persons.length > 0
-        ? b.contact_persons.some(cp => cp.name?.toLowerCase().includes(q) || cp.phones?.some(p => p?.includes(searchQuery)))
-        : (b.contact_person?.toLowerCase().includes(q) || false)
+      const primaryContact = b.contact_persons?.[0]
       
       const matchesSearch =
         (b.business_name?.toLowerCase().includes(q) || false) ||
-        contactPersonMatch ||
-        (b.email?.toLowerCase().includes(q) || false) ||
-        (b.phone?.includes(searchQuery) || false)
+        (primaryContact?.name?.toLowerCase().includes(q) || false) ||
+        (primaryContact?.emails?.[0]?.toLowerCase().includes(q) || false) ||
+        (primaryContact?.phones?.[0]?.includes(searchQuery) || false)
 
       const matchesStatus = statusFilter ? (statusFilter === 'active' ? b.is_active : !b.is_active) : true
       const matchesType = typeFilter ? b.type === typeFilter : true
@@ -111,19 +107,26 @@ export default function BrokersPage() {
                 <span className={`whitespace-nowrap px-2 py-1 rounded-md text-[10px] ${b.is_active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground'}`}>{b.is_active ? 'Active' : 'Inactive'}</span>
               </div>
               <div className="mt-3 grid gap-1.5 text-xs">
-                <div className="inline-flex items-center gap-2 text-foreground/90">
-                  <span className="text-muted-foreground w-16">Contact</span>
-                  <span className="font-medium">
-                    {b.contact_persons && b.contact_persons.length > 0
-                      ? b.contact_persons
-                          .filter(cp => cp.name && cp.name.trim().length > 0)
-                          .map(cp => cp.name.trim())
-                          .join(', ') || (b.contact_person?.trim() || 'N/A')
-                      : (b.contact_person?.trim() || 'N/A')}
-                  </span>
-                </div>
-                <div className="inline-flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" /><span className="truncate">{b.email?.trim() || 'N/A'}</span></div>
-                <div className="inline-flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><span>{b.phone?.trim() || 'N/A'}</span></div>
+                {b.contact_persons?.[0] && (
+                  <>
+                    <div className="inline-flex items-center gap-2 text-foreground/90">
+                      <span className="text-muted-foreground w-16">Contact</span>
+                      <span className="font-medium">{b.contact_persons[0].name?.trim() || 'N/A'}</span>
+                    </div>
+                    {b.contact_persons[0].emails?.[0] && (
+                      <div className="inline-flex items-center gap-2">
+                        <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="truncate">{b.contact_persons[0].emails[0].trim()}</span>
+                      </div>
+                    )}
+                    {b.contact_persons[0].phones?.[0] && (
+                      <div className="inline-flex items-center gap-2">
+                        <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span>{b.contact_persons[0].phones[0].trim()}</span>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
               <div className="mt-3 flex items-center justify-end">
                 <ActionButtons

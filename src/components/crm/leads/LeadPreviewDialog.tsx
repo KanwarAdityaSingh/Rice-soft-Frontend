@@ -269,7 +269,7 @@ export function LeadPreviewDialog({ open, onOpenChange, formData, onConfirm }: L
                   <InfoRow label="Assigned Salesperson" value={salesman?.name || undefined} />
                   <InfoRow 
                     label="Broker" 
-                    value={broker ? `${broker.business_name}${broker.contact_person ? ` (${broker.contact_person})` : ''}` : undefined} 
+                    value={broker ? `${broker.business_name || ''}${broker.contact_persons?.[0]?.name ? ` (${broker.contact_persons[0].name})` : ''}` : undefined} 
                   />
                 </InfoSection>
               )}

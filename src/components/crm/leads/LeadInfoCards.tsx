@@ -224,13 +224,13 @@ export function LeadInfoCards({ lead }: LeadInfoCardsProps) {
               <span className="text-muted-foreground">Business Name:</span> {broker.business_name}
             </div>
             <div>
-              <span className="text-muted-foreground">Contact Person:</span> {broker.contact_person}
+              <span className="text-muted-foreground">Contact Person:</span> {broker.contact_persons?.[0]?.name || 'N/A'}
             </div>
             <div>
-              <span className="text-muted-foreground">Email:</span> {broker.email}
+              <span className="text-muted-foreground">Email:</span> {broker.contact_persons?.[0]?.emails?.[0] || 'N/A'}
             </div>
             <div>
-              <span className="text-muted-foreground">Phone:</span> {broker.phone}
+              <span className="text-muted-foreground">Phone:</span> {broker.contact_persons?.[0]?.phones?.[0] || 'N/A'}
             </div>
             {broker.broker_details?.commission_rate && (
               <div>

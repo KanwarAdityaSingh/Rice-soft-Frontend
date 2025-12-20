@@ -650,7 +650,7 @@ export function LeadFormSteps({
                 onChange={(value) => setFormData({ ...formData, broker_id: value || null })}
                 options={brokers.map((broker) => ({
                   value: broker.id,
-                  label: `${broker.business_name}${broker.contact_person ? ` (${broker.contact_person})` : ''}`
+                  label: `${broker.business_name || ''}${broker.contact_persons?.[0]?.name ? ` (${broker.contact_persons[0].name})` : ''}`
                 }))}
                 placeholder="No Broker Assigned"
               />
@@ -1524,7 +1524,7 @@ export function LeadFormSteps({
                 onChange={(value) => setFormData({ ...formData, broker_id: value || null })}
                 options={brokers.map((broker) => ({
                   value: broker.id,
-                  label: `${broker.business_name}${broker.contact_person ? ` (${broker.contact_person})` : ''}`
+                  label: `${broker.business_name || ''}${broker.contact_persons?.[0]?.name ? ` (${broker.contact_persons[0].name})` : ''}`
                 }))}
                 placeholder="No Broker Assigned"
               />

@@ -4,7 +4,8 @@ import { X, Search, Plus } from 'lucide-react';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { brokersAPI } from '../../../services/brokers.api';
-import { validateEmail, validatePAN, validateAadhaar, validatePhone } from '../../../utils/validation';
+import { bankAPI } from '../../../services/bank.api';
+import { validateEmail, validatePAN, validateAadhaar, validatePhone, validateGST } from '../../../utils/validation';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { BrokerPreviewDialog } from './BrokerPreviewDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
@@ -19,10 +20,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
   const { createBroker } = useBrokers();
   const [formData, setFormData] = useState<CreateBrokerRequest>({
     business_name: '',
-    contact_person: '',
     contact_persons: [{ name: '', phones: [''], emails: [''] }],
-    email: '',
-    phone: '',
     address: {
       street: '',
       city: '',
@@ -33,6 +31,8 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
     business_details: {
       pan_number: '',
       aadhaar_number: '',
+      gst_number: '',
+      business_type: 'individual',
     },
     bank_details: {
       account_holder_name: '',
@@ -45,6 +45,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
     is_active: true,
   });
 
+
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -54,51 +55,78 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+  const [ifscLoading, setIfscLoading] = useState(false);
+
+  const handleIFSCLookup = async (ifscCode: string) => {
+    // Only lookup if IFSC is exactly 11 characters
+    if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifscCode)) {
+      return;
+    }
+
+    setIfscLoading(true);
+    try {
+      const response = await bankAPI.lookupIFSC(ifscCode);
+      
+      if (response.bank_details) {
+        setFormData({
+          ...formData,
+          bank_details: {
+            ...formData.bank_details,
+            bank_name: response.bank_details.bank_name || formData.bank_details?.bank_name || '',
+            branch: response.bank_details.branch || formData.bank_details?.branch || '',
+            ifsc_code: response.bank_details.ifsc_code || ifscCode,
+          }
+        });
+      }
+    } catch (error: any) {
+      console.error('IFSC lookup error:', error);
+      setErrors({ ...errors, ifsc_code: error?.message || 'IFSC code not found' });
+    } finally {
+      setIfscLoading(false);
+    }
+  };
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    // Basic validation
-    // business_name is now optional, no validation needed
-    
     // Validate contact_persons: must have at least one with name and at least one phone
     if (!formData.contact_persons || formData.contact_persons.length === 0) {
       newErrors.contact_persons = 'At least one contact person is required';
     } else {
-      const invalidContacts = formData.contact_persons.filter(cp => !cp.name || cp.name.trim().length < 2);
-      if (invalidContacts.length > 0) {
-        newErrors.contact_persons = 'Each contact person must have a name (minimum 2 characters)';
-      }
-      // Validate that each contact person has at least one phone number
-      const contactsWithoutPhones = formData.contact_persons.filter(cp => 
-        !cp.phones || cp.phones.length === 0 || cp.phones.every(p => !p || p.trim().length === 0)
-      );
-      if (contactsWithoutPhones.length > 0) {
-        newErrors.contact_persons = 'Each contact person must have at least one phone number';
-      }
-      // Validate phone number format (must be exactly 10 digits)
-      const invalidPhones = formData.contact_persons.some(cp => 
-        cp.phones && cp.phones.some(phone => phone && phone.trim().length > 0 && !validatePhone(phone))
-      );
-      if (invalidPhones) {
-        newErrors.contact_persons = 'Contact person phone numbers must be exactly 10 digits';
-      }
+      formData.contact_persons.forEach((cp, idx) => {
+        if (!cp.name || cp.name.trim().length < 2) {
+          newErrors[`contact_person_${idx}_name`] = 'Name required (min 2 chars)';
+        }
+        if (!cp.phones || cp.phones.length === 0 || !cp.phones[0]) {
+          newErrors[`contact_person_${idx}_phone`] = 'At least one phone required';
+        } else {
+          cp.phones.forEach((phone, phoneIdx) => {
+            if (phone && !validatePhone(phone)) {
+              newErrors[`contact_person_${idx}_phone_${phoneIdx}`] = 'Invalid phone format';
+            }
+          });
+        }
+        // Validate emails if provided
+        cp.emails?.forEach((email, emailIdx) => {
+          if (email && !validateEmail(email)) {
+            newErrors[`contact_person_${idx}_email_${emailIdx}`] = 'Valid email required';
+          }
+        });
+      });
     }
-    
-    // Phone field is required and must be 10 digits
-    if (!formData.phone || !formData.phone.trim()) {
-      newErrors.phone = 'Phone is required';
-    } else if (formData.phone.trim().length < 10) {
-      newErrors.phone = 'Phone must be exactly 10 digits';
-    } else if (!validatePhone(formData.phone.trim())) {
-      newErrors.phone = 'Invalid phone number format';
-    }
-    
-    // Email is required and must be valid
-    if (!formData.email || !formData.email.trim()) {
-      newErrors.email = 'Email is required';
-    } else if (!validateEmail(formData.email.trim())) {
-      newErrors.email = 'Please enter a valid email address';
+
+    // Business type validation
+    const businessType = formData.business_details.business_type;
+    if (businessType === 'individual') {
+      // Individual requires PAN or Aadhaar
+      if (!formData.business_details.pan_number && !formData.business_details.aadhaar_number) {
+        newErrors.business_details = 'Either PAN or Aadhaar is required for individual';
+      }
+    } else {
+      // Company/Partnership/LLP requires GST
+      if (!formData.business_details.gst_number) {
+        newErrors.gst_number = 'GST number is required for company/partnership/LLP';
+      }
     }
 
     // Validate PAN format if provided
@@ -109,11 +137,6 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
     // Validate Aadhaar format if provided
     if (formData.business_details.aadhaar_number && !validateAadhaar(formData.business_details.aadhaar_number)) {
       newErrors.aadhaar_number = 'Invalid Aadhaar format (12 digits, cannot start with 0 or 1)';
-    }
-
-    // Ensure at least one of PAN or Aadhaar is provided
-    if (!formData.business_details.pan_number && !formData.business_details.aadhaar_number) {
-      newErrors.business_details = 'Either PAN number or Aadhaar number must be provided';
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -204,6 +227,75 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
     } catch (error: any) {
       console.error('PAN lookup error:', error);
       setErrors({ ...errors, pan_number: error?.message || 'Failed to lookup PAN details' });
+    } finally {
+      setLookupLoading(false);
+    }
+  };
+
+  const handleGSTLookup = async () => {
+    if (!formData.business_details.gst_number) {
+      setErrors({ ...errors, gst_number: 'Please enter a GST number' });
+      return;
+    }
+    
+    if (!validateGST(formData.business_details.gst_number)) {
+      setErrors({ ...errors, gst_number: 'Invalid GST format' });
+      return;
+    }
+
+    setLookupLoading(true);
+    setErrors({ ...errors, gst_number: '' });
+    
+    try {
+      const response = await brokersAPI.lookupGST(formData.business_details.gst_number);
+      
+      const mapped = response.mapped_data;
+      
+      // Populate business name if available
+      const businessName = mapped?.business_name || formData.business_name;
+      
+      // Populate address fields (only fill non-empty values)
+      const addressUpdate: any = { ...formData.address };
+      if (mapped?.address) {
+        if (mapped.address.street) addressUpdate.street = mapped.address.street;
+        if (mapped.address.city) addressUpdate.city = mapped.address.city;
+        if (mapped.address.state) addressUpdate.state = mapped.address.state;
+        if (mapped.address.pincode) addressUpdate.pincode = mapped.address.pincode;
+        if (mapped.address.country) addressUpdate.country = mapped.address.country;
+      }
+      
+      // Update business details - extract PAN from GST (characters 3-12)
+      const businessDetailsUpdate: any = {
+        ...formData.business_details,
+      };
+      
+      if (mapped?.business_details?.gst_number) {
+        businessDetailsUpdate.gst_number = mapped.business_details.gst_number;
+      }
+      
+      if (mapped?.business_details?.pan_number) {
+        businessDetailsUpdate.pan_number = mapped.business_details.pan_number;
+      } else if (formData.business_details.gst_number && formData.business_details.gst_number.length >= 12) {
+        // Extract PAN from GST (characters 3-12, 0-indexed: 2-11)
+        businessDetailsUpdate.pan_number = formData.business_details.gst_number.slice(2, 12);
+      }
+      
+      if (mapped?.business_details?.business_type) {
+        businessDetailsUpdate.business_type = mapped.business_details.business_type;
+      }
+      
+      setFormData({
+        ...formData,
+        business_name: businessName,
+        address: addressUpdate,
+        business_details: businessDetailsUpdate,
+      });
+      
+      // Clear any previous errors
+      setErrors({ ...errors, gst_number: '' });
+    } catch (error: any) {
+      console.error('GST lookup error:', error);
+      setErrors({ ...errors, gst_number: error?.message || 'Failed to lookup GST details' });
     } finally {
       setLookupLoading(false);
     }
@@ -313,12 +405,9 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       setPreviewOpen(false);
       setFormData({
         business_name: '',
-        contact_person: '',
         contact_persons: [{ name: '', phones: [''], emails: [''] }],
-        email: '',
-        phone: '',
         address: { street: '', city: '', state: '', pincode: '', country: 'India' },
-        business_details: { pan_number: '', aadhaar_number: '' },
+        business_details: { pan_number: '', aadhaar_number: '', gst_number: '', business_type: 'individual' },
         bank_details: {
           account_holder_name: '',
           account_number: '',
@@ -404,14 +493,55 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
               {/* Step 1: Basic Info */}
               {step === 1 && (
                 <div className="space-y-4">
+                  {/* Business Type Selector */}
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Business Type *</label>
+                    <CustomSelect
+                      value={formData.business_details.business_type}
+                      onChange={(value) => setFormData({ 
+                        ...formData, 
+                        business_details: { ...formData.business_details, business_type: value as any } 
+                      })}
+                      options={[
+                        { value: 'individual', label: 'Individual (Person)' },
+                        { value: 'company', label: 'Company (Pvt Ltd / Ltd)' },
+                        { value: 'partnership', label: 'Partnership Firm' },
+                        { value: 'llp', label: 'LLP (Limited Liability Partnership)' }
+                      ]}
+                      placeholder="Select Business Type"
+                    />
+                  </div>
+
                   <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 mb-2">
                     <p className="text-sm text-primary/90">
-                      <span className="font-medium">Note:</span> One of the fields (either PAN Number or Aadhaar Number) is mandatory.
+                      <span className="font-medium">Note:</span> {formData.business_details.business_type === 'individual' 
+                        ? 'For individuals, either PAN or Aadhaar is required.' 
+                        : 'For companies/partnerships/LLPs, GST number is required.'}
                     </p>
                   </div>
+
+                  {/* GST Number - shown for company/partnership/llp */}
+                  {formData.business_details.business_type !== 'individual' && (
+                    <div>
+                      <label className="text-sm font-medium mb-1.5 block">GST Number *</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={formData.business_details.gst_number || ''}
+                          onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, gst_number: e.target.value.toUpperCase() } })}
+                          className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                          placeholder="27ABCDE1234F1Z5"
+                        />
+                        <button type="button" onClick={handleGSTLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
+                          {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      {errors.gst_number && <p className="mt-1 text-xs text-red-600">{errors.gst_number}</p>}
+                    </div>
+                  )}
                   
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block">PAN Number</label>
+                    <label className="text-sm font-medium mb-1.5 block">PAN Number{formData.business_details.business_type === 'individual' ? ' *' : ''}</label>
                     <div className="flex gap-2">
                       <input
                         type="text"
@@ -646,86 +776,6 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                     {errors.contact_persons && <p className="mt-1 text-xs text-red-600">{errors.contact_persons}</p>}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">Phone *</label>
-                      <input
-                        type="tel"
-                        placeholder="10 digits only"
-                        value={formData.phone || ''}
-                        onChange={(e) => {
-                          // Only allow digits and limit to 10 digits
-                          const value = e.target.value.replace(/\D/g, '').slice(0, 10);
-                          setFormData({ ...formData, phone: value });
-                          // Validate and set error immediately
-                          if (value.length > 0 && value.length < 10) {
-                            setErrors({ ...errors, phone: 'Phone must be exactly 10 digits' });
-                          } else if (value.length === 10 && !validatePhone(value)) {
-                            setErrors({ ...errors, phone: 'Invalid phone number format' });
-                          } else if (value.length === 10 && validatePhone(value)) {
-                            const newErrors = { ...errors };
-                            delete newErrors.phone;
-                            setErrors(newErrors);
-                          } else if (value.length === 0) {
-                            setErrors({ ...errors, phone: 'Phone is required' });
-                          }
-                        }}
-                        onBlur={(e) => {
-                          const value = e.target.value.trim();
-                          if (value.length === 0) {
-                            setErrors({ ...errors, phone: 'Phone is required' });
-                          } else if (value.length < 10) {
-                            setErrors({ ...errors, phone: 'Phone must be exactly 10 digits' });
-                          } else if (!validatePhone(value)) {
-                            setErrors({ ...errors, phone: 'Invalid phone number format' });
-                          }
-                        }}
-                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                        required
-                        maxLength={10}
-                      />
-                      {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone}</p>}
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">Email *</label>
-                      <input
-                        type="email"
-                        placeholder="example@email.com"
-                        value={formData.email}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          setFormData({ ...formData, email: value });
-                          // Validate and set error immediately (don't trim while typing)
-                          if (value.length === 0) {
-                            setErrors({ ...errors, email: 'Email is required' });
-                          } else if (value.trim().length > 0 && !validateEmail(value.trim())) {
-                            setErrors({ ...errors, email: 'Please enter a valid email address' });
-                          } else if (value.trim().length > 0 && validateEmail(value.trim())) {
-                            const newErrors = { ...errors };
-                            delete newErrors.email;
-                            setErrors(newErrors);
-                          }
-                        }}
-                        onBlur={(e) => {
-                          const value = e.target.value.trim();
-                          setFormData({ ...formData, email: value });
-                          if (value.length === 0) {
-                            setErrors({ ...errors, email: 'Email is required' });
-                          } else if (!validateEmail(value)) {
-                            setErrors({ ...errors, email: 'Please enter a valid email address' });
-                          } else {
-                            const newErrors = { ...errors };
-                            delete newErrors.email;
-                            setErrors(newErrors);
-                          }
-                        }}
-                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                      />
-                      {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
-                    </div>
-                  </div>
-
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Type *</label>
                     <CustomSelect
@@ -840,23 +890,42 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
 
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">IFSC Code</label>
-                    <input
-                      type="text"
-                      value={formData.bank_details?.ifsc_code || ''}
-                      onChange={(e) => setFormData({ 
-                        ...formData, 
-                        bank_details: { 
-                          ...formData.bank_details, 
-                          ifsc_code: e.target.value.toUpperCase() 
-                        } 
-                      })}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                      placeholder="ABCD0123456"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={formData.bank_details?.ifsc_code || ''}
+                        onChange={(e) => {
+                          const value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 11);
+                          setFormData({ 
+                            ...formData, 
+                            bank_details: { 
+                              ...formData.bank_details, 
+                              ifsc_code: value 
+                            } 
+                          });
+                          // Auto-lookup when 11 characters are entered
+                          if (value.length === 11) {
+                            handleIFSCLookup(value);
+                          }
+                        }}
+                        className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                        placeholder="HDFC0001234"
+                        maxLength={11}
+                      />
+                      <button 
+                        type="button" 
+                        onClick={() => handleIFSCLookup(formData.bank_details?.ifsc_code || '')} 
+                        disabled={ifscLoading || !formData.bank_details?.ifsc_code || formData.bank_details.ifsc_code.length !== 11}
+                        className="btn-secondary flex items-center gap-2"
+                      >
+                        {ifscLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    {errors.ifsc_code && <p className="mt-1 text-xs text-red-600">{errors.ifsc_code}</p>}
                   </div>
 
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block">Bank Name</label>
+                    <label className="text-sm font-medium mb-1.5 block">Bank Name (auto-filled)</label>
                     <input
                       type="text"
                       value={formData.bank_details?.bank_name || ''}
@@ -872,7 +941,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                   </div>
 
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block">Branch</label>
+                    <label className="text-sm font-medium mb-1.5 block">Branch (auto-filled)</label>
                     <input
                       type="text"
                       value={formData.bank_details?.branch || ''}

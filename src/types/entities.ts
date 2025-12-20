@@ -60,29 +60,33 @@ export interface VendorBankDetails {
   branch?: string;
 }
 
+export interface ContactPerson {
+  name: string;
+  phones: string[];
+  emails?: string[];
+}
+
 export interface Vendor {
   id: string;
   business_name: string;
-  contact_person: string;
-  email: string;
-  phone: string;
+  contact_persons: ContactPerson[];
   address: VendorAddress;
   business_details: VendorBusinessDetails;
   bank_details?: VendorBankDetails;
   type: 'purchaser' | 'seller' | 'both';
   is_active: boolean;
   google_location_link?: string | null;
+  business_card_url?: string | null;
   created_at: string;
   updated_at: string;
-  last_enquiry_date?: string;
+  last_enquiry_date?: string | null;
   lead_id?: string | null;
+  user_id?: string | null;
 }
 
 export interface CreateVendorRequest {
   business_name: string;
-  contact_person: string;
-  email: string;
-  phone: string;
+  contact_persons: ContactPerson[];
   address: VendorAddress;
   business_details: VendorBusinessDetails;
   bank_details?: VendorBankDetails;
@@ -178,6 +182,8 @@ export interface BrokerAddress {
 export interface BrokerBusinessDetails {
   pan_number?: string;
   aadhaar_number?: string;
+  gst_number?: string;
+  business_type: 'individual' | 'partnership' | 'company' | 'llp';
 }
 
 export interface BrokerBankDetails {
@@ -196,14 +202,12 @@ export interface BrokerDetails {
 
 export interface Broker {
   id: string;
-  business_name?: string | null; // Optional
-  contact_person: string; // Legacy field, kept for backward compatibility
-  email: string;
-  phone: string; // Legacy field, kept for backward compatibility
-  contact_persons?: ContactPerson[]; // New field with phones array
+  business_name?: string | null;
+  contact_persons: ContactPerson[];
   address: BrokerAddress;
   business_details: BrokerBusinessDetails;
-  broker_details?: BrokerDetails;
+  bank_details?: BrokerBankDetails | null;
+  broker_details?: BrokerDetails | null;
   type: 'purchase' | 'sale' | 'both';
   is_active: boolean;
   created_at: string;
@@ -211,11 +215,8 @@ export interface Broker {
 }
 
 export interface CreateBrokerRequest {
-  business_name?: string; // Optional
-  contact_person?: string; // Optional for backward compatibility
-  contact_persons?: ContactPerson[]; // New field with phones array
-  email: string;
-  phone: string; // Mandatory field, separate from contact_persons
+  business_name?: string;
+  contact_persons: ContactPerson[];
   address: BrokerAddress;
   business_details: BrokerBusinessDetails;
   bank_details?: BrokerBankDetails;
@@ -319,12 +320,6 @@ export interface LeadBusinessDetails {
   company_size?: string;
   annual_revenue?: number;
   business_keyword?: string;
-}
-
-export interface ContactPerson {
-  name: string;
-  phones: string[];
-  emails?: string[];
 }
 
 export interface Lead {

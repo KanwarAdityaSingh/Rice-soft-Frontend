@@ -125,44 +125,45 @@ export function TransportersTable() {
             </table>
           </div>
 
-          <ConfirmDialog
-            open={deleteDialogOpen}
-            onOpenChange={setDeleteDialogOpen}
-            onConfirm={async () => {
-              if (selectedTransporter) {
-                await deleteTransporter(selectedTransporter.id);
-                setDeleteDialogOpen(false);
-                setSelectedTransporter(null);
-              }
-            }}
-            title="Delete Transporter"
-            description={`Are you sure you want to delete "${selectedTransporter?.business_name}"? This action cannot be undone.`}
-            confirmText="Delete"
-          />
-
-          <TransporterFormModal
-            open={createModalOpen}
-            onOpenChange={(open) => {
-              setCreateModalOpen(open);
-              if (!open) {
-                refetch();
-              }
-            }}
-          />
-
-          <TransporterFormModal
-            open={editModalOpen}
-            onOpenChange={(open) => {
-              setEditModalOpen(open);
-              if (!open) {
-                setSelectedTransporterId(null);
-                refetch();
-              }
-            }}
-            transporterId={selectedTransporterId}
-          />
         </>
       )}
+
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        onConfirm={async () => {
+          if (selectedTransporter) {
+            await deleteTransporter(selectedTransporter.id);
+            setDeleteDialogOpen(false);
+            setSelectedTransporter(null);
+          }
+        }}
+        title="Delete Transporter"
+        description={`Are you sure you want to delete "${selectedTransporter?.business_name}"? This action cannot be undone.`}
+        confirmText="Delete"
+      />
+
+      <TransporterFormModal
+        open={createModalOpen}
+        onOpenChange={(open) => {
+          setCreateModalOpen(open);
+          if (!open) {
+            refetch();
+          }
+        }}
+      />
+
+      <TransporterFormModal
+        open={editModalOpen}
+        onOpenChange={(open) => {
+          setEditModalOpen(open);
+          if (!open) {
+            setSelectedTransporterId(null);
+            refetch();
+          }
+        }}
+        transporterId={selectedTransporterId}
+      />
     </div>
   );
 }
