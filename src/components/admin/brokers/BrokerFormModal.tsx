@@ -16,6 +16,26 @@ interface BrokerFormModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
+// Helper function to convert ALL CAPS text to Title Case
+const toTitleCase = (str: string | undefined | null): string => {
+  if (!str) return '';
+  // Check if the string is mostly uppercase (more than 60% uppercase letters)
+  const uppercaseCount = (str.match(/[A-Z]/g) || []).length;
+  const letterCount = (str.match(/[a-zA-Z]/g) || []).length;
+  const isAllCaps = letterCount > 0 && uppercaseCount / letterCount > 0.6;
+  
+  if (!isAllCaps) return str; // Don't modify if not all caps
+  
+  return str
+    .toLowerCase()
+    .split(' ')
+    .map(word => {
+      if (word.length === 0) return word;
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(' ');
+};
+
 export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
   const { createBroker } = useBrokers();
   const [formData, setFormData] = useState<CreateBrokerRequest>({
@@ -72,8 +92,8 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
           ...formData,
           bank_details: {
             ...formData.bank_details,
-            bank_name: response.bank_details.bank_name || formData.bank_details?.bank_name || '',
-            branch: response.bank_details.branch || formData.bank_details?.branch || '',
+            bank_name: toTitleCase(response.bank_details.bank_name) || formData.bank_details?.bank_name || '',
+            branch: toTitleCase(response.bank_details.branch) || formData.bank_details?.branch || '',
             ifsc_code: response.bank_details.ifsc_code || ifscCode,
           }
         });
@@ -174,8 +194,8 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       const mapped = response.mapped_data;
       const panData = response.pan_data;
       
-      // Populate business name if available
-      const businessName = mapped?.business_name || formData.business_name;
+      // Populate business name if available (convert to title case)
+      const businessName = toTitleCase(mapped?.business_name) || formData.business_name;
       
       // If PAN data is for a person, add to contact_persons if not already present
       let contactPersons = [...(formData.contact_persons || [])];
@@ -184,19 +204,19 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         if (!existingContact) {
           contactPersons = [
             ...contactPersons,
-            { name: panData.name, phones: [''] }
+            { name: toTitleCase(panData.name), phones: [''] }
           ];
         }
       }
       
-      // Populate address fields (only fill non-empty values)
+      // Populate address fields (only fill non-empty values, convert to title case)
       const addressUpdate: any = { ...formData.address };
       if (mapped?.address) {
-        if (mapped.address.street) addressUpdate.street = mapped.address.street;
-        if (mapped.address.city) addressUpdate.city = mapped.address.city;
-        if (mapped.address.state) addressUpdate.state = mapped.address.state;
+        if (mapped.address.street) addressUpdate.street = toTitleCase(mapped.address.street);
+        if (mapped.address.city) addressUpdate.city = toTitleCase(mapped.address.city);
+        if (mapped.address.state) addressUpdate.state = toTitleCase(mapped.address.state);
         if (mapped.address.pincode) addressUpdate.pincode = mapped.address.pincode;
-        if (mapped.address.country) addressUpdate.country = mapped.address.country;
+        if (mapped.address.country) addressUpdate.country = toTitleCase(mapped.address.country);
       }
       
       // Update business details
@@ -251,17 +271,17 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       
       const mapped = response.mapped_data;
       
-      // Populate business name if available
-      const businessName = mapped?.business_name || formData.business_name;
+      // Populate business name if available (convert to title case)
+      const businessName = toTitleCase(mapped?.business_name) || formData.business_name;
       
-      // Populate address fields (only fill non-empty values)
+      // Populate address fields (only fill non-empty values, convert to title case)
       const addressUpdate: any = { ...formData.address };
       if (mapped?.address) {
-        if (mapped.address.street) addressUpdate.street = mapped.address.street;
-        if (mapped.address.city) addressUpdate.city = mapped.address.city;
-        if (mapped.address.state) addressUpdate.state = mapped.address.state;
+        if (mapped.address.street) addressUpdate.street = toTitleCase(mapped.address.street);
+        if (mapped.address.city) addressUpdate.city = toTitleCase(mapped.address.city);
+        if (mapped.address.state) addressUpdate.state = toTitleCase(mapped.address.state);
         if (mapped.address.pincode) addressUpdate.pincode = mapped.address.pincode;
-        if (mapped.address.country) addressUpdate.country = mapped.address.country;
+        if (mapped.address.country) addressUpdate.country = toTitleCase(mapped.address.country);
       }
       
       // Update business details - extract PAN from GST (characters 3-12)
@@ -325,12 +345,12 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         const mapped = (response as any).mapped_data;
         const aadhaarData = (response as any).aadhaar_data;
         
-        // Populate business name if available
-        const businessName = mapped?.business_name || formData.business_name;
+        // Populate business name if available (convert to title case)
+        const businessName = toTitleCase(mapped?.business_name) || formData.business_name;
         
         // If Aadhaar data has a name, add to contact_persons if not already present
         let contactPersons = [...(formData.contact_persons || [])];
-        const aadhaarName = aadhaarData?.name || mapped?.contact_person;
+        const aadhaarName = toTitleCase(aadhaarData?.name || mapped?.contact_person);
         if (aadhaarName) {
           const existingContact = contactPersons.find(cp => cp.name === aadhaarName);
           if (!existingContact) {
@@ -341,14 +361,14 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
           }
         }
         
-        // Populate address fields (only fill non-empty values)
+        // Populate address fields (only fill non-empty values, convert to title case)
         const addressUpdate: any = { ...formData.address };
         if (mapped?.address) {
-          if (mapped.address.street) addressUpdate.street = mapped.address.street;
-          if (mapped.address.city) addressUpdate.city = mapped.address.city;
-          if (mapped.address.state) addressUpdate.state = mapped.address.state;
+          if (mapped.address.street) addressUpdate.street = toTitleCase(mapped.address.street);
+          if (mapped.address.city) addressUpdate.city = toTitleCase(mapped.address.city);
+          if (mapped.address.state) addressUpdate.state = toTitleCase(mapped.address.state);
           if (mapped.address.pincode) addressUpdate.pincode = mapped.address.pincode;
-          if (mapped.address.country) addressUpdate.country = mapped.address.country;
+          if (mapped.address.country) addressUpdate.country = toTitleCase(mapped.address.country);
         }
         
         setFormData({
@@ -959,9 +979,6 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                   <div className="flex gap-3 pt-4">
                     <button type="button" onClick={() => setStep(2)} className="btn-secondary flex-1">
                       Back
-                    </button>
-                    <button type="button" onClick={() => {/* Skip */}} className="btn-secondary">
-                      Skip Bank Details
                     </button>
                     <button 
                       type="button" 

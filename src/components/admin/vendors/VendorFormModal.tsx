@@ -20,6 +20,31 @@ interface VendorFormModalProps {
   vendorId?: string | null;
 }
 
+// Helper function to convert ALL CAPS text to Title Case
+const toTitleCase = (str: string | undefined | null): string => {
+  if (!str) return '';
+  // Check if the string is mostly uppercase (more than 60% uppercase letters)
+  const uppercaseCount = (str.match(/[A-Z]/g) || []).length;
+  const letterCount = (str.match(/[a-zA-Z]/g) || []).length;
+  const isAllCaps = letterCount > 0 && uppercaseCount / letterCount > 0.6;
+  
+  if (!isAllCaps) return str; // Don't modify if not all caps
+  
+  return str
+    .toLowerCase()
+    .split(' ')
+    .map(word => {
+      if (word.length === 0) return word;
+      // Keep common abbreviations uppercase
+      const abbreviations = ['pvt', 'ltd', 'llp', 'llc', 'inc', 'co', 'and'];
+      if (abbreviations.includes(word)) {
+        return word.charAt(0).toUpperCase() + word.slice(1);
+      }
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(' ');
+};
+
 export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModalProps) {
   const { createVendor, updateVendor } = useVendors();
   const navigate = useNavigate();
@@ -292,17 +317,17 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
       // The API service returns response.data, which is { gst_data: {...}, mapped_data: {...} }
       const mapped = response.mapped_data;
       
-      // Populate business name if available
-      const businessName = mapped?.business_name || formData.business_name;
+      // Populate business name if available (convert to title case)
+      const businessName = toTitleCase(mapped?.business_name) || formData.business_name;
       
-      // Populate address fields (only fill non-empty values)
+      // Populate address fields (only fill non-empty values, convert to title case)
       const addressUpdate: any = { ...formData.address };
       if (mapped?.address) {
-        if (mapped.address.street) addressUpdate.street = mapped.address.street;
-        if (mapped.address.city) addressUpdate.city = mapped.address.city;
-        if (mapped.address.state) addressUpdate.state = mapped.address.state;
+        if (mapped.address.street) addressUpdate.street = toTitleCase(mapped.address.street);
+        if (mapped.address.city) addressUpdate.city = toTitleCase(mapped.address.city);
+        if (mapped.address.state) addressUpdate.state = toTitleCase(mapped.address.state);
         if (mapped.address.pincode) addressUpdate.pincode = mapped.address.pincode;
-        if (mapped.address.country) addressUpdate.country = mapped.address.country;
+        if (mapped.address.country) addressUpdate.country = toTitleCase(mapped.address.country);
       }
       
       // Update business details
@@ -363,23 +388,23 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
       const mapped = response.mapped_data;
       const panData = response.pan_data;
       
-      // Populate business name if available
-      const businessName = mapped?.business_name || formData.business_name;
+      // Populate business name if available (convert to title case)
+      const businessName = toTitleCase(mapped?.business_name) || formData.business_name;
       
       // Populate contact person if PAN is for a person (individual)
       let updatedContactPersons = [...formData.contact_persons];
       if (panData?.category === 'person' && panData?.name) {
-        updatedContactPersons[0] = { ...updatedContactPersons[0], name: panData.name };
+        updatedContactPersons[0] = { ...updatedContactPersons[0], name: toTitleCase(panData.name) };
       }
       
-      // Populate address fields (only fill non-empty values)
+      // Populate address fields (only fill non-empty values, convert to title case)
       const addressUpdate: any = { ...formData.address };
       if (mapped?.address) {
-        if (mapped.address.street) addressUpdate.street = mapped.address.street;
-        if (mapped.address.city) addressUpdate.city = mapped.address.city;
-        if (mapped.address.state) addressUpdate.state = mapped.address.state;
+        if (mapped.address.street) addressUpdate.street = toTitleCase(mapped.address.street);
+        if (mapped.address.city) addressUpdate.city = toTitleCase(mapped.address.city);
+        if (mapped.address.state) addressUpdate.state = toTitleCase(mapped.address.state);
         if (mapped.address.pincode) addressUpdate.pincode = mapped.address.pincode;
-        if (mapped.address.country) addressUpdate.country = mapped.address.country;
+        if (mapped.address.country) addressUpdate.country = toTitleCase(mapped.address.country);
       }
       
       // Update business details
@@ -442,10 +467,10 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
         address: {
           ...formData.address,
           pincode: postOffice.Pincode || pincode,
-          // Fill city, state from response
-          city: postOffice.Block || postOffice.District || postOffice.Name || formData.address?.city || '',
-          state: postOffice.State || formData.address?.state || '',
-          country: postOffice.Country || formData.address?.country || 'India',
+          // Fill city, state from response (convert to title case)
+          city: toTitleCase(postOffice.Block || postOffice.District || postOffice.Name) || formData.address?.city || '',
+          state: toTitleCase(postOffice.State) || formData.address?.state || '',
+          country: toTitleCase(postOffice.Country) || formData.address?.country || 'India',
         },
       });
 
@@ -475,8 +500,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
           ...formData,
           bank_details: {
             ...formData.bank_details,
-            bank_name: response.bank_details.bank_name || formData.bank_details?.bank_name || '',
-            branch: response.bank_details.branch || formData.bank_details?.branch || '',
+            bank_name: toTitleCase(response.bank_details.bank_name) || formData.bank_details?.bank_name || '',
+            branch: toTitleCase(response.bank_details.branch) || formData.bank_details?.branch || '',
             ifsc_code: response.bank_details.ifsc_code || ifscCode,
           }
         });
@@ -1137,9 +1162,6 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
                   <div className="flex gap-3 pt-4">
                     <button type="button" onClick={() => setStep(2)} className="btn-secondary flex-1">
                       Back
-                    </button>
-                    <button type="button" onClick={() => {/* Skip */}} className="btn-secondary">
-                      Skip Bank Details
                     </button>
                     {isEditMode && leadData ? (
                       <button 
