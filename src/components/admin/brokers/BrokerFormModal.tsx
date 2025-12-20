@@ -76,6 +76,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
   const [ifscLoading, setIfscLoading] = useState(false);
+  const [gstAutoFilledFields, setGstAutoFilledFields] = useState<Set<string>>(new Set());
 
   const handleIFSCLookup = async (ifscCode: string) => {
     // Only lookup if IFSC is exactly 11 characters
@@ -271,17 +272,39 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       
       const mapped = response.mapped_data;
       
+      // Track which fields are being auto-filled
+      const autoFilledFields = new Set<string>();
+      
       // Populate business name if available (convert to title case)
-      const businessName = toTitleCase(mapped?.business_name) || formData.business_name;
+      let businessName = formData.business_name;
+      if (mapped?.business_name) {
+        businessName = toTitleCase(mapped.business_name);
+        autoFilledFields.add('business_name');
+      }
       
       // Populate address fields (only fill non-empty values, convert to title case)
       const addressUpdate: any = { ...formData.address };
       if (mapped?.address) {
-        if (mapped.address.street) addressUpdate.street = toTitleCase(mapped.address.street);
-        if (mapped.address.city) addressUpdate.city = toTitleCase(mapped.address.city);
-        if (mapped.address.state) addressUpdate.state = toTitleCase(mapped.address.state);
-        if (mapped.address.pincode) addressUpdate.pincode = mapped.address.pincode;
-        if (mapped.address.country) addressUpdate.country = toTitleCase(mapped.address.country);
+        if (mapped.address.street) {
+          addressUpdate.street = toTitleCase(mapped.address.street);
+          autoFilledFields.add('address.street');
+        }
+        if (mapped.address.city) {
+          addressUpdate.city = toTitleCase(mapped.address.city);
+          autoFilledFields.add('address.city');
+        }
+        if (mapped.address.state) {
+          addressUpdate.state = toTitleCase(mapped.address.state);
+          autoFilledFields.add('address.state');
+        }
+        if (mapped.address.pincode) {
+          addressUpdate.pincode = mapped.address.pincode;
+          autoFilledFields.add('address.pincode');
+        }
+        if (mapped.address.country) {
+          addressUpdate.country = toTitleCase(mapped.address.country);
+          autoFilledFields.add('address.country');
+        }
       }
       
       // Update business details - extract PAN from GST (characters 3-12)
@@ -291,17 +314,21 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       
       if (mapped?.business_details?.gst_number) {
         businessDetailsUpdate.gst_number = mapped.business_details.gst_number;
+        autoFilledFields.add('gst_number');
       }
       
       if (mapped?.business_details?.pan_number) {
         businessDetailsUpdate.pan_number = mapped.business_details.pan_number;
+        autoFilledFields.add('pan_number');
       } else if (formData.business_details.gst_number && formData.business_details.gst_number.length >= 12) {
         // Extract PAN from GST (characters 3-12, 0-indexed: 2-11)
         businessDetailsUpdate.pan_number = formData.business_details.gst_number.slice(2, 12);
+        autoFilledFields.add('pan_number');
       }
       
       if (mapped?.business_details?.business_type) {
         businessDetailsUpdate.business_type = mapped.business_details.business_type;
+        autoFilledFields.add('business_type');
       }
       
       setFormData({
@@ -310,6 +337,9 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         address: addressUpdate,
         business_details: businessDetailsUpdate,
       });
+      
+      // Set the auto-filled fields
+      setGstAutoFilledFields(autoFilledFields);
       
       // Clear any previous errors
       setErrors({ ...errors, gst_number: '' });
@@ -529,6 +559,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                         { value: 'llp', label: 'LLP (Limited Liability Partnership)' }
                       ]}
                       placeholder="Select Business Type"
+                      disabled={gstAutoFilledFields.has('business_type')}
                     />
                   </div>
 
@@ -567,8 +598,9 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                         type="text"
                         value={formData.business_details.pan_number}
                         onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, pan_number: e.target.value.toUpperCase() } })}
-                        className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                        className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
                         placeholder="ABCDE1234F"
+                        readOnly={gstAutoFilledFields.has('pan_number')}
                       />
                       <button type="button" onClick={handlePANLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
                         {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
@@ -577,23 +609,26 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                     {errors.pan_number && <p className="mt-1 text-xs text-red-600">{errors.pan_number}</p>}
                   </div>
 
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">Aadhaar Number</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={formData.business_details.aadhaar_number}
-                        onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, aadhaar_number: e.target.value } })}
-                        className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                        placeholder="234567890123"
-                        maxLength={12}
-                      />
-                      <button type="button" onClick={handleAadhaarLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
-                        {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
-                      </button>
+                  {/* Aadhaar Number - shown only for individual */}
+                  {formData.business_details.business_type === 'individual' && (
+                    <div>
+                      <label className="text-sm font-medium mb-1.5 block">Aadhaar Number</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={formData.business_details.aadhaar_number}
+                          onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, aadhaar_number: e.target.value } })}
+                          className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                          placeholder="234567890123"
+                          maxLength={12}
+                        />
+                        <button type="button" onClick={handleAadhaarLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
+                          {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      {errors.aadhaar_number && <p className="mt-1 text-xs text-red-600">{errors.aadhaar_number}</p>}
                     </div>
-                    {errors.aadhaar_number && <p className="mt-1 text-xs text-red-600">{errors.aadhaar_number}</p>}
-                  </div>
+                  )}
 
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Business Name</label>
@@ -601,7 +636,8 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                       type="text"
                       value={formData.business_name}
                       onChange={(e) => setFormData({ ...formData, business_name: e.target.value })}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
+                      readOnly={gstAutoFilledFields.has('business_name')}
                     />
                     {errors.business_name && <p className="mt-1 text-xs text-red-600">{errors.business_name}</p>}
                   </div>
@@ -825,7 +861,8 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                       type="text"
                       value={formData.address.street}
                       onChange={(e) => setFormData({ ...formData, address: { ...formData.address, street: e.target.value } })}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
+                      readOnly={gstAutoFilledFields.has('address.street')}
                     />
                   </div>
 
@@ -836,7 +873,8 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                         type="text"
                         value={formData.address.city}
                         onChange={(e) => setFormData({ ...formData, address: { ...formData.address, city: e.target.value } })}
-                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
+                        readOnly={gstAutoFilledFields.has('address.city')}
                       />
                     </div>
 
@@ -846,7 +884,8 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                         type="text"
                         value={formData.address.state}
                         onChange={(e) => setFormData({ ...formData, address: { ...formData.address, state: e.target.value } })}
-                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
+                        readOnly={gstAutoFilledFields.has('address.state')}
                       />
                     </div>
                   </div>

@@ -188,10 +188,12 @@ export function BrokerPreviewDialog({ open, onOpenChange, formData, onConfirm }:
                     label="PAN Number" 
                     value={formData.business_details.pan_number || undefined} 
                   />
-                  <InfoRow 
-                    label="Aadhaar Number" 
-                    value={formData.business_details.aadhaar_number || undefined} 
-                  />
+                  {formData.business_details.business_type === 'individual' && (
+                    <InfoRow 
+                      label="Aadhaar Number" 
+                      value={formData.business_details.aadhaar_number || undefined} 
+                    />
+                  )}
                 </InfoSection>
               )}
 

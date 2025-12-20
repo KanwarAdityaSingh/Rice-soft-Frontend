@@ -18,6 +18,8 @@ interface VendorFormModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   vendorId?: string | null;
+  defaultType?: 'purchaser' | 'seller' | 'both';
+  lockType?: boolean;
 }
 
 // Helper function to convert ALL CAPS text to Title Case
@@ -45,7 +47,7 @@ const toTitleCase = (str: string | undefined | null): string => {
     .join(' ');
 };
 
-export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModalProps) {
+export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, lockType = false }: VendorFormModalProps) {
   const { createVendor, updateVendor } = useVendors();
   const navigate = useNavigate();
   const isEditMode = !!vendorId;
@@ -70,7 +72,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
       bank_name: '',
       branch: '',
     } as VendorBankDetails,
-    type: 'both',
+    type: defaultType || 'both',
     is_active: true,
     google_location_link: null,
   });
@@ -89,6 +91,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
   const [originalGstNumber, setOriginalGstNumber] = useState<string>('');
   const [originalPanNumber, setOriginalPanNumber] = useState<string>('');
   const [leadData, setLeadData] = useState<Lead | null>(null);
+  const [gstAutoFilledFields, setGstAutoFilledFields] = useState<Set<string>>(new Set());
 
   // Load vendor data when in edit mode
   useEffect(() => {
@@ -210,7 +213,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
         bank_name: '',
         branch: '',
       },
-      type: 'both',
+      type: defaultType || 'both',
       is_active: true,
       google_location_link: null,
     });
@@ -317,17 +320,39 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
       // The API service returns response.data, which is { gst_data: {...}, mapped_data: {...} }
       const mapped = response.mapped_data;
       
+      // Track which fields are being auto-filled
+      const autoFilledFields = new Set<string>();
+      
       // Populate business name if available (convert to title case)
-      const businessName = toTitleCase(mapped?.business_name) || formData.business_name;
+      let businessName = formData.business_name;
+      if (mapped?.business_name) {
+        businessName = toTitleCase(mapped.business_name);
+        autoFilledFields.add('business_name');
+      }
       
       // Populate address fields (only fill non-empty values, convert to title case)
       const addressUpdate: any = { ...formData.address };
       if (mapped?.address) {
-        if (mapped.address.street) addressUpdate.street = toTitleCase(mapped.address.street);
-        if (mapped.address.city) addressUpdate.city = toTitleCase(mapped.address.city);
-        if (mapped.address.state) addressUpdate.state = toTitleCase(mapped.address.state);
-        if (mapped.address.pincode) addressUpdate.pincode = mapped.address.pincode;
-        if (mapped.address.country) addressUpdate.country = toTitleCase(mapped.address.country);
+        if (mapped.address.street) {
+          addressUpdate.street = toTitleCase(mapped.address.street);
+          autoFilledFields.add('address.street');
+        }
+        if (mapped.address.city) {
+          addressUpdate.city = toTitleCase(mapped.address.city);
+          autoFilledFields.add('address.city');
+        }
+        if (mapped.address.state) {
+          addressUpdate.state = toTitleCase(mapped.address.state);
+          autoFilledFields.add('address.state');
+        }
+        if (mapped.address.pincode) {
+          addressUpdate.pincode = mapped.address.pincode;
+          autoFilledFields.add('address.pincode');
+        }
+        if (mapped.address.country) {
+          addressUpdate.country = toTitleCase(mapped.address.country);
+          autoFilledFields.add('address.country');
+        }
       }
       
       // Update business details
@@ -338,16 +363,19 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
       // Set GST number if available
       if (mapped?.business_details?.gst_number) {
         businessDetailsUpdate.gst_number = mapped.business_details.gst_number;
+        autoFilledFields.add('gst_number');
       }
       
       // Set PAN number if available
       if (mapped?.business_details?.pan_number) {
         businessDetailsUpdate.pan_number = mapped.business_details.pan_number;
+        autoFilledFields.add('pan_number');
       }
       
       // Set business type if available
       if (mapped?.business_details?.business_type) {
         businessDetailsUpdate.business_type = mapped.business_details.business_type;
+        autoFilledFields.add('business_type');
       }
       
       setFormData({
@@ -356,6 +384,9 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
         address: addressUpdate,
         business_details: businessDetailsUpdate,
       });
+      
+      // Set the auto-filled fields
+      setGstAutoFilledFields(autoFilledFields);
       
       // Clear any previous errors
       setErrors({ ...errors, gst_number: '' });
@@ -756,8 +787,9 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
                           type="text"
                           value={formData.business_details.pan_number}
                           onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, pan_number: e.target.value.toUpperCase() } })}
-                          className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                          className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
                           placeholder="ABCDE1234F"
+                          readOnly={gstAutoFilledFields.has('pan_number')}
                         />
                         <button 
                           type="button" 
@@ -778,7 +810,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
                       type="text"
                       value={formData.business_name}
                       onChange={(e) => setFormData({ ...formData, business_name: e.target.value })}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
+                      readOnly={gstAutoFilledFields.has('business_name')}
                     />
                     {errors.business_name && <p className="mt-1 text-xs text-red-600">{errors.business_name}</p>}
                   </div>
@@ -921,6 +954,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
                         { value: 'both', label: 'Both' }
                       ]}
                       placeholder="Select Type"
+                      disabled={lockType}
                     />
                   </div>
 
@@ -938,7 +972,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
                       type="text"
                       value={formData.address.street}
                       onChange={(e) => setFormData({ ...formData, address: { ...formData.address, street: e.target.value } })}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
+                      readOnly={gstAutoFilledFields.has('address.street')}
                     />
                     {errors.street && <p className="mt-1 text-xs text-red-600">{errors.street}</p>}
                   </div>
@@ -950,7 +985,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
                         type="text"
                         value={formData.address.city}
                         onChange={(e) => setFormData({ ...formData, address: { ...formData.address, city: e.target.value } })}
-                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
+                        readOnly={gstAutoFilledFields.has('address.city')}
                       />
                       {errors.city && <p className="mt-1 text-xs text-red-600">{errors.city}</p>}
                     </div>
@@ -961,7 +997,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
                         type="text"
                         value={formData.address.state}
                         onChange={(e) => setFormData({ ...formData, address: { ...formData.address, state: e.target.value } })}
-                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
+                        readOnly={gstAutoFilledFields.has('address.state')}
                       />
                       {errors.state && <p className="mt-1 text-xs text-red-600">{errors.state}</p>}
                     </div>
@@ -989,9 +1026,10 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
                               handlePincodeLookup(value);
                             }
                           }}
-                          className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                          className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
                           placeholder="6 digits"
                           maxLength={6}
+                          readOnly={gstAutoFilledFields.has('address.pincode')}
                         />
                         {pincodeLoading && (
                           <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -1008,7 +1046,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId }: VendorFormModa
                         type="text"
                         value={formData.address.country}
                         onChange={(e) => setFormData({ ...formData, address: { ...formData.address, country: e.target.value } })}
-                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
+                        readOnly={gstAutoFilledFields.has('address.country')}
                       />
                     </div>
                   </div>

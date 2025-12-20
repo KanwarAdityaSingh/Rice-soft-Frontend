@@ -1,5 +1,5 @@
 import { apiService } from './api';
-import type { Transporter, CreateTransporterRequest, UpdateTransporterRequest } from '../types/entities';
+import type { Transporter, CreateTransporterRequest, UpdateTransporterRequest, GSTLookupResponseData, PANLookupResponseData } from '../types/entities';
 
 export const transportersAPI = {
   // Get all transporters
@@ -29,6 +29,16 @@ export const transportersAPI = {
   // Delete transporter
   deleteTransporter: (id: string) => {
     return apiService.delete<{ success: boolean; message: string }>(`/transporters/${id}`);
+  },
+
+  // GST Lookup
+  lookupGST: (gstNumber: string) => {
+    return apiService.get<GSTLookupResponseData>(`/transporters/lookupGST?gst_number=${gstNumber}`);
+  },
+
+  // PAN Lookup
+  lookupPAN: (panNumber: string) => {
+    return apiService.get<PANLookupResponseData>(`/transporters/lookupPAN?pan_number=${panNumber}`);
   },
 };
 

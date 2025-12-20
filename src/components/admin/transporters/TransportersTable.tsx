@@ -25,9 +25,11 @@ export function TransportersTable() {
     return transporters.filter((transporter) => {
       const matchesSearch = 
         transporter.business_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        transporter.contact_person.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        transporter.phone.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (transporter.email && transporter.email.toLowerCase().includes(searchQuery.toLowerCase()));
+        (transporter.contact_persons && transporter.contact_persons.some(cp => 
+          cp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          cp.phones?.some(phone => phone.toLowerCase().includes(searchQuery.toLowerCase())) ||
+          cp.emails?.some(email => email && email.toLowerCase().includes(searchQuery.toLowerCase()))
+        ));
       
       const matchesStatus = statusFilter 
         ? (statusFilter === 'active' ? transporter.is_active : !transporter.is_active)
@@ -93,34 +95,40 @@ export function TransportersTable() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((transporter) => (
-                  <tr key={transporter.id} className="border-b border-border/60 hover:bg-muted/30 transition-colors">
-                    <td className="py-3 px-4 text-sm font-medium">{transporter.business_name}</td>
-                    <td className="py-3 px-4 text-sm">{transporter.contact_person}</td>
-                    <td className="py-3 px-4 text-sm">{transporter.phone}</td>
-                    <td className="py-3 px-4 text-sm">{transporter.email || 'N/A'}</td>
-                    <td className="py-3 px-4 text-sm">{transporter.address.city}</td>
-                    <td className="py-3 px-4 text-sm">
-                      {transporter.vehicle_numbers.length > 0 
-                        ? `${transporter.vehicle_numbers.length} vehicle(s)`
-                        : 'None'
-                      }
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <ActionButtons
-                        isActive={transporter.is_active}
-                        onEdit={() => {
-                          setSelectedTransporterId(transporter.id);
-                          setEditModalOpen(true);
-                        }}
-                        onDelete={() => {
-                          setSelectedTransporter(transporter);
-                          setDeleteDialogOpen(true);
-                        }}
-                      />
-                    </td>
-                  </tr>
-                ))}
+                {filtered.map((transporter) => {
+                  const primaryContact = transporter.contact_persons?.[0];
+                  const primaryPhone = primaryContact?.phones?.[0] || 'N/A';
+                  const primaryEmail = primaryContact?.emails?.[0] || 'N/A';
+                  
+                  return (
+                    <tr key={transporter.id} className="border-b border-border/60 hover:bg-muted/30 transition-colors">
+                      <td className="py-3 px-4 text-sm font-medium">{transporter.business_name}</td>
+                      <td className="py-3 px-4 text-sm">{primaryContact?.name || 'N/A'}</td>
+                      <td className="py-3 px-4 text-sm">{primaryPhone}</td>
+                      <td className="py-3 px-4 text-sm">{primaryEmail}</td>
+                      <td className="py-3 px-4 text-sm">{transporter.address.city}</td>
+                      <td className="py-3 px-4 text-sm">
+                        {transporter.vehicle_numbers.length > 0 
+                          ? `${transporter.vehicle_numbers.length} vehicle(s)`
+                          : 'None'
+                        }
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <ActionButtons
+                          isActive={transporter.is_active}
+                          onEdit={() => {
+                            setSelectedTransporterId(transporter.id);
+                            setEditModalOpen(true);
+                          }}
+                          onDelete={() => {
+                            setSelectedTransporter(transporter);
+                            setDeleteDialogOpen(true);
+                          }}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

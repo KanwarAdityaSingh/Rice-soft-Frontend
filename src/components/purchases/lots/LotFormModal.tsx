@@ -94,7 +94,6 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
     received_weight: 0,
     rate: 0,
     bag_weight: null,
-    bardana: null,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -127,7 +126,6 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
         received_weight: lot.received_weight,
         rate: lot.rate,
         bag_weight: lot.bag_weight || null,
-        bardana: lot.bardana || null,
       });
       setErrors({});
     } catch (error: any) {
@@ -151,7 +149,6 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
       received_weight: 0,
       rate: 0,
       bag_weight: null,
-      bardana: null,
     });
     setErrors({});
   };
@@ -420,17 +417,6 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
                       {errors.rate && (
                         <p className="text-xs text-red-500 mt-1">{errors.rate}</p>
                       )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Bardana</label>
-                      <input
-                        type="text"
-                        value={formData.bardana || ''}
-                        onChange={(e) => setFormData({ ...formData, bardana: e.target.value || null })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-background"
-                        placeholder="Standard"
-                      />
                     </div>
 
                     {calculatedAmount > 0 && (

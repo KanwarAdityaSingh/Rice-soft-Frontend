@@ -125,12 +125,6 @@ export function LotPreviewDialog({ open, onOpenChange, lot }: LotPreviewDialogPr
                   <label className="text-xs text-muted-foreground uppercase tracking-wide">Amount</label>
                   <p className="mt-1 text-sm font-semibold text-primary">₹{(lot.amount ?? 0).toFixed(2)}</p>
                 </div>
-                {lot.bardana && (
-                  <div>
-                    <label className="text-xs text-muted-foreground uppercase tracking-wide">Bardana</label>
-                    <p className="mt-1 text-sm font-medium">{lot.bardana}</p>
-                  </div>
-                )}
               </div>
 
               <div className="pt-4 border-t border-border">

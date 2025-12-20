@@ -5,10 +5,11 @@ import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { EmptyState } from '../../admin/shared/EmptyState';
 import { ActionButtons } from '../../admin/shared/ActionButtons';
 import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
-import { FileText } from 'lucide-react';
+import { FileText, Scale } from 'lucide-react';
 import { useInwardSlipPasses } from '../../../hooks/useInwardSlipPasses';
 import { InwardSlipPassFormModal } from './InwardSlipPassFormModal';
 import { InwardSlipPassPreviewDialog } from './InwardSlipPassPreviewDialog';
+import { KaantaWeightDialog } from './KaantaWeightDialog';
 import type { InwardSlipPass } from '../../../types/entities';
 
 export function InwardSlipPassesTable() {
@@ -22,6 +23,8 @@ export function InwardSlipPassesTable() {
   const [selectedISPId, setSelectedISPId] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewISP, setPreviewISP] = useState<InwardSlipPass | null>(null);
+  const [kaantaWeightOpen, setKaantaWeightOpen] = useState(false);
+  const [kaantaWeightISP, setKaantaWeightISP] = useState<InwardSlipPass | null>(null);
 
   const filtered = useMemo(() => {
     return inwardSlipPasses.filter((isp) => {
@@ -94,8 +97,25 @@ export function InwardSlipPassesTable() {
                     <span className="font-medium">₹{isp.transportation_cost.toFixed(2)}</span>
                   </div>
                 )}
+                {isp.kaanta_weight != null && (
+                  <div className="inline-flex items-center gap-2">
+                    <span className="text-muted-foreground w-20">Kaanta Wt:</span>
+                    <span className="font-medium text-primary">{isp.kaanta_weight.toFixed(2)} kg</span>
+                  </div>
+                )}
               </div>
               <div className="mt-3 flex items-center justify-end gap-2">
+                <button
+                  onClick={() => {
+                    setKaantaWeightISP(isp);
+                    setKaantaWeightOpen(true);
+                  }}
+                  className="text-xs text-emerald-600 hover:text-emerald-700 px-2 py-1 rounded flex items-center gap-1"
+                  title="Add Kaanta Weight"
+                >
+                  <Scale className="h-3 w-3" />
+                  Kaanta
+                </button>
                 <button
                   onClick={() => {
                     setPreviewISP(isp);
@@ -164,6 +184,13 @@ export function InwardSlipPassesTable() {
         open={previewOpen}
         onOpenChange={setPreviewOpen}
         isp={previewISP}
+      />
+
+      <KaantaWeightDialog
+        open={kaantaWeightOpen}
+        onOpenChange={setKaantaWeightOpen}
+        isp={kaantaWeightISP}
+        onSuccess={refetch}
       />
     </div>
   );

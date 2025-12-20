@@ -462,7 +462,9 @@ export default function VendorsPage() {
           if (!open) {
             refetch();
           }
-        }} 
+        }}
+        defaultType="seller"
+        lockType={true}
       />
 
       <VendorFormModal

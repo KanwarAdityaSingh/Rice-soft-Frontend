@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import React, { useState, useEffect } from 'react';
-import { X, FileText, Check, Loader2, Plus } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, FileText, Check, Loader2, Plus, Search, ChevronDown, RefreshCw, Minus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useInwardSlipPasses } from '../../../hooks/useInwardSlipPasses';
 import { inwardSlipPassesAPI } from '../../../services/inwardSlipPasses.api';
@@ -32,7 +32,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   const { createInwardSlipPass, updateInwardSlipPass } = useInwardSlipPasses();
   const { saudas } = useSaudas();
   const { vendors } = useVendors();
-  const { transporters } = useTransporters();
+  const { transporters, refetch: refetchTransporters, loading: loadingTransporters } = useTransporters();
   const isEditMode = !!ispId;
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
@@ -115,6 +115,9 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+  const [saudaSearchQuery, setSaudaSearchQuery] = useState('');
+  const [saudaDropdownOpen, setSaudaDropdownOpen] = useState(false);
+  const saudaDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open && ispId && isEditMode) {
@@ -123,6 +126,20 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
       resetForm();
     }
   }, [open, ispId]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (saudaDropdownRef.current && !saudaDropdownRef.current.contains(event.target as Node)) {
+        setSaudaDropdownOpen(false);
+      }
+    };
+
+    if (saudaDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [saudaDropdownOpen]);
 
   const loadISPData = async () => {
     if (!ispId) return;
@@ -375,6 +392,62 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     });
   };
 
+  const removeSauda = (saudaId: string) => {
+    setFormData(prev => ({
+      ...prev,
+      sauda_ids: (prev.sauda_ids || []).filter(id => id !== saudaId)
+    }));
+  };
+
+  const getFilteredSaudas = () => {
+    if (!saudaSearchQuery.trim()) return saudas;
+    const query = saudaSearchQuery.toLowerCase();
+    return saudas.filter(sauda => {
+      const displayName = getSaudaDisplayName(sauda).toLowerCase();
+      const rate = sauda.rate.toString();
+      return displayName.includes(query) || rate.includes(query);
+    });
+  };
+
+  const getSelectedSaudas = () => {
+    return saudas.filter(s => (formData.sauda_ids || []).includes(s.id));
+  };
+
+  const adjustDate = (days: number) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const currentDate = new Date(formData.date);
+    const newDate = new Date(currentDate);
+    newDate.setDate(newDate.getDate() + days);
+    
+    // Calculate difference from today
+    const diffTime = newDate.getTime() - today.getTime();
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    
+    // Check if new date is within allowed range (-1 to +1 from today)
+    if (diffDays < -1) {
+      setAlertType('warning');
+      setAlertTitle('Date Restriction');
+      setAlertMessage('You cannot select a date more than 1 day before today.');
+      setAlertOpen(true);
+      return;
+    }
+    
+    if (diffDays > 1) {
+      setAlertType('warning');
+      setAlertTitle('Date Restriction');
+      setAlertMessage('You cannot select a date more than 1 day after today.');
+      setAlertOpen(true);
+      return;
+    }
+    
+    setFormData({ ...formData, date: newDate.toISOString().split('T')[0] });
+  };
+
+  const incrementDate = () => adjustDate(1);
+  const decrementDate = () => adjustDate(-1);
+
   return (
     <>
       <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -400,31 +473,107 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                 </div>
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  {/* Sauda Selection - First Row */}
+                  {/* Sauda Selection - Multiple Select with Search */}
                   <div>
                     <label className="block text-sm font-medium mb-2">
                       Saudas <span className="text-red-500">*</span>
                     </label>
-                    <div className="max-h-40 overflow-y-auto border border-border rounded-lg p-3 space-y-2">
-                      {saudas.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">No saudas available</p>
-                      ) : (
-                        saudas.map((s) => (
-                          <label key={s.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 p-2 rounded">
-                            <input
-                              type="checkbox"
-                              checked={(formData.sauda_ids || []).includes(s.id)}
-                              onChange={() => toggleSaudaSelection(s.id)}
-                              disabled={isEditMode}
-                              className="rounded"
-                            />
-                            <span className="text-sm">
-                              {getSaudaDisplayName(s)} - ₹{s.rate}
-                            </span>
-                          </label>
-                        ))
-                      )}
-                    </div>
+                    
+                    {/* Selected Pills */}
+                    {getSelectedSaudas().length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {getSelectedSaudas().map((sauda) => (
+                          <div
+                            key={sauda.id}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary rounded-full text-sm"
+                          >
+                            <span>{getSaudaDisplayName(sauda)} - ₹{sauda.rate}</span>
+                            {!isEditMode && (
+                              <button
+                                type="button"
+                                onClick={() => removeSauda(sauda.id)}
+                                className="hover:bg-primary/20 rounded-full p-0.5 transition-colors"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Dropdown */}
+                    {!isEditMode && (
+                      <div ref={saudaDropdownRef} className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setSaudaDropdownOpen(!saudaDropdownOpen)}
+                          className={`w-full px-3 py-2 border rounded-lg bg-background flex items-center justify-between ${
+                            errors.sauda_ids ? 'border-red-500' : 'border-border'
+                          }`}
+                        >
+                          <span className="text-sm text-muted-foreground">
+                            {getSelectedSaudas().length === 0 
+                              ? 'Select saudas...' 
+                              : `${getSelectedSaudas().length} sauda(s) selected`}
+                          </span>
+                          <ChevronDown className={`h-4 w-4 transition-transform ${saudaDropdownOpen ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        {saudaDropdownOpen && (
+                          <div className="absolute z-10 w-full mt-1 bg-background border border-border rounded-lg shadow-lg">
+                            {/* Search Input */}
+                            <div className="p-2 border-b border-border">
+                              <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                <input
+                                  type="text"
+                                  value={saudaSearchQuery}
+                                  onChange={(e) => setSaudaSearchQuery(e.target.value)}
+                                  placeholder="Search saudas..."
+                                  className="w-full pl-9 pr-3 py-2 border border-border rounded-lg bg-background text-sm"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </div>
+                            </div>
+
+                            {/* Options List */}
+                            <div className="max-h-60 overflow-y-auto p-2">
+                              {saudas.length === 0 ? (
+                                <p className="text-sm text-muted-foreground py-2 px-3">No saudas available</p>
+                              ) : getFilteredSaudas().length === 0 ? (
+                                <p className="text-sm text-muted-foreground py-2 px-3">No matching saudas</p>
+                              ) : (
+                                getFilteredSaudas().map((sauda) => {
+                                  const isSelected = (formData.sauda_ids || []).includes(sauda.id);
+                                  return (
+                                    <button
+                                      key={sauda.id}
+                                      type="button"
+                                      onClick={() => {
+                                        toggleSaudaSelection(sauda.id);
+                                        setSaudaSearchQuery('');
+                                      }}
+                                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                                        isSelected
+                                          ? 'bg-primary/10 text-primary'
+                                          : 'hover:bg-muted'
+                                      }`}
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <span>{getSaudaDisplayName(sauda)} - ₹{sauda.rate}</span>
+                                        {isSelected && <Check className="h-4 w-4" />}
+                                      </div>
+                                    </button>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {errors.sauda_ids && (
                       <p className="text-xs text-red-500 mt-1">{errors.sauda_ids}</p>
                     )}
@@ -433,48 +582,32 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                   {/* Divider */}
                   <div className="border-t border-border my-4"></div>
 
-                  {/* Slip Number and Date */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Slip Number <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.slip_number}
-                        onChange={(e) => setFormData({ ...formData, slip_number: e.target.value })}
-                        className={`w-full px-3 py-2 border rounded-lg bg-background ${
-                          errors.slip_number ? 'border-red-500' : 'border-border'
-                        }`}
-                        placeholder="ISP-001"
-                      />
-                      {errors.slip_number && (
-                        <p className="text-xs text-red-500 mt-1">{errors.slip_number}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Date <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="date"
-                        value={formData.date}
-                        onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                        className={`w-full px-3 py-2 border rounded-lg bg-background ${
-                          errors.date ? 'border-red-500' : 'border-border'
-                        }`}
-                      />
-                      {errors.date && (
-                        <p className="text-xs text-red-500 mt-1">{errors.date}</p>
-                      )}
-                    </div>
-                  </div>
-
                   {/* Party Details Section */}
                   <div className="space-y-4 pt-2">
                     <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Party Details</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Party GST Number</label>
+                        <input
+                          type="text"
+                          value={formData.party_gst_number || ''}
+                          onChange={(e) => setFormData({ ...formData, party_gst_number: e.target.value || null })}
+                          className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+                          placeholder="27ABCDE1234F1Z5"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Party PAN Number</label>
+                        <input
+                          type="text"
+                          value={formData.party_pan_number || ''}
+                          onChange={(e) => setFormData({ ...formData, party_pan_number: e.target.value || null })}
+                          className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+                          placeholder="ABCDE1234F"
+                        />
+                      </div>
+
                       <div className="sm:col-span-2">
                         <label className="block text-sm font-medium mb-1">
                           Party Name <span className="text-red-500">*</span>
@@ -503,28 +636,62 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                           placeholder="Party Address"
                         />
                       </div>
+                    </div>
+                  </div>
 
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Party GST Number</label>
-                        <input
-                          type="text"
-                          value={formData.party_gst_number || ''}
-                          onChange={(e) => setFormData({ ...formData, party_gst_number: e.target.value || null })}
-                          className="w-full px-3 py-2 border border-border rounded-lg bg-background"
-                          placeholder="27ABCDE1234F1Z5"
-                        />
-                      </div>
+                  {/* Slip Number and Date */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        Slip Number <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.slip_number}
+                        onChange={(e) => setFormData({ ...formData, slip_number: e.target.value })}
+                        className={`w-full px-3 py-2 border rounded-lg bg-background ${
+                          errors.slip_number ? 'border-red-500' : 'border-border'
+                        }`}
+                        placeholder="ISP-001"
+                      />
+                      {errors.slip_number && (
+                        <p className="text-xs text-red-500 mt-1">{errors.slip_number}</p>
+                      )}
+                    </div>
 
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Party PAN Number</label>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        Date <span className="text-red-500">*</span>
+                      </label>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={decrementDate}
+                          className="flex-shrink-0 px-2.5 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center"
+                          title="Previous Day"
+                        >
+                          <Minus className="h-4 w-4" />
+                        </button>
                         <input
-                          type="text"
-                          value={formData.party_pan_number || ''}
-                          onChange={(e) => setFormData({ ...formData, party_pan_number: e.target.value || null })}
-                          className="w-full px-3 py-2 border border-border rounded-lg bg-background"
-                          placeholder="ABCDE1234F"
+                          type="date"
+                          value={formData.date}
+                          onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                          className={`flex-1 px-3 py-2 border rounded-lg bg-background ${
+                            errors.date ? 'border-red-500' : 'border-border'
+                          }`}
                         />
+                        <button
+                          type="button"
+                          onClick={incrementDate}
+                          className="flex-shrink-0 px-2.5 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center"
+                          title="Next Day"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
                       </div>
+                      {errors.date && (
+                        <p className="text-xs text-red-500 mt-1">{errors.date}</p>
+                      )}
                     </div>
                   </div>
 
@@ -539,8 +706,8 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                             value={formData.transporter_id || ''}
                             onChange={(e) => {
                               if (e.target.value === '__add_new__') {
-                                navigate('/directory/transporters');
-                                // Reset to empty after navigation
+                                window.open('/directory/transporters', '_blank');
+                                // Reset to empty after opening
                                 setTimeout(() => {
                                   const select = e.target as HTMLSelectElement;
                                   select.value = '';
@@ -577,8 +744,17 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                           </select>
                           <button
                             type="button"
-                            onClick={() => navigate('/directory/transporters')}
-                            className="px-3 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center"
+                            onClick={() => refetchTransporters()}
+                            disabled={loadingTransporters}
+                            className="flex-shrink-0 px-2.5 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center disabled:opacity-50"
+                            title="Refresh Transporters"
+                          >
+                            <RefreshCw className={`h-4 w-4 ${loadingTransporters ? 'animate-spin' : ''}`} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => window.open('/directory/transporters', '_blank')}
+                            className="flex-shrink-0 px-3 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center"
                             title="Add New Transporter"
                           >
                             <Plus className="h-4 w-4" />

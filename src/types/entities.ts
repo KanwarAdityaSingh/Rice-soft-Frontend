@@ -122,12 +122,12 @@ export interface TransporterBankDetails {
 export interface Transporter {
   id: string;
   business_name: string;
-  contact_person: string;
-  phone: string;
-  email: string | null;
+  contact_persons: ContactPerson[];
   address: TransporterAddress;
+  transport_type: 'registered' | 'unregistered';
   gst_number: string | null;
   pan_number: string | null;
+  aadhar_number: string | null;
   vehicle_numbers: string[];
   bank_details?: TransporterBankDetails;
   is_active: boolean;
@@ -137,12 +137,12 @@ export interface Transporter {
 
 export interface CreateTransporterRequest {
   business_name: string;
-  contact_person: string;
-  phone: string;
-  email?: string | null;
+  contact_persons: ContactPerson[];
   address: TransporterAddress;
+  transport_type: 'registered' | 'unregistered';
   gst_number?: string | null;
   pan_number?: string | null;
+  aadhar_number?: string | null;
   vehicle_numbers?: string[];
   bank_details?: TransporterBankDetails;
   is_active?: boolean;
@@ -699,6 +699,9 @@ export interface InwardSlipPass {
   bilti_pdf_url?: string | null;
   eway_bill_number?: string | null;
   eway_bill_url?: string | null;
+  full_truck_weight?: number | null;
+  empty_truck_weight?: number | null;
+  kaanta_weight?: number | null;
   notes?: string | null;
   created_at: string;
   updated_at: string;
@@ -729,6 +732,9 @@ export interface UpdateInwardSlipPassRequest {
   party_pan_number?: string | null;
   transporter_id?: string | null;
   transportation_cost?: number | null;
+  full_truck_weight?: number | null;
+  empty_truck_weight?: number | null;
+  kaanta_weight?: number | null;
   notes?: string | null;
 }
 
@@ -744,7 +750,6 @@ export interface Lot {
   total_weight?: number | null;
   bill_weight: number;
   received_weight: number;
-  bardana?: string | null;
   rate: number;
   amount: number;
   created_at: string;
@@ -761,7 +766,6 @@ export interface CreateLotRequest {
   received_weight: number;
   rate: number;
   bag_weight?: number | null;
-  bardana?: string | null;
 }
 
 export interface UpdateLotRequest {
@@ -773,7 +777,6 @@ export interface UpdateLotRequest {
   received_weight?: number;
   rate?: number;
   bag_weight?: number | null;
-  bardana?: string | null;
 }
 
 // Purchase Types
