@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import React, { useState, useEffect } from 'react';
-import { X, Plus, RefreshCw } from 'lucide-react';
+import { X, Plus, RefreshCw, Check, Loader2, Image as ImageIcon } from 'lucide-react';
 import { useSaudas } from '../../../hooks/useSaudas';
 import { saudasAPI } from '../../../services/saudas.api';
 import { useVendors } from '../../../hooks/useVendors';
@@ -10,6 +10,11 @@ import { CustomSelect } from '../../shared/CustomSelect';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import type { CreateSaudaRequest, UpdateSaudaRequest, RiceCode, RiceType, CashDiscountType, BrokerCommissionType } from '../../../types/entities';
+
+interface FileUploadState {
+  cooked_rice_image: File | null;
+  uncooked_rice_image: File | null;
+}
 
 interface SaudaFormModalProps {
   open: boolean;
@@ -49,6 +54,12 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [loadingSauda, setLoadingSauda] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<FileUploadState>({
+    cooked_rice_image: null,
+    uncooked_rice_image: null,
+  });
+  const [uploading, setUploading] = useState<Record<string, boolean>>({});
+  const [uploadSuccess, setUploadSuccess] = useState<Record<string, boolean>>({});
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
@@ -119,6 +130,12 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
         notes: sauda.notes || null,
       });
       setErrors({});
+      setPendingFiles({
+        cooked_rice_image: null,
+        uncooked_rice_image: null,
+      });
+      setUploading({});
+      setUploadSuccess({});
     } catch (error: any) {
       setAlertType('error');
       setAlertTitle('Error');
@@ -150,6 +167,12 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
     setErrors({});
     setUnit('kg');
     setBrokerCommissionUnit('kg');
+    setPendingFiles({
+      cooked_rice_image: null,
+      uncooked_rice_image: null,
+    });
+    setUploading({});
+    setUploadSuccess({});
   };
 
   const validateForm = (): boolean => {
@@ -192,6 +215,91 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
     return Object.keys(newErrors).length === 0;
   };
 
+  const uploadPendingFiles = async (newSaudaId: string) => {
+    const uploadPromises: Promise<void>[] = [];
+    const fileFields = Object.keys(pendingFiles) as (keyof FileUploadState)[];
+    
+    for (const field of fileFields) {
+      const file = pendingFiles[field];
+      if (file) {
+        uploadPromises.push(
+          (async () => {
+            try {
+              await handleFileUpload(field, file, newSaudaId);
+            } catch (error) {
+              console.error(`Failed to upload ${field}:`, error);
+            }
+          })()
+        );
+      }
+    }
+    
+    if (uploadPromises.length > 0) {
+      await Promise.all(uploadPromises);
+    }
+  };
+
+  const handleFileUpload = async (field: string, file: File, targetSaudaId?: string) => {
+    const uploadSaudaId = targetSaudaId || saudaId;
+    if (!uploadSaudaId) {
+      // Store file for later upload after creation
+      setPendingFiles(prev => ({ ...prev, [field]: file }));
+      return;
+    }
+
+    setUploading(prev => ({ ...prev, [field]: true }));
+    try {
+      let uploadFn;
+      switch (field) {
+        case 'cooked_rice_image':
+          uploadFn = saudasAPI.uploadCookedRiceImage;
+          break;
+        case 'uncooked_rice_image':
+          uploadFn = saudasAPI.uploadUncookedRiceImage;
+          break;
+        default:
+          throw new Error('Unknown upload field');
+      }
+      const result = await uploadFn(uploadSaudaId, file);
+      setUploadSuccess(prev => ({ ...prev, [field]: true }));
+      // Update form data with the new image URL
+      // The API returns { url: string } or the URL might be in result.url
+      const imageUrl = result?.url || (typeof result === 'string' ? result : null);
+      if (field === 'cooked_rice_image' && imageUrl) {
+        setFormData(prev => ({ ...prev, cooked_rice_image_url: imageUrl }));
+      } else if (field === 'uncooked_rice_image' && imageUrl) {
+        setFormData(prev => ({ ...prev, uncooked_rice_image_url: imageUrl }));
+      }
+      // Clear pending file after successful upload
+      setPendingFiles(prev => ({ ...prev, [field]: null }));
+      if (isEditMode) {
+        setAlertType('success');
+        setAlertTitle('Success');
+        setAlertMessage('Image uploaded successfully');
+        setAlertOpen(true);
+      }
+    } catch (error: any) {
+      setAlertType('error');
+      setAlertTitle('Error');
+      setAlertMessage(error.message || 'Failed to upload image');
+      setAlertOpen(true);
+    } finally {
+      setUploading(prev => ({ ...prev, [field]: false }));
+    }
+  };
+
+  const handleFileSelect = (field: keyof FileUploadState, file: File | null) => {
+    if (!file) return;
+    
+    if (isEditMode && saudaId) {
+      // In edit mode, upload immediately
+      handleFileUpload(field, file);
+    } else {
+      // In create mode, store for later
+      setPendingFiles(prev => ({ ...prev, [field]: file }));
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
@@ -216,11 +324,17 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
       };
       if (isEditMode && saudaId) {
         await updateSauda(saudaId, payload as UpdateSaudaRequest);
+        // Upload any new pending files
+        await uploadPendingFiles(saudaId);
         setAlertType('success');
         setAlertTitle('Success');
         setAlertMessage('Sauda updated successfully');
       } else {
-        await createSauda(payload as CreateSaudaRequest);
+        const newSauda = await createSauda(payload as CreateSaudaRequest);
+        // Upload pending files after creation
+        if (newSauda && newSauda.id) {
+          await uploadPendingFiles(newSauda.id);
+        }
         setAlertType('success');
         setAlertTitle('Success');
         setAlertMessage('Sauda created successfully');
@@ -611,6 +725,128 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                         <p className="text-xs text-muted-foreground ml-auto">
                           {(formData.notes || '').length}/100
                         </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section: Rice Images */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide border-b border-border pb-2">
+                      Rice Images
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Cooked Rice Image */}
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Cooked Rice Image
+                        </label>
+                        <div className="space-y-2">
+                          {formData.cooked_rice_image_url && (
+                            <div className="relative w-full h-32 border border-border rounded-lg overflow-hidden bg-muted/30">
+                              <img
+                                src={formData.cooked_rice_image_url}
+                                alt="Cooked rice"
+                                className="w-full h-full object-cover"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFormData(prev => ({ ...prev, cooked_rice_image_url: null }));
+                                  setPendingFiles(prev => ({ ...prev, cooked_rice_image: null }));
+                                }}
+                                className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                                title="Remove image"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          )}
+                          <div className="relative">
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/jpg,image/png,image/gif"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                handleFileSelect('cooked_rice_image', file || null);
+                              }}
+                              disabled={uploading.cooked_rice_image}
+                              className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-sm file:bg-primary/10 file:text-primary hover:file:bg-primary/20 disabled:opacity-50"
+                            />
+                            {uploading.cooked_rice_image && (
+                              <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                              </div>
+                            )}
+                            {uploadSuccess.cooked_rice_image && !uploading.cooked_rice_image && (
+                              <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                <Check className="h-4 w-4 text-emerald-500" />
+                              </div>
+                            )}
+                          </div>
+                          {pendingFiles.cooked_rice_image && !isEditMode && (
+                            <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
+                              <ImageIcon className="h-3 w-3" />
+                              {pendingFiles.cooked_rice_image?.name}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Uncooked Rice Image */}
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Uncooked Rice Image
+                        </label>
+                        <div className="space-y-2">
+                          {formData.uncooked_rice_image_url && (
+                            <div className="relative w-full h-32 border border-border rounded-lg overflow-hidden bg-muted/30">
+                              <img
+                                src={formData.uncooked_rice_image_url}
+                                alt="Uncooked rice"
+                                className="w-full h-full object-cover"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFormData(prev => ({ ...prev, uncooked_rice_image_url: null }));
+                                  setPendingFiles(prev => ({ ...prev, uncooked_rice_image: null }));
+                                }}
+                                className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                                title="Remove image"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          )}
+                          <div className="relative">
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/jpg,image/png,image/gif"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                handleFileSelect('uncooked_rice_image', file || null);
+                              }}
+                              disabled={uploading.uncooked_rice_image}
+                              className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-sm file:bg-primary/10 file:text-primary hover:file:bg-primary/20 disabled:opacity-50"
+                            />
+                            {uploading.uncooked_rice_image && (
+                              <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                              </div>
+                            )}
+                            {uploadSuccess.uncooked_rice_image && !uploading.uncooked_rice_image && (
+                              <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                <Check className="h-4 w-4 text-emerald-500" />
+                              </div>
+                            )}
+                          </div>
+                          {pendingFiles.uncooked_rice_image && !isEditMode && (
+                            <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
+                              <ImageIcon className="h-3 w-3" />
+                              {pendingFiles.uncooked_rice_image?.name}
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>

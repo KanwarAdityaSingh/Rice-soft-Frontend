@@ -38,5 +38,45 @@ export const saudasAPI = {
   deleteSauda: (id: string) => {
     return apiService.delete<{ success: boolean; message: string }>(`/saudas/${id}`);
   },
+
+  // Upload cooked rice image
+  uploadCookedRiceImage: async (id: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const token = localStorage.getItem('auth:token');
+    const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3000/api';
+    const response = await fetch(`${API_BASE_URL}/saudas/${id}/upload-cooked-rice-image`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Upload failed');
+    }
+    return data.data;
+  },
+
+  // Upload uncooked rice image
+  uploadUncookedRiceImage: async (id: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const token = localStorage.getItem('auth:token');
+    const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3000/api';
+    const response = await fetch(`${API_BASE_URL}/saudas/${id}/upload-uncooked-rice-image`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Upload failed');
+    }
+    return data.data;
+  },
 };
 
