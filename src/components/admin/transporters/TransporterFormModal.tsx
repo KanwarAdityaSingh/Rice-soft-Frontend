@@ -159,27 +159,23 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
       }
       
       // Populate address fields (only fill non-empty values, convert to title case)
+      // Note: Address fields are NOT added to autoFilledFields, so they remain editable
       const addressUpdate: any = { ...formData.address };
       if (mapped?.address) {
         if (mapped.address.street) {
           addressUpdate.street = toTitleCase(mapped.address.street);
-          autoFilledFields.add('address.street');
         }
         if (mapped.address.city) {
           addressUpdate.city = toTitleCase(mapped.address.city);
-          autoFilledFields.add('address.city');
         }
         if (mapped.address.state) {
           addressUpdate.state = toTitleCase(mapped.address.state);
-          autoFilledFields.add('address.state');
         }
         if (mapped.address.pincode) {
           addressUpdate.pincode = mapped.address.pincode;
-          autoFilledFields.add('address.pincode');
         }
         if (mapped.address.country) {
           addressUpdate.country = toTitleCase(mapped.address.country);
-          autoFilledFields.add('address.country');
         }
       }
       
@@ -231,11 +227,26 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
       const response = await transportersAPI.lookupPAN(formData.pan_number);
       
       const mapped = response.mapped_data;
+      const panData = response.pan_data;
+      
+      // Track which fields are being auto-filled
+      const autoFilledFields = new Set<string>();
       
       // Populate business name if available (convert to title case)
-      const businessName = toTitleCase(mapped?.business_name) || formData.business_name;
+      let businessName = formData.business_name;
+      if (mapped?.business_name) {
+        businessName = toTitleCase(mapped.business_name);
+        autoFilledFields.add('business_name');
+      }
+      
+      // Populate contact person if PAN is for a person (individual)
+      let updatedContactPersons = [...formData.contact_persons];
+      if (panData?.category === 'person' && panData?.name) {
+        updatedContactPersons[0] = { ...updatedContactPersons[0], name: toTitleCase(panData.name) };
+      }
       
       // Populate address fields (only fill non-empty values, convert to title case)
+      // Note: Address fields are NOT added to autoFilledFields, so they remain editable
       const addressUpdate: any = { ...formData.address };
       if (mapped?.address) {
         if (mapped.address.street) addressUpdate.street = toTitleCase(mapped.address.street);
@@ -245,11 +256,18 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
         if (mapped.address.country) addressUpdate.country = toTitleCase(mapped.address.country);
       }
       
+      // Mark PAN number as auto-filled
+      autoFilledFields.add('pan_number');
+      
       setFormData({
         ...formData,
         business_name: businessName,
+        contact_persons: updatedContactPersons,
         address: addressUpdate,
       });
+      
+      // Set the auto-filled fields
+      setGstAutoFilledFields(autoFilledFields);
       
       // Clear any previous errors
       setErrors({ ...errors, pan_number: '' });
@@ -363,10 +381,10 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
   };
 
   const addVehicleNumber = () => {
-    if (newVehicleNumber.trim() && !formData.vehicle_numbers.includes(newVehicleNumber.trim())) {
+    if (newVehicleNumber.trim() && !(formData.vehicle_numbers || []).includes(newVehicleNumber.trim())) {
       setFormData({
         ...formData,
-        vehicle_numbers: [...formData.vehicle_numbers, newVehicleNumber.trim()],
+        vehicle_numbers: [...(formData.vehicle_numbers || []), newVehicleNumber.trim()],
       });
       setNewVehicleNumber('');
     }
@@ -375,7 +393,7 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
   const removeVehicleNumber = (index: number) => {
     setFormData({
       ...formData,
-      vehicle_numbers: formData.vehicle_numbers.filter((_, i) => i !== index),
+      vehicle_numbers: (formData.vehicle_numbers || []).filter((_, i) => i !== index),
     });
   };
 
@@ -850,9 +868,9 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                           <Plus className="h-4 w-4" />
                         </button>
                       </div>
-                      {formData.vehicle_numbers.length > 0 && (
+                      {(formData.vehicle_numbers || []).length > 0 && (
                         <div className="flex flex-wrap gap-2">
-                          {formData.vehicle_numbers.map((vehicle, index) => (
+                          {(formData.vehicle_numbers || []).map((vehicle, index) => (
                             <div
                               key={index}
                               className="flex items-center gap-2 px-3 py-1 bg-muted rounded-lg"

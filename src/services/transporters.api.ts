@@ -40,5 +40,10 @@ export const transportersAPI = {
   lookupPAN: (panNumber: string) => {
     return apiService.get<PANLookupResponseData>(`/transporters/lookupPAN?pan_number=${panNumber}`);
   },
+
+  // Verify bank account
+  verifyBankAccount: (accountNumber: string, ifscCode: string) => {
+    return apiService.get<any>(`/transporters/verifyBankAccount?id_number=${accountNumber}&ifsc=${ifscCode.toUpperCase()}`);
+  },
 };
 

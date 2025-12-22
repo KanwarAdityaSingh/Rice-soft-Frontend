@@ -221,6 +221,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
     setErrors({});
     setOriginalGstNumber('');
     setOriginalPanNumber('');
+    setBankAccountVerified(false);
+    setGstAutoFilledFields(new Set());
   };
 
   // Contact persons management functions
@@ -331,27 +333,23 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       }
       
       // Populate address fields (only fill non-empty values, convert to title case)
+      // Note: Address fields are NOT added to autoFilledFields, so they remain editable
       const addressUpdate: any = { ...formData.address };
       if (mapped?.address) {
         if (mapped.address.street) {
           addressUpdate.street = toTitleCase(mapped.address.street);
-          autoFilledFields.add('address.street');
         }
         if (mapped.address.city) {
           addressUpdate.city = toTitleCase(mapped.address.city);
-          autoFilledFields.add('address.city');
         }
         if (mapped.address.state) {
           addressUpdate.state = toTitleCase(mapped.address.state);
-          autoFilledFields.add('address.state');
         }
         if (mapped.address.pincode) {
           addressUpdate.pincode = mapped.address.pincode;
-          autoFilledFields.add('address.pincode');
         }
         if (mapped.address.country) {
           addressUpdate.country = toTitleCase(mapped.address.country);
-          autoFilledFields.add('address.country');
         }
       }
       
@@ -378,11 +376,19 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
         autoFilledFields.add('business_type');
       }
       
+      // Auto-fill account holder name with business name and mark it as read-only
+      const bankDetailsUpdate = {
+        ...formData.bank_details,
+        account_holder_name: businessName,
+      };
+      autoFilledFields.add('account_holder_name');
+      
       setFormData({
         ...formData,
         business_name: businessName,
         address: addressUpdate,
         business_details: businessDetailsUpdate,
+        bank_details: bankDetailsUpdate,
       });
       
       // Set the auto-filled fields
@@ -419,8 +425,15 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       const mapped = response.mapped_data;
       const panData = response.pan_data;
       
+      // Track which fields are being auto-filled
+      const autoFilledFields = new Set<string>();
+      
       // Populate business name if available (convert to title case)
-      const businessName = toTitleCase(mapped?.business_name) || formData.business_name;
+      let businessName = formData.business_name;
+      if (mapped?.business_name) {
+        businessName = toTitleCase(mapped.business_name);
+        autoFilledFields.add('business_name');
+      }
       
       // Populate contact person if PAN is for a person (individual)
       let updatedContactPersons = [...formData.contact_persons];
@@ -429,6 +442,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       }
       
       // Populate address fields (only fill non-empty values, convert to title case)
+      // Note: Address fields are NOT added to autoFilledFields, so they remain editable
       const addressUpdate: any = { ...formData.address };
       if (mapped?.address) {
         if (mapped.address.street) addressUpdate.street = toTitleCase(mapped.address.street);
@@ -446,6 +460,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       // Ensure PAN number is set
       if (mapped?.business_details?.pan_number) {
         businessDetailsUpdate.pan_number = mapped.business_details.pan_number;
+        autoFilledFields.add('pan_number');
       }
       
       // Set business type if available
@@ -453,13 +468,24 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
         businessDetailsUpdate.business_type = mapped.business_details.business_type;
       }
       
+      // Auto-fill account holder name with business name and mark it as read-only
+      const bankDetailsUpdate = {
+        ...formData.bank_details,
+        account_holder_name: businessName,
+      };
+      autoFilledFields.add('account_holder_name');
+      
       setFormData({
         ...formData,
         business_name: businessName,
         contact_persons: updatedContactPersons,
         address: addressUpdate,
         business_details: businessDetailsUpdate,
+        bank_details: bankDetailsUpdate,
       });
+      
+      // Set the auto-filled fields
+      setGstAutoFilledFields(autoFilledFields);
       
       // Clear any previous errors
       setErrors({ ...errors, pan_number: '' });
@@ -515,6 +541,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
   };
 
   const [ifscLoading, setIfscLoading] = useState(false);
+  const [verifyingBankAccount, setVerifyingBankAccount] = useState(false);
+  const [bankAccountVerified, setBankAccountVerified] = useState(false);
 
   const handleIFSCLookup = async (ifscCode: string) => {
     // Only lookup if IFSC is exactly 11 characters
@@ -542,6 +570,86 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       setErrors({ ...errors, ifsc_code: error?.message || 'IFSC code not found' });
     } finally {
       setIfscLoading(false);
+    }
+  };
+
+  const handleVerifyBankAccount = async () => {
+    const accountNumber = formData.bank_details?.account_number;
+    const ifscCode = formData.bank_details?.ifsc_code;
+
+    if (!accountNumber || !ifscCode) {
+      setAlertType('warning');
+      setAlertTitle('Missing Information');
+      setAlertMessage('Please enter both account number and IFSC code before verifying.');
+      setAlertOpen(true);
+      return;
+    }
+
+    setVerifyingBankAccount(true);
+    setBankAccountVerified(false);
+    
+    try {
+      const response = await vendorsAPI.verifyBankAccount(accountNumber, ifscCode);
+      
+      // Check if account exists
+      if (!response.account_exists) {
+        setBankAccountVerified(false);
+        setAlertType('error');
+        setAlertTitle('Account Not Found');
+        setAlertMessage('The bank account could not be verified. Please check the account number and IFSC code.');
+        setAlertOpen(true);
+        return;
+      }
+
+      const verifiedAccountHolderName = response.account_holder_name;
+      const currentAccountHolderName = formData.bank_details?.account_holder_name?.trim();
+
+      // If account holder name is already filled, check if it matches
+      if (currentAccountHolderName && verifiedAccountHolderName) {
+        const normalizedCurrent = currentAccountHolderName.toUpperCase().replace(/\s+/g, ' ');
+        const normalizedVerified = verifiedAccountHolderName.toUpperCase().replace(/\s+/g, ' ');
+        
+        if (normalizedCurrent !== normalizedVerified) {
+          setBankAccountVerified(false);
+          setAlertType('error');
+          setAlertTitle('Account Holder Name Mismatch');
+          setAlertMessage(`The account holder name does not match. Expected: "${verifiedAccountHolderName}", but found: "${currentAccountHolderName}". Please verify the details.`);
+          setAlertOpen(true);
+          return;
+        }
+      }
+
+      // Update form data with verified details
+      const updatedBankDetails = {
+        ...formData.bank_details,
+        account_number: accountNumber,
+        ifsc_code: ifscCode,
+      };
+
+      // Fill in account holder name if empty
+      if (verifiedAccountHolderName && !currentAccountHolderName) {
+        updatedBankDetails.account_holder_name = toTitleCase(verifiedAccountHolderName);
+      }
+
+      setFormData({
+        ...formData,
+        bank_details: updatedBankDetails,
+      });
+
+      setBankAccountVerified(true);
+      setAlertType('success');
+      setAlertTitle('Bank Account Verified');
+      setAlertMessage(response.message || 'Bank account details have been verified successfully.');
+      setAlertOpen(true);
+    } catch (error: any) {
+      console.error('Bank account verification error:', error);
+      setBankAccountVerified(false);
+      setAlertType('error');
+      setAlertTitle('Verification Failed');
+      setAlertMessage(error?.message || 'Failed to verify bank account. Please check the details and try again.');
+      setAlertOpen(true);
+    } finally {
+      setVerifyingBankAccount(false);
     }
   };
 
@@ -669,6 +777,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       setAlertMessage(errorMessage);
       setAlertOpen(true);
       setPreviewOpen(false);
+      // Reopen the form modal so user can edit
+      onOpenChange(true);
     } finally {
       setLoading(false);
     }
@@ -1110,7 +1220,10 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                           account_holder_name: e.target.value 
                         } 
                       })}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                      readOnly={gstAutoFilledFields.has('account_holder_name')}
+                      className={`w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
+                        gstAutoFilledFields.has('account_holder_name') ? 'read-only:cursor-not-allowed' : ''
+                      }`}
                     />
                   </div>
 
@@ -1119,13 +1232,17 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                     <input
                       type="text"
                       value={formData.bank_details?.account_number || ''}
-                      onChange={(e) => setFormData({ 
-                        ...formData, 
-                        bank_details: { 
-                          ...formData.bank_details, 
-                          account_number: e.target.value 
-                        } 
-                      })}
+                      onChange={(e) => {
+                        setFormData({ 
+                          ...formData, 
+                          bank_details: { 
+                            ...formData.bank_details, 
+                            account_number: e.target.value 
+                          } 
+                        });
+                        // Reset verification status when account number changes
+                        setBankAccountVerified(false);
+                      }}
                       className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                     />
                   </div>
@@ -1145,6 +1262,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                               ifsc_code: value 
                             } 
                           });
+                          // Reset verification status when IFSC changes
+                          setBankAccountVerified(false);
                           // Auto-lookup when 11 characters are entered
                           if (value.length === 11) {
                             handleIFSCLookup(value);
@@ -1165,6 +1284,48 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                     </div>
                     {errors.ifsc_code && <p className="mt-1 text-xs text-red-600">{errors.ifsc_code}</p>}
                   </div>
+
+                  {/* Verify Bank Account Button */}
+                  {formData.bank_details?.account_number && formData.bank_details?.ifsc_code && formData.bank_details.ifsc_code.length === 11 && (
+                    <div className="flex items-center gap-2">
+                      <button 
+                        type="button" 
+                        onClick={handleVerifyBankAccount}
+                        disabled={verifyingBankAccount}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          bankAccountVerified 
+                            ? 'bg-green-500/20 text-green-700 dark:text-green-400 border border-green-500/30' 
+                            : 'bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20'
+                        }`}
+                      >
+                        {verifyingBankAccount ? (
+                          <>
+                            <LoadingSpinner size="sm" />
+                            <span>Verifying...</span>
+                          </>
+                        ) : bankAccountVerified ? (
+                          <>
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            <span>Verified</span>
+                          </>
+                        ) : (
+                          <>
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span>Verify Bank Account</span>
+                          </>
+                        )}
+                      </button>
+                      {bankAccountVerified && (
+                        <span className="text-xs text-green-600 dark:text-green-400">
+                          Account details verified successfully
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Bank Name (auto-filled)</label>

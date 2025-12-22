@@ -59,5 +59,10 @@ export const vendorsAPI = {
     if (params.pan_number) queryParams.append('pan_number', params.pan_number);
     return apiService.get<VendorCheckResponse>(`/vendors/checkExists?${queryParams.toString()}`);
   },
+
+  // Verify bank account
+  verifyBankAccount: (accountNumber: string, ifscCode: string) => {
+    return apiService.get<any>(`/vendors/verifyBankAccount?id_number=${accountNumber}&ifsc=${ifscCode.toUpperCase()}`);
+  },
 };
 

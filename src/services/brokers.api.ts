@@ -56,5 +56,10 @@ export const brokersAPI = {
   quickCreateFromGST: (data: any) => {
     return apiService.post<Broker>('/brokers/quickCreateFromGST', data);
   },
+
+  // Verify bank account
+  verifyBankAccount: (accountNumber: string, ifscCode: string) => {
+    return apiService.get<any>(`/brokers/verifyBankAccount?id_number=${accountNumber}&ifsc=${ifscCode.toUpperCase()}`);
+  },
 };
 

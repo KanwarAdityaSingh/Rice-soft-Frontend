@@ -1,10 +1,18 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Plus } from 'lucide-react';
 import { SaudasTable } from '../../components/purchases/saudas/SaudasTable';
 import { SaudaFormModal } from '../../components/purchases/saudas/SaudaFormModal';
 
 export default function SaudasPage() {
   const [createOpen, setCreateOpen] = useState(false);
+  const tableRefreshRef = useRef<(() => void) | null>(null);
+
+  const handleSaudaSuccess = () => {
+    // Trigger table refresh when sauda is created/updated
+    if (tableRefreshRef.current) {
+      tableRefreshRef.current();
+    }
+  };
 
   return (
     <div className="container mx-auto py-6 sm:py-10 space-y-6 sm:space-y-8 px-4 sm:px-6">
@@ -27,13 +35,14 @@ export default function SaudasPage() {
         </div>
       </header>
 
-      <SaudasTable />
+      <SaudasTable onRefreshRef={tableRefreshRef} />
 
       <SaudaFormModal
         open={createOpen}
         onOpenChange={(open) => {
           setCreateOpen(open);
         }}
+        onSuccess={handleSaudaSuccess}
       />
     </div>
   );

@@ -14,12 +14,23 @@ import { SaudaFormModal } from './SaudaFormModal';
 import { SaudaPreviewDialog } from './SaudaPreviewDialog';
 import type { Sauda, RiceCode, RiceType } from '../../../types/entities';
 
-export function SaudasTable() {
+interface SaudasTableProps {
+  onRefreshRef?: React.MutableRefObject<(() => void) | null>;
+}
+
+export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
   const [typeFilter, setTypeFilter] = useState<string | undefined>();
   const { saudas, loading, deleteSauda, refetch } = useSaudas({
     sauda_type: typeFilter as any,
   });
   const { vendors } = useVendors();
+
+  // Expose refetch function to parent via ref
+  useEffect(() => {
+    if (onRefreshRef) {
+      onRefreshRef.current = refetch;
+    }
+  }, [refetch, onRefreshRef]);
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedSauda, setSelectedSauda] = useState<Sauda | null>(null);

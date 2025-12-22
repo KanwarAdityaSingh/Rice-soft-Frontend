@@ -81,6 +81,8 @@ export function SalesmanFormModal({ open, onOpenChange }: SalesmanFormModalProps
       setAlertMessage(errorMessage);
       setAlertOpen(true);
       setPreviewOpen(false);
+      // Reopen the form modal so user can edit
+      onOpenChange(true);
     } finally {
       setLoading(false);
     }
