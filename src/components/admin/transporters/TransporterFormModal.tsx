@@ -1,14 +1,12 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Search, Car, Check, RefreshCw, ExternalLink } from 'lucide-react';
+import { X, Plus, Search, Check } from 'lucide-react';
 import { useTransporters } from '../../../hooks/useTransporters';
-import { useVehicles } from '../../../hooks/useVehicles';
 import { transportersAPI } from '../../../services/transporters.api';
 import { validateGST, validatePAN, validateAadhaar } from '../../../utils/validation';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
-import { Link } from 'react-router-dom';
 import type { CreateTransporterRequest, UpdateTransporterRequest } from '../../../types/entities';
 
 interface TransporterFormModalProps {
@@ -19,10 +17,9 @@ interface TransporterFormModalProps {
 
 export function TransporterFormModal({ open, onOpenChange, transporterId }: TransporterFormModalProps) {
   const { createTransporter, updateTransporter } = useTransporters();
-  const { vehicles, refetch: refetchVehicles, loading: loadingVehicles } = useVehicles();
   const isEditMode = !!transporterId;
   
-  const [formData, setFormData] = useState<CreateTransporterRequest & { vehicle_ids?: string[] }>({
+  const [formData, setFormData] = useState<CreateTransporterRequest>({
     business_name: '',
     contact_persons: [{ name: '', phones: [''], emails: [''] }],
     address: {
@@ -36,18 +33,17 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
     gst_number: null,
     pan_number: null,
     aadhar_number: null,
-    vehicle_ids: [],
     bank_details: {},
     is_active: true,
   });
-  
-  const [vehicleSearchQuery, setVehicleSearchQuery] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [loadingTransporter, setLoadingTransporter] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [step, setStep] = useState(1);
   const [gstAutoFilledFields, setGstAutoFilledFields] = useState<Set<string>>(new Set());
+  const [originalGstNumber, setOriginalGstNumber] = useState<string>('');
+  const [originalPanNumber, setOriginalPanNumber] = useState<string>('');
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
@@ -66,6 +62,13 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
     setLoadingTransporter(true);
     try {
       const transporter = await transportersAPI.getTransporterById(transporterId);
+      const gstNumber = transporter.gst_number || '';
+      const panNumber = transporter.pan_number || '';
+      
+      // Store original values to check if they should be disabled
+      setOriginalGstNumber(gstNumber);
+      setOriginalPanNumber(panNumber);
+      
       setFormData({
         business_name: transporter.business_name,
         contact_persons: transporter.contact_persons && transporter.contact_persons.length > 0
@@ -80,7 +83,6 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
         gst_number: transporter.gst_number || null,
         pan_number: transporter.pan_number || null,
         aadhar_number: transporter.aadhar_number || null,
-        vehicle_ids: transporter.vehicle_ids || [],
         bank_details: transporter.bank_details || {},
         is_active: transporter.is_active,
       });
@@ -110,13 +112,13 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
       gst_number: null,
       pan_number: null,
       aadhar_number: null,
-      vehicle_ids: [],
       bank_details: {},
       is_active: true,
     });
-    setVehicleSearchQuery('');
     setErrors({});
     setGstAutoFilledFields(new Set());
+    setOriginalGstNumber('');
+    setOriginalPanNumber('');
     setStep(1);
   };
 
@@ -357,11 +359,8 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
 
     setLoading(true);
     try {
-      // Prepare the data - we only send vehicle_ids now, not vehicle_numbers
-      const submitData = {
-        ...formData,
-        vehicle_ids: formData.vehicle_ids || [],
-      };
+      // Remove vehicle_ids from payload - relationship is managed from vehicle side
+      const { vehicle_ids, ...submitData } = formData;
 
       if (isEditMode && transporterId) {
         await updateTransporter(transporterId, submitData as UpdateTransporterRequest);
@@ -389,29 +388,6 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
     }
   };
 
-  // Toggle vehicle selection
-  const toggleVehicle = (vehicleId: string) => {
-    setFormData(prev => ({
-      ...prev,
-      vehicle_ids: prev.vehicle_ids?.includes(vehicleId)
-        ? prev.vehicle_ids.filter(id => id !== vehicleId)
-        : [...(prev.vehicle_ids || []), vehicleId],
-    }));
-  };
-
-  // Filter vehicles by search query
-  const filteredVehicles = vehicles.filter(v => {
-    if (!vehicleSearchQuery) return v.is_active;
-    const q = vehicleSearchQuery.toLowerCase();
-    return v.is_active && (
-      v.vehicle_number.toLowerCase().includes(q) ||
-      v.owner_name?.toLowerCase().includes(q) ||
-      v.maker_model?.toLowerCase().includes(q)
-    );
-  });
-
-  // Get selected vehicles details
-  const selectedVehicles = vehicles.filter(v => formData.vehicle_ids?.includes(v.id));
 
   return (
     <>
@@ -477,23 +453,29 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                             <label className="block text-sm font-medium mb-1">
                               GST Number <span className="text-red-500">*</span>
                             </label>
-                            <div className="flex gap-2">
-                              <input
-                                type="text"
-                                value={formData.gst_number || ''}
-                                onChange={(e) => setFormData({ ...formData, gst_number: e.target.value.toUpperCase() || null })}
-                                className="flex-1 px-3 py-2 border border-border rounded-lg bg-background"
-                                placeholder="27ABCDE1234F1Z5"
-                              />
-                              <button 
-                                type="button" 
-                                onClick={handleGSTLookup} 
-                                disabled={lookupLoading} 
-                                className="btn-secondary flex items-center gap-2 px-3"
-                              >
-                                {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
-                              </button>
-                            </div>
+                            {isEditMode && originalGstNumber && originalGstNumber.trim().length > 0 ? (
+                              <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm pointer-events-none select-none">
+                                {originalGstNumber}
+                              </div>
+                            ) : (
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  value={formData.gst_number || ''}
+                                  onChange={(e) => setFormData({ ...formData, gst_number: e.target.value.toUpperCase() || null })}
+                                  className="flex-1 px-3 py-2 border border-border rounded-lg bg-background"
+                                  placeholder="27ABCDE1234F1Z5"
+                                />
+                                <button 
+                                  type="button" 
+                                  onClick={handleGSTLookup} 
+                                  disabled={lookupLoading} 
+                                  className="btn-secondary flex items-center gap-2 px-3"
+                                >
+                                  {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                                </button>
+                              </div>
+                            )}
                             {errors.gst_number && (
                               <p className="text-xs text-red-500 mt-1">{errors.gst_number}</p>
                             )}
@@ -502,24 +484,30 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                           {/* PAN Number below GST (full width) */}
                           <div>
                             <label className="block text-sm font-medium mb-1">PAN Number</label>
-                            <div className="flex gap-2">
-                              <input
-                                type="text"
-                                value={formData.pan_number || ''}
-                                onChange={(e) => setFormData({ ...formData, pan_number: e.target.value.toUpperCase() || null })}
-                                className="flex-1 px-3 py-2 border border-border rounded-lg bg-background read-only:cursor-not-allowed"
-                                placeholder="ABCDE1234F"
-                                readOnly={gstAutoFilledFields.has('pan_number')}
-                              />
-                              <button 
-                                type="button" 
-                                onClick={handlePANLookup} 
-                                disabled={lookupLoading} 
-                                className="btn-secondary flex items-center gap-2 px-3"
-                              >
-                                {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
-                              </button>
-                            </div>
+                            {isEditMode && originalPanNumber && originalPanNumber.trim().length > 0 ? (
+                              <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm pointer-events-none select-none">
+                                {originalPanNumber}
+                              </div>
+                            ) : (
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  value={formData.pan_number || ''}
+                                  onChange={(e) => setFormData({ ...formData, pan_number: e.target.value.toUpperCase() || null })}
+                                  className="flex-1 px-3 py-2 border border-border rounded-lg bg-background read-only:cursor-not-allowed"
+                                  placeholder="ABCDE1234F"
+                                  readOnly={gstAutoFilledFields.has('pan_number')}
+                                />
+                                <button 
+                                  type="button" 
+                                  onClick={handlePANLookup} 
+                                  disabled={lookupLoading} 
+                                  className="btn-secondary flex items-center gap-2 px-3"
+                                >
+                                  {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                                </button>
+                              </div>
+                            )}
                             {errors.pan_number && (
                               <p className="text-xs text-red-500 mt-1">{errors.pan_number}</p>
                             )}
@@ -761,11 +749,10 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                               ...formData,
                               address: { ...formData.address, street: e.target.value },
                             })}
-                            className={`w-full px-3 py-2 border rounded-lg bg-background read-only:cursor-not-allowed ${
+                            className={`w-full px-3 py-2 border rounded-lg bg-background ${
                               errors['address.street'] ? 'border-red-500' : 'border-border'
                             }`}
                             placeholder="123 Main Street"
-                            readOnly={gstAutoFilledFields.has('address.street')}
                           />
                           {errors['address.street'] && (
                             <p className="text-xs text-red-500 mt-1">{errors['address.street']}</p>
@@ -783,11 +770,10 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                               ...formData,
                               address: { ...formData.address, city: e.target.value },
                             })}
-                            className={`w-full px-3 py-2 border rounded-lg bg-background read-only:cursor-not-allowed ${
+                            className={`w-full px-3 py-2 border rounded-lg bg-background ${
                               errors['address.city'] ? 'border-red-500' : 'border-border'
                             }`}
                             placeholder="Mumbai"
-                            readOnly={gstAutoFilledFields.has('address.city')}
                           />
                           {errors['address.city'] && (
                             <p className="text-xs text-red-500 mt-1">{errors['address.city']}</p>
@@ -805,11 +791,10 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                               ...formData,
                               address: { ...formData.address, state: e.target.value },
                             })}
-                            className={`w-full px-3 py-2 border rounded-lg bg-background read-only:cursor-not-allowed ${
+                            className={`w-full px-3 py-2 border rounded-lg bg-background ${
                               errors['address.state'] ? 'border-red-500' : 'border-border'
                             }`}
                             placeholder="Maharashtra"
-                            readOnly={gstAutoFilledFields.has('address.state')}
                           />
                           {errors['address.state'] && (
                             <p className="text-xs text-red-500 mt-1">{errors['address.state']}</p>
@@ -827,11 +812,10 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                               ...formData,
                               address: { ...formData.address, pincode: e.target.value },
                             })}
-                            className={`w-full px-3 py-2 border rounded-lg bg-background read-only:cursor-not-allowed ${
+                            className={`w-full px-3 py-2 border rounded-lg bg-background ${
                               errors['address.pincode'] ? 'border-red-500' : 'border-border'
                             }`}
                             placeholder="400001"
-                            readOnly={gstAutoFilledFields.has('address.pincode')}
                           />
                           {errors['address.pincode'] && (
                             <p className="text-xs text-red-500 mt-1">{errors['address.pincode']}</p>
@@ -849,138 +833,14 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                               ...formData,
                               address: { ...formData.address, country: e.target.value },
                             })}
-                            className={`w-full px-3 py-2 border rounded-lg bg-background read-only:cursor-not-allowed ${
+                            className={`w-full px-3 py-2 border rounded-lg bg-background ${
                               errors['address.country'] ? 'border-red-500' : 'border-border'
                             }`}
                             placeholder="India"
-                            readOnly={gstAutoFilledFields.has('address.country')}
                           />
                           {errors['address.country'] && (
                             <p className="text-xs text-red-500 mt-1">{errors['address.country']}</p>
                           )}
-                        </div>
-
-                        {/* Linked Vehicles Section - NEW: Using vehicle_ids instead of vehicle_numbers */}
-                        <div className="sm:col-span-2">
-                          <div className="flex items-center justify-between mb-2">
-                            <label className="block text-sm font-medium">
-                              Linked Vehicles
-                            </label>
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => refetchVehicles()}
-                                disabled={loadingVehicles}
-                                className="p-1 hover:bg-muted rounded"
-                                title="Refresh vehicles"
-                              >
-                                <RefreshCw className={`h-3.5 w-3.5 ${loadingVehicles ? 'animate-spin' : ''}`} />
-                              </button>
-                              <Link 
-                                to="/directory/vehicles" 
-                                target="_blank"
-                                className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
-                              >
-                                <ExternalLink className="h-3 w-3" />
-                                Manage Vehicles
-                              </Link>
-                            </div>
-                          </div>
-
-                          {/* Selected Vehicles Display */}
-                          {selectedVehicles.length > 0 && (
-                            <div className="mb-3 flex flex-wrap gap-2">
-                              {selectedVehicles.map(vehicle => (
-                                <div
-                                  key={vehicle.id}
-                                  className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/30 rounded-lg"
-                                >
-                                  <Car className="h-3.5 w-3.5 text-primary" />
-                                  <span className="text-sm font-medium">{vehicle.vehicle_number}</span>
-                                  {vehicle.owner_name && (
-                                    <span className="text-xs text-muted-foreground">({vehicle.owner_name})</span>
-                                  )}
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleVehicle(vehicle.id)}
-                                    className="ml-1 p-0.5 hover:bg-primary/20 rounded"
-                                    title="Remove vehicle"
-                                  >
-                                    <X className="h-3 w-3 text-primary" />
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Vehicle Search */}
-                          <div className="mb-2">
-                            <input
-                              type="text"
-                              value={vehicleSearchQuery}
-                              onChange={(e) => setVehicleSearchQuery(e.target.value)}
-                              className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm"
-                              placeholder="Search vehicles by number, owner, or model..."
-                            />
-                          </div>
-
-                          {/* Vehicle Selection List */}
-                          <div className="border border-border rounded-lg bg-muted/20 max-h-48 overflow-y-auto">
-                            {loadingVehicles ? (
-                              <div className="flex justify-center py-4">
-                                <LoadingSpinner size="sm" />
-                              </div>
-                            ) : filteredVehicles.length === 0 ? (
-                              <div className="p-4 text-center text-sm text-muted-foreground">
-                                {vehicleSearchQuery 
-                                  ? 'No vehicles match your search' 
-                                  : 'No vehicles available. Add vehicles from the Vehicles page.'}
-                              </div>
-                            ) : (
-                              <div className="p-2 space-y-1">
-                                {filteredVehicles.map(vehicle => {
-                                  const isSelected = formData.vehicle_ids?.includes(vehicle.id);
-                                  return (
-                                    <button
-                                      key={vehicle.id}
-                                      type="button"
-                                      onClick={() => toggleVehicle(vehicle.id)}
-                                      className={`w-full flex items-center gap-3 p-2 rounded-lg text-left transition-colors ${
-                                        isSelected 
-                                          ? 'bg-primary/10 border border-primary/30' 
-                                          : 'hover:bg-muted border border-transparent'
-                                      }`}
-                                    >
-                                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${
-                                        isSelected ? 'bg-primary/20' : 'bg-muted'
-                                      }`}>
-                                        <Car className={`h-4 w-4 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-sm font-medium">{vehicle.vehicle_number}</span>
-                                          {vehicle.is_verified && (
-                                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-600">Verified</span>
-                                          )}
-                                        </div>
-                                        <div className="text-xs text-muted-foreground truncate">
-                                          {[vehicle.owner_name, vehicle.maker_model, vehicle.vehicle_class]
-                                            .filter(Boolean)
-                                            .join(' • ') || 'No details'}
-                                        </div>
-                                      </div>
-                                      {isSelected && (
-                                        <Check className="h-4 w-4 text-primary shrink-0" />
-                                      )}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {selectedVehicles.length} vehicle{selectedVehicles.length !== 1 ? 's' : ''} selected
-                          </p>
                         </div>
                       </div>
 

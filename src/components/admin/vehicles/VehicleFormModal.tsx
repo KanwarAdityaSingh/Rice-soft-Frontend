@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { useState, useEffect } from 'react';
-import { X, Car, Shield, Loader2, Check, RefreshCw, Plus } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { X, Car, Shield, Loader2, Check, RefreshCw, Plus, ChevronDown, Search } from 'lucide-react';
 import { vehiclesAPI } from '../../../services/vehicles.api';
 import { useTransporters } from '../../../hooks/useTransporters';
 import { AlertDialog } from '../../shared/AlertDialog';
@@ -39,6 +39,7 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
   const [loading, setLoading] = useState(false);
   const [loadingVehicle, setLoadingVehicle] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [verifiedFields, setVerifiedFields] = useState<Set<string>>(new Set());
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
@@ -74,6 +75,20 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
         verified_at: vehicle.verified_at,
         is_active: vehicle.is_active,
       });
+      // If vehicle was verified, mark those fields as read-only
+      if (vehicle.is_verified) {
+        const verifiedFieldsSet = new Set<string>();
+        if (vehicle.owner_name) verifiedFieldsSet.add('owner_name');
+        if (vehicle.maker_model) verifiedFieldsSet.add('maker_model');
+        if (vehicle.vehicle_class) verifiedFieldsSet.add('vehicle_class');
+        if (vehicle.fuel_type) verifiedFieldsSet.add('fuel_type');
+        if (vehicle.rc_number) verifiedFieldsSet.add('rc_number');
+        if (vehicle.registration_date) verifiedFieldsSet.add('registration_date');
+        if (vehicle.insurance_validity) verifiedFieldsSet.add('insurance_validity');
+        if (vehicle.fitness_validity) verifiedFieldsSet.add('fitness_validity');
+        if (vehicle.permit_validity) verifiedFieldsSet.add('permit_validity');
+        setVerifiedFields(verifiedFieldsSet);
+      }
       setErrors({});
     } catch (error: any) {
       setAlertType('error');
@@ -104,6 +119,7 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
       is_active: true,
     });
     setErrors({});
+    setVerifiedFields(new Set());
   };
 
   const handleVerify = async () => {
@@ -115,6 +131,19 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
     setVerifying(true);
     try {
       const result = await vehiclesAPI.verifyVehicle(formData.vehicle_number.trim());
+      const verifiedFieldsSet = new Set<string>();
+      
+      // Track which fields were verified
+      if (result.owner_name) verifiedFieldsSet.add('owner_name');
+      if (result.maker_model) verifiedFieldsSet.add('maker_model');
+      if (result.vehicle_class) verifiedFieldsSet.add('vehicle_class');
+      if (result.fuel_type) verifiedFieldsSet.add('fuel_type');
+      if (result.rc_number) verifiedFieldsSet.add('rc_number');
+      if (result.registration_date) verifiedFieldsSet.add('registration_date');
+      if (result.insurance_validity) verifiedFieldsSet.add('insurance_validity');
+      if (result.fitness_validity) verifiedFieldsSet.add('fitness_validity');
+      if (result.permit_validity) verifiedFieldsSet.add('permit_validity');
+      
       setFormData(prev => ({
         ...prev,
         ...result,
@@ -122,6 +151,7 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
         is_verified: true,
         verified_at: new Date().toISOString(),
       }));
+      setVerifiedFields(verifiedFieldsSet);
       setAlertType('success');
       setAlertTitle('Vehicle Verified');
       setAlertMessage(`Owner: ${result.owner_name || 'N/A'}, Model: ${result.maker_model || 'N/A'}`);
@@ -131,6 +161,7 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
       setAlertTitle('Verification Failed');
       setAlertMessage(error.message || 'Could not verify vehicle. You can still add it manually.');
       setAlertOpen(true);
+      // Don't set verified fields on error - allow manual entry
     } finally {
       setVerifying(false);
     }
@@ -188,6 +219,21 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
         : [...(prev.transporter_ids || []), transporterId],
     }));
   };
+
+  const [transporterDropdownOpen, setTransporterDropdownOpen] = useState(false);
+  const transporterDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (transporterDropdownRef.current && !transporterDropdownRef.current.contains(event.target as Node)) {
+        setTransporterDropdownOpen(false);
+      }
+    };
+    if (transporterDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [transporterDropdownOpen]);
 
   return (
     <>
@@ -256,8 +302,9 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                         type="text"
                         value={formData.owner_name || ''}
                         onChange={(e) => setFormData({ ...formData, owner_name: e.target.value || null })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+                        className="w-full px-3 py-2 border border-border rounded-lg bg-background read-only:cursor-not-allowed"
                         placeholder="Owner name"
+                        readOnly={verifiedFields.has('owner_name')}
                       />
                     </div>
                     <div>
@@ -266,8 +313,9 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                         type="text"
                         value={formData.maker_model || ''}
                         onChange={(e) => setFormData({ ...formData, maker_model: e.target.value || null })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+                        className="w-full px-3 py-2 border border-border rounded-lg bg-background read-only:cursor-not-allowed"
                         placeholder="TATA ACE"
+                        readOnly={verifiedFields.has('maker_model')}
                       />
                     </div>
                   </div>
@@ -280,8 +328,9 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                         type="text"
                         value={formData.vehicle_class || ''}
                         onChange={(e) => setFormData({ ...formData, vehicle_class: e.target.value || null })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+                        className="w-full px-3 py-2 border border-border rounded-lg bg-background read-only:cursor-not-allowed"
                         placeholder="LMV, HMV"
+                        readOnly={verifiedFields.has('vehicle_class')}
                       />
                     </div>
                     <div>
@@ -290,6 +339,7 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                         value={formData.fuel_type || ''}
                         onChange={(e) => setFormData({ ...formData, fuel_type: e.target.value || null })}
                         className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+                        disabled={verifiedFields.has('fuel_type')}
                       >
                         <option value="">Select</option>
                         <option value="Diesel">Diesel</option>
@@ -308,7 +358,8 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                         type="date"
                         value={formData.registration_date || ''}
                         onChange={(e) => setFormData({ ...formData, registration_date: e.target.value || null })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm"
+                        className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm read-only:cursor-not-allowed"
+                        readOnly={verifiedFields.has('registration_date')}
                       />
                     </div>
                     <div>
@@ -317,7 +368,8 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                         type="date"
                         value={formData.insurance_validity || ''}
                         onChange={(e) => setFormData({ ...formData, insurance_validity: e.target.value || null })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm"
+                        className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm read-only:cursor-not-allowed"
+                        readOnly={verifiedFields.has('insurance_validity')}
                       />
                     </div>
                     <div>
@@ -326,7 +378,8 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                         type="date"
                         value={formData.fitness_validity || ''}
                         onChange={(e) => setFormData({ ...formData, fitness_validity: e.target.value || null })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm"
+                        className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm read-only:cursor-not-allowed"
+                        readOnly={verifiedFields.has('fitness_validity')}
                       />
                     </div>
                     <div>
@@ -335,7 +388,8 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                         type="date"
                         value={formData.permit_validity || ''}
                         onChange={(e) => setFormData({ ...formData, permit_validity: e.target.value || null })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm"
+                        className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm read-only:cursor-not-allowed"
+                        readOnly={verifiedFields.has('permit_validity')}
                       />
                     </div>
                   </div>
@@ -353,29 +407,66 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                         <RefreshCw className={`h-3.5 w-3.5 ${loadingTransporters ? 'animate-spin' : ''}`} />
                       </button>
                     </div>
-                    <div className="flex flex-wrap gap-2 p-3 border border-border rounded-lg bg-muted/20 max-h-32 overflow-y-auto">
-                      {transporters.filter(t => t.is_active).map((t) => {
-                        const isSelected = formData.transporter_ids?.includes(t.id);
-                        return (
-                          <button
-                            key={t.id}
-                            type="button"
-                            onClick={() => toggleTransporter(t.id)}
-                            className={`px-2 py-1 text-xs rounded-full transition-colors ${
-                              isSelected 
-                                ? 'bg-primary text-primary-foreground' 
-                                : 'bg-background border border-border hover:border-primary'
-                            }`}
-                          >
-                            {t.business_name}
-                            {isSelected && <Check className="inline ml-1 h-3 w-3" />}
-                          </button>
-                        );
-                      })}
-                      {transporters.filter(t => t.is_active).length === 0 && (
-                        <span className="text-xs text-muted-foreground">No transporters available</span>
+                    <div ref={transporterDropdownRef} className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setTransporterDropdownOpen(!transporterDropdownOpen)}
+                        className="w-full px-3 py-2 border border-border rounded-lg bg-background flex items-center justify-between text-sm"
+                      >
+                        <span className="text-muted-foreground">
+                          {formData.transporter_ids && formData.transporter_ids.length > 0
+                            ? `${formData.transporter_ids.length} selected`
+                            : 'Select transporters...'}
+                        </span>
+                        <ChevronDown className={`h-4 w-4 transition-transform ${transporterDropdownOpen ? 'rotate-180' : ''}`} />
+                      </button>
+                      {transporterDropdownOpen && (
+                        <div className="absolute z-10 w-full mt-1 bg-background border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                          {transporters.filter(t => t.is_active).map((t) => {
+                            const isSelected = formData.transporter_ids?.includes(t.id);
+                            return (
+                              <button
+                                key={t.id}
+                                type="button"
+                                onClick={() => toggleTransporter(t.id)}
+                                className={`w-full text-left px-3 py-2 text-sm transition-colors flex items-center justify-between ${
+                                  isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted'
+                                }`}
+                              >
+                                <span>{t.business_name}</span>
+                                {isSelected && <Check className="h-4 w-4" />}
+                              </button>
+                            );
+                          })}
+                          {transporters.filter(t => t.is_active).length === 0 && (
+                            <div className="px-3 py-2 text-sm text-muted-foreground">No transporters available</div>
+                          )}
+                        </div>
                       )}
                     </div>
+                    {formData.transporter_ids && formData.transporter_ids.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {formData.transporter_ids.map((id) => {
+                          const transporter = transporters.find(t => t.id === id);
+                          if (!transporter) return null;
+                          return (
+                            <div
+                              key={id}
+                              className="inline-flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded-full text-xs"
+                            >
+                              <span>{transporter.business_name}</span>
+                              <button
+                                type="button"
+                                onClick={() => toggleTransporter(id)}
+                                className="hover:bg-primary/20 rounded-full p-0.5"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
                   {/* Active Toggle */}

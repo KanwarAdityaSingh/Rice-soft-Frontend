@@ -39,12 +39,14 @@ export function InwardSlipPassesTable() {
   const getISPDocuments = (isp: InwardSlipPass): DocumentInfo[] => {
     const docs: DocumentInfo[] = [];
     
-    if (isp.inward_slip_bill_image_url) {
-      docs.push({ url: isp.inward_slip_bill_image_url, label: 'Inward Slip Bill', type: 'image' });
+    // Add other_bills
+    if (isp.other_bills && isp.other_bills.length > 0) {
+      isp.other_bills.forEach(bill => {
+        const isPdf = bill.url.toLowerCase().includes('.pdf');
+        docs.push({ url: bill.url, label: bill.name, type: isPdf ? 'pdf' : 'image' });
+      });
     }
-    if (isp.transportation_bill_image_url) {
-      docs.push({ url: isp.transportation_bill_image_url, label: 'Transportation Bill', type: 'image' });
-    }
+    
     if (isp.bill_pdf_url) {
       const isPdf = isp.bill_pdf_url.toLowerCase().includes('.pdf');
       docs.push({ url: isp.bill_pdf_url, label: 'Purchase Bill', type: isPdf ? 'pdf' : 'image' });
@@ -193,30 +195,26 @@ export function InwardSlipPassesTable() {
                       <DropdownMenu.Label className="px-3 py-1.5 text-xs text-muted-foreground font-medium">
                         View Documents
                       </DropdownMenu.Label>
-                      <DropdownMenu.Item
-                        className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
-                          isp.inward_slip_bill_image_url 
-                            ? 'hover:bg-accent hover:text-accent-foreground text-blue-600' 
-                            : 'text-muted-foreground/50 cursor-not-allowed'
-                        }`}
-                        disabled={!isp.inward_slip_bill_image_url}
-                        onSelect={() => isp.inward_slip_bill_image_url && handleViewDocuments([{ url: isp.inward_slip_bill_image_url, label: 'Inward Slip Bill', type: 'image' }])}
-                      >
-                        <Receipt className="h-4 w-4" /> Inward Slip Bill
-                        {!isp.inward_slip_bill_image_url && <span className="ml-auto text-[10px]">N/A</span>}
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item
-                        className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
-                          isp.transportation_bill_image_url 
-                            ? 'hover:bg-accent hover:text-accent-foreground text-blue-600' 
-                            : 'text-muted-foreground/50 cursor-not-allowed'
-                        }`}
-                        disabled={!isp.transportation_bill_image_url}
-                        onSelect={() => isp.transportation_bill_image_url && handleViewDocuments([{ url: isp.transportation_bill_image_url, label: 'Transportation Bill', type: 'image' }])}
-                      >
-                        <Truck className="h-4 w-4" /> Transport Bill
-                        {!isp.transportation_bill_image_url && <span className="ml-auto text-[10px]">N/A</span>}
-                      </DropdownMenu.Item>
+                      {/* Other Bills */}
+                      {isp.other_bills && isp.other_bills.length > 0 ? (
+                        <>
+                          {isp.other_bills.map((bill, index) => {
+                            const isPdf = bill.url.toLowerCase().includes('.pdf');
+                            return (
+                              <DropdownMenu.Item
+                                key={index}
+                                className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground text-blue-600"
+                                onSelect={() => handleViewDocuments([{ url: bill.url, label: bill.name, type: isPdf ? 'pdf' : 'image' }])}
+                              >
+                                <Receipt className="h-4 w-4" /> {bill.name}
+                              </DropdownMenu.Item>
+                            );
+                          })}
+                          {(isp.bill_pdf_url || isp.bilti_image_url || isp.bilti_pdf_url || isp.eway_bill_url) && (
+                            <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                          )}
+                        </>
+                      ) : null}
                       <DropdownMenu.Item
                         className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
                           isp.bill_pdf_url 

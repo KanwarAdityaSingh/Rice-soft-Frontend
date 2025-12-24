@@ -12,9 +12,10 @@ import { vehiclesAPI } from '../../../services/vehicles.api';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { vendorsAPI } from '../../../services/vendors.api';
 import { getRiceTypeLabel } from '../../../utils/riceType';
+import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
-import type { CreateInwardSlipPassRequest, UpdateInwardSlipPassRequest, InwardSlipPass, RiceCode, RiceType, Sauda, Vehicle, VehicleVerificationResponse } from '../../../types/entities';
+import type { CreateInwardSlipPassRequest, UpdateInwardSlipPassRequest, InwardSlipPass, RiceCode, RiceType, Sauda, Vehicle, VehicleVerificationResponse, OtherBill } from '../../../types/entities';
 
 // Default recipient type
 interface DefaultRecipient {
@@ -24,11 +25,14 @@ interface DefaultRecipient {
 }
 
 interface FileUploadState {
-  bill_image: File | null;
-  transportation_bill: File | null;
   purchase_bill: File | null;
   bilti: File | null;
   eway_bill: File | null;
+}
+
+interface PendingOtherBill {
+  name: string;
+  file: File;
 }
 
 interface InwardSlipPassFormModalProps {
@@ -130,9 +134,9 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     notes: null,
   });
   const [displaySlipNumber, setDisplaySlipNumber] = useState<string>(''); // For display in edit mode
+  const [otherBills, setOtherBills] = useState<OtherBill[]>([]);
+  const [pendingOtherBills, setPendingOtherBills] = useState<PendingOtherBill[]>([]);
   const [pendingFiles, setPendingFiles] = useState<FileUploadState>({
-    bill_image: null,
-    transportation_bill: null,
     purchase_bill: null,
     bilti: null,
     eway_bill: null,
@@ -142,6 +146,9 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   const [loadingISP, setLoadingISP] = useState(false);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [uploadSuccess, setUploadSuccess] = useState<Record<string, boolean>>({});
+  const [uploadingOtherBill, setUploadingOtherBill] = useState(false);
+  const [newBillName, setNewBillName] = useState('');
+  const [newBillFile, setNewBillFile] = useState<File | null>(null);
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
@@ -190,6 +197,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
         notes: isp.notes || null,
       });
       setDisplaySlipNumber(isp.slip_number); // Store for display only
+      setOtherBills(isp.other_bills || []); // Load other_bills array
       // Load selected vehicle details
       if (isp.vehicle_id) {
         try {
@@ -225,15 +233,17 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
       notes: null,
     });
     setDisplaySlipNumber('');
+    setOtherBills([]);
+    setPendingOtherBills([]);
     setPendingFiles({
-      bill_image: null,
-      transportation_bill: null,
       purchase_bill: null,
       bilti: null,
       eway_bill: null,
     });
     setUploadSuccess({});
     setErrors({});
+    setNewBillName('');
+    setNewBillFile(null);
     // Reset vehicle state
     setVehicleNumberInput('');
     setSelectedVehicle(null);
@@ -284,8 +294,36 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
       }
     }
     
+    // Upload pending other bills
+    for (const pendingBill of pendingOtherBills) {
+      uploadPromises.push(
+        (async () => {
+          try {
+            await handleUploadOtherBill(newIspId, pendingBill.name, pendingBill.file);
+          } catch (error) {
+            console.error(`Failed to upload other bill ${pendingBill.name}:`, error);
+          }
+        })()
+      );
+    }
+    
     if (uploadPromises.length > 0) {
       await Promise.all(uploadPromises);
+    }
+    
+    // Clear pending other bills after successful upload
+    if (pendingOtherBills.length > 0) {
+      setPendingOtherBills([]);
+    }
+    
+    // Reload ISP data to get updated other_bills
+    if (isEditMode && newIspId) {
+      try {
+        const updatedISP = await inwardSlipPassesAPI.getInwardSlipPassById(newIspId);
+        setOtherBills(updatedISP.other_bills || []);
+      } catch (error) {
+        console.error('Failed to reload ISP data:', error);
+      }
     }
   };
 
@@ -341,12 +379,6 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     try {
       let uploadFn;
       switch (field) {
-        case 'bill_image':
-          uploadFn = inwardSlipPassesAPI.uploadBillImage;
-          break;
-        case 'transportation_bill':
-          uploadFn = inwardSlipPassesAPI.uploadTransportationBill;
-          break;
         case 'purchase_bill':
           uploadFn = inwardSlipPassesAPI.uploadPurchaseBill;
           break;
@@ -377,6 +409,98 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     }
   };
 
+  const handleUploadOtherBill = async (targetIspId: string, name: string, file: File) => {
+    try {
+      const result = await inwardSlipPassesAPI.uploadOtherBill(targetIspId, name, file);
+      // Reload ISP data to get updated other_bills array
+      if (isEditMode && ispId) {
+        const updatedISP = await inwardSlipPassesAPI.getInwardSlipPassById(ispId);
+        setOtherBills(updatedISP.other_bills || []);
+      } else {
+        setOtherBills(prev => [...prev, result.bill]);
+      }
+      setAlertType('success');
+      setAlertTitle('Success');
+      setAlertMessage('Bill uploaded successfully');
+      setAlertOpen(true);
+    } catch (error: any) {
+      setAlertType('error');
+      setAlertTitle('Error');
+      setAlertMessage(error.message || 'Failed to upload bill');
+      setAlertOpen(true);
+      throw error;
+    }
+  };
+
+  const handleDeleteOtherBill = async (billUrl: string) => {
+    if (!ispId) return;
+    
+    if (!confirm('Are you sure you want to delete this bill?')) {
+      return;
+    }
+
+    try {
+      await inwardSlipPassesAPI.deleteOtherBill(ispId, billUrl);
+      // Reload ISP data to get updated other_bills array
+      const updatedISP = await inwardSlipPassesAPI.getInwardSlipPassById(ispId);
+      setOtherBills(updatedISP.other_bills || []);
+      setAlertType('success');
+      setAlertTitle('Success');
+      setAlertMessage('Bill deleted successfully');
+      setAlertOpen(true);
+    } catch (error: any) {
+      setAlertType('error');
+      setAlertTitle('Error');
+      setAlertMessage(error.message || 'Failed to delete bill');
+      setAlertOpen(true);
+    }
+  };
+
+  const handleAddOtherBill = () => {
+    if (!newBillName.trim() || !newBillFile) {
+      setAlertType('error');
+      setAlertTitle('Validation Error');
+      setAlertMessage('Please provide a bill name and select a file');
+      setAlertOpen(true);
+      return;
+    }
+
+    // Validate file size (10MB max)
+    if (newBillFile.size > 10 * 1024 * 1024) {
+      setAlertType('error');
+      setAlertTitle('File Too Large');
+      setAlertMessage('File size must be less than 10MB');
+      setAlertOpen(true);
+      return;
+    }
+
+    // Validate file type
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'application/pdf'];
+    if (!validTypes.includes(newBillFile.type)) {
+      setAlertType('error');
+      setAlertTitle('Invalid File Type');
+      setAlertMessage('Only JPEG, PNG, GIF images and PDF files are allowed');
+      setAlertOpen(true);
+      return;
+    }
+
+    if (isEditMode && ispId) {
+      // Upload immediately in edit mode
+      setUploadingOtherBill(true);
+      handleUploadOtherBill(ispId, newBillName.trim(), newBillFile)
+        .then(() => {
+          setNewBillName('');
+          setNewBillFile(null);
+        })
+        .finally(() => setUploadingOtherBill(false));
+    } else {
+      // Store for later upload after creation
+      setPendingOtherBills(prev => [...prev, { name: newBillName.trim(), file: newBillFile }]);
+      setNewBillName('');
+      setNewBillFile(null);
+    }
+  };
+
   const handleFileSelect = (field: keyof FileUploadState, file: File | null) => {
     if (!file) return;
     
@@ -389,51 +513,63 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     }
   };
 
+
   const toggleSaudaSelection = (saudaId: string) => {
     setFormData(prev => {
       const currentIds = prev.sauda_ids || [];
       const isAdding = !currentIds.includes(saudaId);
-      const newIds = isAdding
-        ? [...currentIds, saudaId]
-        : currentIds.filter(id => id !== saudaId);
       
-      // If adding a sauda and party details are empty, fill from the sauda's vendor
       if (isAdding) {
         const selectedSauda = saudas.find(s => s.id === saudaId);
         if (selectedSauda) {
+          // Check if any saudas are already selected
+          if (currentIds.length > 0) {
+            // Get vendor from first selected sauda
+            const firstSauda = saudas.find(s => s.id === currentIds[0]);
+            if (firstSauda && firstSauda.purchaser_id !== selectedSauda.purchaser_id) {
+              // Different vendor - show error
+              setAlertType('error');
+              setAlertTitle('Vendor Mismatch');
+              setAlertMessage('All selected saudas must have the same vendor. Please deselect other saudas first.');
+              setAlertOpen(true);
+              return prev; // Don't add this sauda
+            }
+          }
+          
+          const newIds = [...currentIds, saudaId];
           const vendor = vendors.find(v => v.id === selectedSauda.purchaser_id);
           if (vendor) {
-            // Only fill if party fields are empty
-            const updates: Partial<CreateInwardSlipPassRequest> = { sauda_ids: newIds };
+            // Fill party details from vendor
+            const addressParts = [
+              vendor.address.street,
+              vendor.address.city,
+              vendor.address.state,
+              vendor.address.pincode,
+              vendor.address.country
+            ].filter(Boolean);
             
-            if (!prev.party_name || prev.party_name.trim() === '') {
-              updates.party_name = vendor.business_name;
-            }
-            
-            if (!prev.party_address || prev.party_address.trim() === '') {
-              const addressParts = [
-                vendor.address.street,
-                vendor.address.city,
-                vendor.address.state,
-                vendor.address.pincode,
-                vendor.address.country
-              ].filter(Boolean);
-              updates.party_address = addressParts.join(', ') || null;
-            }
-            
-            if (!prev.party_gst_number || prev.party_gst_number.trim() === '') {
-              updates.party_gst_number = vendor.business_details.gst_number || null;
-            }
-            
-            if (!prev.party_pan_number || prev.party_pan_number.trim() === '') {
-              updates.party_pan_number = vendor.business_details.pan_number || null;
-            }
-            
-            return { ...prev, ...updates };
+            return {
+              ...prev,
+              sauda_ids: newIds,
+              party_name: vendor.business_name,
+              party_address: addressParts.join(', ') || null,
+              party_gst_number: vendor.business_details.gst_number || null,
+              party_pan_number: vendor.business_details.pan_number || null,
+            };
           }
+          return { ...prev, sauda_ids: newIds };
         }
       }
       
+      // Removing a sauda
+      const newIds = currentIds.filter(id => id !== saudaId);
+      
+      // If no saudas left, allow editing party details
+      if (newIds.length === 0) {
+        return { ...prev, sauda_ids: newIds };
+      }
+      
+      // If saudas remain, keep party details locked (they're already set)
       return { ...prev, sauda_ids: newIds };
     });
   };
@@ -446,13 +582,27 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   };
 
   const getFilteredSaudas = () => {
-    if (!saudaSearchQuery.trim()) return saudas;
-    const query = saudaSearchQuery.toLowerCase();
-    return saudas.filter(sauda => {
-      const displayName = getSaudaDisplayName(sauda).toLowerCase();
-      const rate = sauda.rate.toString();
-      return displayName.includes(query) || rate.includes(query);
-    });
+    let filtered = saudas;
+    
+    // If saudas are already selected, only show saudas with the same vendor
+    if (formData.sauda_ids && formData.sauda_ids.length > 0) {
+      const firstSauda = saudas.find(s => s.id === formData.sauda_ids[0]);
+      if (firstSauda) {
+        filtered = saudas.filter(s => s.purchaser_id === firstSauda.purchaser_id);
+      }
+    }
+    
+    // Apply search filter
+    if (saudaSearchQuery.trim()) {
+      const query = saudaSearchQuery.toLowerCase();
+      filtered = filtered.filter(sauda => {
+        const displayName = getSaudaDisplayName(sauda).toLowerCase();
+        const rate = sauda.rate.toString();
+        return displayName.includes(query) || rate.includes(query);
+      });
+    }
+    
+    return filtered;
   };
 
   const getSelectedSaudas = () => {
@@ -800,20 +950,44 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                               {saudas.length === 0 ? (
                                 <p className="text-xs text-muted-foreground py-1 px-2">No saudas</p>
                               ) : getFilteredSaudas().length === 0 ? (
-                                <p className="text-xs text-muted-foreground py-1 px-2">No match</p>
+                                <div className="px-2 py-1">
+                                  <p className="text-xs text-muted-foreground">No match</p>
+                                  {formData.sauda_ids && formData.sauda_ids.length > 0 && (
+                                    <p className="text-[10px] text-primary/80 mt-1">Only saudas with the same vendor can be selected together</p>
+                                  )}
+                                </div>
                               ) : (
-                                getFilteredSaudas().map((sauda) => {
-                                  const isSelected = (formData.sauda_ids || []).includes(sauda.id);
-                                  return (
-                                    <button key={sauda.id} type="button" onClick={() => { toggleSaudaSelection(sauda.id); setSaudaSearchQuery(''); }}
-                                      className={`w-full text-left px-2 py-1 rounded text-xs transition-colors ${isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted'}`}>
-                                      <div className="flex items-center justify-between">
-                                        <span>{getSaudaDisplayName(sauda)} - ₹{sauda.rate}</span>
-                                        {isSelected && <Check className="h-3 w-3" />}
-                                      </div>
-                                    </button>
-                                  );
-                                })
+                                <>
+                                  {formData.sauda_ids && formData.sauda_ids.length > 0 && (
+                                    <div className="px-2 py-1 mb-1 bg-primary/5 border-b border-primary/20">
+                                      <p className="text-[10px] text-primary/90 font-medium">Only saudas with the same vendor are shown</p>
+                                    </div>
+                                  )}
+                                  {getFilteredSaudas().map((sauda) => {
+                                    const isSelected = (formData.sauda_ids || []).includes(sauda.id);
+                                    return (
+                                      <button key={sauda.id} type="button" onClick={() => { toggleSaudaSelection(sauda.id); setSaudaSearchQuery(''); }}
+                                        className={`w-full text-left px-2 py-1 rounded text-xs transition-colors ${isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted'}`}>
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-2 flex-1">
+                                            <span>{getSaudaDisplayName(sauda)} - ₹{sauda.rate}</span>
+                                            {sauda.completion_percentage !== null && (
+                                              <span className={`text-[9px] px-1 py-0.5 rounded-full ${getCompletionStatus(sauda.completion_percentage).bgColor} ${getCompletionStatus(sauda.completion_percentage).color} border ${getCompletionStatus(sauda.completion_percentage).borderColor}`}>
+                                                {formatCompletionPercentage(sauda.completion_percentage)}
+                                              </span>
+                                            )}
+                                          </div>
+                                          {isSelected && <Check className="h-3 w-3" />}
+                                        </div>
+                                        {sauda.quantity && (
+                                          <div className="text-[10px] text-muted-foreground mt-0.5">
+                                            {formatWeightDisplay(sauda.received_until_now, sauda.quantity)}
+                                          </div>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </>
                               )}
                             </div>
                           </div>
@@ -824,27 +998,63 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
 
                   {/* Party Details */}
                   <div className="space-y-2 pt-2 border-t border-border">
-                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Party Details</h3>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Party Details</h3>
+                      {formData.sauda_ids && formData.sauda_ids.length > 0 && (
+                        <span className="text-[10px] text-muted-foreground">Locked (from sauda vendor)</span>
+                      )}
+                    </div>
+                    {formData.sauda_ids && formData.sauda_ids.length > 0 && (
+                      <div className="rounded-lg border border-primary/30 bg-primary/10 px-2 py-1 mb-2">
+                        <p className="text-[10px] text-primary/90">
+                          Party details are automatically filled from the selected sauda's vendor and cannot be edited.
+                        </p>
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-xs font-medium mb-0.5">GST No.</label>
-                        <input type="text" value={formData.party_gst_number || ''} onChange={(e) => setFormData({ ...formData, party_gst_number: e.target.value || null })}
-                          className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background" placeholder="27ABCDE1234F1Z5" />
+                        <input 
+                          type="text" 
+                          value={formData.party_gst_number || ''} 
+                          onChange={(e) => setFormData({ ...formData, party_gst_number: e.target.value || null })}
+                          className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background read-only:cursor-not-allowed" 
+                          placeholder="27ABCDE1234F1Z5"
+                          readOnly={formData.sauda_ids && formData.sauda_ids.length > 0}
+                        />
                       </div>
                       <div>
                         <label className="block text-xs font-medium mb-0.5">PAN No.</label>
-                        <input type="text" value={formData.party_pan_number || ''} onChange={(e) => setFormData({ ...formData, party_pan_number: e.target.value || null })}
-                          className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background" placeholder="ABCDE1234F" />
+                        <input 
+                          type="text" 
+                          value={formData.party_pan_number || ''} 
+                          onChange={(e) => setFormData({ ...formData, party_pan_number: e.target.value || null })}
+                          className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background read-only:cursor-not-allowed" 
+                          placeholder="ABCDE1234F"
+                          readOnly={formData.sauda_ids && formData.sauda_ids.length > 0}
+                        />
                       </div>
                       <div className="col-span-2">
                         <label className="block text-xs font-medium mb-0.5">Party Name <span className="text-red-500">*</span></label>
-                        <input type="text" value={formData.party_name} onChange={(e) => setFormData({ ...formData, party_name: e.target.value })}
-                          className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background ${errors.party_name ? 'border-red-500' : 'border-border'}`} placeholder="Party Name" />
+                        <input 
+                          type="text" 
+                          value={formData.party_name} 
+                          onChange={(e) => setFormData({ ...formData, party_name: e.target.value })}
+                          className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background read-only:cursor-not-allowed ${errors.party_name ? 'border-red-500' : 'border-border'}`} 
+                          placeholder="Party Name"
+                          readOnly={formData.sauda_ids && formData.sauda_ids.length > 0}
+                        />
                       </div>
                       <div className="col-span-2">
                         <label className="block text-xs font-medium mb-0.5">Address</label>
-                        <input type="text" value={formData.party_address || ''} onChange={(e) => setFormData({ ...formData, party_address: e.target.value || null })}
-                          className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background" placeholder="Party Address" />
+                        <input 
+                          type="text" 
+                          value={formData.party_address || ''} 
+                          onChange={(e) => setFormData({ ...formData, party_address: e.target.value || null })}
+                          className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background read-only:cursor-not-allowed" 
+                          placeholder="Party Address"
+                          readOnly={formData.sauda_ids && formData.sauda_ids.length > 0}
+                        />
                       </div>
                     </div>
                   </div>
@@ -1013,24 +1223,129 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                       className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background" placeholder="Additional notes" />
                   </div>
 
-                  {/* Documents */}
+                  {/* Other Bills */}
                   <div className="pt-2 border-t border-border space-y-2">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-xs font-semibold text-muted-foreground uppercase">Documents</h3>
+                      <h3 className="text-xs font-semibold text-muted-foreground uppercase">Other Bills</h3>
                       {!isEditMode && <span className="text-[10px] text-muted-foreground">Upload after save</span>}
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      {(['bill_image', 'transportation_bill', 'purchase_bill', 'bilti', 'eway_bill'] as const).map((field) => (
-                        <div key={field} className="relative">
-                          <label className="block text-[10px] font-medium mb-0.5 capitalize">{field.replace(/_/g, ' ')}</label>
-                          <div className="relative">
-                            <input type="file" accept="image/*,.pdf" onChange={(e) => { handleFileSelect(field, e.target.files?.[0] || null); }} disabled={uploading[field]}
-                              className="w-full px-1.5 py-1 text-[10px] border border-border rounded-md bg-background file:mr-1 file:py-0.5 file:px-1.5 file:rounded file:border-0 file:text-[10px] file:bg-primary/10 file:text-primary disabled:opacity-50" />
-                            {uploading[field] && <div className="absolute right-1.5 top-1/2 -translate-y-1/2"><Loader2 className="h-3 w-3 animate-spin text-primary" /></div>}
-                            {uploadSuccess[field] && !uploading[field] && <div className="absolute right-1.5 top-1/2 -translate-y-1/2"><Check className="h-3 w-3 text-emerald-500" /></div>}
+                    
+                    {/* Display existing bills */}
+                    {(otherBills.length > 0 || pendingOtherBills.length > 0) && (
+                      <div className="space-y-1.5">
+                        {otherBills.map((bill, index) => (
+                          <div key={index} className="flex items-center justify-between p-1.5 bg-muted/30 rounded border border-border">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs font-medium truncate">{bill.name}</div>
+                              <div className="text-[10px] text-muted-foreground">
+                                {new Date(bill.uploaded_at).toLocaleString('en-IN')}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <a
+                                href={bill.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-1 hover:bg-muted rounded text-primary"
+                                title="View"
+                              >
+                                <FileText className="h-3 w-3" />
+                              </a>
+                              {isEditMode && ispId && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteOtherBill(bill.url)}
+                                  className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-red-500"
+                                  title="Delete"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              )}
+                            </div>
                           </div>
+                        ))}
+                        {pendingOtherBills.map((bill, index) => (
+                          <div key={`pending-${index}`} className="flex items-center justify-between p-1.5 bg-primary/10 rounded border border-primary/30">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs font-medium truncate">{bill.name}</div>
+                              <div className="text-[10px] text-muted-foreground">Pending upload</div>
+                            </div>
+                            {!isEditMode && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPendingOtherBills(prev => prev.filter((_, i) => i !== index));
+                                }}
+                                className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-red-500"
+                                title="Remove"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Upload new bill form */}
+                    <div className="space-y-1.5 p-2 bg-muted/20 rounded border border-border">
+                      <div>
+                        <label className="block text-[10px] font-medium mb-0.5">Bill Name</label>
+                        <input
+                          type="text"
+                          value={newBillName}
+                          onChange={(e) => setNewBillName(e.target.value)}
+                          placeholder="e.g., Transportation Bill"
+                          className="w-full px-1.5 py-1 text-xs border border-border rounded-md bg-background"
+                          disabled={uploadingOtherBill}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-medium mb-0.5">File (Image/PDF, max 10MB)</label>
+                        <div className="relative">
+                          <input
+                            type="file"
+                            accept="image/*,.pdf"
+                            onChange={(e) => setNewBillFile(e.target.files?.[0] || null)}
+                            disabled={uploadingOtherBill}
+                            className="w-full px-1.5 py-1 text-[10px] border border-border rounded-md bg-background file:mr-1 file:py-0.5 file:px-1.5 file:rounded file:border-0 file:text-[10px] file:bg-primary/10 file:text-primary disabled:opacity-50"
+                          />
+                          {uploadingOtherBill && (
+                            <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
+                              <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                            </div>
+                          )}
                         </div>
-                      ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddOtherBill}
+                        disabled={uploadingOtherBill || !newBillName.trim() || !newBillFile}
+                        className="w-full px-2 py-1 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-1"
+                      >
+                        <Plus className="h-3 w-3" />
+                        {uploadingOtherBill ? 'Uploading...' : 'Add Bill'}
+                      </button>
+                    </div>
+
+                    {/* Other Documents */}
+                    <div className="pt-2 border-t border-border">
+                      <div className="flex items-center justify-between mb-1">
+                        <h4 className="text-[10px] font-semibold text-muted-foreground uppercase">Other Documents</h4>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(['purchase_bill', 'bilti', 'eway_bill'] as const).map((field) => (
+                          <div key={field} className="relative">
+                            <label className="block text-[10px] font-medium mb-0.5 capitalize">{field.replace(/_/g, ' ')}</label>
+                            <div className="relative">
+                              <input type="file" accept="image/*,.pdf" onChange={(e) => { handleFileSelect(field, e.target.files?.[0] || null); }} disabled={uploading[field]}
+                                className="w-full px-1.5 py-1 text-[10px] border border-border rounded-md bg-background file:mr-1 file:py-0.5 file:px-1.5 file:rounded file:border-0 file:text-[10px] file:bg-primary/10 file:text-primary disabled:opacity-50" />
+                              {uploading[field] && <div className="absolute right-1.5 top-1/2 -translate-y-1/2"><Loader2 className="h-3 w-3 animate-spin text-primary" /></div>}
+                              {uploadSuccess[field] && !uploading[field] && <div className="absolute right-1.5 top-1/2 -translate-y-1/2"><Check className="h-3 w-3 text-emerald-500" /></div>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
@@ -1142,7 +1457,21 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                             {getSelectedSaudas().map((sauda, idx) => (
                               <div key={sauda.id} className="flex justify-between items-center py-1 border-b border-dotted border-border last:border-0">
                                 <span className="text-muted-foreground">{idx + 1}.</span>
-                                <span className="flex-1 ml-2">{getSaudaDisplayName(sauda)}</span>
+                                <div className="flex-1 ml-2">
+                                  <div className="flex items-center gap-2">
+                                    <span>{getSaudaDisplayName(sauda)}</span>
+                                    {sauda.completion_percentage !== null && (
+                                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${getCompletionStatus(sauda.completion_percentage).bgColor} ${getCompletionStatus(sauda.completion_percentage).color} border ${getCompletionStatus(sauda.completion_percentage).borderColor}`}>
+                                        {formatCompletionPercentage(sauda.completion_percentage)}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {sauda.quantity && (
+                                    <div className="text-xs text-muted-foreground mt-0.5">
+                                      {formatWeightDisplay(sauda.received_until_now, sauda.quantity)}
+                                    </div>
+                                  )}
+                                </div>
                                 <span className="font-semibold">₹{sauda.rate}/kg</span>
                               </div>
                             ))}

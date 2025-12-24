@@ -14,6 +14,7 @@ import { useBrokers } from '../../../hooks/useBrokers';
 import { transportersAPI } from '../../../services/transporters.api';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { getRiceTypeLabel } from '../../../utils/riceType';
+import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { NotificationModal } from '../../shared/NotificationModal';
@@ -82,7 +83,6 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
     payer_id: '',
     recipient_id: '', // Will be auto-set
     amount: undefined,
-    igst_percentage: 0,
     date_of_payment: new Date().toISOString().split('T')[0],
     transaction_id: null,
     charges: [],
@@ -109,7 +109,9 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
     charge_type: 'fixed',
   });
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notificationInitialTab, setNotificationInitialTab] = useState<'email' | 'whatsapp'>('email');
   const [createdPaymentAdvice, setCreatedPaymentAdvice] = useState<PaymentAdvice | null>(null);
+  const [loadedPaymentAdvice, setLoadedPaymentAdvice] = useState<PaymentAdvice | null>(null);
 
   // Load reference data
   useEffect(() => {
@@ -149,7 +151,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
         setLoadingSummary(true);
         try {
           const [data, kaantaData] = await Promise.all([
-            purchaseSummaryAPI.getSaudaSummary(formData.sauda_id, formData.igst_percentage),
+            purchaseSummaryAPI.getSaudaSummary(formData.sauda_id),
             kaantasAPI.getAllKaantas(formData.sauda_id)
           ]);
           setSummary(data);
@@ -164,7 +166,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
         setLoadingSummary(true);
         try {
           const [data, kaantaData] = await Promise.all([
-            purchaseSummaryAPI.getISPSummary(formData.inward_slip_pass_id, formData.igst_percentage),
+            purchaseSummaryAPI.getISPSummary(formData.inward_slip_pass_id),
             kaantasAPI.getAllKaantas(undefined, formData.inward_slip_pass_id)
           ]);
           setSummary(data);
@@ -181,13 +183,14 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
       }
     };
     fetchSummary();
-  }, [linkType, formData.sauda_id, formData.inward_slip_pass_id, formData.igst_percentage]);
+  }, [linkType, formData.sauda_id, formData.inward_slip_pass_id]);
 
   const loadPAData = async () => {
     if (!paymentAdviceId) return;
     setLoadingPA(true);
     try {
       const pa = await paymentAdvicesAPI.getPaymentAdviceById(paymentAdviceId);
+      setLoadedPaymentAdvice(pa);
       if (pa.sauda_id) {
         setLinkType('sauda');
       } else if (pa.inward_slip_pass_id) {
@@ -227,7 +230,6 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
       payer_id: '',
       recipient_id: '',
       amount: undefined,
-      igst_percentage: 0,
       date_of_payment: new Date().toISOString().split('T')[0],
       transaction_id: null,
       charges: [],
@@ -361,7 +363,6 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
         payer_id: formData.payer_id,
         recipient_id: formData.payer_id, // Using payer as recipient for now (actual recipient is hardcoded in display)
         amount: formData.amount,
-        igst_percentage: formData.igst_percentage,
         date_of_payment: formData.date_of_payment,
         transaction_id: invoiceNo || null,
         charges: formData.charges,
@@ -446,8 +447,11 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
   const activeSaudas = saudas.filter(s => s.status === 'active' || s.status === 'completed');
 
   // Calculate bill weight (sauda quantity), kaanta weight, final weight
-  const billWeight = summary?.total_weight ?? 0;
-  const kaantaWeight = kaantas.reduce((sum, k) => sum + k.kaanta_weight, 0);
+  // Use payment advice fields if available, otherwise calculate from kaantas
+  const billWeight = createdPaymentAdvice?.bill_weight ?? loadedPaymentAdvice?.bill_weight ?? (kaantas.reduce((sum, k) => sum + (k.said_sent_weight || 0), 0));
+  const kaantaWeight = createdPaymentAdvice?.kanta_weight ?? loadedPaymentAdvice?.kanta_weight ?? (kaantas.reduce((sum, k) => sum + k.kaanta_weight, 0));
+  const danaDeduction = createdPaymentAdvice?.dana_deduction ?? loadedPaymentAdvice?.dana_deduction ?? 0;
+  const finalWeight = createdPaymentAdvice?.final_weight ?? loadedPaymentAdvice?.final_weight ?? (summary?.total_weight ?? kaantaWeight);
   const totalBags = summary?.total_bags ?? kaantas.reduce((sum, k) => sum + k.no_of_bags, 0);
 
   // Reference for PDF download
@@ -704,19 +708,6 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                         )}
                       </div>
 
-                      <div>
-                        <label className="block text-sm font-medium mb-1">IGST %</label>
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="0"
-                          max="100"
-                          value={formData.igst_percentage || ''}
-                          onChange={(e) => setFormData({ ...formData, igst_percentage: parseFloat(e.target.value) || 0 })}
-                          className="w-full px-3 py-2 border border-border rounded-lg bg-background"
-                          placeholder="0"
-                        />
-                      </div>
 
                       <div>
                         <label className="block text-sm font-medium mb-1">
@@ -855,7 +846,10 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                         <div className="flex gap-3 justify-center">
                           <button
                             type="button"
-                            onClick={() => setNotificationOpen(true)}
+                            onClick={() => {
+                              setNotificationInitialTab('email');
+                              setNotificationOpen(true);
+                            }}
                             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-lg font-medium transition-all shadow-lg"
                           >
                             <Mail className="h-4 w-4" />
@@ -863,7 +857,10 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                           </button>
                           <button
                             type="button"
-                            onClick={() => setNotificationOpen(true)}
+                            onClick={() => {
+                              setNotificationInitialTab('whatsapp');
+                              setNotificationOpen(true);
+                            }}
                             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-lg font-medium transition-all shadow-lg"
                           >
                             <MessageCircle className="h-4 w-4" />
@@ -906,59 +903,299 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                           </div>
                         </div>
 
+                        {/* ISP: Per-Sauda Breakdown */}
+                        {linkType === 'isp' && summary && 'saudas' in summary && summary.saudas && summary.saudas.length > 0 && (
+                          <div className="mb-3 pb-3 border-b border-border">
+                            <div className="text-xs font-semibold text-muted-foreground mb-2">Per Sauda Breakdown:</div>
+                            <div className="space-y-2">
+                              {summary.saudas.map((saudaItem, idx) => (
+                                <div key={saudaItem.sauda_id} className="border border-border/50 rounded p-2 bg-muted/20">
+                                  <div className="font-semibold text-xs mb-1">
+                                    {idx + 1}. {getRiceCodeName(saudaItem.sauda_details.rice_code_id)} {getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes) || 'N/A'}
+                                    {saudaItem.sauda_details.completion_percentage !== null && (
+                                      <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-full ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).bgColor} ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).color} border ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).borderColor}`}>
+                                        {formatCompletionPercentage(saudaItem.sauda_details.completion_percentage)}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[10px]">
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Weight:</span>
+                                      <span>{saudaItem.total_weight.toFixed(2)} kg</span>
+                                    </div>
+                                    {saudaItem.sauda_details.quantity && (
+                                      <div className="flex justify-between">
+                                        <span className="text-muted-foreground">Received/Expected:</span>
+                                        <span>{formatWeightDisplay(saudaItem.sauda_details.received_until_now, saudaItem.sauda_details.quantity)}</span>
+                                      </div>
+                                    )}
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Rate:</span>
+                                      <span>₹{saudaItem.sauda_details.rate.toFixed(2)}/kg</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Base Amount:</span>
+                                      <span>₹{saudaItem.base_amount.toFixed(2)}</span>
+                                    </div>
+                                    {saudaItem.cash_discount_amount > 0 && (
+                                      <div className="flex justify-between text-emerald-600">
+                                        <span>- Cash Discount:</span>
+                                        <span>₹{saudaItem.cash_discount_amount.toFixed(2)}</span>
+                                      </div>
+                                    )}
+                                    {saudaItem.broker_commission_amount > 0 && (
+                                      <div className="flex justify-between">
+                                        <span className="text-muted-foreground">+ Broker Commission:</span>
+                                        <span>₹{saudaItem.broker_commission_amount.toFixed(2)}</span>
+                                      </div>
+                                    )}
+                                    <div className="col-span-2 flex justify-between font-semibold border-t border-border/30 pt-0.5 mt-0.5">
+                                      <span>Sauda Total:</span>
+                                      <span>₹{saudaItem.final_total_amount.toFixed(2)}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="text-xs font-semibold text-muted-foreground mt-2 pt-2 border-t border-border">Total Summary:</div>
+                          </div>
+                        )}
+
                         {/* Payment Details Header */}
                         <div className="text-center font-bold border-b border-t border-border py-1">
                           PAYMENT DETAILS
                         </div>
 
                         {/* Two Column Layout */}
-                        <div className="grid grid-cols-2 gap-x-6 gap-y-1">
-                          {/* Left Column */}
-                          <div className="space-y-1">
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Party Name</span>
-                              <span className="font-medium text-right">{getVendorName(formData.payer_id) || selectedISP?.party_name || '-'}</span>
+                        {linkType === 'isp' && summary && 'saudas' in summary && summary.saudas && summary.saudas.length > 0 ? (
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Party Name</span>
+                                <span className="font-medium text-right">{getVendorName(formData.payer_id) || selectedISP?.party_name || '-'}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Address</span>
+                                <span className="text-right text-xs">{getVendorAddress(formData.payer_id) || selectedISP?.party_address || '-'}</span>
+                              </div>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Address</span>
-                              <span className="text-right text-xs">{getVendorAddress(formData.payer_id) || selectedISP?.party_address || '-'}</span>
+                            
+                            {/* Per-Sauda Table */}
+                            <div className="border border-border rounded-lg overflow-hidden">
+                              <div className="bg-muted/50 px-3 py-2 text-xs font-semibold border-b border-border">
+                                Sauda-wise Details
+                              </div>
+                              <div className="divide-y divide-border">
+                                {summary.saudas.map((saudaItem, idx) => (
+                                  <div key={saudaItem.sauda_id} className="p-3">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <div className="font-semibold text-xs">
+                                        {idx + 1}. {getRiceCodeName(saudaItem.sauda_details.rice_code_id)} {getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes) || 'N/A'}
+                                        {saudaItem.sauda_details.completion_percentage !== null && (
+                                          <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-full ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).bgColor} ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).color} border ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).borderColor}`}>
+                                            {formatCompletionPercentage(saudaItem.sauda_details.completion_percentage)}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="text-xs font-bold text-primary">
+                                        ₹{saudaItem.final_total_amount.toFixed(2)}
+                                      </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[10px]">
+                                      <div className="flex justify-between">
+                                        <span className="text-muted-foreground">Weight:</span>
+                                        <span>{saudaItem.total_weight.toFixed(2)} kg</span>
+                                      </div>
+                                      {saudaItem.sauda_details.quantity && (
+                                        <div className="flex justify-between">
+                                          <span className="text-muted-foreground">Received/Expected:</span>
+                                          <span>{formatWeightDisplay(saudaItem.sauda_details.received_until_now, saudaItem.sauda_details.quantity)}</span>
+                                        </div>
+                                      )}
+                                      <div className="flex justify-between">
+                                        <span className="text-muted-foreground">Rate:</span>
+                                        <span>₹{saudaItem.sauda_details.rate.toFixed(2)}/kg</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="text-muted-foreground">Base Amount:</span>
+                                        <span>₹{saudaItem.base_amount.toFixed(2)}</span>
+                                      </div>
+                                      {saudaItem.cash_discount_amount > 0 && (
+                                        <div className="flex justify-between text-emerald-600">
+                                          <span>- Cash Discount:</span>
+                                          <span>₹{saudaItem.cash_discount_amount.toFixed(2)}</span>
+                                        </div>
+                                      )}
+                                      {saudaItem.broker_commission_amount > 0 && (
+                                        <div className="flex justify-between">
+                                          <span className="text-muted-foreground">+ Broker Commission:</span>
+                                          <span>₹{saudaItem.broker_commission_amount.toFixed(2)}</span>
+                                        </div>
+                                      )}
+                                      {getBrokerName(saudaItem.sauda_details.broker_id) && (
+                                        <div className="flex justify-between col-span-2">
+                                          <span className="text-muted-foreground">Broker:</span>
+                                          <span className="text-xs">{getBrokerName(saudaItem.sauda_details.broker_id)}</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                              {/* Total Row */}
+                              <div className="bg-primary/10 px-3 py-2 border-t-2 border-primary/30">
+                                <div className="flex justify-between items-center text-sm font-bold">
+                                  <span>Total (All Saudas):</span>
+                                  <span className="text-primary">₹{summary.final_total_amount.toFixed(2)}</span>
+                                </div>
+                                {/* Weight Calculation Flow */}
+                                {(billWeight > 0 || kaantaWeight > 0 || danaDeduction > 0 || finalWeight > 0) && (
+                                  <div className="mt-2 pt-2 border-t border-primary/20 space-y-0.5 text-[10px]">
+                                    {billWeight > 0 && (
+                                      <div className="flex justify-between">
+                                        <span className="text-muted-foreground">Bill Weight:</span>
+                                        <span>{billWeight.toFixed(2)} kg</span>
+                                      </div>
+                                    )}
+                                    {kaantaWeight > 0 && (
+                                      <div className="flex justify-between">
+                                        <span className="text-muted-foreground">Kaanta Weight:</span>
+                                        <span>{kaantaWeight.toFixed(2)} kg</span>
+                                      </div>
+                                    )}
+                                    {danaDeduction > 0 && (
+                                      <div className="flex justify-between text-red-600">
+                                        <span className="text-muted-foreground">Less: Dana (300gm per Qtl):</span>
+                                        <span>-{danaDeduction.toFixed(2)} kg</span>
+                                      </div>
+                                    )}
+                                    {finalWeight > 0 && (
+                                      <div className="flex justify-between font-semibold border-t border-primary/20 pt-0.5 mt-0.5">
+                                        <span className="text-muted-foreground">Final Weight:</span>
+                                        <span>{finalWeight.toFixed(2)} kg</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                                <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                                  <span>Total Weight: {finalWeight.toFixed(2)} kg</span>
+                                  <span>Total Bags: {summary.total_bags}</span>
+                                </div>
+                              </div>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Broker</span>
-                              <span className="font-medium">{getBrokerName(selectedSauda?.broker_id) || '-'}</span>
+                            
+                            {/* Transportation */}
+                            <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-3">
+                              <div className="space-y-1">
+                                {summary.transportation_cost > 0 && (
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">+ Transport:</span>
+                                    <span className="font-medium">₹{summary.transportation_cost.toFixed(2)}</span>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              {/* Right Column for ISP */}
+                              <div className="space-y-1 border-l border-border pl-4">
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Truck No</span>
+                                  <span className="font-medium">{vehicle?.vehicle_number || '-'}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Bag</span>
+                                  <span className="font-medium">{summary.total_bags}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">DUE Date</span>
+                                  <span className="font-medium">{dueDate ? new Date(dueDate).toLocaleDateString('en-IN') : '-'}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">FREIGHT</span>
+                                  <span className="font-medium">{summary.transportation_cost.toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Transporter</span>
+                                  <span className="font-medium text-xs">{getTransporterName(selectedISP?.transporter_id) || '-'}</span>
+                                </div>
+                              </div>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Bill Weight</span>
-                              <span className="font-medium">{billWeight.toFixed(2)}</span>
+                            
+                            {/* Charges and Net Payable for ISP */}
+                            {(formData.charges || []).length > 0 && (
+                              <div className="mt-3 pt-3 border-t border-border">
+                                <div className="text-xs font-semibold text-muted-foreground mb-2">Deductions:</div>
+                                {(formData.charges || []).map((charge, idx) => (
+                                  <div key={idx} className="flex justify-between text-xs">
+                                    <span className="text-muted-foreground">- {charge.charge_name}:</span>
+                                    <span className="font-medium text-red-600">
+                                      {charge.charge_type === 'fixed' 
+                                        ? `₹${charge.charge_value.toFixed(2)}` 
+                                        : `${charge.charge_value}% (₹${((previewAmount * charge.charge_value / 100)).toFixed(2)})`
+                                      }
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            
+                            <div className="mt-3 pt-3 border-t-2 border-primary/30 bg-primary/10 rounded-lg p-3">
+                              <div className="flex justify-between items-center">
+                                <span className="font-bold text-sm">Net Payable:</span>
+                                <span className="font-bold text-xl text-primary">₹{calculateNetPayable().toFixed(2)}</span>
+                              </div>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Kanta Weight</span>
-                              <span className="font-medium">{kaantaWeight.toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Less: Dana 300gm per Qtl</span>
-                              <span className="font-medium">0.00</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Final Weight</span>
-                              <span className="font-medium">{(summary?.total_weight ?? kaantaWeight).toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Rate</span>
-                              <span className="font-medium">{selectedSauda?.rate?.toFixed(2) || '-'}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Amount</span>
-                              <span className="font-bold">{(summary?.base_amount ?? 0).toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Brokerage Rs {selectedSauda?.broker_commission_type === 'percentage' ? `${selectedSauda?.broker_commission || 0}%` : ''}</span>
-                              <span className="font-medium">{(summary?.broker_commission_amount ?? 0).toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">CD {selectedSauda?.cash_discount_type === 'percentage' ? `${selectedSauda?.cash_discount || 0}%` : ''}</span>
-                              <span className="font-medium">{(summary?.cash_discount_amount ?? 0).toFixed(2)}</span>
-                            </div>
+                          </div>
+                        ) : (
+                          /* Sauda: Show traditional format */
+                          <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+                            {/* Left Column */}
+                            <div className="space-y-1">
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Party Name</span>
+                                <span className="font-medium text-right">{getVendorName(formData.payer_id) || selectedISP?.party_name || '-'}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Address</span>
+                                <span className="text-right text-xs">{getVendorAddress(formData.payer_id) || selectedISP?.party_address || '-'}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Broker</span>
+                                <span className="font-medium">{getBrokerName(selectedSauda?.broker_id) || '-'}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Bill Weight</span>
+                                <span className="font-medium">{billWeight.toFixed(2)} kg</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Kaanta Weight</span>
+                                <span className="font-medium">{kaantaWeight.toFixed(2)} kg</span>
+                              </div>
+                              {danaDeduction > 0 && (
+                                <div className="flex justify-between text-red-600">
+                                  <span className="text-muted-foreground">Less: Dana (300gm per Qtl)</span>
+                                  <span className="font-medium">-{danaDeduction.toFixed(2)} kg</span>
+                                </div>
+                              )}
+                              <div className="flex justify-between font-semibold">
+                                <span className="text-muted-foreground">Final Weight</span>
+                                <span className="font-medium">{finalWeight.toFixed(2)} kg</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Rate</span>
+                                <span className="font-medium">{selectedSauda?.rate?.toFixed(2) || '-'}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Amount</span>
+                                <span className="font-bold">{(summary?.base_amount ?? 0).toFixed(2)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Brokerage Rs {selectedSauda?.broker_commission_type === 'percentage' ? `${selectedSauda?.broker_commission || 0}%` : ''}</span>
+                                <span className="font-medium">{(summary?.broker_commission_amount ?? 0).toFixed(2)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">CD {selectedSauda?.cash_discount_type === 'percentage' ? `${selectedSauda?.cash_discount || 0}%` : ''}</span>
+                                <span className="font-medium">{(summary?.cash_discount_amount ?? 0).toFixed(2)}</span>
+                              </div>
                             {/* Custom Charges */}
                             {(formData.charges || []).map((charge, idx) => (
                               <div key={idx} className="flex justify-between">
@@ -987,6 +1224,21 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                               <span className="text-muted-foreground">Item</span>
                               <span className="font-medium">{getRiceCodeName(selectedSauda?.rice_code_id) || 'RICE'}</span>
                             </div>
+                            {linkType === 'sauda' && summary && 'sauda_details' in summary && summary.sauda_details && summary.sauda_details.completion_percentage !== null && (
+                              <div className="flex justify-between items-center">
+                                <span className="text-muted-foreground">Completion</span>
+                                <div className="flex items-center gap-1">
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${getCompletionStatus(summary.sauda_details.completion_percentage).bgColor} ${getCompletionStatus(summary.sauda_details.completion_percentage).color} border ${getCompletionStatus(summary.sauda_details.completion_percentage).borderColor}`}>
+                                    {formatCompletionPercentage(summary.sauda_details.completion_percentage)}
+                                  </span>
+                                  {summary.sauda_details.quantity && (
+                                    <span className="text-[10px] text-muted-foreground">
+                                      {formatWeightDisplay(summary.sauda_details.received_until_now, summary.sauda_details.quantity)}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                             <div className="flex justify-between">
                               <span className="text-muted-foreground">Bag</span>
                               <span className="font-medium">{totalBags}</span>
@@ -1003,14 +1255,9 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                               <span className="text-muted-foreground">Transporter</span>
                               <span className="font-medium text-xs">{getTransporterName(selectedISP?.transporter_id) || '-'}</span>
                             </div>
-                            <div className="flex justify-between mt-4">
-                              <span className="text-muted-foreground">IGST ({formData.igst_percentage || 0}%)</span>
-                              <span className="font-medium">{(summary?.igst_amount ?? 0).toFixed(2)}</span>
-                            </div>
                           </div>
                         </div>
-                      </div>
-                    )}
+                        )}
 
                     {/* Download Button - Outside previewRef so it won't appear in PDF */}
                     {summary && (
@@ -1023,6 +1270,8 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                           <Download className="h-4 w-4" />
                           Download PDF
                         </button>
+                      </div>
+                    )}
                       </div>
                     )}
                   </div>
@@ -1045,6 +1294,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
         open={notificationOpen}
         onOpenChange={setNotificationOpen}
         type="payment-advice"
+        initialTab={notificationInitialTab}
         paymentAdviceData={createdPaymentAdvice ? {
           adviceNumber: createdPaymentAdvice.transaction_id || invoiceNo,
           vendorName: getVendorName(createdPaymentAdvice.payer_id),

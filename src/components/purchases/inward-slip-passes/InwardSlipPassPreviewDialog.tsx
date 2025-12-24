@@ -105,12 +105,14 @@ export function InwardSlipPassPreviewDialog({ open, onOpenChange, isp }: InwardS
     if (!isp) return [];
     const docs: DocumentInfo[] = [];
     
-    if (isp.inward_slip_bill_image_url) {
-      docs.push({ url: isp.inward_slip_bill_image_url, label: 'Inward Slip Bill', type: 'image' });
+    // Add other_bills
+    if (isp.other_bills && isp.other_bills.length > 0) {
+      isp.other_bills.forEach(bill => {
+        const isPdf = bill.url.toLowerCase().includes('.pdf');
+        docs.push({ url: bill.url, label: bill.name, type: isPdf ? 'pdf' : 'image' });
+      });
     }
-    if (isp.transportation_bill_image_url) {
-      docs.push({ url: isp.transportation_bill_image_url, label: 'Transportation Bill', type: 'image' });
-    }
+    
     if (isp.bill_pdf_url) {
       const isPdf = isp.bill_pdf_url.toLowerCase().includes('.pdf');
       docs.push({ url: isp.bill_pdf_url, label: 'Purchase Bill', type: isPdf ? 'pdf' : 'image' });

@@ -31,13 +31,14 @@ export const inwardSlipPassesAPI = {
     return apiService.post<InwardSlipPass>(`/inward-slip-passes/${id}/status`, { status });
   },
 
-  // Upload bill image
-  uploadBillImage: async (id: string, file: File) => {
+  // Upload other bill with custom name
+  uploadOtherBill: async (id: string, name: string, file: File) => {
     const formData = new FormData();
+    formData.append('name', name.trim());
     formData.append('file', file);
     const token = localStorage.getItem('auth:token');
     const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3000/api';
-    const response = await fetch(`${API_BASE_URL}/inward-slip-passes/${id}/upload-bill-image`, {
+    const response = await fetch(`${API_BASE_URL}/v1/inward-slip-passes/${id}/upload-other-bill`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -51,22 +52,21 @@ export const inwardSlipPassesAPI = {
     return data.data;
   },
 
-  // Upload transportation bill
-  uploadTransportationBill: async (id: string, file: File) => {
-    const formData = new FormData();
-    formData.append('file', file);
+  // Delete other bill
+  deleteOtherBill: async (id: string, billUrl: string) => {
     const token = localStorage.getItem('auth:token');
     const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3000/api';
-    const response = await fetch(`${API_BASE_URL}/inward-slip-passes/${id}/upload-transportation-bill`, {
-      method: 'POST',
+    const response = await fetch(`${API_BASE_URL}/v1/inward-slip-passes/${id}/delete-other-bill`, {
+      method: 'DELETE',
       headers: {
+        'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: formData,
+      body: JSON.stringify({ url: billUrl }),
     });
     const data = await response.json();
     if (!response.ok) {
-      throw new Error(data.message || 'Upload failed');
+      throw new Error(data.message || 'Delete failed');
     }
     return data.data;
   },

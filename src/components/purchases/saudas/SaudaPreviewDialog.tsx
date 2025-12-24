@@ -6,6 +6,7 @@ import { vendorsAPI } from '../../../services/vendors.api';
 import { useVendors } from '../../../hooks/useVendors';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { getRiceTypeLabel } from '../../../utils/riceType';
+import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
 import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
 import type { Sauda, RiceCode, RiceType } from '../../../types/entities';
 
@@ -297,9 +298,33 @@ export function SaudaPreviewDialog({ open, onOpenChange, sauda }: SaudaPreviewDi
                     <span className="font-semibold">₹{sauda.rate?.toFixed(2) || '0.00'}/kg</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Quantity:</span>
+                    <span className="text-muted-foreground">Expected Quantity:</span>
                     <span className="font-semibold">{sauda.quantity?.toFixed(2) || '-'} kg</span>
                   </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Received Weight:</span>
+                    <span className="font-semibold">{sauda.received_until_now.toFixed(2)} kg</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Completion:</span>
+                    <span className="font-semibold">
+                      {sauda.completion_percentage !== null ? (
+                        <span className={`px-2 py-0.5 rounded ${getCompletionStatus(sauda.completion_percentage).bgColor} ${getCompletionStatus(sauda.completion_percentage).color}`}>
+                          {formatCompletionPercentage(sauda.completion_percentage)}
+                        </span>
+                      ) : (
+                        'N/A'
+                      )}
+                    </span>
+                  </div>
+                  {sauda.completion_percentage !== null && (
+                    <div className="col-span-2 flex justify-between items-center mt-1 pt-1 border-t border-border/50">
+                      <span className="text-muted-foreground">Status:</span>
+                      <span className={`text-xs px-2 py-1 rounded-full ${getCompletionStatus(sauda.completion_percentage).bgColor} ${getCompletionStatus(sauda.completion_percentage).color} border ${getCompletionStatus(sauda.completion_percentage).borderColor}`}>
+                        {getCompletionStatus(sauda.completion_percentage).label}
+                      </span>
+                    </div>
+                  )}
                   {sauda.cash_discount != null && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Cash Discount:</span>

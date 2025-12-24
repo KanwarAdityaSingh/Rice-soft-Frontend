@@ -681,6 +681,8 @@ export interface Sauda {
   cash_discount?: number | null;
   cash_discount_type?: CashDiscountType;
   quantity?: number | null;
+  received_until_now: number;
+  completion_percentage: number | null;
   estimated_delivery_time?: number | null;
   purchaser_id: string;
   cooked_rice_image_url?: string | null;
@@ -739,6 +741,12 @@ export interface SaudaFilters {
 // Inward Slip Pass Types
 // Note: Weight fields have been moved to Kaanta entity.
 // Note: vehicle_number replaced with vehicle_id (reference to Vehicle entity)
+export interface OtherBill {
+  name: string;
+  url: string;
+  uploaded_at: string;
+}
+
 export interface InwardSlipPass {
   id: string;
   sauda_ids: string[];
@@ -752,8 +760,7 @@ export interface InwardSlipPass {
   transporter_id?: string | null;
   transportation_cost?: number | null;
   status: 'pending' | 'completed';
-  inward_slip_bill_image_url?: string | null;
-  transportation_bill_image_url?: string | null;
+  other_bills?: OtherBill[];
   bill_pdf_url?: string | null;
   bilti_image_url?: string | null;
   bilti_pdf_url?: string | null;
@@ -777,9 +784,12 @@ export interface Kaanta {
   full_truck_weight: number;
   empty_truck_weight: number;
   kaanta_weight: number; // Auto-calculated: full_truck_weight - empty_truck_weight
+  said_sent_weight?: number | null; // Weight mentioned in bill/said document (in kg)
   bag_weight: number;
   no_of_bags: number;
   bag_type: BagType;
+  khaali_kaanta_parchi_url?: string | null;
+  bhara_kaanta_parchi_url?: string | null;
   created_at: string;
   updated_at: string;
   created_by?: string;
@@ -791,6 +801,7 @@ export interface CreateKaantaRequest {
   inward_slip_pass_id: string;
   full_truck_weight: number;
   empty_truck_weight: number;
+  said_sent_weight?: number | null; // Optional: Weight mentioned in bill/said document
   bag_weight: number;
   no_of_bags: number;
   bag_type: BagType;
@@ -799,6 +810,7 @@ export interface CreateKaantaRequest {
 export interface UpdateKaantaRequest {
   full_truck_weight?: number;
   empty_truck_weight?: number;
+  said_sent_weight?: number | null;
   bag_weight?: number;
   no_of_bags?: number;
   bag_type?: BagType;
@@ -893,6 +905,8 @@ export interface PurchaseSummarySaudaDetail {
   rice_type?: string | null;
   rate: number;
   quantity?: number | null;
+  received_until_now: number;
+  completion_percentage: number | null;
   purchaser_id: string;
   broker_id?: string | null;
   broker_commission?: number | null;
@@ -1092,6 +1106,10 @@ export interface PaymentAdvice {
   status: 'pending' | 'completed' | 'failed';
   transaction_id?: string | null;
   payment_slip_url?: string | null;
+  bill_weight?: number | null; // Sum of said_sent_weight from kaantas
+  kanta_weight?: number | null; // Sum of kaanta_weight from kaantas
+  dana_deduction?: number | null; // Calculated as (said_sent_weight * 300/1000)/100
+  final_weight?: number | null; // kaanta_weight - dana_deduction
   charges: Charge[];
   created_at: string;
   updated_at: string;
@@ -1105,8 +1123,6 @@ export interface CreatePaymentAdviceRequest {
   recipient_id: string;
   // Amount is optional - auto-calculated from summary if not provided
   amount?: number;
-  // IGST percentage for auto-calculation (default: 0)
-  igst_percentage?: number;
   date_of_payment: string;
   status?: 'pending' | 'completed' | 'failed';
   transaction_id?: string | null;

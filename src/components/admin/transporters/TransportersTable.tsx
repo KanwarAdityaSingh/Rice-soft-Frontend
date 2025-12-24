@@ -166,8 +166,21 @@ export function TransportersTable() {
   };
 
   // Get vehicles linked to a transporter
-  const getLinkedVehicles = (transporterId: string) => {
-    return vehicles.filter(v => v.transporter_ids?.includes(transporterId));
+  // First try to use vehicle_ids from transporter object (from GET response)
+  // Fall back to reverse lookup if vehicle_ids not available
+  const getLinkedVehicles = (transporter: Transporter) => {
+    // If transporter has vehicle_ids from backend, use those
+    if (transporter.vehicle_ids && transporter.vehicle_ids.length > 0) {
+      return vehicles.filter(v => transporter.vehicle_ids?.includes(v.id));
+    }
+    // Fallback: reverse lookup from vehicles
+    return vehicles.filter(v => v.transporter_ids?.includes(transporter.id));
+  };
+
+  // Get vehicle numbers for display
+  const getVehicleNumbers = (transporter: Transporter): string[] => {
+    const linkedVehicles = getLinkedVehicles(transporter);
+    return linkedVehicles.map(v => v.vehicle_number);
   };
 
   const filtered = useMemo(() => {
@@ -258,14 +271,15 @@ export function TransportersTable() {
                       <td className="py-3 px-4 text-sm">{transporter.address.city}</td>
                       <td className="py-3 px-4 text-sm">
                         {(() => {
-                          const linkedVehicles = getLinkedVehicles(transporter.id);
+                          const linkedVehicles = getLinkedVehicles(transporter);
+                          const vehicleNumbers = getVehicleNumbers(transporter);
                           if (linkedVehicles.length === 0) return <span className="text-muted-foreground">None</span>;
                           return (
                             <div className="flex items-center gap-1.5">
                               <Car className="h-3.5 w-3.5 text-primary" />
                               <span className="font-medium">{linkedVehicles.length}</span>
                               <span className="text-muted-foreground text-xs">
-                                ({linkedVehicles.slice(0, 2).map(v => v.vehicle_number).join(', ')}{linkedVehicles.length > 2 ? '...' : ''})
+                                ({vehicleNumbers.slice(0, 2).join(', ')}{vehicleNumbers.length > 2 ? '...' : ''})
                               </span>
                               <Link to="/directory/vehicles" className="ml-1 text-primary hover:text-primary/80">
                                 <ExternalLink className="h-3 w-3" />

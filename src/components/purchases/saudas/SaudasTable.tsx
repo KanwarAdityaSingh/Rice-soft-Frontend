@@ -11,6 +11,7 @@ import { useSaudas } from '../../../hooks/useSaudas';
 import { useVendors } from '../../../hooks/useVendors';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { getRiceTypeLabel } from '../../../utils/riceType';
+import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
 import { SaudaFormModal } from './SaudaFormModal';
 import { SaudaPreviewDialog } from './SaudaPreviewDialog';
 import { SaudaEmailModal } from './SaudaEmailModal';
@@ -180,6 +181,13 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                       {getSaudaDisplayName(s)}
                     </h3>
                     <div className="text-xs text-muted-foreground">Rate: ₹{(s.rate ?? 0).toFixed(2)}</div>
+                    {s.completion_percentage !== null && (
+                      <div className="mt-1">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full ${getCompletionStatus(s.completion_percentage).bgColor} ${getCompletionStatus(s.completion_percentage).color} border ${getCompletionStatus(s.completion_percentage).borderColor}`}>
+                          {getCompletionStatus(s.completion_percentage).label}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -187,7 +195,18 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                 {s.quantity && (
                   <div className="inline-flex items-center gap-2">
                     <span className="text-muted-foreground w-20">Quantity:</span>
-                    <span className="font-medium">{s.quantity}</span>
+                    <span className="font-medium">{formatWeightDisplay(s.received_until_now, s.quantity)}</span>
+                    {s.completion_percentage !== null && (
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full ${getCompletionStatus(s.completion_percentage).bgColor} ${getCompletionStatus(s.completion_percentage).color}`}>
+                        {formatCompletionPercentage(s.completion_percentage)}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {!s.quantity && s.received_until_now > 0 && (
+                  <div className="inline-flex items-center gap-2">
+                    <span className="text-muted-foreground w-20">Received:</span>
+                    <span className="font-medium">{s.received_until_now.toFixed(2)} kg</span>
                   </div>
                 )}
                 {s.broker_commission != null && (

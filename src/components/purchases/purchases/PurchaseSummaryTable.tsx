@@ -8,6 +8,7 @@ import { purchaseSummaryAPI } from '../../../services/purchaseSummary.api';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { vendorsAPI } from '../../../services/vendors.api';
 import { getRiceTypeLabel } from '../../../utils/riceType';
+import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
 import type { SaudaPurchaseSummary, ISPPurchaseSummary, RiceCode, RiceType, Vendor, Sauda, InwardSlipPass } from '../../../types/entities';
 
 type ViewMode = 'sauda' | 'isp';
@@ -283,6 +284,18 @@ export function PurchaseSummaryTable() {
                           <div className="text-sm text-muted-foreground">
                             {getRiceCodeName(saudaInfo?.rice_code_id)} • {getRiceTypeLabel(saudaInfo?.rice_type, riceTypes) || 'N/A'} • ₹{saudaInfo?.rate}/kg
                           </div>
+                          {summary.sauda_details && summary.sauda_details.completion_percentage !== null && (
+                            <div className="mt-1">
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${getCompletionStatus(summary.sauda_details.completion_percentage).bgColor} ${getCompletionStatus(summary.sauda_details.completion_percentage).color} border ${getCompletionStatus(summary.sauda_details.completion_percentage).borderColor}`}>
+                                {getCompletionStatus(summary.sauda_details.completion_percentage).label} • {formatCompletionPercentage(summary.sauda_details.completion_percentage)}
+                              </span>
+                              {summary.sauda_details.quantity && (
+                                <span className="text-xs text-muted-foreground ml-2">
+                                  {formatWeightDisplay(summary.sauda_details.received_until_now, summary.sauda_details.quantity)}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-6">
@@ -481,6 +494,18 @@ export function PurchaseSummaryTable() {
                                 <div className="text-xs text-muted-foreground">
                                   {sauda.total_lots} lots • {sauda.total_weight.toFixed(2)} kg • ₹{sauda.sauda_details.rate}/kg
                                 </div>
+                                {sauda.sauda_details.completion_percentage !== null && (
+                                  <div className="mt-1 flex items-center gap-2">
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${getCompletionStatus(sauda.sauda_details.completion_percentage).bgColor} ${getCompletionStatus(sauda.sauda_details.completion_percentage).color} border ${getCompletionStatus(sauda.sauda_details.completion_percentage).borderColor}`}>
+                                      {formatCompletionPercentage(sauda.sauda_details.completion_percentage)}
+                                    </span>
+                                    {sauda.sauda_details.quantity && (
+                                      <span className="text-[10px] text-muted-foreground">
+                                        {formatWeightDisplay(sauda.sauda_details.received_until_now, sauda.sauda_details.quantity)}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>

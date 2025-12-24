@@ -3,15 +3,16 @@ import { X, CreditCard, Download, Image as ImageIcon, FileText } from 'lucide-re
 import { useState, useEffect, useRef } from 'react';
 import { vendorsAPI } from '../../../services/vendors.api';
 import { vehiclesAPI } from '../../../services/vehicles.api';
-import { purchasesAPI } from '../../../services/purchases.api';
+import { purchaseSummaryAPI } from '../../../services/purchaseSummary.api';
 import { useSaudas } from '../../../hooks/useSaudas';
 import { useInwardSlipPasses } from '../../../hooks/useInwardSlipPasses';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { useTransporters } from '../../../hooks/useTransporters';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { getRiceTypeLabel } from '../../../utils/riceType';
+import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
 import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
-import type { PaymentAdvice, RiceCode, RiceType, Sauda, InwardSlipPass, Vehicle } from '../../../types/entities';
+import type { PaymentAdvice, RiceCode, RiceType, Sauda, InwardSlipPass, Vehicle, PurchaseSummarySaudaDetail, ISPPurchaseSummary, SaudaPurchaseSummary } from '../../../types/entities';
 
 interface DefaultRecipient {
   name: string;
@@ -19,23 +20,8 @@ interface DefaultRecipient {
   llpin: string;
 }
 
-interface PurchaseSummary {
-  total_lots: number;
-  total_bags: number;
-  total_weight: number;
-  base_amount: number;
-  cash_discount_amount: number;
-  amount_after_discount: number;
-  broker_commission_amount: number;
-  amount_after_commission: number;
-  transportation_cost: number;
-  amount_after_transportation: number;
-  igst_amount: number;
-  final_total_amount: number;
-  net_payable: number;
-  sauda_details?: any;
-  isp_details?: any[];
-}
+// Use the actual types from entities
+type PurchaseSummary = SaudaPurchaseSummary | ISPPurchaseSummary;
 
 interface PaymentAdvicePreviewDialogProps {
   open: boolean;
@@ -47,7 +33,7 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
   const [defaultRecipient, setDefaultRecipient] = useState<DefaultRecipient | null>(null);
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
-  const [summary, setSummary] = useState<PurchaseSummary | null>(null);
+  const [summary, setSummary] = useState<SaudaPurchaseSummary | ISPPurchaseSummary | null>(null);
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const { saudas } = useSaudas();
   const { inwardSlipPasses } = useInwardSlipPasses();
@@ -73,10 +59,10 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
 
         // Fetch summary
         if (paymentAdvice?.sauda_id) {
-          const summaryData = await purchasesAPI.getSaudaSummary(paymentAdvice.sauda_id, paymentAdvice.igst_percentage || 0);
+          const summaryData = await purchaseSummaryAPI.getSaudaSummary(paymentAdvice.sauda_id);
           setSummary(summaryData);
         } else if (paymentAdvice?.inward_slip_pass_id) {
-          const summaryData = await purchasesAPI.getISPSummary(paymentAdvice.inward_slip_pass_id, paymentAdvice.igst_percentage || 0);
+          const summaryData = await purchaseSummaryAPI.getISPSummary(paymentAdvice.inward_slip_pass_id);
           setSummary(summaryData);
         }
 
@@ -351,15 +337,57 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
               {/* Linked Info */}
               <div className="mb-3 border-b border-dotted border-border pb-2">
                 {sauda && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Sauda:</span>
-                    <span className="font-semibold">{getRiceCodeName(sauda.rice_code_id)} {getRiceTypeLabel(sauda.rice_type, riceTypes)} @ ₹{sauda.rate}/kg</span>
+                  <div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Sauda:</span>
+                      <span className="font-semibold">{getRiceCodeName(sauda.rice_code_id)} {getRiceTypeLabel(sauda.rice_type, riceTypes)} @ ₹{sauda.rate}/kg</span>
+                    </div>
+                    {'sauda_details' in summary && summary.sauda_details && summary.sauda_details.completion_percentage !== null && (
+                      <div className="flex justify-between items-center mt-1">
+                        <span className="text-muted-foreground text-xs">Completion:</span>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${getCompletionStatus(summary.sauda_details.completion_percentage).bgColor} ${getCompletionStatus(summary.sauda_details.completion_percentage).color} border ${getCompletionStatus(summary.sauda_details.completion_percentage).borderColor}`}>
+                            {formatCompletionPercentage(summary.sauda_details.completion_percentage)}
+                          </span>
+                          {summary.sauda_details.quantity && (
+                            <span className="text-xs text-muted-foreground">
+                              {formatWeightDisplay(summary.sauda_details.received_until_now, summary.sauda_details.quantity)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
                 {isp && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">ISP:</span>
-                    <span className="font-semibold">{isp.slip_number} - {vehicle?.vehicle_number || '-'}</span>
+                  <div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">ISP:</span>
+                      <span className="font-semibold">{isp.slip_number} - {vehicle?.vehicle_number || '-'}</span>
+                    </div>
+                    {'saudas' in summary && summary.saudas && summary.saudas.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {summary.saudas.map((saudaItem) => (
+                          <div key={saudaItem.sauda_id} className="text-xs">
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">
+                                {getRiceCodeName(saudaItem.sauda_details.rice_code_id)} {getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes)}
+                              </span>
+                              {saudaItem.sauda_details.completion_percentage !== null && (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).bgColor} ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).color} border ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).borderColor}`}>
+                                  {formatCompletionPercentage(saudaItem.sauda_details.completion_percentage)}
+                                </span>
+                              )}
+                            </div>
+                            {saudaItem.sauda_details.quantity && (
+                              <div className="text-[10px] text-muted-foreground mt-0.5">
+                                {formatWeightDisplay(saudaItem.sauda_details.received_until_now, saudaItem.sauda_details.quantity)}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -368,10 +396,95 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
               {summary && (
                 <div className="mb-3">
                   <div className="font-bold border-b border-border pb-1 mb-2">Calculation Breakdown</div>
+                  
+                  {/* ISP: Show per-sauda breakdown first */}
+                  {isp && 'saudas' in summary && summary.saudas && summary.saudas.length > 0 && (
+                    <div className="mb-3 space-y-2">
+                      <div className="text-xs font-semibold text-muted-foreground">Per Sauda Breakdown:</div>
+                      {summary.saudas.map((saudaItem, idx) => (
+                        <div key={saudaItem.sauda_id} className="border border-border/50 rounded p-2 bg-muted/20">
+                          <div className="font-semibold text-xs mb-1">
+                            {idx + 1}. {getRiceCodeName(saudaItem.sauda_details.rice_code_id)} {getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes) || 'N/A'}
+                            {saudaItem.sauda_details.completion_percentage !== null && (
+                              <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-full ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).bgColor} ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).color} border ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).borderColor}`}>
+                                {formatCompletionPercentage(saudaItem.sauda_details.completion_percentage)}
+                              </span>
+                            )}
+                          </div>
+                          <div className="space-y-0.5 text-[10px]">
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Weight:</span>
+                              <span>{saudaItem.total_weight.toFixed(2)} kg</span>
+                            </div>
+                            {saudaItem.sauda_details.quantity && (
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Received/Expected:</span>
+                                <span>{formatWeightDisplay(saudaItem.sauda_details.received_until_now, saudaItem.sauda_details.quantity)}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Base Amount:</span>
+                              <span>₹{saudaItem.base_amount.toFixed(2)}</span>
+                            </div>
+                            {saudaItem.cash_discount_amount > 0 && (
+                              <div className="flex justify-between text-emerald-600">
+                                <span>- Cash Discount:</span>
+                                <span>₹{saudaItem.cash_discount_amount.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {saudaItem.broker_commission_amount > 0 && (
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">+ Broker Commission:</span>
+                                <span>₹{saudaItem.broker_commission_amount.toFixed(2)}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between font-semibold border-t border-border/30 pt-0.5 mt-0.5">
+                              <span>Sauda Total:</span>
+                              <span>₹{saudaItem.final_total_amount.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="text-xs font-semibold text-muted-foreground pt-1 border-t border-border">Total Summary:</div>
+                    </div>
+                  )}
+                  
+                  {/* Weight Calculation Flow */}
+                  {(paymentAdvice.bill_weight || paymentAdvice.kanta_weight || paymentAdvice.dana_deduction || paymentAdvice.final_weight) && (
+                    <div className="mb-3 space-y-1 border-b border-dotted border-border pb-2">
+                      <div className="text-xs font-semibold text-muted-foreground mb-1">Weight Calculation:</div>
+                      {paymentAdvice.bill_weight && (
+                        <div className="flex justify-between text-[10px]">
+                          <span className="text-muted-foreground">Bill Weight:</span>
+                          <span>{paymentAdvice.bill_weight.toFixed(2)} kg</span>
+                        </div>
+                      )}
+                      {paymentAdvice.kanta_weight && (
+                        <div className="flex justify-between text-[10px]">
+                          <span className="text-muted-foreground">Kaanta Weight:</span>
+                          <span>{paymentAdvice.kanta_weight.toFixed(2)} kg</span>
+                        </div>
+                      )}
+                      {paymentAdvice.dana_deduction && paymentAdvice.dana_deduction > 0 && (
+                        <div className="flex justify-between text-[10px] text-red-600">
+                          <span className="text-muted-foreground">Less: Dana (300gm per Qtl):</span>
+                          <span>-{paymentAdvice.dana_deduction.toFixed(2)} kg</span>
+                        </div>
+                      )}
+                      {paymentAdvice.final_weight && (
+                        <div className="flex justify-between text-[10px] font-semibold border-t border-border/30 pt-0.5 mt-0.5">
+                          <span className="text-muted-foreground">Final Weight:</span>
+                          <span>{paymentAdvice.final_weight.toFixed(2)} kg</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Overall Summary */}
                   <div className="space-y-1">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Total Weight:</span>
-                      <span className="font-semibold">{summary.total_weight?.toFixed(2) || '-'} kg</span>
+                      <span className="font-semibold">{(paymentAdvice.final_weight ?? summary.total_weight)?.toFixed(2) || '-'} kg</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Total Bags:</span>
@@ -397,12 +510,6 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">+ Transport:</span>
                         <span>₹{summary.transportation_cost?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                      </div>
-                    )}
-                    {summary.igst_amount > 0 && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">+ IGST ({paymentAdvice.igst_percentage || 0}%):</span>
-                        <span>₹{summary.igst_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                       </div>
                     )}
                   </div>

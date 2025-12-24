@@ -76,6 +76,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notificationInitialTab, setNotificationInitialTab] = useState<'email' | 'whatsapp'>('email');
   const [createdSaudaId, setCreatedSaudaId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -1021,7 +1022,10 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                       <div className="flex gap-3 justify-center">
                         <button
                           type="button"
-                          onClick={() => setNotificationOpen(true)}
+                          onClick={() => {
+                            setNotificationInitialTab('email');
+                            setNotificationOpen(true);
+                          }}
                           className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-lg font-medium transition-all shadow-lg"
                         >
                           <Mail className="h-4 w-4" />
@@ -1030,8 +1034,8 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                         <button
                           type="button"
                           onClick={() => {
+                            setNotificationInitialTab('whatsapp');
                             setNotificationOpen(true);
-                            // Set WhatsApp tab active (will be handled by modal)
                           }}
                           className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-lg font-medium transition-all shadow-lg"
                         >
@@ -1199,6 +1203,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
         open={notificationOpen}
         onOpenChange={setNotificationOpen}
         type="sauda"
+        initialTab={notificationInitialTab}
         entityId={createdSaudaId || saudaId || undefined}
         onSuccess={() => {
           setNotificationOpen(false);

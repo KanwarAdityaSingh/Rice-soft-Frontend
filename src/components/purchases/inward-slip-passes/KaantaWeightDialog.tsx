@@ -1,12 +1,15 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState, useEffect } from 'react';
-import { X, Scale, Package, Info, Check, Circle, Eye, Trash2 } from 'lucide-react';
+import { X, Scale, Package, Info, Check, Circle, Eye, Trash2, Image as ImageIcon, Upload } from 'lucide-react';
 import { kaantasAPI } from '../../../services/kaantas.api';
 import { saudasAPI } from '../../../services/saudas.api';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
+import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
+import { CustomSelect } from '../../shared/CustomSelect';
 import { getRiceTypeLabel } from '../../../utils/riceType';
+import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay, calculateRemainingWeight, exceedsRemainingWeight } from '../../../utils/saudaCompletion';
 import type { InwardSlipPass, Sauda, RiceCode, RiceType, BagType, CreateKaantaRequest, Kaanta } from '../../../types/entities';
 
 interface KaantaWeightDialogProps {
@@ -20,6 +23,7 @@ interface KaantaEntry {
   sauda_id: string;
   full_truck_weight: string;
   empty_truck_weight: string;
+  said_sent_weight: string;
   bag_weight: string;
   no_of_bags: string;
   bag_type: BagType;
@@ -45,6 +49,11 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
   const [deletingKaantaId, setDeletingKaantaId] = useState<string | null>(null);
+  
+  // Image upload state
+  const [uploadingImage, setUploadingImage] = useState<Record<string, boolean>>({});
+  const [documentViewerOpen, setDocumentViewerOpen] = useState(false);
+  const [viewerDocuments, setViewerDocuments] = useState<DocumentInfo[]>([]);
 
   // Load data when dialog opens
   useEffect(() => {
@@ -79,6 +88,7 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
           sauda_id: s.id,
           full_truck_weight: '',
           empty_truck_weight: '',
+          said_sent_weight: '',
           bag_weight: '',
           no_of_bags: '',
           bag_type: 'jute' as BagType,
@@ -209,6 +219,19 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
         isValid = false;
       }
 
+      // Validate against remaining weight
+      const sauda = getSaudaById(entry.sauda_id);
+      if (sauda) {
+        const kaantaWeight = calculateKaantaWeight(entry);
+        if (kaantaWeight > 0) {
+          const remaining = calculateRemainingWeight(sauda.quantity, sauda.received_until_now);
+          if (remaining !== null && kaantaWeight > remaining) {
+            entryErrors.fullTruckWeight = `Cannot exceed remaining weight: ${remaining.toFixed(2)} kg`;
+            isValid = false;
+          }
+        }
+      }
+
       if (Object.keys(entryErrors).length > 0) {
         newErrors[index] = entryErrors;
       }
@@ -233,6 +256,7 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
           inward_slip_pass_id: isp.id,
           full_truck_weight: parseFloat(entry.full_truck_weight),
           empty_truck_weight: parseFloat(entry.empty_truck_weight),
+          said_sent_weight: entry.said_sent_weight ? parseFloat(entry.said_sent_weight) : null,
           bag_weight: parseFloat(entry.bag_weight),
           no_of_bags: parseInt(entry.no_of_bags),
           bag_type: entry.bag_type,
@@ -247,7 +271,7 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
       setAlertMessage(`${filledEntries.length} Kaanta(s) created successfully! Lots have been auto-created.`);
       setAlertOpen(true);
       
-      // Refresh data to show newly created kaantas
+      // Refresh data to show newly created kaantas and updated sauda completion status
       await fetchData();
       
       if (onSuccess) onSuccess();
@@ -270,7 +294,7 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
       setAlertMessage('Kaanta and associated lot deleted successfully');
       setAlertOpen(true);
       
-      // Refresh data
+      // Refresh data to show updated sauda completion status
       await fetchData();
       if (onSuccess) onSuccess();
     } catch (error: any) {
@@ -280,6 +304,47 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
       setAlertOpen(true);
     } finally {
       setDeletingKaantaId(null);
+    }
+  };
+
+  const handleImageUpload = async (kaantaId: string, imageType: 'khaali' | 'bhara', file: File) => {
+    const uploadKey = `${kaantaId}-${imageType}`;
+    setUploadingImage(prev => ({ ...prev, [uploadKey]: true }));
+    try {
+      if (imageType === 'khaali') {
+        await kaantasAPI.uploadKhaaliKaantaParchi(kaantaId, file);
+      } else {
+        await kaantasAPI.uploadBharaKaantaParchi(kaantaId, file);
+      }
+      setAlertType('success');
+      setAlertTitle('Success');
+      setAlertMessage('Image uploaded successfully');
+      setAlertOpen(true);
+      
+      // Refresh data to show updated image URLs
+      await fetchData();
+      if (onSuccess) onSuccess();
+    } catch (error: any) {
+      setAlertType('error');
+      setAlertTitle('Error');
+      setAlertMessage(error.message || 'Failed to upload image');
+      setAlertOpen(true);
+    } finally {
+      setUploadingImage(prev => ({ ...prev, [uploadKey]: false }));
+    }
+  };
+
+  const handleViewImage = (kaanta: Kaanta, imageType: 'khaali' | 'bhara') => {
+    const imageUrl = imageType === 'khaali' 
+      ? kaanta.khaali_kaanta_parchi_url 
+      : kaanta.bhara_kaanta_parchi_url;
+    
+    if (imageUrl) {
+      const label = imageType === 'khaali' 
+        ? 'Khaali Kaanta Parchi (Empty)' 
+        : 'Bhara Kaanta Parchi (Filled)';
+      setViewerDocuments([{ url: imageUrl, label, type: 'image' }]);
+      setDocumentViewerOpen(true);
     }
   };
 
@@ -418,6 +483,80 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                   </div>
                                 </div>
                               </div>
+                              
+                              {/* Image Upload Section */}
+                              <div className="mt-3 pt-3 border-t border-emerald-500/20">
+                                <div className="text-xs font-semibold text-muted-foreground mb-2">Kaanta Parchis</div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {/* Khaali Kaanta Parchi */}
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] text-muted-foreground">Khaali (Empty)</label>
+                                    <div className="flex items-center gap-1">
+                                      {kaanta.khaali_kaanta_parchi_url ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleViewImage(kaanta, 'khaali')}
+                                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 rounded border border-emerald-500/20 transition-colors"
+                                        >
+                                          <ImageIcon className="h-3 w-3" />
+                                          View
+                                        </button>
+                                      ) : (
+                                        <label className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] bg-muted hover:bg-muted/80 text-muted-foreground rounded border border-border cursor-pointer transition-colors">
+                                          <Upload className="h-3 w-3" />
+                                          <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                              const file = e.target.files?.[0];
+                                              if (file) {
+                                                handleImageUpload(kaanta.id, 'khaali', file);
+                                              }
+                                            }}
+                                            disabled={uploadingImage[`${kaanta.id}-khaali`]}
+                                          />
+                                          {uploadingImage[`${kaanta.id}-khaali`] ? 'Uploading...' : 'Upload'}
+                                        </label>
+                                      )}
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Bhara Kaanta Parchi */}
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] text-muted-foreground">Bhara (Filled)</label>
+                                    <div className="flex items-center gap-1">
+                                      {kaanta.bhara_kaanta_parchi_url ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleViewImage(kaanta, 'bhara')}
+                                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 rounded border border-emerald-500/20 transition-colors"
+                                        >
+                                          <ImageIcon className="h-3 w-3" />
+                                          View
+                                        </button>
+                                      ) : (
+                                        <label className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] bg-muted hover:bg-muted/80 text-muted-foreground rounded border border-border cursor-pointer transition-colors">
+                                          <Upload className="h-3 w-3" />
+                                          <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                              const file = e.target.files?.[0];
+                                              if (file) {
+                                                handleImageUpload(kaanta.id, 'bhara', file);
+                                              }
+                                            }}
+                                            disabled={uploadingImage[`${kaanta.id}-bhara`]}
+                                          />
+                                          {uploadingImage[`${kaanta.id}-bhara`] ? 'Uploading...' : 'Upload'}
+                                        </label>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
                             </div>
                           );
                         })}
@@ -449,6 +588,8 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                           const kaantaWeight = calculateKaantaWeight(entry);
                           const entryErrors = errors[index] || {};
                           const isFilled = isEntryFilled(entry);
+                          const remaining = sauda ? calculateRemainingWeight(sauda.quantity, sauda.received_until_now) : null;
+                          const completionStatus = sauda ? getCompletionStatus(sauda.completion_percentage) : null;
                           
                           return (
                             <div 
@@ -474,13 +615,26 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                   >
                                     {entry.isEnabled && <Check className="h-3 w-3" />}
                                   </button>
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-2 flex-wrap">
                                     <Package className="h-4 w-4 text-primary" />
                                     <span className="font-medium">{sauda ? getSaudaDisplayName(sauda) : 'Unknown Sauda'}</span>
-                                    {sauda?.quantity && (
-                                      <span className="text-xs text-muted-foreground">
-                                        (Qty: {sauda.quantity} kg)
-                                      </span>
+                                    {sauda && (
+                                      <>
+                                        {sauda.quantity ? (
+                                          <span className="text-xs text-muted-foreground">
+                                            ({formatWeightDisplay(sauda.received_until_now, sauda.quantity)})
+                                          </span>
+                                        ) : (
+                                          <span className="text-xs text-muted-foreground">
+                                            (Received: {sauda.received_until_now.toFixed(2)} kg)
+                                          </span>
+                                        )}
+                                        {completionStatus && (
+                                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${completionStatus.bgColor} ${completionStatus.color} border ${completionStatus.borderColor}`}>
+                                            {formatCompletionPercentage(sauda.completion_percentage)}
+                                          </span>
+                                        )}
+                                      </>
                                     )}
                                   </div>
                                 </div>
@@ -490,21 +644,37 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                   </span>
                                 )}
                               </div>
+                              {sauda && remaining !== null && entry.isEnabled && (
+                                <div className="mb-3 p-2 bg-blue-500/10 border border-blue-500/20 rounded text-xs">
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-blue-600 dark:text-blue-400">Remaining Weight:</span>
+                                    <span className="font-bold text-blue-700 dark:text-blue-300">{remaining.toFixed(2)} kg</span>
+                                  </div>
+                                </div>
+                              )}
 
                               {entry.isEnabled && (
                                 <>
-                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                                     <div>
                                       <label className="block text-xs font-medium mb-1">Full Wt (kg) *</label>
                                       <input
                                         type="number"
                                         step="0.01"
+                                        min="0"
                                         value={entry.full_truck_weight}
-                                        onChange={(e) => updateEntry(index, 'full_truck_weight', e.target.value)}
-                                        className={`w-full px-2 py-1.5 text-sm border rounded bg-background ${
+                                        onChange={(e) => {
+                                          const value = e.target.value;
+                                          // Prevent negative values
+                                          if (value === '' || (!isNaN(parseFloat(value)) && parseFloat(value) >= 0)) {
+                                            updateEntry(index, 'full_truck_weight', value);
+                                          }
+                                        }}
+                                        onWheel={(e) => e.currentTarget.blur()}
+                                        className={`w-full px-3 py-2 text-sm border rounded-lg bg-background ${
                                           entryErrors.fullTruckWeight ? 'border-red-500' : 'border-border'
                                         }`}
-                                        placeholder="5000"
+                                        placeholder="5000.00"
                                       />
                                       {entryErrors.fullTruckWeight && (
                                         <p className="text-[10px] text-red-500 mt-0.5">{entryErrors.fullTruckWeight}</p>
@@ -516,12 +686,20 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                       <input
                                         type="number"
                                         step="0.01"
+                                        min="0"
                                         value={entry.empty_truck_weight}
-                                        onChange={(e) => updateEntry(index, 'empty_truck_weight', e.target.value)}
-                                        className={`w-full px-2 py-1.5 text-sm border rounded bg-background ${
+                                        onChange={(e) => {
+                                          const value = e.target.value;
+                                          // Prevent negative values
+                                          if (value === '' || (!isNaN(parseFloat(value)) && parseFloat(value) >= 0)) {
+                                            updateEntry(index, 'empty_truck_weight', value);
+                                          }
+                                        }}
+                                        onWheel={(e) => e.currentTarget.blur()}
+                                        className={`w-full px-3 py-2 text-sm border rounded-lg bg-background ${
                                           entryErrors.emptyTruckWeight ? 'border-red-500' : 'border-border'
                                         }`}
-                                        placeholder="2000"
+                                        placeholder="2000.00"
                                       />
                                       {entryErrors.emptyTruckWeight && (
                                         <p className="text-[10px] text-red-500 mt-0.5">{entryErrors.emptyTruckWeight}</p>
@@ -529,16 +707,40 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                     </div>
 
                                     <div>
-                                      <label className="block text-xs font-medium mb-1">Bag Wt (kg) *</label>
+                                      <label className="block text-xs font-medium mb-1">Committed Weight (kg)</label>
                                       <input
                                         type="number"
                                         step="0.01"
-                                        value={entry.bag_weight}
-                                        onChange={(e) => updateEntry(index, 'bag_weight', e.target.value)}
-                                        className={`w-full px-2 py-1.5 text-sm border rounded bg-background ${
-                                          entryErrors.bagWeight ? 'border-red-500' : 'border-border'
-                                        }`}
-                                        placeholder="50"
+                                        min="0"
+                                        value={entry.said_sent_weight}
+                                        onChange={(e) => {
+                                          const value = e.target.value;
+                                          // Prevent negative values
+                                          if (value === '' || (!isNaN(parseFloat(value)) && parseFloat(value) >= 0)) {
+                                            updateEntry(index, 'said_sent_weight', value);
+                                          }
+                                        }}
+                                        onWheel={(e) => e.currentTarget.blur()}
+                                        className="w-full px-3 py-2 text-sm border rounded-lg bg-background border-border"
+                                        placeholder="Optional"
+                                      />
+                                    </div>
+
+                                    <div>
+                                      <label className="block text-xs font-medium mb-1">Bag Wt (kg) *</label>
+                                      <CustomSelect
+                                        value={entry.bag_weight || null}
+                                        onChange={(value) => updateEntry(index, 'bag_weight', value || '')}
+                                        options={[
+                                          { value: '5', label: '5 kg' },
+                                          { value: '10', label: '10 kg' },
+                                          { value: '26', label: '26 kg' },
+                                          { value: '30', label: '30 kg' },
+                                          { value: '50', label: '50 kg' },
+                                          { value: '55', label: '55 kg' },
+                                        ]}
+                                        placeholder="Select bag weight"
+                                        allowClear={false}
                                       />
                                       {entryErrors.bagWeight && (
                                         <p className="text-[10px] text-red-500 mt-0.5">{entryErrors.bagWeight}</p>
@@ -551,9 +753,17 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                       </label>
                                       <input
                                         type="number"
+                                        min="0"
                                         value={entry.no_of_bags}
-                                        onChange={(e) => updateEntry(index, 'no_of_bags', e.target.value)}
-                                        className={`w-full px-2 py-1.5 text-sm border rounded bg-background ${
+                                        onChange={(e) => {
+                                          const value = e.target.value;
+                                          // Prevent negative values and allow empty
+                                          if (value === '' || (!isNaN(parseInt(value)) && parseInt(value) >= 0)) {
+                                            updateEntry(index, 'no_of_bags', value);
+                                          }
+                                        }}
+                                        onWheel={(e) => e.currentTarget.blur()}
+                                        className={`w-full px-3 py-2 text-sm border rounded-lg bg-background ${
                                           entryErrors.noOfBags ? 'border-red-500' : 'border-border'
                                         }`}
                                         placeholder="Auto"
@@ -565,14 +775,19 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                   </div>
 
                                   <div className="mt-3 flex items-center justify-between">
-                                    <select
-                                      value={entry.bag_type}
-                                      onChange={(e) => updateEntry(index, 'bag_type', e.target.value)}
-                                      className="px-2 py-1 text-xs border border-border rounded bg-background"
-                                    >
-                                      <option value="jute">Jute Bag</option>
-                                      <option value="pp">PP Bag</option>
-                                    </select>
+                                    <div className="flex-1 max-w-[200px]">
+                                      <label className="block text-xs font-medium mb-1">Bag Type *</label>
+                                      <CustomSelect
+                                        value={entry.bag_type}
+                                        onChange={(value) => updateEntry(index, 'bag_type', value as BagType)}
+                                        options={[
+                                          { value: 'jute', label: 'Jute Bag' },
+                                          { value: 'pp', label: 'PP Bag' },
+                                        ]}
+                                        placeholder="Select bag type"
+                                        allowClear={false}
+                                      />
+                                    </div>
                                     <div className="text-right">
                                       <div className="text-xs text-muted-foreground">Kaanta Weight</div>
                                       <div className="font-bold text-primary">{kaantaWeight.toFixed(2)} kg</div>
@@ -654,6 +869,13 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
         type={alertType}
         title={alertTitle}
         message={alertMessage}
+      />
+
+      <DocumentViewerModal
+        open={documentViewerOpen}
+        onOpenChange={setDocumentViewerOpen}
+        document={viewerDocuments[0] || null}
+        documents={viewerDocuments}
       />
     </>
   );
