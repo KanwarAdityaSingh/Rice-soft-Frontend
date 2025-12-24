@@ -1,15 +1,24 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import React, { useState, useEffect } from 'react';
-import { X, Plus, RefreshCw, Check, Loader2, Image as ImageIcon } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Plus, RefreshCw, Check, Loader2, Image as ImageIcon, Download, FileText, Mail, MessageCircle } from 'lucide-react';
 import { useSaudas } from '../../../hooks/useSaudas';
 import { saudasAPI } from '../../../services/saudas.api';
 import { useVendors } from '../../../hooks/useVendors';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
+import { vendorsAPI } from '../../../services/vendors.api';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
+import { NotificationModal } from '../../shared/NotificationModal';
 import type { CreateSaudaRequest, UpdateSaudaRequest, RiceCode, RiceType, CashDiscountType, BrokerCommissionType } from '../../../types/entities';
+
+// Default recipient type
+interface DefaultRecipient {
+  name: string;
+  address: string;
+  llpin: string;
+}
 
 interface FileUploadState {
   cooked_rice_image: File | null;
@@ -34,6 +43,8 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
   const [loadingRiceTypes, setLoadingRiceTypes] = useState(false);
   const [unit, setUnit] = useState<'kg' | 'quintal' | 'ton'>('kg');
   const [brokerCommissionUnit, setBrokerCommissionUnit] = useState<'kg' | 'quintal' | 'ton'>('kg');
+  const [defaultRecipient, setDefaultRecipient] = useState<DefaultRecipient | null>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
   const [formData, setFormData] = useState<CreateSaudaRequest>({
     sauda_type: 'exgodown',
     rice_code_id: null,
@@ -64,6 +75,8 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [createdSaudaId, setCreatedSaudaId] = useState<string | null>(null);
 
   useEffect(() => {
     if (open && saudaId && isEditMode) {
@@ -85,8 +98,17 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
         setLoadingRiceCodes(false);
       }
     };
+    const fetchDefaultRecipient = async () => {
+      try {
+        const recipient = await vendorsAPI.getDefaultRecipient();
+        setDefaultRecipient(recipient);
+      } catch (error) {
+        console.error('Failed to fetch default recipient:', error);
+      }
+    };
     if (open) {
       fetchRiceCodes();
+      fetchDefaultRecipient();
     }
   }, [open]);
 
@@ -173,6 +195,8 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
     });
     setUploading({});
     setUploadSuccess({});
+    setCreatedSaudaId(null);
+    setNotificationOpen(false);
   };
 
   const validateForm = (): boolean => {
@@ -326,6 +350,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
         await updateSauda(saudaId, payload as UpdateSaudaRequest);
         // Upload any new pending files
         await uploadPendingFiles(saudaId);
+        setCreatedSaudaId(saudaId); // Allow notifications for updated sauda too
         setAlertType('success');
         setAlertTitle('Success');
         setAlertMessage('Sauda updated successfully');
@@ -334,6 +359,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
         // Upload pending files after creation
         if (newSauda && newSauda.id) {
           await uploadPendingFiles(newSauda.id);
+          setCreatedSaudaId(newSauda.id);
         }
         setAlertType('success');
         setAlertTitle('Success');
@@ -342,10 +368,11 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
       setAlertOpen(true);
       // Call onSuccess callback immediately after successful save
       onSuccess?.();
-      setTimeout(() => {
-        onOpenChange(false);
-        resetForm();
-      }, 1500);
+      // Don't auto-close, let user send notifications if needed
+      // setTimeout(() => {
+      //   onOpenChange(false);
+      //   resetForm();
+      // }, 1500);
     } catch (error: any) {
       setAlertType('error');
       setAlertTitle('Error');
@@ -358,13 +385,110 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
 
   const sellerVendors = vendors.filter(v => v.type === 'seller' || v.type === 'both');
 
+  // Helper functions for preview
+  const getRiceCodeName = (riceCodeId: string | null) => {
+    if (!riceCodeId) return '-';
+    const riceCode = riceCodes.find(rc => rc.rice_code_id === riceCodeId);
+    return riceCode ? riceCode.rice_code_name : '-';
+  };
+
+  const getRiceTypeName = (riceType: string | null) => {
+    if (!riceType) return '-';
+    const type = riceTypes.find(rt => rt.value === riceType);
+    return type ? type.label : riceType;
+  };
+
+  const getVendorName = (vendorId: string) => {
+    if (!vendorId) return '-';
+    const vendor = vendors.find(v => v.id === vendorId);
+    return vendor ? vendor.business_name : '-';
+  };
+
+  const getBrokerName = (brokerId: string | null) => {
+    if (!brokerId) return '-';
+    const broker = brokers.find(b => b.id === brokerId);
+    return broker ? broker.business_name : '-';
+  };
+
+  // Calculate amount
+  const calculateAmount = () => {
+    if (!formData.rate || !formData.quantity) return null;
+    const factor = unit === 'kg' ? 1 : unit === 'quintal' ? 100 : 1000;
+    const ratePerKg = formData.rate / factor;
+    const quantityInKg = formData.quantity * factor;
+    return ratePerKg * quantityInKg;
+  };
+
+  // PDF Download function
+  const handleDownloadPDF = () => {
+    if (!previewRef.current) return;
+    
+    const printContent = previewRef.current.innerHTML;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Sauda Details</title>
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+              font-family: 'Courier New', monospace; 
+              padding: 20px;
+              background: white;
+              color: black;
+              font-size: 12px;
+            }
+            .preview-container {
+              max-width: 600px;
+              margin: 0 auto;
+              border: 2px solid #333;
+              padding: 20px;
+            }
+            .header { text-align: center; border-bottom: 2px dashed #333; padding-bottom: 15px; margin-bottom: 15px; }
+            .header h2 { font-size: 18px; margin-bottom: 5px; }
+            .header p { font-size: 10px; color: #666; }
+            .section { margin-bottom: 15px; }
+            .section-title { font-weight: bold; border-bottom: 1px solid #333; padding-bottom: 5px; margin-bottom: 10px; }
+            .row { display: flex; justify-content: space-between; padding: 3px 0; }
+            .label { color: #666; }
+            .value { font-weight: bold; text-align: right; }
+            .highlight { background: #f5f5f5; padding: 10px; border-radius: 4px; text-align: center; }
+            .highlight .amount { font-size: 20px; font-weight: bold; }
+            .footer { text-align: center; border-top: 2px dashed #333; padding-top: 15px; margin-top: 15px; font-size: 10px; color: #666; }
+            @media print {
+              body { padding: 0; }
+              .preview-container { border: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="preview-container">
+            ${printContent}
+          </div>
+          <script>
+            window.onload = function() {
+              window.print();
+              window.onafterprint = function() {
+                window.close();
+              };
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   return (
     <>
       <Dialog.Root open={open} onOpenChange={onOpenChange}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" />
-          <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-[95vw] sm:w-[90vw] md:w-full max-w-2xl translate-x-[-50%] translate-y-[-50%]">
-            <div className="glass rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 shadow-2xl max-h-[90vh] overflow-y-auto">
+          <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-[95vw] sm:w-[90vw] md:w-full max-w-5xl translate-x-[-50%] translate-y-[-50%]">
+            <div className="glass rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
                 <Dialog.Title className="text-xl sm:text-2xl font-semibold">
                   {isEditMode ? 'Edit Sauda' : 'Create Sauda'}
@@ -382,21 +506,22 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                   <LoadingSpinner />
                 </div>
               ) : (
-                <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <form onSubmit={handleSubmit} className="space-y-3">
                   {/* Section: Basic Info */}
-                  <div className="space-y-4">
-                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide border-b border-border pb-2">
-                      Basic Information
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b border-border pb-1">
+                      Basic Info
                     </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-3 gap-2">
                       <div>
-                        <label className="block text-sm font-medium mb-1">
+                        <label className="block text-xs font-medium mb-0.5">
                           Sauda Type <span className="text-red-500">*</span>
                         </label>
                         <select
                           value={formData.sauda_type}
                           onChange={(e) => setFormData({ ...formData, sauda_type: e.target.value as 'exgodown' | 'for' })}
-                          className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+                          className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background"
                           disabled={isEditMode}
                         >
                           <option value="exgodown">Ex Godown</option>
@@ -405,11 +530,11 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium mb-1">Rice Code</label>
+                        <label className="block text-xs font-medium mb-0.5">Rice Code</label>
                         {loadingRiceCodes ? (
-                          <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm flex items-center gap-2">
+                          <div className="w-full rounded-md border border-border bg-background/60 px-2 py-1.5 text-sm flex items-center gap-2">
                             <LoadingSpinner size="sm" />
-                            <span className="text-muted-foreground">Loading...</span>
+                            <span className="text-muted-foreground text-xs">Loading...</span>
                           </div>
                         ) : (
                           <CustomSelect
@@ -419,7 +544,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                               value: riceCode.rice_code_id,
                               label: riceCode.rice_code_name
                             }))}
-                            placeholder="Select Rice Code"
+                            placeholder="Select"
                             allowClear={true}
                             clearLabel="None"
                           />
@@ -427,16 +552,16 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium mb-1">
+                        <label className="block text-xs font-medium mb-0.5">
                           Rice Type <span className="text-red-500">*</span>
                         </label>
                         {loadingRiceTypes ? (
-                          <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm flex items-center gap-2">
+                          <div className="w-full rounded-md border border-border bg-background/60 px-2 py-1.5 text-sm flex items-center gap-2">
                             <LoadingSpinner size="sm" />
-                            <span className="text-muted-foreground">Loading...</span>
+                            <span className="text-muted-foreground text-xs">Loading...</span>
                           </div>
                         ) : (
-                          <div className={errors.rice_type ? 'border border-red-500 rounded-lg' : ''}>
+                          <div className={errors.rice_type ? 'border border-red-500 rounded-md' : ''}>
                             <CustomSelect
                               value={formData.rice_type || null}
                               onChange={(value) => setFormData({ ...formData, rice_type: value || null })}
@@ -444,27 +569,24 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                                 value: riceType.value,
                                 label: riceType.label
                               }))}
-                              placeholder="Select Rice Type"
+                              placeholder="Select"
                               allowClear={false}
                             />
                           </div>
-                        )}
-                        {errors.rice_type && (
-                          <p className="text-xs text-red-500 mt-1">{errors.rice_type}</p>
                         )}
                       </div>
                     </div>
                   </div>
 
                   {/* Section: Pricing & Quantity */}
-                  <div className="space-y-4">
-                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide border-b border-border pb-2">
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b border-border pb-1">
                       Pricing & Quantity
                     </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-3 gap-2">
                       <div>
-                        <label className="block text-sm font-medium mb-1">
-                          Rate (₹ per {unit}) <span className="text-red-500">*</span>
+                        <label className="block text-xs font-medium mb-0.5">
+                          Rate (₹/{unit}) <span className="text-red-500">*</span>
                         </label>
                         <input
                           type="number"
@@ -472,26 +594,23 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                           min="0"
                           value={formData.rate || ''}
                           onChange={(e) => setFormData({ ...formData, rate: parseFloat(e.target.value) || 0 })}
-                          className={`w-full px-3 py-2 border rounded-lg bg-background ${
+                          className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background ${
                             errors.rate ? 'border-red-500' : 'border-border'
                           }`}
                           placeholder="0.00"
                         />
-                        {errors.rate && (
-                          <p className="text-xs text-red-500 mt-1">{errors.rate}</p>
-                        )}
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium mb-1">Quantity</label>
-                        <div className="flex gap-2">
+                        <label className="block text-xs font-medium mb-0.5">Quantity</label>
+                        <div className="flex gap-1">
                           <input
                             type="number"
                             step="0.01"
                             min="0"
                             value={formData.quantity || ''}
                             onChange={(e) => setFormData({ ...formData, quantity: parseFloat(e.target.value) || null })}
-                            className={`flex-1 px-3 py-2 border rounded-lg bg-background ${
+                            className={`flex-1 min-w-0 px-2 py-1.5 text-sm border rounded-md bg-background ${
                               errors.quantity ? 'border-red-500' : 'border-border'
                             }`}
                             placeholder="0"
@@ -514,21 +633,18 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                               });
                               setUnit(newUnit);
                             }}
-                            className="w-28 px-2 py-2 border border-border rounded-lg bg-background text-sm"
+                            className="w-16 px-1 py-1.5 text-xs border border-border rounded-md bg-background"
                           >
                             <option value="kg">Kg</option>
-                            <option value="quintal">Quintal</option>
+                            <option value="quintal">Qtl</option>
                             <option value="ton">Ton</option>
                           </select>
                         </div>
-                        {errors.quantity && (
-                          <p className="text-xs text-red-500 mt-1">{errors.quantity}</p>
-                        )}
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium mb-1">Cash Discount</label>
-                        <div className="flex gap-2">
+                        <label className="block text-xs font-medium mb-0.5">Cash Discount</label>
+                        <div className="flex gap-1">
                           <input
                             type="number"
                             step="0.01"
@@ -536,48 +652,44 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                             max={formData.cash_discount_type === 'percentage' ? 100 : undefined}
                             value={formData.cash_discount || ''}
                             onChange={(e) => setFormData({ ...formData, cash_discount: parseFloat(e.target.value) || null })}
-                            className={`flex-1 px-3 py-2 border rounded-lg bg-background ${
+                            className={`flex-1 min-w-0 px-2 py-1.5 text-sm border rounded-md bg-background ${
                               errors.cash_discount ? 'border-red-500' : 'border-border'
                             }`}
-                            placeholder="0.00"
+                            placeholder="0"
                           />
                           <select
                             value={formData.cash_discount_type || 'rupees'}
                             onChange={(e) => setFormData({ ...formData, cash_discount_type: e.target.value as CashDiscountType })}
-                            className="w-20 px-2 py-2 border border-border rounded-lg bg-background text-sm"
+                            className="w-12 px-1 py-1.5 text-xs border border-border rounded-md bg-background"
                           >
                             <option value="rupees">₹</option>
                             <option value="percentage">%</option>
                           </select>
                         </div>
-                        {errors.cash_discount && (
-                          <p className="text-xs text-red-500 mt-1">{errors.cash_discount}</p>
-                        )}
                       </div>
-
                     </div>
                   </div>
 
                   {/* Section: Parties */}
-                  <div className="space-y-4">
-                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide border-b border-border pb-2">
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b border-border pb-1">
                       Parties
                     </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="block text-sm font-medium mb-1">
+                        <label className="block text-xs font-medium mb-0.5">
                           Vendor <span className="text-red-500">*</span>
                         </label>
-                        <div className="flex gap-2">
+                        <div className="flex gap-1">
                           <select
                             value={formData.purchaser_id}
                             onChange={(e) => setFormData({ ...formData, purchaser_id: e.target.value })}
-                            className={`flex-1 min-w-0 px-3 py-2 border rounded-lg bg-background ${
+                            className={`flex-1 min-w-0 px-2 py-1.5 text-sm border rounded-md bg-background ${
                               errors.purchaser_id ? 'border-red-500' : 'border-border'
                             }`}
                             disabled={isEditMode}
                           >
-                            <option value="">Select Vendor</option>
+                            <option value="">Select</option>
                             {sellerVendors.map((v) => (
                               <option key={v.id} value={v.id}>
                                 {v.business_name}
@@ -588,10 +700,10 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                             type="button"
                             onClick={() => refetchVendors()}
                             disabled={loadingVendors}
-                            className="flex-shrink-0 px-2.5 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center disabled:opacity-50"
-                            title="Refresh Vendors"
+                            className="flex-shrink-0 p-1.5 border border-border rounded-md bg-background hover:bg-muted transition-colors disabled:opacity-50"
+                            title="Refresh"
                           >
-                            <RefreshCw className={`h-4 w-4 ${loadingVendors ? 'animate-spin' : ''}`} />
+                            <RefreshCw className={`h-3.5 w-3.5 ${loadingVendors ? 'animate-spin' : ''}`} />
                           </button>
                           <button
                             type="button"
@@ -600,28 +712,25 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                               const vendorUrl = `${window.location.origin}${basename}/directory/vendors`;
                               window.open(vendorUrl, '_blank');
                             }}
-                            className="flex-shrink-0 px-2.5 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center"
-                            title="Add New Vendor (Opens in new tab)"
+                            className="flex-shrink-0 p-1.5 border border-border rounded-md bg-background hover:bg-muted transition-colors"
+                            title="Add New"
                           >
-                            <Plus className="h-4 w-4" />
+                            <Plus className="h-3.5 w-3.5" />
                           </button>
                         </div>
-                        {errors.purchaser_id && (
-                          <p className="text-xs text-red-500 mt-1">{errors.purchaser_id}</p>
-                        )}
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium mb-1">Broker</label>
-                        <div className="flex gap-2">
+                        <label className="block text-xs font-medium mb-0.5">Broker</label>
+                        <div className="flex gap-1">
                           <select
                             value={formData.broker_id || ''}
                             onChange={(e) => {
                               setFormData({ ...formData, broker_id: e.target.value || null });
                             }}
-                            className="flex-1 min-w-0 px-3 py-2 border border-border rounded-lg bg-background"
+                            className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md bg-background"
                           >
-                            <option value="">Select Broker</option>
+                            <option value="">Select</option>
                             {brokers.filter(b => b.is_active).map((b) => (
                               <option key={b.id} value={b.id}>
                                 {b.business_name}
@@ -632,10 +741,10 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                             type="button"
                             onClick={() => refetchBrokers()}
                             disabled={loadingBrokers}
-                            className="flex-shrink-0 px-2.5 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center disabled:opacity-50"
-                            title="Refresh Brokers"
+                            className="flex-shrink-0 p-1.5 border border-border rounded-md bg-background hover:bg-muted transition-colors disabled:opacity-50"
+                            title="Refresh"
                           >
-                            <RefreshCw className={`h-4 w-4 ${loadingBrokers ? 'animate-spin' : ''}`} />
+                            <RefreshCw className={`h-3.5 w-3.5 ${loadingBrokers ? 'animate-spin' : ''}`} />
                           </button>
                           <button
                             type="button"
@@ -644,24 +753,21 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                               const brokerUrl = `${window.location.origin}${basename}/directory/brokers`;
                               window.open(brokerUrl, '_blank');
                             }}
-                            className="flex-shrink-0 px-2.5 py-2 border border-border rounded-lg bg-background hover:bg-muted transition-colors flex items-center justify-center"
-                            title="Add New Broker (Opens in new tab)"
+                            className="flex-shrink-0 p-1.5 border border-border rounded-md bg-background hover:bg-muted transition-colors"
+                            title="Add New"
                           >
-                            <Plus className="h-4 w-4" />
+                            <Plus className="h-3.5 w-3.5" />
                           </button>
                         </div>
                       </div>
                     </div>
 
-                    {/* Broker Commission - separate row */}
+                    {/* Broker Commission - inline */}
                     <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Broker Commission
-                        {formData.broker_commission_type === 'weight' && (
-                          <span className="text-muted-foreground font-normal"> (per {brokerCommissionUnit})</span>
-                        )}
+                      <label className="block text-xs font-medium mb-0.5">
+                        Broker Commission {formData.broker_commission_type === 'weight' && <span className="text-muted-foreground font-normal">(per {brokerCommissionUnit})</span>}
                       </label>
-                      <div className="flex gap-2">
+                      <div className="flex gap-1">
                         <input
                           type="number"
                           step="0.01"
@@ -669,15 +775,15 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                           max={formData.broker_commission_type === 'percentage' ? 100 : undefined}
                           value={formData.broker_commission || ''}
                           onChange={(e) => setFormData({ ...formData, broker_commission: parseFloat(e.target.value) || null })}
-                          className={`flex-1 min-w-0 px-3 py-2 border rounded-lg bg-background ${
+                          className={`flex-1 min-w-0 px-2 py-1.5 text-sm border rounded-md bg-background ${
                             errors.broker_commission ? 'border-red-500' : 'border-border'
                           }`}
-                          placeholder="0.00"
+                          placeholder="0"
                         />
                         <select
                           value={formData.broker_commission_type || 'percentage'}
                           onChange={(e) => setFormData({ ...formData, broker_commission_type: e.target.value as BrokerCommissionType })}
-                          className="flex-shrink-0 w-20 px-2 py-2 border border-border rounded-lg bg-background text-sm"
+                          className="flex-shrink-0 w-14 px-1 py-1.5 text-xs border border-border rounded-md bg-background"
                         >
                           <option value="percentage">%</option>
                           <option value="rupees">₹</option>
@@ -687,62 +793,44 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                           <select
                             value={brokerCommissionUnit}
                             onChange={(e) => setBrokerCommissionUnit(e.target.value as 'kg' | 'quintal' | 'ton')}
-                            className="flex-shrink-0 w-24 px-2 py-2 border border-border rounded-lg bg-background text-sm"
+                            className="flex-shrink-0 w-16 px-1 py-1.5 text-xs border border-border rounded-md bg-background"
                           >
                             <option value="kg">Kg</option>
-                            <option value="quintal">Quintal</option>
+                            <option value="quintal">Qtl</option>
                             <option value="ton">Ton</option>
                           </select>
                         )}
                       </div>
-                      {errors.broker_commission && (
-                        <p className="text-xs text-red-500 mt-1">{errors.broker_commission}</p>
-                      )}
                     </div>
                   </div>
 
                   {/* Section: Notes */}
-                  <div className="space-y-4">
-                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide border-b border-border pb-2">
-                      Additional Information
-                    </h3>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Notes</label>
-                      <textarea
-                        value={formData.notes || ''}
-                        onChange={(e) => setFormData({ ...formData, notes: e.target.value || null })}
-                        className={`w-full px-3 py-2 border rounded-lg bg-background resize-none ${
-                          errors.notes ? 'border-red-500' : 'border-border'
-                        }`}
-                        placeholder="Additional notes (max 100 characters)"
-                        rows={3}
-                        maxLength={100}
-                      />
-                      <div className="flex justify-between items-center mt-1">
-                        {errors.notes && (
-                          <p className="text-xs text-red-500">{errors.notes}</p>
-                        )}
-                        <p className="text-xs text-muted-foreground ml-auto">
-                          {(formData.notes || '').length}/100
-                        </p>
-                      </div>
-                    </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium">Notes</label>
+                    <textarea
+                      value={formData.notes || ''}
+                      onChange={(e) => setFormData({ ...formData, notes: e.target.value || null })}
+                      className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background resize-none ${
+                        errors.notes ? 'border-red-500' : 'border-border'
+                      }`}
+                      placeholder="Additional notes (max 100 chars)"
+                      rows={2}
+                      maxLength={100}
+                    />
                   </div>
 
                   {/* Section: Rice Images */}
-                  <div className="space-y-4">
-                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide border-b border-border pb-2">
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b border-border pb-1">
                       Rice Images
                     </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 gap-2">
                       {/* Cooked Rice Image */}
                       <div>
-                        <label className="block text-sm font-medium mb-1">
-                          Cooked Rice Image
-                        </label>
-                        <div className="space-y-2">
+                        <label className="block text-xs font-medium mb-0.5">Cooked Rice</label>
+                        <div className="space-y-1">
                           {formData.cooked_rice_image_url && (
-                            <div className="relative w-full h-32 border border-border rounded-lg overflow-hidden bg-muted/30">
+                            <div className="relative w-full h-20 border border-border rounded-md overflow-hidden bg-muted/30">
                               <img
                                 src={formData.cooked_rice_image_url}
                                 alt="Cooked rice"
@@ -754,8 +842,8 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                                   setFormData(prev => ({ ...prev, cooked_rice_image_url: null }));
                                   setPendingFiles(prev => ({ ...prev, cooked_rice_image: null }));
                                 }}
-                                className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
-                                title="Remove image"
+                                className="absolute top-0.5 right-0.5 p-0.5 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                                title="Remove"
                               >
                                 <X className="h-3 w-3" />
                               </button>
@@ -770,36 +858,28 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                                 handleFileSelect('cooked_rice_image', file || null);
                               }}
                               disabled={uploading.cooked_rice_image}
-                              className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-sm file:bg-primary/10 file:text-primary hover:file:bg-primary/20 disabled:opacity-50"
+                              className="w-full px-2 py-1 text-xs border border-border rounded-md bg-background file:mr-2 file:py-0.5 file:px-2 file:rounded file:border-0 file:text-xs file:bg-primary/10 file:text-primary disabled:opacity-50"
                             />
                             {uploading.cooked_rice_image && (
-                              <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                              <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                                <Loader2 className="h-3 w-3 animate-spin text-primary" />
                               </div>
                             )}
                             {uploadSuccess.cooked_rice_image && !uploading.cooked_rice_image && (
-                              <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                                <Check className="h-4 w-4 text-emerald-500" />
+                              <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                                <Check className="h-3 w-3 text-emerald-500" />
                               </div>
                             )}
                           </div>
-                          {pendingFiles.cooked_rice_image && !isEditMode && (
-                            <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
-                              <ImageIcon className="h-3 w-3" />
-                              {pendingFiles.cooked_rice_image?.name}
-                            </p>
-                          )}
                         </div>
                       </div>
 
                       {/* Uncooked Rice Image */}
                       <div>
-                        <label className="block text-sm font-medium mb-1">
-                          Uncooked Rice Image
-                        </label>
-                        <div className="space-y-2">
+                        <label className="block text-xs font-medium mb-0.5">Uncooked Rice</label>
+                        <div className="space-y-1">
                           {formData.uncooked_rice_image_url && (
-                            <div className="relative w-full h-32 border border-border rounded-lg overflow-hidden bg-muted/30">
+                            <div className="relative w-full h-20 border border-border rounded-md overflow-hidden bg-muted/30">
                               <img
                                 src={formData.uncooked_rice_image_url}
                                 alt="Uncooked rice"
@@ -811,8 +891,8 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                                   setFormData(prev => ({ ...prev, uncooked_rice_image_url: null }));
                                   setPendingFiles(prev => ({ ...prev, uncooked_rice_image: null }));
                                 }}
-                                className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
-                                title="Remove image"
+                                className="absolute top-0.5 right-0.5 p-0.5 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                                title="Remove"
                               >
                                 <X className="h-3 w-3" />
                               </button>
@@ -827,48 +907,209 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                                 handleFileSelect('uncooked_rice_image', file || null);
                               }}
                               disabled={uploading.uncooked_rice_image}
-                              className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:text-sm file:bg-primary/10 file:text-primary hover:file:bg-primary/20 disabled:opacity-50"
+                              className="w-full px-2 py-1 text-xs border border-border rounded-md bg-background file:mr-2 file:py-0.5 file:px-2 file:rounded file:border-0 file:text-xs file:bg-primary/10 file:text-primary disabled:opacity-50"
                             />
                             {uploading.uncooked_rice_image && (
-                              <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                              <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                                <Loader2 className="h-3 w-3 animate-spin text-primary" />
                               </div>
                             )}
                             {uploadSuccess.uncooked_rice_image && !uploading.uncooked_rice_image && (
-                              <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                                <Check className="h-4 w-4 text-emerald-500" />
+                              <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                                <Check className="h-3 w-3 text-emerald-500" />
                               </div>
                             )}
                           </div>
-                          {pendingFiles.uncooked_rice_image && !isEditMode && (
-                            <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
-                              <ImageIcon className="h-3 w-3" />
-                              {pendingFiles.uncooked_rice_image?.name}
-                            </p>
-                          )}
                         </div>
                       </div>
                     </div>
                   </div>
 
                   {/* Actions */}
-                  <div className="flex justify-end gap-3 pt-4 border-t border-border">
+                  <div className="flex justify-end gap-2 pt-3 border-t border-border">
                     <button
                       type="button"
                       onClick={() => onOpenChange(false)}
-                      className="px-4 py-2 border border-border rounded-lg hover:bg-muted transition-colors"
+                      className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={loading}
-                      className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+                      className="px-4 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
                     >
-                      {loading ? 'Saving...' : isEditMode ? 'Update Sauda' : 'Create Sauda'}
+                      {loading ? 'Saving...' : isEditMode ? 'Update' : 'Create'}
                     </button>
                   </div>
+
+                  {/* Notification Buttons - Show after successful save */}
+                  {(createdSaudaId || (isEditMode && saudaId)) && alertType === 'success' && !loading && (
+                    <div className="mt-4 pt-4 border-t border-border">
+                      <p className="text-xs text-muted-foreground mb-3 text-center">Send notification to recipients:</p>
+                      <div className="flex gap-3 justify-center">
+                        <button
+                          type="button"
+                          onClick={() => setNotificationOpen(true)}
+                          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-lg font-medium transition-all shadow-lg"
+                        >
+                          <Mail className="h-4 w-4" />
+                          Send Email
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNotificationOpen(true);
+                            // Set WhatsApp tab active (will be handled by modal)
+                          }}
+                          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-lg font-medium transition-all shadow-lg"
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                          Send WhatsApp
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </form>
+
+                {/* Preview Section */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold flex items-center gap-2">
+                      <FileText className="h-5 w-5" />
+                      Sauda Preview
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={handleDownloadPDF}
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                    >
+                      <Download className="h-4 w-4" />
+                      Download PDF
+                    </button>
+                  </div>
+
+                  <div 
+                    ref={previewRef}
+                    className="border border-border rounded-lg p-4 bg-background font-mono text-sm overflow-y-auto max-h-[65vh]"
+                  >
+                      {/* Header */}
+                      <div className="text-center border-b-2 border-dashed border-border pb-4 mb-4">
+                        <h2 className="font-bold text-lg">{defaultRecipient?.name || 'Loading...'}</h2>
+                        <p className="text-xs text-muted-foreground">LLPIN: {defaultRecipient?.llpin || '-'}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{defaultRecipient?.address || '-'}</p>
+                      </div>
+
+                      {/* Sauda Title */}
+                      <div className="text-center mb-4">
+                        <h3 className="font-bold text-base uppercase border-b border-border pb-2">Sauda Details</h3>
+                      </div>
+
+                      {/* Basic Info */}
+                      <div className="mb-4">
+                        <div className="font-bold border-b border-border pb-1 mb-2">Basic Information</div>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Sauda Type:</span>
+                            <span className="font-semibold">{formData.sauda_type === 'exgodown' ? 'Ex Godown' : 'FOR'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Rice Code:</span>
+                            <span className="font-semibold">{getRiceCodeName(formData.rice_code_id)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Rice Type:</span>
+                            <span className="font-semibold">{getRiceTypeName(formData.rice_type)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Date:</span>
+                            <span className="font-semibold">{new Date().toLocaleDateString('en-IN')}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Pricing */}
+                      <div className="mb-4">
+                        <div className="font-bold border-b border-border pb-1 mb-2">Pricing & Quantity</div>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Rate:</span>
+                            <span className="font-semibold">₹{formData.rate?.toFixed(2) || '0.00'}/{unit}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Quantity:</span>
+                            <span className="font-semibold">{formData.quantity?.toFixed(2) || '-'} {unit}</span>
+                          </div>
+                          {formData.cash_discount && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Cash Discount:</span>
+                              <span className="font-semibold text-emerald-600">
+                                {formData.cash_discount_type === 'percentage' 
+                                  ? `${formData.cash_discount}%` 
+                                  : `₹${formData.cash_discount?.toFixed(2)}`}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Parties */}
+                      <div className="mb-4">
+                        <div className="font-bold border-b border-border pb-1 mb-2">Parties</div>
+                        <div className="grid grid-cols-1 gap-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Vendor:</span>
+                            <span className="font-semibold">{getVendorName(formData.purchaser_id)}</span>
+                          </div>
+                          {formData.broker_id && (
+                            <>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Broker:</span>
+                                <span className="font-semibold">{getBrokerName(formData.broker_id)}</span>
+                              </div>
+                              {formData.broker_commission && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Commission:</span>
+                                  <span className="font-semibold">
+                                    {formData.broker_commission_type === 'percentage' 
+                                      ? `${formData.broker_commission}%`
+                                      : formData.broker_commission_type === 'weight'
+                                      ? `₹${formData.broker_commission}/${brokerCommissionUnit}`
+                                      : `₹${formData.broker_commission?.toFixed(2)}`}
+                                  </span>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Amount */}
+                      {calculateAmount() && (
+                        <div className="bg-muted/50 rounded-lg p-3 text-center mt-4">
+                          <p className="text-xs text-muted-foreground mb-1">Estimated Amount</p>
+                          <p className="text-xl font-bold text-primary">
+                            ₹{calculateAmount()?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Notes */}
+                      {formData.notes && (
+                        <div className="mt-4 pt-4 border-t border-dashed border-border">
+                          <p className="text-xs text-muted-foreground">Notes:</p>
+                          <p className="text-sm">{formData.notes}</p>
+                        </div>
+                      )}
+
+                      {/* Footer */}
+                      <div className="text-center border-t-2 border-dashed border-border pt-4 mt-4">
+                        <p className="text-xs text-muted-foreground">Generated on {new Date().toLocaleString('en-IN')}</p>
+                        <p className="text-xs text-muted-foreground">This is a computer-generated document</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           </Dialog.Content>
@@ -881,6 +1122,20 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
         type={alertType}
         title={alertTitle}
         message={alertMessage}
+      />
+
+      <NotificationModal
+        open={notificationOpen}
+        onOpenChange={setNotificationOpen}
+        type="sauda"
+        entityId={createdSaudaId || saudaId || undefined}
+        onSuccess={() => {
+          setNotificationOpen(false);
+          setTimeout(() => {
+            onOpenChange(false);
+            resetForm();
+          }, 1000);
+        }}
       />
     </>
   );

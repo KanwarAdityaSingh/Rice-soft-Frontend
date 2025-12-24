@@ -1,6 +1,21 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { X, FileText, Truck, Calendar, User, MapPin, DollarSign } from 'lucide-react';
-import type { InwardSlipPass } from '../../../types/entities';
+import { X, FileText, Download, Image as ImageIcon, Files } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { vendorsAPI } from '../../../services/vendors.api';
+import { vehiclesAPI } from '../../../services/vehicles.api';
+import { useTransporters } from '../../../hooks/useTransporters';
+import { useSaudas } from '../../../hooks/useSaudas';
+import { useVendors } from '../../../hooks/useVendors';
+import { riceCodesAPI } from '../../../services/riceCodes.api';
+import { getRiceTypeLabel } from '../../../utils/riceType';
+import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
+import type { InwardSlipPass, RiceCode, RiceType, Sauda, Vehicle } from '../../../types/entities';
+
+interface DefaultRecipient {
+  name: string;
+  address: string;
+  llpin: string;
+}
 
 interface InwardSlipPassPreviewDialogProps {
   open: boolean;
@@ -9,170 +24,331 @@ interface InwardSlipPassPreviewDialogProps {
 }
 
 export function InwardSlipPassPreviewDialog({ open, onOpenChange, isp }: InwardSlipPassPreviewDialogProps) {
+  const [defaultRecipient, setDefaultRecipient] = useState<DefaultRecipient | null>(null);
+  const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
+  const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
+  const [vehicle, setVehicle] = useState<Vehicle | null>(null);
+  const { transporters } = useTransporters();
+  const { saudas } = useSaudas();
+  const { vendors } = useVendors();
+  const previewRef = useRef<HTMLDivElement>(null);
+  
+  // Document viewer state
+  const [documentViewerOpen, setDocumentViewerOpen] = useState(false);
+  const [viewerDocuments, setViewerDocuments] = useState<DocumentInfo[]>([]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [recipient, codes, types] = await Promise.all([
+          vendorsAPI.getDefaultRecipient(),
+          riceCodesAPI.getAllRiceCodes(),
+          riceCodesAPI.getRiceTypes()
+        ]);
+        setDefaultRecipient(recipient);
+        setRiceCodes(codes);
+        setRiceTypes(types);
+        
+        // Fetch vehicle details
+        if (isp?.vehicle_id) {
+          try {
+            const vehicleData = await vehiclesAPI.getVehicleById(isp.vehicle_id);
+            setVehicle(vehicleData);
+          } catch (err) {
+            console.error('Failed to fetch vehicle:', err);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch data:', error);
+      }
+    };
+    if (open && isp) {
+      fetchData();
+    }
+  }, [open, isp]);
+
+  const getTransporterName = (transporterId: string | null): string => {
+    if (!transporterId) return '-';
+    const transporter = transporters.find(t => t.id === transporterId);
+    return transporter ? transporter.business_name : '-';
+  };
+
+  const getPurchaserName = (purchaserId: string | null | undefined): string => {
+    if (!purchaserId) return '';
+    const purchaser = vendors.find((v) => v.id === purchaserId);
+    return purchaser ? purchaser.business_name : '';
+  };
+
+  const getRiceCodeName = (riceCodeId: string | null | undefined): string => {
+    if (!riceCodeId) return '';
+    const riceCode = riceCodes.find((rc) => rc.rice_code_id === riceCodeId);
+    return riceCode ? riceCode.rice_code_name : '';
+  };
+
+  const getSaudaDisplayName = (sauda: Sauda): string => {
+    const parts: string[] = [];
+    const purchaserName = getPurchaserName(sauda.purchaser_id);
+    if (purchaserName) parts.push(purchaserName);
+    const riceCodeName = getRiceCodeName(sauda.rice_code_id);
+    if (riceCodeName) parts.push(riceCodeName);
+    const riceTypeLabel = getRiceTypeLabel(sauda.rice_type, riceTypes);
+    if (riceTypeLabel) parts.push(riceTypeLabel);
+    return parts.join(' - ') || 'Sauda';
+  };
+
+  const getLinkedSaudas = (): Sauda[] => {
+    if (!isp?.sauda_ids) return [];
+    return saudas.filter(s => isp.sauda_ids.includes(s.id));
+  };
+
+  const getISPDocuments = (): DocumentInfo[] => {
+    if (!isp) return [];
+    const docs: DocumentInfo[] = [];
+    
+    if (isp.inward_slip_bill_image_url) {
+      docs.push({ url: isp.inward_slip_bill_image_url, label: 'Inward Slip Bill', type: 'image' });
+    }
+    if (isp.transportation_bill_image_url) {
+      docs.push({ url: isp.transportation_bill_image_url, label: 'Transportation Bill', type: 'image' });
+    }
+    if (isp.bill_pdf_url) {
+      const isPdf = isp.bill_pdf_url.toLowerCase().includes('.pdf');
+      docs.push({ url: isp.bill_pdf_url, label: 'Purchase Bill', type: isPdf ? 'pdf' : 'image' });
+    }
+    if (isp.bilti_image_url) {
+      docs.push({ url: isp.bilti_image_url, label: 'Bilti/LR Image', type: 'image' });
+    }
+    if (isp.bilti_pdf_url) {
+      docs.push({ url: isp.bilti_pdf_url, label: 'Bilti/LR PDF', type: 'pdf' });
+    }
+    if (isp.eway_bill_url) {
+      docs.push({ url: isp.eway_bill_url, label: 'E-way Bill', type: 'pdf' });
+    }
+    
+    return docs;
+  };
+
+  const handleViewDocuments = (docs: DocumentInfo[], startIndex: number = 0) => {
+    const reordered = [...docs.slice(startIndex), ...docs.slice(0, startIndex)];
+    setViewerDocuments(reordered);
+    setDocumentViewerOpen(true);
+  };
+
+  const handleDownloadPDF = () => {
+    if (!previewRef.current) return;
+    
+    const printContent = previewRef.current.innerHTML;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Inward Slip Pass - ${isp?.slip_number}</title>
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: 'Courier New', monospace; padding: 20px; background: white; color: black; font-size: 11px; }
+            .preview-container { max-width: 700px; margin: 0 auto; border: 2px solid #333; padding: 15px; }
+            .thanks { text-align: center; font-size: 10px; margin-bottom: 20px; }
+            .header { text-align: center; border-bottom: 2px dashed #333; padding-bottom: 10px; margin-bottom: 15px; }
+            .header h2 { font-size: 20px; margin-bottom: 3px; letter-spacing: 2px; }
+            .header p { font-size: 9px; color: #666; }
+            .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; padding: 5px 0; border-bottom: 1px dotted #999; }
+            .info-pair { display: flex; gap: 8px; }
+            .info-label { color: #666; }
+            .info-value { font-weight: bold; }
+            .weight-section { margin: 15px 0; }
+            .weight-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px dotted #999; }
+            .weight-label { flex: 1; }
+            .weight-value { font-weight: bold; font-size: 14px; min-width: 100px; text-align: right; }
+            .weight-date { font-size: 10px; color: #666; margin-left: 20px; min-width: 150px; }
+            .net-weight { background: #f5f5f5; padding: 10px; font-size: 16px; font-weight: bold; border: 2px solid #333; }
+            .charges { margin-top: 15px; padding-top: 10px; border-top: 2px dashed #333; }
+            .sauda-section { margin-top: 15px; padding: 10px; background: #f9f9f9; }
+            .sauda-item { padding: 5px 0; border-bottom: 1px dotted #ccc; }
+            @media print { body { padding: 0; } .preview-container { border: none; } }
+          </style>
+        </head>
+        <body>
+          <div class="preview-container">${printContent}</div>
+          <script>window.onload = function() { window.print(); window.onafterprint = function() { window.close(); }; };</script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   if (!isp) return null;
+
+  const linkedSaudas = getLinkedSaudas();
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" />
-        <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-[95vw] sm:w-[90vw] md:w-full max-w-2xl translate-x-[-50%] translate-y-[-50%]">
-          <div className="glass rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
+        <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-[95vw] sm:w-[90vw] md:w-full max-w-xl translate-x-[-50%] translate-y-[-50%]">
+          <div className="glass rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-primary/20 rounded-lg">
-                  <FileText className="h-6 w-6 text-primary" />
+                  <FileText className="h-5 w-5 text-primary" />
                 </div>
-                <div>
-                  <Dialog.Title className="text-xl sm:text-2xl font-semibold">
-                    Inward Slip Pass Details
-                  </Dialog.Title>
-                  <Dialog.Description className="text-sm text-muted-foreground mt-1">
-                    {isp.slip_number}
-                  </Dialog.Description>
-                </div>
+                <Dialog.Title className="text-lg font-semibold">ISP Preview</Dialog.Title>
               </div>
-              <button
-                onClick={() => onOpenChange(false)}
-                className="p-2 hover:bg-muted rounded-lg transition-colors"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleDownloadPDF}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                >
+                  <Download className="h-4 w-4" />
+                  Download
+                </button>
+                <button onClick={() => onOpenChange(false)} className="p-2 hover:bg-muted rounded-lg transition-colors">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs text-muted-foreground uppercase tracking-wide">Slip Number</label>
-                  <p className="mt-1 text-sm font-medium">{isp.slip_number}</p>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground uppercase tracking-wide">Status</label>
-                  <p className="mt-1">
-                    <span className={`px-2 py-1 rounded-md text-xs ${
-                      isp.status === 'completed' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-yellow-500/10 text-yellow-600'
-                    }`}>
-                      {isp.status}
-                    </span>
-                  </p>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                    <Calendar className="h-3 w-3" />
-                    Date
-                  </label>
-                  <p className="mt-1 text-sm font-medium">{new Date(isp.date).toLocaleDateString()}</p>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                    <Truck className="h-3 w-3" />
-                    Vehicle Number
-                  </label>
-                  <p className="mt-1 text-sm font-medium">{isp.vehicle_number}</p>
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="text-xs text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                    <User className="h-3 w-3" />
-                    Party Name
-                  </label>
-                  <p className="mt-1 text-sm font-medium">{isp.party_name}</p>
-                </div>
-                {isp.party_address && (
-                  <div className="sm:col-span-2">
-                    <label className="text-xs text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                      <MapPin className="h-3 w-3" />
-                      Party Address
-                    </label>
-                    <p className="mt-1 text-sm">{isp.party_address}</p>
-                  </div>
-                )}
-                {isp.party_gst_number && (
-                  <div>
-                    <label className="text-xs text-muted-foreground uppercase tracking-wide">GST Number</label>
-                    <p className="mt-1 text-sm font-medium">{isp.party_gst_number}</p>
-                  </div>
-                )}
-                {isp.party_pan_number && (
-                  <div>
-                    <label className="text-xs text-muted-foreground uppercase tracking-wide">PAN Number</label>
-                    <p className="mt-1 text-sm font-medium">{isp.party_pan_number}</p>
-                  </div>
-                )}
-                {isp.transporter_id && (
-                  <div>
-                    <label className="text-xs text-muted-foreground uppercase tracking-wide">Transporter ID</label>
-                    <p className="mt-1 text-sm font-medium">{isp.transporter_id}</p>
-                  </div>
-                )}
-                {isp.transportation_cost != null && (
-                  <div>
-                    <label className="text-xs text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                      <DollarSign className="h-3 w-3" />
-                      Transportation Cost
-                    </label>
-                    <p className="mt-1 text-sm font-medium">₹{isp.transportation_cost.toFixed(2)}</p>
-                  </div>
-                )}
-                {isp.eway_bill_number && (
-                  <div>
-                    <label className="text-xs text-muted-foreground uppercase tracking-wide">Eway Bill</label>
-                    <p className="mt-1 text-sm font-medium">{isp.eway_bill_number}</p>
-                  </div>
-                )}
+            <div ref={previewRef} className="border-2 border-border rounded-lg p-4 bg-background font-mono text-xs">
+              {/* Thanks Message */}
+              <div className="text-center mb-4 text-[10px] text-muted-foreground">
+                ! Thanks for your visit !
               </div>
 
-              {(isp.inward_slip_bill_image_url || isp.transportation_bill_image_url || isp.bill_pdf_url || isp.bilti_image_url || isp.eway_bill_url) && (
-                <div className="pt-4 border-t border-border">
-                  <h3 className="text-sm font-semibold mb-3">Documents</h3>
-                  <div className="space-y-2">
-                    {isp.inward_slip_bill_image_url && (
-                      <a href={isp.inward_slip_bill_image_url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline">
-                        View Inward Slip Bill
-                      </a>
-                    )}
-                    {isp.transportation_bill_image_url && (
-                      <a href={isp.transportation_bill_image_url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline block">
-                        View Transportation Bill
-                      </a>
-                    )}
-                    {isp.bill_pdf_url && (
-                      <a href={isp.bill_pdf_url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline block">
-                        View Purchase Bill PDF
-                      </a>
-                    )}
-                    {isp.bilti_image_url && (
-                      <a href={isp.bilti_image_url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline block">
-                        View Bilti
-                      </a>
-                    )}
-                    {isp.eway_bill_url && (
-                      <a href={isp.eway_bill_url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline block">
-                        View Eway Bill
-                      </a>
-                    )}
+              {/* Company Header */}
+              <div className="text-center border-b-2 border-dashed border-border pb-3 mb-4">
+                <h2 className="font-bold text-lg tracking-wider">{defaultRecipient?.name || 'Loading...'}</h2>
+                <p className="text-[9px] text-muted-foreground mt-1">{defaultRecipient?.address || '-'}</p>
+                <p className="text-[9px] text-muted-foreground">LLPIN: {defaultRecipient?.llpin || '-'}</p>
+              </div>
+
+              {/* Slip Info Row */}
+              <div className="border-b border-dotted border-border pb-2 mb-3">
+                <div className="flex justify-between gap-4 flex-wrap">
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground">RST No.:</span>
+                    <span className="font-bold">{isp.slip_number}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground">Vehicle No.:</span>
+                    <span className="font-bold">{vehicle?.vehicle_number || '-'}</span>
+                  </div>
+                </div>
+                <div className="flex justify-between gap-4 mt-2 flex-wrap">
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground">Party Name:</span>
+                    <span className="font-bold">{isp.party_name}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="text-muted-foreground">Item:</span>
+                    <span className="font-bold">RICE</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Address Row */}
+              {isp.party_address && (
+                <div className="border-b border-dotted border-border pb-2 mb-3">
+                  <span className="text-muted-foreground">Address:</span>
+                  <span className="font-semibold ml-2">{isp.party_address}</span>
+                </div>
+              )}
+
+              {/* Date */}
+              <div className="flex justify-between border-b border-dotted border-border pb-2 mb-3">
+                <span className="text-muted-foreground">Date:</span>
+                <span className="font-bold">{new Date(isp.date).toLocaleDateString('en-IN')}</span>
+              </div>
+
+              {/* Charges */}
+              {isp.transportation_cost != null && (
+                <div className="border-t-2 border-dashed border-border pt-3 mt-3">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Transportation Cost:</span>
+                    <span className="font-bold">₹ {isp.transportation_cost?.toLocaleString('en-IN') || '-'}</span>
                   </div>
                 </div>
               )}
 
-              {isp.notes && (
-                <div className="pt-4 border-t border-border">
-                  <label className="text-xs text-muted-foreground uppercase tracking-wide">Notes</label>
-                  <p className="mt-1 text-sm">{isp.notes}</p>
+              {/* Transporter Info */}
+              {isp.transporter_id && (
+                <div className="border-t border-dotted border-border pt-2 mt-2">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Transporter:</span>
+                    <span className="font-semibold">{getTransporterName(isp.transporter_id)}</span>
+                  </div>
                 </div>
               )}
 
-              <div className="pt-4 border-t border-border">
-                <div className="text-xs text-muted-foreground">
-                  <p>Created: {new Date(isp.created_at).toLocaleString()}</p>
-                  {isp.updated_at !== isp.created_at && (
-                    <p className="mt-1">Updated: {new Date(isp.updated_at).toLocaleString()}</p>
-                  )}
+              {/* Linked Saudas */}
+              {linkedSaudas.length > 0 && (
+                <div className="border-t-2 border-dashed border-border pt-3 mt-3">
+                  <div className="font-bold mb-2">Linked Saudas ({linkedSaudas.length})</div>
+                  <div className="space-y-1 bg-muted/30 p-2 rounded">
+                    {linkedSaudas.map((sauda, idx) => (
+                      <div key={sauda.id} className="flex justify-between items-center py-1 border-b border-dotted border-border last:border-0">
+                        <span className="text-muted-foreground">{idx + 1}.</span>
+                        <span className="flex-1 ml-2">{getSaudaDisplayName(sauda)}</span>
+                        <span className="font-semibold">₹{sauda.rate}/kg</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+              )}
+
+              {/* Documents Section */}
+              {getISPDocuments().length > 0 && (
+                <div className="border-t-2 border-dashed border-border pt-3 mt-3">
+                  <div className="font-bold mb-2 flex items-center gap-2">
+                    <Files className="h-4 w-4" />
+                    Documents ({getISPDocuments().length})
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {getISPDocuments().map((doc, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => handleViewDocuments(getISPDocuments(), idx)}
+                        className="group flex flex-col items-center gap-1 p-2 rounded-lg bg-muted/30 hover:bg-muted/60 border border-border hover:border-primary/50 transition-all"
+                      >
+                        {doc.type === 'pdf' ? (
+                          <FileText className="h-6 w-6 text-red-500" />
+                        ) : (
+                          <ImageIcon className="h-6 w-6 text-blue-500" />
+                        )}
+                        <span className="text-[10px] text-center text-muted-foreground group-hover:text-foreground line-clamp-2">
+                          {doc.label}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Notes */}
+              {isp.notes && (
+                <div className="border-t border-dotted border-border pt-2 mt-3">
+                  <span className="text-muted-foreground">Notes:</span>
+                  <p className="mt-1">{isp.notes}</p>
+                </div>
+              )}
+
+              {/* Footer */}
+              <div className="text-center border-t-2 border-dashed border-border pt-3 mt-4">
+                <p className="text-[9px] text-muted-foreground">Generated on {new Date().toLocaleString('en-IN')}</p>
+                <p className="text-[9px] text-muted-foreground">This is a computer-generated document</p>
               </div>
             </div>
           </div>
         </Dialog.Content>
       </Dialog.Portal>
+
+      <DocumentViewerModal
+        open={documentViewerOpen}
+        onOpenChange={setDocumentViewerOpen}
+        document={viewerDocuments[0] || null}
+        documents={viewerDocuments}
+      />
     </Dialog.Root>
   );
 }
-

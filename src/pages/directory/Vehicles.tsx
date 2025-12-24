@@ -1,9 +1,6 @@
-// Old import - Purchase entity has been removed
-// import { PurchasesTable } from '../../components/purchases/purchases/PurchasesTable';
+import { VehiclesTable } from '../../components/admin/vehicles/VehiclesTable';
 
-import { PurchaseSummaryTable } from '../../components/purchases/purchases/PurchaseSummaryTable';
-
-export default function PurchasesPage() {
+export default function VehiclesPage() {
   return (
     <div className="container mx-auto py-6 sm:py-10 space-y-6 sm:space-y-8 px-4 sm:px-6">
       <header className="hero-bg rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 relative overflow-hidden">
@@ -11,15 +8,14 @@ export default function PurchasesPage() {
         <div className="absolute -right-6 -bottom-6 h-20 w-20 floating-orb" />
         <div className="relative">
           <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold">
-            <span className="text-gradient">Purchase Summary</span>
+            <span className="text-gradient">Vehicles Directory</span>
           </h1>
           <p className="mt-1 sm:mt-2 text-sm sm:text-base text-muted-foreground">
-            View calculated purchase summaries by sauda or ISP
+            Manage vehicles with Surepass RC verification
           </p>
         </div>
       </header>
-
-      <PurchaseSummaryTable />
+      <VehiclesTable />
     </div>
   );
 }

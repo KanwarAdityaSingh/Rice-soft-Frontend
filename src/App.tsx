@@ -9,6 +9,7 @@ import BrokersPage from './pages/directory/Brokers.tsx'
 import SalesmenPage from './pages/directory/Salesmen.tsx'
 import VendorsPage from './pages/directory/Vendors.tsx'
 import TransportersPage from './pages/directory/Transporters.tsx'
+import VehiclesPage from './pages/directory/Vehicles.tsx'
 import RiceCodesPage from './pages/directory/RiceCodes.tsx'
 import LeadsPage from './pages/crm/Leads'
 import LeadDetailPage from './pages/crm/LeadDetail'
@@ -155,6 +156,16 @@ function AnimatedRoutes() {
             <ProtectedRoute>
               <AppLayout>
                 <TransportersPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/directory/vehicles"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <VehiclesPage />
               </AppLayout>
             </ProtectedRoute>
           }

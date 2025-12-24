@@ -1,17 +1,20 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { SearchBar } from '../../admin/shared/SearchBar';
 import { FilterDropdown } from '../../admin/shared/FilterDropdown';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { EmptyState } from '../../admin/shared/EmptyState';
-import { ActionButtons } from '../../admin/shared/ActionButtons';
 import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
-import { Package } from 'lucide-react';
+import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
+import { Package, Eye, Image as ImageIcon, MoreVertical, Edit2, Trash2, UtensilsCrossed, Wheat, Mail, MessageCircle } from 'lucide-react';
 import { useSaudas } from '../../../hooks/useSaudas';
 import { useVendors } from '../../../hooks/useVendors';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { getRiceTypeLabel } from '../../../utils/riceType';
 import { SaudaFormModal } from './SaudaFormModal';
 import { SaudaPreviewDialog } from './SaudaPreviewDialog';
+import { SaudaEmailModal } from './SaudaEmailModal';
+import { SaudaWhatsAppModal } from './SaudaWhatsAppModal';
 import type { Sauda, RiceCode, RiceType } from '../../../types/entities';
 
 interface SaudasTableProps {
@@ -41,6 +44,15 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
   const [previewSauda, setPreviewSauda] = useState<Sauda | null>(null);
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
+  
+  // Document viewer state
+  const [documentViewerOpen, setDocumentViewerOpen] = useState(false);
+  const [viewerDocuments, setViewerDocuments] = useState<DocumentInfo[]>([]);
+  
+  // Notification state
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
+  const [selectedSaudaForNotification, setSelectedSaudaForNotification] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchRiceCodes = async () => {
@@ -91,6 +103,22 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
     if (riceTypeLabel) parts.push(riceTypeLabel);
     
     return parts.join(' - ') || 'Sauda';
+  };
+
+  const getSaudaDocuments = (sauda: Sauda): DocumentInfo[] => {
+    const docs: DocumentInfo[] = [];
+    if (sauda.cooked_rice_image_url) {
+      docs.push({ url: sauda.cooked_rice_image_url, label: 'Cooked Rice Sample', type: 'image' });
+    }
+    if (sauda.uncooked_rice_image_url) {
+      docs.push({ url: sauda.uncooked_rice_image_url, label: 'Uncooked Rice Sample', type: 'image' });
+    }
+    return docs;
+  };
+
+  const handleViewDocuments = (docs: DocumentInfo[]) => {
+    setViewerDocuments(docs);
+    setDocumentViewerOpen(true);
   };
 
   const filtered = useMemo(() => {
@@ -185,28 +213,105 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                   </div>
                 )}
               </div>
-              <div className="mt-3 flex items-center justify-end gap-2">
+              <div className="mt-3 flex items-center justify-end gap-1">
                 <button
                   onClick={() => {
                     setPreviewSauda(s);
                     setPreviewOpen(true);
                   }}
-                  className="text-xs text-primary hover:text-primary/80 px-2 py-1 rounded"
+                  className="p-1.5 text-primary hover:bg-primary/10 rounded-md transition-colors"
+                  title="View Preview"
                 >
-                  View
+                  <Eye className="h-4 w-4" />
                 </button>
-                <ActionButtons
-                  isActive={true}
-                  onEdit={() => {
-                    setSelectedSaudaId(s.id);
-                    setEditModalOpen(true);
+                
+                {/* Notification buttons */}
+                <button
+                  onClick={() => {
+                    setSelectedSaudaForNotification(s.id);
+                    setEmailModalOpen(true);
                   }}
-                  onDelete={() => {
-                    setSelectedSauda(s);
-                    setDeleteDialogOpen(true);
+                  className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
+                  title="Send Email"
+                >
+                  <Mail className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedSaudaForNotification(s.id);
+                    setWhatsappModalOpen(true);
                   }}
-                  permissionEntity="vendor"
-                />
+                  className="p-1.5 text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-md transition-colors"
+                  title="Send WhatsApp"
+                >
+                  <MessageCircle className="h-4 w-4" />
+                </button>
+                
+                {/* Custom dropdown with view options */}
+                <DropdownMenu.Root>
+                  <DropdownMenu.Trigger asChild>
+                    <button className="rounded-lg p-2 hover:bg-muted transition-colors">
+                      <MoreVertical className="h-4 w-4" />
+                    </button>
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Portal>
+                    <DropdownMenu.Content
+                      className="glass min-w-[10rem] rounded-xl p-1 shadow-lg z-50"
+                      sideOffset={8}
+                      align="end"
+                    >
+                      {/* View Images Section - Always visible */}
+                      <DropdownMenu.Label className="px-3 py-1.5 text-xs text-muted-foreground font-medium">
+                        View Images
+                      </DropdownMenu.Label>
+                      <DropdownMenu.Item
+                        className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+                          s.cooked_rice_image_url 
+                            ? 'hover:bg-accent hover:text-accent-foreground text-amber-600' 
+                            : 'text-muted-foreground/50 cursor-not-allowed'
+                        }`}
+                        disabled={!s.cooked_rice_image_url}
+                        onSelect={() => s.cooked_rice_image_url && handleViewDocuments([{ url: s.cooked_rice_image_url, label: 'Cooked Rice Sample', type: 'image' }])}
+                      >
+                        <UtensilsCrossed className="h-4 w-4" /> Cooked Rice
+                        {!s.cooked_rice_image_url && <span className="ml-auto text-[10px]">N/A</span>}
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+                          s.uncooked_rice_image_url 
+                            ? 'hover:bg-accent hover:text-accent-foreground text-amber-600' 
+                            : 'text-muted-foreground/50 cursor-not-allowed'
+                        }`}
+                        disabled={!s.uncooked_rice_image_url}
+                        onSelect={() => s.uncooked_rice_image_url && handleViewDocuments([{ url: s.uncooked_rice_image_url, label: 'Uncooked Rice Sample', type: 'image' }])}
+                      >
+                        <Wheat className="h-4 w-4" /> Uncooked Rice
+                        {!s.uncooked_rice_image_url && <span className="ml-auto text-[10px]">N/A</span>}
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                      
+                      {/* Edit/Delete Actions */}
+                      <DropdownMenu.Item
+                        className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+                        onSelect={() => {
+                          setSelectedSaudaId(s.id);
+                          setEditModalOpen(true);
+                        }}
+                      >
+                        <Edit2 className="h-4 w-4" /> Edit
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                        onSelect={() => {
+                          setSelectedSauda(s);
+                          setDeleteDialogOpen(true);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" /> Delete
+                      </DropdownMenu.Item>
+                    </DropdownMenu.Content>
+                  </DropdownMenu.Portal>
+                </DropdownMenu.Root>
               </div>
             </article>
           ))}
@@ -257,6 +362,45 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
         onOpenChange={setPreviewOpen}
         sauda={previewSauda}
       />
+
+      <DocumentViewerModal
+        open={documentViewerOpen}
+        onOpenChange={setDocumentViewerOpen}
+        document={viewerDocuments[0] || null}
+        documents={viewerDocuments}
+      />
+
+      {selectedSaudaForNotification && (
+        <>
+          <SaudaEmailModal
+            open={emailModalOpen}
+            onOpenChange={(open) => {
+              setEmailModalOpen(open);
+              if (!open) {
+                setSelectedSaudaForNotification(null);
+              }
+            }}
+            saudaId={selectedSaudaForNotification}
+            onSuccess={() => {
+              refetch();
+            }}
+          />
+
+          <SaudaWhatsAppModal
+            open={whatsappModalOpen}
+            onOpenChange={(open) => {
+              setWhatsappModalOpen(open);
+              if (!open) {
+                setSelectedSaudaForNotification(null);
+              }
+            }}
+            saudaId={selectedSaudaForNotification}
+            onSuccess={() => {
+              refetch();
+            }}
+          />
+        </>
+      )}
     </div>
   );
 }

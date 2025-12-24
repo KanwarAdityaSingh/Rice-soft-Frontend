@@ -1,3 +1,19 @@
+/**
+ * ============================================================================
+ * DEPRECATED: purchases.api.ts
+ * ============================================================================
+ * The Purchase entity has been REMOVED from the backend.
+ * Purchase calculations are now done in real-time via the Purchase Summary API.
+ * 
+ * Use instead:
+ * - purchaseSummary.api.ts for getting purchase summaries
+ * - Payment Advices now link directly to Sauda or ISP
+ * 
+ * This file is kept for reference only.
+ * ============================================================================
+ */
+
+/*
 import { apiService } from './api';
 import type { 
   Purchase, 
@@ -79,4 +95,7 @@ export const purchasesAPI = {
     return apiService.post<Purchase>(`/purchases/${id}/recalculate-totals`, {});
   },
 };
+*/
 
+// Export empty object to prevent import errors
+export const purchasesAPI = {} as any;

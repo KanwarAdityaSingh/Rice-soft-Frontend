@@ -1,20 +1,23 @@
 import { useState, useMemo } from 'react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { SearchBar } from '../../admin/shared/SearchBar';
-import { FilterDropdown } from '../../admin/shared/FilterDropdown';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { EmptyState } from '../../admin/shared/EmptyState';
-import { ActionButtons } from '../../admin/shared/ActionButtons';
 import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
-import { FileText, Scale } from 'lucide-react';
+import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
+import { FileText, Scale, Package, Eye, Image as ImageIcon, MoreVertical, Edit2, Trash2, Receipt, Truck, FileCheck, ClipboardList, Route } from 'lucide-react';
 import { useInwardSlipPasses } from '../../../hooks/useInwardSlipPasses';
+import { useVehicleMap } from '../../../hooks/useVehicles';
 import { InwardSlipPassFormModal } from './InwardSlipPassFormModal';
 import { InwardSlipPassPreviewDialog } from './InwardSlipPassPreviewDialog';
 import { KaantaWeightDialog } from './KaantaWeightDialog';
+import { LinkedLotsDialog } from './LinkedLotsDialog';
 import type { InwardSlipPass } from '../../../types/entities';
 
 export function InwardSlipPassesTable() {
   const [saudaFilter, setSaudaFilter] = useState<string | undefined>();
   const { inwardSlipPasses, loading, deleteInwardSlipPass, refetch } = useInwardSlipPasses(saudaFilter);
+  const { getVehicleNumber } = useVehicleMap();
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedISP, setSelectedISP] = useState<InwardSlipPass | null>(null);
@@ -25,18 +28,57 @@ export function InwardSlipPassesTable() {
   const [previewISP, setPreviewISP] = useState<InwardSlipPass | null>(null);
   const [kaantaWeightOpen, setKaantaWeightOpen] = useState(false);
   const [kaantaWeightISP, setKaantaWeightISP] = useState<InwardSlipPass | null>(null);
+  const [linkedLotsOpen, setLinkedLotsOpen] = useState(false);
+  const [linkedLotsISP, setLinkedLotsISP] = useState<InwardSlipPass | null>(null);
+  
+  // Document viewer state
+  const [documentViewerOpen, setDocumentViewerOpen] = useState(false);
+  const [viewerDocuments, setViewerDocuments] = useState<DocumentInfo[]>([]);
+
+  // Get all documents for an ISP
+  const getISPDocuments = (isp: InwardSlipPass): DocumentInfo[] => {
+    const docs: DocumentInfo[] = [];
+    
+    if (isp.inward_slip_bill_image_url) {
+      docs.push({ url: isp.inward_slip_bill_image_url, label: 'Inward Slip Bill', type: 'image' });
+    }
+    if (isp.transportation_bill_image_url) {
+      docs.push({ url: isp.transportation_bill_image_url, label: 'Transportation Bill', type: 'image' });
+    }
+    if (isp.bill_pdf_url) {
+      const isPdf = isp.bill_pdf_url.toLowerCase().includes('.pdf');
+      docs.push({ url: isp.bill_pdf_url, label: 'Purchase Bill', type: isPdf ? 'pdf' : 'image' });
+    }
+    if (isp.bilti_image_url) {
+      docs.push({ url: isp.bilti_image_url, label: 'Bilti/LR Image', type: 'image' });
+    }
+    if (isp.bilti_pdf_url) {
+      docs.push({ url: isp.bilti_pdf_url, label: 'Bilti/LR PDF', type: 'pdf' });
+    }
+    if (isp.eway_bill_url) {
+      docs.push({ url: isp.eway_bill_url, label: 'E-way Bill', type: 'pdf' });
+    }
+    
+    return docs;
+  };
+
+  const handleViewDocuments = (docs: DocumentInfo[]) => {
+    setViewerDocuments(docs);
+    setDocumentViewerOpen(true);
+  };
 
   const filtered = useMemo(() => {
     return inwardSlipPasses.filter((isp) => {
       const q = searchQuery.toLowerCase();
+      const vehicleNumber = getVehicleNumber(isp.vehicle_id);
       const matchesSearch =
         isp.slip_number.toLowerCase().includes(q) ||
-        isp.vehicle_number.toLowerCase().includes(q) ||
+        vehicleNumber.toLowerCase().includes(q) ||
         isp.party_name.toLowerCase().includes(q);
 
       return matchesSearch;
     });
-  }, [inwardSlipPasses, searchQuery]);
+  }, [inwardSlipPasses, searchQuery, getVehicleNumber]);
 
   return (
     <div>
@@ -85,7 +127,7 @@ export function InwardSlipPassesTable() {
               <div className="mt-3 grid gap-1.5 text-xs">
                 <div className="inline-flex items-center gap-2">
                   <span className="text-muted-foreground w-20">Vehicle:</span>
-                  <span className="font-medium">{isp.vehicle_number}</span>
+                  <span className="font-medium">{getVehicleNumber(isp.vehicle_id)}</span>
                 </div>
                 <div className="inline-flex items-center gap-2">
                   <span className="text-muted-foreground w-20">Date:</span>
@@ -97,46 +139,156 @@ export function InwardSlipPassesTable() {
                     <span className="font-medium">₹{isp.transportation_cost.toFixed(2)}</span>
                   </div>
                 )}
-                {isp.kaanta_weight != null && (
-                  <div className="inline-flex items-center gap-2">
-                    <span className="text-muted-foreground w-20">Kaanta Wt:</span>
-                    <span className="font-medium text-primary">{isp.kaanta_weight.toFixed(2)} kg</span>
-                  </div>
-                )}
+                <div className="inline-flex items-center gap-2">
+                  <span className="text-muted-foreground w-20">Saudas:</span>
+                  <span className="font-medium">{isp.sauda_ids?.length || 0}</span>
+                </div>
               </div>
-              <div className="mt-3 flex items-center justify-end gap-2">
+              <div className="mt-3 flex items-center justify-end gap-1">
+                <button
+                  onClick={() => {
+                    setLinkedLotsISP(isp);
+                    setLinkedLotsOpen(true);
+                  }}
+                  className="p-1.5 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-md transition-colors"
+                  title="View Linked Lots"
+                >
+                  <Package className="h-4 w-4" />
+                </button>
                 <button
                   onClick={() => {
                     setKaantaWeightISP(isp);
                     setKaantaWeightOpen(true);
                   }}
-                  className="text-xs text-emerald-600 hover:text-emerald-700 px-2 py-1 rounded flex items-center gap-1"
-                  title="Add Kaanta Weight"
+                  className="p-1.5 text-emerald-600 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 rounded-md transition-colors"
+                  title="Create Kaanta"
                 >
-                  <Scale className="h-3 w-3" />
-                  Kaanta
+                  <Scale className="h-4 w-4" />
                 </button>
                 <button
                   onClick={() => {
                     setPreviewISP(isp);
                     setPreviewOpen(true);
                   }}
-                  className="text-xs text-primary hover:text-primary/80 px-2 py-1 rounded"
+                  className="p-1.5 text-primary hover:bg-primary/10 rounded-md transition-colors"
+                  title="View Preview"
                 >
-                  View
+                  <Eye className="h-4 w-4" />
                 </button>
-                <ActionButtons
-                  isActive={isp.status === 'completed'}
-                  onEdit={() => {
-                    setSelectedISPId(isp.id);
-                    setEditModalOpen(true);
-                  }}
-                  onDelete={() => {
-                    setSelectedISP(isp);
-                    setDeleteDialogOpen(true);
-                  }}
-                  permissionEntity="vendor"
-                />
+                
+                {/* Custom dropdown with view options */}
+                <DropdownMenu.Root>
+                  <DropdownMenu.Trigger asChild>
+                    <button className="rounded-lg p-2 hover:bg-muted transition-colors">
+                      <MoreVertical className="h-4 w-4" />
+                    </button>
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Portal>
+                    <DropdownMenu.Content
+                      className="glass min-w-[11rem] rounded-xl p-1 shadow-lg z-50"
+                      sideOffset={8}
+                      align="end"
+                    >
+                      {/* View Documents Section - Always visible */}
+                      <DropdownMenu.Label className="px-3 py-1.5 text-xs text-muted-foreground font-medium">
+                        View Documents
+                      </DropdownMenu.Label>
+                      <DropdownMenu.Item
+                        className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+                          isp.inward_slip_bill_image_url 
+                            ? 'hover:bg-accent hover:text-accent-foreground text-blue-600' 
+                            : 'text-muted-foreground/50 cursor-not-allowed'
+                        }`}
+                        disabled={!isp.inward_slip_bill_image_url}
+                        onSelect={() => isp.inward_slip_bill_image_url && handleViewDocuments([{ url: isp.inward_slip_bill_image_url, label: 'Inward Slip Bill', type: 'image' }])}
+                      >
+                        <Receipt className="h-4 w-4" /> Inward Slip Bill
+                        {!isp.inward_slip_bill_image_url && <span className="ml-auto text-[10px]">N/A</span>}
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+                          isp.transportation_bill_image_url 
+                            ? 'hover:bg-accent hover:text-accent-foreground text-blue-600' 
+                            : 'text-muted-foreground/50 cursor-not-allowed'
+                        }`}
+                        disabled={!isp.transportation_bill_image_url}
+                        onSelect={() => isp.transportation_bill_image_url && handleViewDocuments([{ url: isp.transportation_bill_image_url, label: 'Transportation Bill', type: 'image' }])}
+                      >
+                        <Truck className="h-4 w-4" /> Transport Bill
+                        {!isp.transportation_bill_image_url && <span className="ml-auto text-[10px]">N/A</span>}
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+                          isp.bill_pdf_url 
+                            ? 'hover:bg-accent hover:text-accent-foreground text-blue-600' 
+                            : 'text-muted-foreground/50 cursor-not-allowed'
+                        }`}
+                        disabled={!isp.bill_pdf_url}
+                        onSelect={() => isp.bill_pdf_url && handleViewDocuments([{ url: isp.bill_pdf_url, label: 'Purchase Bill', type: isp.bill_pdf_url.toLowerCase().includes('.pdf') ? 'pdf' : 'image' }])}
+                      >
+                        <FileCheck className="h-4 w-4" /> Purchase Bill
+                        {!isp.bill_pdf_url && <span className="ml-auto text-[10px]">N/A</span>}
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+                          isp.bilti_image_url 
+                            ? 'hover:bg-accent hover:text-accent-foreground text-blue-600' 
+                            : 'text-muted-foreground/50 cursor-not-allowed'
+                        }`}
+                        disabled={!isp.bilti_image_url}
+                        onSelect={() => isp.bilti_image_url && handleViewDocuments([{ url: isp.bilti_image_url, label: 'Bilti/LR Image', type: 'image' }])}
+                      >
+                        <ClipboardList className="h-4 w-4" /> Bilti Image
+                        {!isp.bilti_image_url && <span className="ml-auto text-[10px]">N/A</span>}
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+                          isp.bilti_pdf_url 
+                            ? 'hover:bg-accent hover:text-accent-foreground text-blue-600' 
+                            : 'text-muted-foreground/50 cursor-not-allowed'
+                        }`}
+                        disabled={!isp.bilti_pdf_url}
+                        onSelect={() => isp.bilti_pdf_url && handleViewDocuments([{ url: isp.bilti_pdf_url, label: 'Bilti/LR PDF', type: 'pdf' }])}
+                      >
+                        <FileText className="h-4 w-4" /> Bilti PDF
+                        {!isp.bilti_pdf_url && <span className="ml-auto text-[10px]">N/A</span>}
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+                          isp.eway_bill_url 
+                            ? 'hover:bg-accent hover:text-accent-foreground text-blue-600' 
+                            : 'text-muted-foreground/50 cursor-not-allowed'
+                        }`}
+                        disabled={!isp.eway_bill_url}
+                        onSelect={() => isp.eway_bill_url && handleViewDocuments([{ url: isp.eway_bill_url, label: 'E-way Bill', type: 'pdf' }])}
+                      >
+                        <Route className="h-4 w-4" /> E-way Bill
+                        {!isp.eway_bill_url && <span className="ml-auto text-[10px]">N/A</span>}
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                      
+                      {/* Edit/Delete Actions */}
+                      <DropdownMenu.Item
+                        className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+                        onSelect={() => {
+                          setSelectedISPId(isp.id);
+                          setEditModalOpen(true);
+                        }}
+                      >
+                        <Edit2 className="h-4 w-4" /> Edit
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item
+                        className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                        onSelect={() => {
+                          setSelectedISP(isp);
+                          setDeleteDialogOpen(true);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" /> Delete
+                      </DropdownMenu.Item>
+                    </DropdownMenu.Content>
+                  </DropdownMenu.Portal>
+                </DropdownMenu.Root>
               </div>
             </article>
           ))}
@@ -191,6 +343,19 @@ export function InwardSlipPassesTable() {
         onOpenChange={setKaantaWeightOpen}
         isp={kaantaWeightISP}
         onSuccess={refetch}
+      />
+
+      <LinkedLotsDialog
+        open={linkedLotsOpen}
+        onOpenChange={setLinkedLotsOpen}
+        isp={linkedLotsISP}
+      />
+
+      <DocumentViewerModal
+        open={documentViewerOpen}
+        onOpenChange={setDocumentViewerOpen}
+        document={viewerDocuments[0] || null}
+        documents={viewerDocuments}
       />
     </div>
   );

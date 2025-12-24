@@ -1,13 +1,15 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Search } from 'lucide-react';
+import { X, Plus, Search, Car, Check, RefreshCw, ExternalLink } from 'lucide-react';
 import { useTransporters } from '../../../hooks/useTransporters';
+import { useVehicles } from '../../../hooks/useVehicles';
 import { transportersAPI } from '../../../services/transporters.api';
 import { validateGST, validatePAN, validateAadhaar } from '../../../utils/validation';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
-import type { CreateTransporterRequest, UpdateTransporterRequest, Transporter } from '../../../types/entities';
+import { Link } from 'react-router-dom';
+import type { CreateTransporterRequest, UpdateTransporterRequest } from '../../../types/entities';
 
 interface TransporterFormModalProps {
   open: boolean;
@@ -17,8 +19,10 @@ interface TransporterFormModalProps {
 
 export function TransporterFormModal({ open, onOpenChange, transporterId }: TransporterFormModalProps) {
   const { createTransporter, updateTransporter } = useTransporters();
+  const { vehicles, refetch: refetchVehicles, loading: loadingVehicles } = useVehicles();
   const isEditMode = !!transporterId;
-  const [formData, setFormData] = useState<CreateTransporterRequest>({
+  
+  const [formData, setFormData] = useState<CreateTransporterRequest & { vehicle_ids?: string[] }>({
     business_name: '',
     contact_persons: [{ name: '', phones: [''], emails: [''] }],
     address: {
@@ -32,11 +36,12 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
     gst_number: null,
     pan_number: null,
     aadhar_number: null,
-    vehicle_numbers: [],
+    vehicle_ids: [],
     bank_details: {},
     is_active: true,
   });
-  const [newVehicleNumber, setNewVehicleNumber] = useState('');
+  
+  const [vehicleSearchQuery, setVehicleSearchQuery] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [loadingTransporter, setLoadingTransporter] = useState(false);
@@ -75,7 +80,7 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
         gst_number: transporter.gst_number || null,
         pan_number: transporter.pan_number || null,
         aadhar_number: transporter.aadhar_number || null,
-        vehicle_numbers: transporter.vehicle_numbers || [],
+        vehicle_ids: transporter.vehicle_ids || [],
         bank_details: transporter.bank_details || {},
         is_active: transporter.is_active,
       });
@@ -105,11 +110,11 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
       gst_number: null,
       pan_number: null,
       aadhar_number: null,
-      vehicle_numbers: [],
+      vehicle_ids: [],
       bank_details: {},
       is_active: true,
     });
-    setNewVehicleNumber('');
+    setVehicleSearchQuery('');
     setErrors({});
     setGstAutoFilledFields(new Set());
     setStep(1);
@@ -159,7 +164,6 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
       }
       
       // Populate address fields (only fill non-empty values, convert to title case)
-      // Note: Address fields are NOT added to autoFilledFields, so they remain editable
       const addressUpdate: any = { ...formData.address };
       if (mapped?.address) {
         if (mapped.address.street) {
@@ -246,7 +250,6 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
       }
       
       // Populate address fields (only fill non-empty values, convert to title case)
-      // Note: Address fields are NOT added to autoFilledFields, so they remain editable
       const addressUpdate: any = { ...formData.address };
       if (mapped?.address) {
         if (mapped.address.street) addressUpdate.street = toTitleCase(mapped.address.street);
@@ -354,13 +357,19 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
 
     setLoading(true);
     try {
+      // Prepare the data - we only send vehicle_ids now, not vehicle_numbers
+      const submitData = {
+        ...formData,
+        vehicle_ids: formData.vehicle_ids || [],
+      };
+
       if (isEditMode && transporterId) {
-        await updateTransporter(transporterId, formData as UpdateTransporterRequest);
+        await updateTransporter(transporterId, submitData as UpdateTransporterRequest);
         setAlertType('success');
         setAlertTitle('Success');
         setAlertMessage('Transporter updated successfully');
       } else {
-        await createTransporter(formData);
+        await createTransporter(submitData);
         setAlertType('success');
         setAlertTitle('Success');
         setAlertMessage('Transporter created successfully');
@@ -380,22 +389,29 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
     }
   };
 
-  const addVehicleNumber = () => {
-    if (newVehicleNumber.trim() && !(formData.vehicle_numbers || []).includes(newVehicleNumber.trim())) {
-      setFormData({
-        ...formData,
-        vehicle_numbers: [...(formData.vehicle_numbers || []), newVehicleNumber.trim()],
-      });
-      setNewVehicleNumber('');
-    }
+  // Toggle vehicle selection
+  const toggleVehicle = (vehicleId: string) => {
+    setFormData(prev => ({
+      ...prev,
+      vehicle_ids: prev.vehicle_ids?.includes(vehicleId)
+        ? prev.vehicle_ids.filter(id => id !== vehicleId)
+        : [...(prev.vehicle_ids || []), vehicleId],
+    }));
   };
 
-  const removeVehicleNumber = (index: number) => {
-    setFormData({
-      ...formData,
-      vehicle_numbers: (formData.vehicle_numbers || []).filter((_, i) => i !== index),
-    });
-  };
+  // Filter vehicles by search query
+  const filteredVehicles = vehicles.filter(v => {
+    if (!vehicleSearchQuery) return v.is_active;
+    const q = vehicleSearchQuery.toLowerCase();
+    return v.is_active && (
+      v.vehicle_number.toLowerCase().includes(q) ||
+      v.owner_name?.toLowerCase().includes(q) ||
+      v.maker_model?.toLowerCase().includes(q)
+    );
+  });
+
+  // Get selected vehicles details
+  const selectedVehicles = vehicles.filter(v => formData.vehicle_ids?.includes(v.id));
 
   return (
     <>
@@ -533,391 +549,469 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
 
                       {/* Business Name below GST/PAN/Aadhaar */}
                       <div className="grid grid-cols-1 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Business Name <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.business_name}
-                        onChange={(e) => setFormData({ ...formData, business_name: e.target.value })}
+                        <div>
+                          <label className="block text-sm font-medium mb-1">
+                            Business Name <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={formData.business_name}
+                            onChange={(e) => setFormData({ ...formData, business_name: e.target.value })}
                             className={`w-full px-3 py-2 border rounded-lg bg-background read-only:cursor-not-allowed ${
-                          errors.business_name ? 'border-red-500' : 'border-border'
-                        }`}
-                        placeholder="ABC Transport Services"
+                              errors.business_name ? 'border-red-500' : 'border-border'
+                            }`}
+                            placeholder="ABC Transport Services"
                             readOnly={gstAutoFilledFields.has('business_name')}
-                      />
-                      {errors.business_name && (
-                        <p className="text-xs text-red-500 mt-1">{errors.business_name}</p>
-                      )}
+                          />
+                          {errors.business_name && (
+                            <p className="text-xs text-red-500 mt-1">{errors.business_name}</p>
+                          )}
                         </div>
-                    </div>
+                      </div>
 
                       <div className="grid grid-cols-1 gap-4">
                         {/* Contact Persons Section */}
-                    <div>
+                        <div>
                           <label className="block text-sm font-medium mb-2">
                             Contact Persons <span className="text-red-500">*</span>
-                      </label>
-                      <div className="space-y-3">
-                        {(formData.contact_persons || []).map((contact, index) => (
-                          <div key={index} className="space-y-2 p-3 border border-border rounded-lg bg-background/60">
-                            <div className="flex gap-2 items-start">
-                      <input
-                        type="text"
-                                placeholder="Name"
-                                value={contact.name}
-                                onChange={(e) => {
-                                  const updated = [...(formData.contact_persons || [])];
-                                  updated[index] = { ...updated[index], name: e.target.value };
-                                  setFormData({ ...formData, contact_persons: updated });
-                                }}
-                                className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                              />
-                              {(formData.contact_persons || []).length > 1 && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const updated = (formData.contact_persons || []).filter((_, i) => i !== index);
-                                    setFormData({ ...formData, contact_persons: updated });
-                                  }}
-                                  className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-                                  title="Remove contact person"
-                                >
-                                  <X className="h-4 w-4" />
-                                </button>
-                      )}
-                    </div>
-                            {errors[`contact_person_${index}_name`] && (
-                              <p className="text-xs text-red-600">{errors[`contact_person_${index}_name`]}</p>
-                            )}
-
-                            {/* Phone Numbers */}
-                            <div className="space-y-1">
-                              <label className="text-xs font-medium text-muted-foreground">Phone Numbers *</label>
-                              {(contact.phones || ['']).map((phone, phoneIndex) => (
-                                <div key={phoneIndex} className="flex gap-2">
-                      <input
-                                    type="tel"
-                                    placeholder="Phone (10 digits)"
-                                    value={phone}
+                          </label>
+                          <div className="space-y-3">
+                            {(formData.contact_persons || []).map((contact, index) => (
+                              <div key={index} className="space-y-2 p-3 border border-border rounded-lg bg-background/60">
+                                <div className="flex gap-2 items-start">
+                                  <input
+                                    type="text"
+                                    placeholder="Name"
+                                    value={contact.name}
                                     onChange={(e) => {
                                       const updated = [...(formData.contact_persons || [])];
-                                      const updatedPhones = [...(updated[index].phones || [''])];
-                                      updatedPhones[phoneIndex] = e.target.value;
-                                      updated[index] = { ...updated[index], phones: updatedPhones };
+                                      updated[index] = { ...updated[index], name: e.target.value };
                                       setFormData({ ...formData, contact_persons: updated });
                                     }}
                                     className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                                   />
-                                  {(contact.phones || ['']).length > 1 && (
+                                  {(formData.contact_persons || []).length > 1 && (
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        const updated = [...(formData.contact_persons || [])];
-                                        const updatedPhones = updated[index].phones?.filter((_, i) => i !== phoneIndex) || [];
-                                        updated[index] = { ...updated[index], phones: updatedPhones.length > 0 ? updatedPhones : [''] };
+                                        const updated = (formData.contact_persons || []).filter((_, i) => i !== index);
                                         setFormData({ ...formData, contact_persons: updated });
                                       }}
                                       className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-                                      title="Remove phone"
+                                      title="Remove contact person"
                                     >
-                                      <X className="h-3 w-3" />
+                                      <X className="h-4 w-4" />
                                     </button>
                                   )}
                                 </div>
-                              ))}
-                              {errors[`contact_person_${index}_phone`] && (
-                                <p className="text-xs text-red-600">{errors[`contact_person_${index}_phone`]}</p>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const updated = [...(formData.contact_persons || [])];
-                                  updated[index] = { ...updated[index], phones: [...(updated[index].phones || ['']), ''] };
-                                  setFormData({ ...formData, contact_persons: updated });
-                                }}
-                                className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
-                              >
-                                <Plus className="h-3 w-3" />
-                                Add Phone Number
-                              </button>
-                    </div>
+                                {errors[`contact_person_${index}_name`] && (
+                                  <p className="text-xs text-red-600">{errors[`contact_person_${index}_name`]}</p>
+                                )}
 
-                            {/* Email Addresses */}
-                            <div className="space-y-1">
-                              <label className="text-xs font-medium text-muted-foreground">Email Addresses</label>
-                              {(contact.emails || ['']).map((email, emailIndex) => (
-                                <div key={emailIndex}>
-                                  <div className="flex gap-2">
-                      <input
-                        type="email"
-                                      placeholder="Email"
-                                      value={email}
-                                      onChange={(e) => {
-                                        const updated = [...(formData.contact_persons || [])];
-                                        const updatedEmails = [...(updated[index].emails || [''])];
-                                        updatedEmails[emailIndex] = e.target.value;
-                                        updated[index] = { ...updated[index], emails: updatedEmails };
-                                        setFormData({ ...formData, contact_persons: updated });
-                                      }}
-                                      className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                                    />
-                                    {(contact.emails || ['']).length > 1 && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
+                                {/* Phone Numbers */}
+                                <div className="space-y-1">
+                                  <label className="text-xs font-medium text-muted-foreground">Phone Numbers *</label>
+                                  {(contact.phones || ['']).map((phone, phoneIndex) => (
+                                    <div key={phoneIndex} className="flex gap-2">
+                                      <input
+                                        type="tel"
+                                        placeholder="Phone (10 digits)"
+                                        value={phone}
+                                        onChange={(e) => {
                                           const updated = [...(formData.contact_persons || [])];
-                                          const updatedEmails = updated[index].emails?.filter((_, i) => i !== emailIndex) || [];
-                                          updated[index] = { ...updated[index], emails: updatedEmails.length > 0 ? updatedEmails : [''] };
+                                          const updatedPhones = [...(updated[index].phones || [''])];
+                                          updatedPhones[phoneIndex] = e.target.value;
+                                          updated[index] = { ...updated[index], phones: updatedPhones };
                                           setFormData({ ...formData, contact_persons: updated });
                                         }}
-                                        className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-                                        title="Remove email"
-                                      >
-                                        <X className="h-3 w-3" />
-                                      </button>
-                                    )}
-                                  </div>
-                                  {errors[`contact_person_${index}_email_${emailIndex}`] && (
-                                    <p className="text-xs text-red-600 mt-0.5">{errors[`contact_person_${index}_email_${emailIndex}`]}</p>
+                                        className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                                      />
+                                      {(contact.phones || ['']).length > 1 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const updated = [...(formData.contact_persons || [])];
+                                            const updatedPhones = updated[index].phones?.filter((_, i) => i !== phoneIndex) || [];
+                                            updated[index] = { ...updated[index], phones: updatedPhones.length > 0 ? updatedPhones : [''] };
+                                            setFormData({ ...formData, contact_persons: updated });
+                                          }}
+                                          className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+                                          title="Remove phone"
+                                        >
+                                          <X className="h-3 w-3" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  ))}
+                                  {errors[`contact_person_${index}_phone`] && (
+                                    <p className="text-xs text-red-600">{errors[`contact_person_${index}_phone`]}</p>
                                   )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = [...(formData.contact_persons || [])];
+                                      updated[index] = { ...updated[index], phones: [...(updated[index].phones || ['']), ''] };
+                                      setFormData({ ...formData, contact_persons: updated });
+                                    }}
+                                    className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                    Add Phone Number
+                                  </button>
                                 </div>
-                              ))}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const updated = [...(formData.contact_persons || [])];
-                                  updated[index] = { ...updated[index], emails: [...(updated[index].emails || ['']), ''] };
-                                  setFormData({ ...formData, contact_persons: updated });
-                                }}
-                                className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
-                              >
-                                <Plus className="h-3 w-3" />
-                                Add Email
-                              </button>
-                            </div>
+
+                                {/* Email Addresses */}
+                                <div className="space-y-1">
+                                  <label className="text-xs font-medium text-muted-foreground">Email Addresses</label>
+                                  {(contact.emails || ['']).map((email, emailIndex) => (
+                                    <div key={emailIndex}>
+                                      <div className="flex gap-2">
+                                        <input
+                                          type="email"
+                                          placeholder="Email"
+                                          value={email}
+                                          onChange={(e) => {
+                                            const updated = [...(formData.contact_persons || [])];
+                                            const updatedEmails = [...(updated[index].emails || [''])];
+                                            updatedEmails[emailIndex] = e.target.value;
+                                            updated[index] = { ...updated[index], emails: updatedEmails };
+                                            setFormData({ ...formData, contact_persons: updated });
+                                          }}
+                                          className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                                        />
+                                        {(contact.emails || ['']).length > 1 && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const updated = [...(formData.contact_persons || [])];
+                                              const updatedEmails = updated[index].emails?.filter((_, i) => i !== emailIndex) || [];
+                                              updated[index] = { ...updated[index], emails: updatedEmails.length > 0 ? updatedEmails : [''] };
+                                              setFormData({ ...formData, contact_persons: updated });
+                                            }}
+                                            className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+                                            title="Remove email"
+                                          >
+                                            <X className="h-3 w-3" />
+                                          </button>
+                                        )}
+                                      </div>
+                                      {errors[`contact_person_${index}_email_${emailIndex}`] && (
+                                        <p className="text-xs text-red-600 mt-0.5">{errors[`contact_person_${index}_email_${emailIndex}`]}</p>
+                                      )}
+                                    </div>
+                                  ))}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = [...(formData.contact_persons || [])];
+                                      updated[index] = { ...updated[index], emails: [...(updated[index].emails || ['']), ''] };
+                                      setFormData({ ...formData, contact_persons: updated });
+                                    }}
+                                    className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                    Add Email
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFormData({
+                                  ...formData,
+                                  contact_persons: [...(formData.contact_persons || []), { name: '', phones: [''], emails: [''] }]
+                                });
+                              }}
+                              className="w-full flex items-center justify-center gap-2 py-2 text-sm text-primary hover:bg-primary/10 rounded-lg border border-dashed border-primary/50 transition-colors"
+                            >
+                              <Plus className="h-4 w-4" />
+                              Add Contact Person
+                            </button>
                           </div>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setFormData({
-                              ...formData,
-                              contact_persons: [...(formData.contact_persons || []), { name: '', phones: [''], emails: [''] }]
-                            });
-                          }}
-                          className="w-full flex items-center justify-center gap-2 py-2 text-sm text-primary hover:bg-primary/10 rounded-lg border border-dashed border-primary/50 transition-colors"
-                        >
-                          <Plus className="h-4 w-4" />
-                          Add Contact Person
-                        </button>
+                          {errors.contact_persons && <p className="mt-1 text-xs text-red-600">{errors.contact_persons}</p>}
+                        </div>
                       </div>
-                      {errors.contact_persons && <p className="mt-1 text-xs text-red-600">{errors.contact_persons}</p>}
-                    </div>
-                  </div>
 
-                  {/* Next Button for Step 1 */}
-                  <div className="flex justify-end pt-4">
-                    <button
-                      type="button"
-                      onClick={() => setStep(2)}
-                      className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-                    >
-                      Next: Address & Details
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {/* Step 2: Address & Vehicles */}
-              {step === 2 && (
-                <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="sm:col-span-2">
-                      <label className="block text-sm font-medium mb-1">
-                        Street <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.address.street}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          address: { ...formData.address, street: e.target.value },
-                        })}
-                        className={`w-full px-3 py-2 border rounded-lg bg-background read-only:cursor-not-allowed ${
-                          errors['address.street'] ? 'border-red-500' : 'border-border'
-                        }`}
-                        placeholder="123 Main Street"
-                        readOnly={gstAutoFilledFields.has('address.street')}
-                      />
-                      {errors['address.street'] && (
-                        <p className="text-xs text-red-500 mt-1">{errors['address.street']}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        City <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.address.city}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          address: { ...formData.address, city: e.target.value },
-                        })}
-                        className={`w-full px-3 py-2 border rounded-lg bg-background read-only:cursor-not-allowed ${
-                          errors['address.city'] ? 'border-red-500' : 'border-border'
-                        }`}
-                        placeholder="Mumbai"
-                        readOnly={gstAutoFilledFields.has('address.city')}
-                      />
-                      {errors['address.city'] && (
-                        <p className="text-xs text-red-500 mt-1">{errors['address.city']}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        State <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.address.state}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          address: { ...formData.address, state: e.target.value },
-                        })}
-                        className={`w-full px-3 py-2 border rounded-lg bg-background read-only:cursor-not-allowed ${
-                          errors['address.state'] ? 'border-red-500' : 'border-border'
-                        }`}
-                        placeholder="Maharashtra"
-                        readOnly={gstAutoFilledFields.has('address.state')}
-                      />
-                      {errors['address.state'] && (
-                        <p className="text-xs text-red-500 mt-1">{errors['address.state']}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Pincode <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.address.pincode}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          address: { ...formData.address, pincode: e.target.value },
-                        })}
-                        className={`w-full px-3 py-2 border rounded-lg bg-background read-only:cursor-not-allowed ${
-                          errors['address.pincode'] ? 'border-red-500' : 'border-border'
-                        }`}
-                        placeholder="400001"
-                        readOnly={gstAutoFilledFields.has('address.pincode')}
-                      />
-                      {errors['address.pincode'] && (
-                        <p className="text-xs text-red-500 mt-1">{errors['address.pincode']}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Country <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.address.country}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          address: { ...formData.address, country: e.target.value },
-                        })}
-                        className={`w-full px-3 py-2 border rounded-lg bg-background read-only:cursor-not-allowed ${
-                          errors['address.country'] ? 'border-red-500' : 'border-border'
-                        }`}
-                        placeholder="India"
-                        readOnly={gstAutoFilledFields.has('address.country')}
-                      />
-                      {errors['address.country'] && (
-                        <p className="text-xs text-red-500 mt-1">{errors['address.country']}</p>
-                      )}
-                    </div>
-
-                    <div className="sm:col-span-2">
-                      <label className="block text-sm font-medium mb-1">Vehicle Numbers</label>
-                      <div className="flex gap-2 mb-2">
-                        <input
-                          type="text"
-                          value={newVehicleNumber}
-                          onChange={(e) => setNewVehicleNumber(e.target.value)}
-                          onKeyPress={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              addVehicleNumber();
-                            }
-                          }}
-                          className="flex-1 px-3 py-2 border border-border rounded-lg bg-background"
-                          placeholder="MH01AB1234"
-                        />
+                      {/* Next Button for Step 1 */}
+                      <div className="flex justify-end pt-4">
                         <button
                           type="button"
-                          onClick={addVehicleNumber}
+                          onClick={() => setStep(2)}
                           className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
                         >
-                          <Plus className="h-4 w-4" />
+                          Next: Address & Vehicles
                         </button>
                       </div>
-                      {(formData.vehicle_numbers || []).length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {(formData.vehicle_numbers || []).map((vehicle, index) => (
-                            <div
-                              key={index}
-                              className="flex items-center gap-2 px-3 py-1 bg-muted rounded-lg"
-                            >
-                              <span className="text-sm">{vehicle}</span>
+                    </>
+                  )}
+
+                  {/* Step 2: Address & Vehicles */}
+                  {step === 2 && (
+                    <>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="sm:col-span-2">
+                          <label className="block text-sm font-medium mb-1">
+                            Street <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={formData.address.street}
+                            onChange={(e) => setFormData({
+                              ...formData,
+                              address: { ...formData.address, street: e.target.value },
+                            })}
+                            className={`w-full px-3 py-2 border rounded-lg bg-background read-only:cursor-not-allowed ${
+                              errors['address.street'] ? 'border-red-500' : 'border-border'
+                            }`}
+                            placeholder="123 Main Street"
+                            readOnly={gstAutoFilledFields.has('address.street')}
+                          />
+                          {errors['address.street'] && (
+                            <p className="text-xs text-red-500 mt-1">{errors['address.street']}</p>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium mb-1">
+                            City <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={formData.address.city}
+                            onChange={(e) => setFormData({
+                              ...formData,
+                              address: { ...formData.address, city: e.target.value },
+                            })}
+                            className={`w-full px-3 py-2 border rounded-lg bg-background read-only:cursor-not-allowed ${
+                              errors['address.city'] ? 'border-red-500' : 'border-border'
+                            }`}
+                            placeholder="Mumbai"
+                            readOnly={gstAutoFilledFields.has('address.city')}
+                          />
+                          {errors['address.city'] && (
+                            <p className="text-xs text-red-500 mt-1">{errors['address.city']}</p>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium mb-1">
+                            State <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={formData.address.state}
+                            onChange={(e) => setFormData({
+                              ...formData,
+                              address: { ...formData.address, state: e.target.value },
+                            })}
+                            className={`w-full px-3 py-2 border rounded-lg bg-background read-only:cursor-not-allowed ${
+                              errors['address.state'] ? 'border-red-500' : 'border-border'
+                            }`}
+                            placeholder="Maharashtra"
+                            readOnly={gstAutoFilledFields.has('address.state')}
+                          />
+                          {errors['address.state'] && (
+                            <p className="text-xs text-red-500 mt-1">{errors['address.state']}</p>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium mb-1">
+                            Pincode <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={formData.address.pincode}
+                            onChange={(e) => setFormData({
+                              ...formData,
+                              address: { ...formData.address, pincode: e.target.value },
+                            })}
+                            className={`w-full px-3 py-2 border rounded-lg bg-background read-only:cursor-not-allowed ${
+                              errors['address.pincode'] ? 'border-red-500' : 'border-border'
+                            }`}
+                            placeholder="400001"
+                            readOnly={gstAutoFilledFields.has('address.pincode')}
+                          />
+                          {errors['address.pincode'] && (
+                            <p className="text-xs text-red-500 mt-1">{errors['address.pincode']}</p>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium mb-1">
+                            Country <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={formData.address.country}
+                            onChange={(e) => setFormData({
+                              ...formData,
+                              address: { ...formData.address, country: e.target.value },
+                            })}
+                            className={`w-full px-3 py-2 border rounded-lg bg-background read-only:cursor-not-allowed ${
+                              errors['address.country'] ? 'border-red-500' : 'border-border'
+                            }`}
+                            placeholder="India"
+                            readOnly={gstAutoFilledFields.has('address.country')}
+                          />
+                          {errors['address.country'] && (
+                            <p className="text-xs text-red-500 mt-1">{errors['address.country']}</p>
+                          )}
+                        </div>
+
+                        {/* Linked Vehicles Section - NEW: Using vehicle_ids instead of vehicle_numbers */}
+                        <div className="sm:col-span-2">
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="block text-sm font-medium">
+                              Linked Vehicles
+                            </label>
+                            <div className="flex items-center gap-2">
                               <button
                                 type="button"
-                                onClick={() => removeVehicleNumber(index)}
-                                className="text-red-500 hover:text-red-700"
+                                onClick={() => refetchVehicles()}
+                                disabled={loadingVehicles}
+                                className="p-1 hover:bg-muted rounded"
+                                title="Refresh vehicles"
                               >
-                                <Trash2 className="h-3 w-3" />
+                                <RefreshCw className={`h-3.5 w-3.5 ${loadingVehicles ? 'animate-spin' : ''}`} />
                               </button>
+                              <Link 
+                                to="/directory/vehicles" 
+                                target="_blank"
+                                className="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                                Manage Vehicles
+                              </Link>
                             </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                          </div>
 
-                  {/* Back and Submit buttons for Step 2 */}
-                  <div className="flex justify-between gap-3 pt-4">
-                    <button
-                      type="button"
-                      onClick={() => setStep(1)}
-                      className="px-4 py-2 border border-border rounded-lg hover:bg-muted transition-colors"
-                    >
-                      Back
-                    </button>
-                    <div className="flex gap-3">
-                      <button
-                        type="button"
-                        onClick={() => onOpenChange(false)}
-                        className="px-4 py-2 border border-border rounded-lg hover:bg-muted transition-colors"
-                      >
-                        Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
-                    >
-                      {loading ? 'Saving...' : isEditMode ? 'Update' : 'Create'}
-                    </button>
-                  </div>
-                  </div>
-                </>
-              )}
+                          {/* Selected Vehicles Display */}
+                          {selectedVehicles.length > 0 && (
+                            <div className="mb-3 flex flex-wrap gap-2">
+                              {selectedVehicles.map(vehicle => (
+                                <div
+                                  key={vehicle.id}
+                                  className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/30 rounded-lg"
+                                >
+                                  <Car className="h-3.5 w-3.5 text-primary" />
+                                  <span className="text-sm font-medium">{vehicle.vehicle_number}</span>
+                                  {vehicle.owner_name && (
+                                    <span className="text-xs text-muted-foreground">({vehicle.owner_name})</span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleVehicle(vehicle.id)}
+                                    className="ml-1 p-0.5 hover:bg-primary/20 rounded"
+                                    title="Remove vehicle"
+                                  >
+                                    <X className="h-3 w-3 text-primary" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Vehicle Search */}
+                          <div className="mb-2">
+                            <input
+                              type="text"
+                              value={vehicleSearchQuery}
+                              onChange={(e) => setVehicleSearchQuery(e.target.value)}
+                              className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm"
+                              placeholder="Search vehicles by number, owner, or model..."
+                            />
+                          </div>
+
+                          {/* Vehicle Selection List */}
+                          <div className="border border-border rounded-lg bg-muted/20 max-h-48 overflow-y-auto">
+                            {loadingVehicles ? (
+                              <div className="flex justify-center py-4">
+                                <LoadingSpinner size="sm" />
+                              </div>
+                            ) : filteredVehicles.length === 0 ? (
+                              <div className="p-4 text-center text-sm text-muted-foreground">
+                                {vehicleSearchQuery 
+                                  ? 'No vehicles match your search' 
+                                  : 'No vehicles available. Add vehicles from the Vehicles page.'}
+                              </div>
+                            ) : (
+                              <div className="p-2 space-y-1">
+                                {filteredVehicles.map(vehicle => {
+                                  const isSelected = formData.vehicle_ids?.includes(vehicle.id);
+                                  return (
+                                    <button
+                                      key={vehicle.id}
+                                      type="button"
+                                      onClick={() => toggleVehicle(vehicle.id)}
+                                      className={`w-full flex items-center gap-3 p-2 rounded-lg text-left transition-colors ${
+                                        isSelected 
+                                          ? 'bg-primary/10 border border-primary/30' 
+                                          : 'hover:bg-muted border border-transparent'
+                                      }`}
+                                    >
+                                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${
+                                        isSelected ? 'bg-primary/20' : 'bg-muted'
+                                      }`}>
+                                        <Car className={`h-4 w-4 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-sm font-medium">{vehicle.vehicle_number}</span>
+                                          {vehicle.is_verified && (
+                                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-600">Verified</span>
+                                          )}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground truncate">
+                                          {[vehicle.owner_name, vehicle.maker_model, vehicle.vehicle_class]
+                                            .filter(Boolean)
+                                            .join(' • ') || 'No details'}
+                                        </div>
+                                      </div>
+                                      {isSelected && (
+                                        <Check className="h-4 w-4 text-primary shrink-0" />
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {selectedVehicles.length} vehicle{selectedVehicles.length !== 1 ? 's' : ''} selected
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Back and Submit buttons for Step 2 */}
+                      <div className="flex justify-between gap-3 pt-4">
+                        <button
+                          type="button"
+                          onClick={() => setStep(1)}
+                          className="px-4 py-2 border border-border rounded-lg hover:bg-muted transition-colors"
+                        >
+                          Back
+                        </button>
+                        <div className="flex gap-3">
+                          <button
+                            type="button"
+                            onClick={() => onOpenChange(false)}
+                            className="px-4 py-2 border border-border rounded-lg hover:bg-muted transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={loading}
+                            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+                          >
+                            {loading ? 'Saving...' : isEditMode ? 'Update' : 'Create'}
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </form>
               )}
             </div>
@@ -935,5 +1029,3 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
     </>
   );
 }
-
-

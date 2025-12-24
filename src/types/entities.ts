@@ -128,11 +128,68 @@ export interface Transporter {
   gst_number: string | null;
   pan_number: string | null;
   aadhar_number: string | null;
-  vehicle_numbers: string[];
+  vehicle_numbers: string[]; // Deprecated, kept for backward compatibility
+  vehicle_ids: string[]; // NEW: Array of vehicle UUIDs
   bank_details?: TransporterBankDetails;
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+// Vehicle Types - For vehicle management with Surepass integration
+export interface Vehicle {
+  id: string;
+  vehicle_number: string;
+  rc_number: string | null;
+  owner_name: string | null;
+  vehicle_class: string | null;
+  fuel_type: string | null;
+  maker_model: string | null;
+  registration_date: string | null;
+  insurance_validity: string | null;
+  fitness_validity: string | null;
+  permit_validity: string | null;
+  challan_details: any[] | null;
+  transporter_ids: string[];
+  is_verified: boolean;
+  verified_at: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateVehicleRequest {
+  vehicle_number: string;
+  rc_number?: string | null;
+  owner_name?: string | null;
+  vehicle_class?: string | null;
+  fuel_type?: string | null;
+  maker_model?: string | null;
+  registration_date?: string | null;
+  insurance_validity?: string | null;
+  fitness_validity?: string | null;
+  permit_validity?: string | null;
+  challan_details?: any[] | null;
+  transporter_ids?: string[];
+  is_verified?: boolean;
+  verified_at?: string | null;
+  is_active?: boolean;
+}
+
+export interface UpdateVehicleRequest extends Partial<CreateVehicleRequest> {}
+
+export interface VehicleVerificationResponse {
+  vehicle_number: string;
+  rc_number: string | null;
+  owner_name: string | null;
+  vehicle_class: string | null;
+  fuel_type: string | null;
+  maker_model: string | null;
+  registration_date: string | null;
+  insurance_validity: string | null;
+  fitness_validity: string | null;
+  permit_validity: string | null;
+  challan_details: any[] | null;
 }
 
 export interface CreateTransporterRequest {
@@ -143,7 +200,8 @@ export interface CreateTransporterRequest {
   gst_number?: string | null;
   pan_number?: string | null;
   aadhar_number?: string | null;
-  vehicle_numbers?: string[];
+  vehicle_numbers?: string[]; // Deprecated, kept for backward compatibility
+  vehicle_ids?: string[]; // NEW: Array of vehicle UUIDs to link
   bank_details?: TransporterBankDetails;
   is_active?: boolean;
 }
@@ -679,12 +737,14 @@ export interface SaudaFilters {
 }
 
 // Inward Slip Pass Types
+// Note: Weight fields have been moved to Kaanta entity.
+// Note: vehicle_number replaced with vehicle_id (reference to Vehicle entity)
 export interface InwardSlipPass {
   id: string;
   sauda_ids: string[];
   slip_number: string;
   date: string;
-  vehicle_number: string;
+  vehicle_id: string; // REQUIRED: UUID reference to vehicles table
   party_name: string;
   party_address?: string | null;
   party_gst_number?: string | null;
@@ -699,19 +759,56 @@ export interface InwardSlipPass {
   bilti_pdf_url?: string | null;
   eway_bill_number?: string | null;
   eway_bill_url?: string | null;
-  full_truck_weight?: number | null;
-  empty_truck_weight?: number | null;
-  kaanta_weight?: number | null;
   notes?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// Kaanta Types - Weighbridge measurement entity
+// Each Kaanta represents a weighbridge measurement for a specific sauda within an ISP
+// Creating a Kaanta automatically creates a Lot
+export type BagType = 'jute' | 'pp';
+
+export interface Kaanta {
+  id: string;
+  kaanta_id: string;
+  sauda_id: string;
+  inward_slip_pass_id: string;
+  full_truck_weight: number;
+  empty_truck_weight: number;
+  kaanta_weight: number; // Auto-calculated: full_truck_weight - empty_truck_weight
+  bag_weight: number;
+  no_of_bags: number;
+  bag_type: BagType;
+  created_at: string;
+  updated_at: string;
+  created_by?: string;
+  updated_by?: string;
+}
+
+export interface CreateKaantaRequest {
+  sauda_id: string;
+  inward_slip_pass_id: string;
+  full_truck_weight: number;
+  empty_truck_weight: number;
+  bag_weight: number;
+  no_of_bags: number;
+  bag_type: BagType;
+}
+
+export interface UpdateKaantaRequest {
+  full_truck_weight?: number;
+  empty_truck_weight?: number;
+  bag_weight?: number;
+  no_of_bags?: number;
+  bag_type?: BagType;
 }
 
 export interface CreateInwardSlipPassRequest {
   sauda_ids: string[];
   slip_number: string;
   date: string;
-  vehicle_number: string;
+  vehicle_id: string; // REQUIRED: UUID reference to vehicles table
   party_name: string;
   party_address?: string | null;
   party_gst_number?: string | null;
@@ -725,16 +822,13 @@ export interface UpdateInwardSlipPassRequest {
   sauda_ids?: string[];
   slip_number?: string;
   date?: string;
-  vehicle_number?: string;
+  vehicle_id?: string; // UUID reference to vehicles table
   party_name?: string;
   party_address?: string | null;
   party_gst_number?: string | null;
   party_pan_number?: string | null;
   transporter_id?: string | null;
   transportation_cost?: number | null;
-  full_truck_weight?: number | null;
-  empty_truck_weight?: number | null;
-  kaanta_weight?: number | null;
   notes?: string | null;
 }
 
@@ -779,6 +873,113 @@ export interface UpdateLotRequest {
   bag_weight?: number | null;
 }
 
+// Purchase Summary Types - Real-time calculated summaries (replaces Purchase entity)
+export interface PurchaseSummaryLotDetail {
+  id: string;
+  lot_number: string;
+  rice_code_id?: string | null;
+  rice_type?: string | null;
+  no_of_bags: number;
+  bill_weight: number;
+  received_weight: number;
+  rate: number;
+  amount: number;
+}
+
+export interface PurchaseSummarySaudaDetail {
+  id: string;
+  sauda_type: 'exgodown' | 'for';
+  rice_code_id?: string | null;
+  rice_type?: string | null;
+  rate: number;
+  quantity?: number | null;
+  purchaser_id: string;
+  broker_id?: string | null;
+  broker_commission?: number | null;
+  broker_commission_type?: BrokerCommissionType;
+  cash_discount?: number | null;
+  cash_discount_type?: CashDiscountType;
+}
+
+export interface PurchaseSummaryISPDetail {
+  id: string;
+  slip_number: string;
+  date: string;
+  vehicle_id: string;
+  party_name: string;
+  transportation_cost?: number | null;
+}
+
+// Purchase Summary for a single Sauda
+export interface SaudaPurchaseSummary {
+  sauda_id: string;
+  
+  // Aggregated counts
+  total_lots: number;
+  total_bags: number;
+  total_weight: number;
+  
+  // Step-by-step calculation
+  base_amount: number;
+  cash_discount_amount: number;
+  amount_after_discount: number;
+  broker_commission_amount: number;
+  amount_after_commission: number;
+  transportation_cost: number;
+  amount_after_transportation: number;
+  igst_amount: number;
+  final_total_amount: number;
+  net_payable: number;
+  
+  // Metadata
+  sauda_details: PurchaseSummarySaudaDetail;
+  isp_details: PurchaseSummaryISPDetail[];
+  lot_details: PurchaseSummaryLotDetail[];
+}
+
+// Purchase Summary for ISP (aggregates all saudas in that ISP)
+export interface ISPPurchaseSummary {
+  inward_slip_pass_id: string;
+  
+  // Aggregated totals across all saudas
+  total_lots: number;
+  total_bags: number;
+  total_weight: number;
+  base_amount: number;
+  cash_discount_amount: number;
+  amount_after_discount: number;
+  broker_commission_amount: number;
+  amount_after_commission: number;
+  transportation_cost: number;
+  amount_after_transportation: number;
+  igst_amount: number;
+  final_total_amount: number;
+  net_payable: number;
+  
+  // Per-sauda breakdown
+  saudas: Array<{
+    sauda_id: string;
+    sauda_details: PurchaseSummarySaudaDetail;
+    total_lots: number;
+    total_bags: number;
+    total_weight: number;
+    base_amount: number;
+    cash_discount_amount: number;
+    broker_commission_amount: number;
+    final_total_amount: number;
+    lot_details: PurchaseSummaryLotDetail[];
+  }>;
+  
+  isp_details: PurchaseSummaryISPDetail;
+}
+
+// ============================================================================
+// DEPRECATED: Purchase Types - Purchase entity has been removed from backend
+// These types are kept for reference but should not be used in new code.
+// Use PurchaseSummary APIs instead for real-time calculations.
+// ============================================================================
+
+/*
 // Purchase Types
 export interface Purchase {
   id: string;
@@ -861,8 +1062,13 @@ export interface LinkInwardSlipPassesRequest {
 export interface LinkLotsRequest {
   lot_ids: string[];
 }
+*/
+// ============================================================================
+// END DEPRECATED PURCHASE TYPES
+// ============================================================================
 
 // Payment Advice Types
+// Updated: Now links to Sauda OR ISP instead of Purchase
 export interface Charge {
   id: string;
   charge_name: string;
@@ -872,7 +1078,12 @@ export interface Charge {
 
 export interface PaymentAdvice {
   id: string;
+  // @deprecated - Use sauda_id or inward_slip_pass_id instead
   purchase_id?: string | null;
+  // Link to a single sauda for payment
+  sauda_id?: string | null;
+  // Link to an ISP for payment (covers all saudas in that ISP)
+  inward_slip_pass_id?: string | null;
   payer_id: string;
   recipient_id: string;
   amount: number;
@@ -887,10 +1098,15 @@ export interface PaymentAdvice {
 }
 
 export interface CreatePaymentAdviceRequest {
-  purchase_id?: string | null;
+  // One of sauda_id or inward_slip_pass_id is required
+  sauda_id?: string | null;
+  inward_slip_pass_id?: string | null;
   payer_id: string;
   recipient_id: string;
-  amount: number;
+  // Amount is optional - auto-calculated from summary if not provided
+  amount?: number;
+  // IGST percentage for auto-calculation (default: 0)
+  igst_percentage?: number;
   date_of_payment: string;
   status?: 'pending' | 'completed' | 'failed';
   transaction_id?: string | null;
@@ -902,7 +1118,8 @@ export interface CreatePaymentAdviceRequest {
 }
 
 export interface UpdatePaymentAdviceRequest {
-  purchase_id?: string | null;
+  sauda_id?: string | null;
+  inward_slip_pass_id?: string | null;
   payer_id?: string;
   recipient_id?: string;
   amount?: number;

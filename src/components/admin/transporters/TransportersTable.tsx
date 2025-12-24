@@ -5,14 +5,17 @@ import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { EmptyState } from '../shared/EmptyState';
 import { ActionButtons } from '../shared/ActionButtons';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
-import { Truck } from 'lucide-react';
+import { Truck, Car, ExternalLink } from 'lucide-react';
 import { useTransporters } from '../../../hooks/useTransporters';
+import { useVehicles } from '../../../hooks/useVehicles';
 import { TransporterFormModal } from './TransporterFormModal';
+import { Link } from 'react-router-dom';
 import type { Transporter } from '../../../types/entities';
 
 export function TransportersTable() {
   const [includeInactive, setIncludeInactive] = useState(false);
   const { transporters, loading, deleteTransporter, refetch } = useTransporters(includeInactive);
+  const { vehicles } = useVehicles();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -20,6 +23,11 @@ export function TransportersTable() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedTransporterId, setSelectedTransporterId] = useState<string | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+
+  // Get vehicles linked to a transporter
+  const getLinkedVehicles = (transporterId: string) => {
+    return vehicles.filter(v => v.transporter_ids?.includes(transporterId));
+  };
 
   const filtered = useMemo(() => {
     return transporters.filter((transporter) => {
@@ -108,10 +116,22 @@ export function TransportersTable() {
                       <td className="py-3 px-4 text-sm">{primaryEmail}</td>
                       <td className="py-3 px-4 text-sm">{transporter.address.city}</td>
                       <td className="py-3 px-4 text-sm">
-                        {transporter.vehicle_numbers.length > 0 
-                          ? `${transporter.vehicle_numbers.length} vehicle(s)`
-                          : 'None'
-                        }
+                        {(() => {
+                          const linkedVehicles = getLinkedVehicles(transporter.id);
+                          if (linkedVehicles.length === 0) return <span className="text-muted-foreground">None</span>;
+                          return (
+                            <div className="flex items-center gap-1.5">
+                              <Car className="h-3.5 w-3.5 text-primary" />
+                              <span className="font-medium">{linkedVehicles.length}</span>
+                              <span className="text-muted-foreground text-xs">
+                                ({linkedVehicles.slice(0, 2).map(v => v.vehicle_number).join(', ')}{linkedVehicles.length > 2 ? '...' : ''})
+                              </span>
+                              <Link to="/directory/vehicles" className="ml-1 text-primary hover:text-primary/80">
+                                <ExternalLink className="h-3 w-3" />
+                              </Link>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="py-3 px-4 text-right">
                         <ActionButtons

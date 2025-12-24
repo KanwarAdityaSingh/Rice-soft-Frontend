@@ -64,5 +64,10 @@ export const vendorsAPI = {
   verifyBankAccount: (accountNumber: string, ifscCode: string) => {
     return apiService.get<any>(`/vendors/verifyBankAccount?id_number=${accountNumber}&ifsc=${ifscCode.toUpperCase()}`);
   },
+
+  // Get default payment advice recipient
+  getDefaultRecipient: () => {
+    return apiService.get<{ name: string; address: string; llpin: string }>('/vendors/getDefaultRecipient');
+  },
 };
 

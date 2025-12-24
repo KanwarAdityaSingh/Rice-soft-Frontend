@@ -1,3 +1,19 @@
+/**
+ * ============================================================================
+ * DEPRECATED: usePurchases.ts
+ * ============================================================================
+ * The Purchase entity has been REMOVED from the backend.
+ * Purchase calculations are now done in real-time via the Purchase Summary API.
+ * 
+ * Use instead:
+ * - usePurchaseSummary.ts for getting purchase summaries
+ * - Payment Advices now link directly to Sauda or ISP
+ * 
+ * This file is kept for reference only.
+ * ============================================================================
+ */
+
+/*
 import { useState, useEffect } from 'react';
 import { purchasesAPI } from '../services/purchases.api';
 import type { 
@@ -151,4 +167,15 @@ export function usePurchases(vendor_id?: string) {
     refetch: fetchPurchases,
   };
 }
+*/
 
+// Export stub to prevent import errors
+export function usePurchases() {
+  console.warn('usePurchases is deprecated. Use usePurchaseSummary instead.');
+  return {
+    purchases: [],
+    loading: false,
+    error: null,
+    refetch: () => {},
+  };
+}

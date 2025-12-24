@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { paymentAdvicesAPI } from '../services/paymentAdvices.api';
 import type { 
   PaymentAdvice, 
@@ -7,27 +7,31 @@ import type {
   AddChargeRequest
 } from '../types/entities';
 
-export function usePaymentAdvices(purchase_id?: string, status?: 'pending' | 'completed' | 'failed') {
+export function usePaymentAdvices(
+  sauda_id?: string, 
+  inward_slip_pass_id?: string,
+  status?: 'pending' | 'completed' | 'failed'
+) {
   const [paymentAdvices, setPaymentAdvices] = useState<PaymentAdvice[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchPaymentAdvices = async () => {
+  const fetchPaymentAdvices = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await paymentAdvicesAPI.getAllPaymentAdvices(purchase_id, status);
+      const data = await paymentAdvicesAPI.getAllPaymentAdvices(sauda_id, inward_slip_pass_id, status);
       setPaymentAdvices(data);
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [sauda_id, inward_slip_pass_id, status]);
 
   useEffect(() => {
     fetchPaymentAdvices();
-  }, [purchase_id, status]);
+  }, [fetchPaymentAdvices]);
 
   const createPaymentAdvice = async (data: CreatePaymentAdviceRequest) => {
     try {
