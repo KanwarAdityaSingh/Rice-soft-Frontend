@@ -457,75 +457,134 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
   const handleDownloadPDF = () => {
     if (!previewRef.current) return;
 
-    const printContent = previewRef.current.innerHTML;
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert('Please allow popups to download the PDF');
-      return;
-    }
+    try {
+      const printContent = previewRef.current.innerHTML;
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        alert('Please allow popups to download the PDF');
+        return;
+      }
 
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Payment Advice - ${invoiceNo}</title>
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { 
-              font-family: Arial, sans-serif; 
-              padding: 20px; 
-              font-size: 12px;
-              color: #000;
-            }
-            .preview-container { max-width: 800px; margin: 0 auto; }
-            .text-center { text-align: center; }
-            .font-bold { font-weight: bold; }
-            .font-medium { font-weight: 500; }
-            .text-lg { font-size: 16px; }
-            .text-xs { font-size: 10px; }
-            .text-muted-foreground { color: #666; }
-            .border-b { border-bottom: 1px solid #ddd; }
-            .border-t { border-top: 1px solid #ddd; }
-            .border-l { border-left: 1px solid #ddd; }
-            .border-border { border-color: #ddd; }
-            .pb-3 { padding-bottom: 12px; }
-            .pt-2 { padding-top: 8px; }
-            .mt-2 { margin-top: 8px; }
-            .mt-4 { margin-top: 16px; }
-            .py-1 { padding: 4px 0; }
-            .pl-4 { padding-left: 16px; }
-            .space-y-1 > * + * { margin-top: 4px; }
-            .space-y-4 > * + * { margin-top: 16px; }
-            .grid { display: grid; }
-            .grid-cols-2 { grid-template-columns: repeat(2, 1fr); }
-            .gap-x-6 { column-gap: 24px; }
-            .gap-y-1 { row-gap: 4px; }
-            .flex { display: flex; }
-            .justify-between { justify-content: space-between; }
-            .text-right { text-align: right; }
-            .text-primary { color: #7c3aed; }
-            h3 { margin-bottom: 4px; }
-            @media print {
-              body { padding: 0; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="preview-container">
-            ${printContent}
-          </div>
-          <script>
-            window.onload = function() {
-              window.print();
-              window.onafterprint = function() {
-                window.close();
-              };
-            };
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Payment Advice - ${invoiceNo}</title>
+            <meta charset="UTF-8">
+            <style>
+              * { margin: 0; padding: 0; box-sizing: border-box; }
+              body { 
+                font-family: 'Arial', 'Helvetica', sans-serif; 
+                padding: 30px; 
+                font-size: 14px;
+                line-height: 1.6;
+                color: #000;
+                background: #fff;
+              }
+              .preview-container { 
+                max-width: 900px; 
+                margin: 0 auto; 
+                background: white;
+                padding: 30px;
+              }
+              .text-center { text-align: center; }
+              .font-bold { font-weight: bold; }
+              .font-medium { font-weight: 600; }
+              .font-semibold { font-weight: 600; }
+              .text-lg { font-size: 18px; }
+              .text-xl { font-size: 20px; }
+              .text-2xl { font-size: 24px; }
+              .text-xs { font-size: 12px; }
+              .text-sm { font-size: 13px; }
+              .text-muted-foreground { color: #666; }
+              .border-b { border-bottom: 1px solid #ddd; }
+              .border-t { border-top: 1px solid #ddd; }
+              .border-l { border-left: 1px solid #ddd; }
+              .border-border { border-color: #ddd; }
+              .border-dashed { border-style: dashed; }
+              .border-dotted { border-style: dotted; }
+              .pb-3 { padding-bottom: 16px; }
+              .pt-2 { padding-top: 12px; }
+              .pt-4 { padding-top: 20px; }
+              .mt-2 { margin-top: 12px; }
+              .mt-4 { margin-top: 20px; }
+              .mb-2 { margin-bottom: 12px; }
+              .mb-3 { margin-bottom: 16px; }
+              .mb-4 { margin-bottom: 20px; }
+              .py-1 { padding: 8px 0; }
+              .pl-4 { padding-left: 20px; }
+              .space-y-1 > * + * { margin-top: 8px; }
+              .space-y-4 > * + * { margin-top: 20px; }
+              .grid { display: grid; }
+              .grid-cols-2 { grid-template-columns: repeat(2, 1fr); }
+              .grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
+              .gap-x-6 { column-gap: 30px; }
+              .gap-y-1 { row-gap: 8px; }
+              .gap-2 { gap: 12px; }
+              .flex { display: flex; }
+              .justify-between { justify-content: space-between; }
+              .text-right { text-align: right; }
+              .text-primary { color: #7c3aed; }
+              h2 { font-size: 20px; margin-bottom: 10px; }
+              h3 { font-size: 16px; margin-bottom: 12px; font-weight: bold; }
+              p { margin-bottom: 8px; }
+              @media print {
+                body { padding: 15px; }
+                .preview-container { padding: 20px; }
+                @page { margin: 1cm; }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="preview-container">
+              ${printContent}
+            </div>
+            <script>
+              (function() {
+                var printWindow = window;
+                var closed = false;
+                
+                function closeWindow() {
+                  if (!closed && printWindow && !printWindow.closed) {
+                    closed = true;
+                    try {
+                      printWindow.close();
+                    } catch (e) {
+                      // Ignore errors when closing
+                    }
+                  }
+                }
+                
+                // Use onafterprint event if available (more reliable)
+                if (printWindow.matchMedia) {
+                  var mediaQueryList = printWindow.matchMedia('print');
+                  mediaQueryList.addEventListener('change', function(mql) {
+                    if (!mql.matches) {
+                      // Print dialog was closed
+                      setTimeout(closeWindow, 100);
+                    }
+                  });
+                }
+                
+                // Fallback: use onafterprint event
+                printWindow.onafterprint = function() {
+                  setTimeout(closeWindow, 100);
+                };
+                
+                // Trigger print after a short delay
+                setTimeout(function() {
+                  printWindow.print();
+                }, 250);
+              })();
+            </script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Failed to generate PDF. Please try again.');
+    }
   };
 
   return (

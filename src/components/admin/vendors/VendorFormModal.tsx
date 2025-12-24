@@ -545,14 +545,19 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
   const [bankAccountVerified, setBankAccountVerified] = useState(false);
 
   const handleIFSCLookup = async (ifscCode: string) => {
-    // Only lookup if IFSC is exactly 11 characters
-    if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifscCode)) {
+    // Only lookup if IFSC is exactly 11 characters (basic validation, let API handle detailed validation)
+    if (!ifscCode || ifscCode.length !== 11) {
+      setErrors({ ...errors, ifsc_code: 'IFSC code must be exactly 11 characters' });
       return;
     }
 
     setIfscLoading(true);
+    setErrors({ ...errors, ifsc_code: '' });
+    
     try {
+      console.log('Calling IFSC lookup API for:', ifscCode);
       const response = await bankAPI.lookupIFSC(ifscCode);
+      console.log('IFSC lookup response:', response);
       
       if (response.bank_details) {
         setFormData({
@@ -564,6 +569,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
             ifsc_code: response.bank_details.ifsc_code || ifscCode,
           }
         });
+        setErrors({ ...errors, ifsc_code: '' });
       }
     } catch (error: any) {
       console.error('IFSC lookup error:', error);
@@ -589,7 +595,9 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
     setBankAccountVerified(false);
     
     try {
+      console.log('Calling verify bank account API:', { accountNumber, ifscCode });
       const response = await vendorsAPI.verifyBankAccount(accountNumber, ifscCode);
+      console.log('Verify bank account response:', response);
       
       // Check if account exists
       if (!response.account_exists) {
@@ -1275,9 +1283,40 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                       />
                       <button 
                         type="button" 
-                        onClick={() => handleIFSCLookup(formData.bank_details?.ifsc_code || '')} 
-                        disabled={ifscLoading || !formData.bank_details?.ifsc_code || formData.bank_details.ifsc_code.length !== 11}
-                        className="btn-secondary flex items-center gap-2"
+                        onClick={async (e) => {
+                          console.log('IFSC search button clicked');
+                          e.preventDefault();
+                          e.stopPropagation();
+                          
+                          if (ifscLoading) {
+                            console.log('Already loading, ignoring click');
+                            return;
+                          }
+                          
+                          const ifscCode = formData.bank_details?.ifsc_code?.trim() || '';
+                          console.log('IFSC code from form:', ifscCode, 'Length:', ifscCode.length);
+                          
+                          if (!ifscCode) {
+                            console.log('No IFSC code provided');
+                            setErrors({ ...errors, ifsc_code: 'Please enter an IFSC code' });
+                            return;
+                          }
+                          
+                          if (ifscCode.length !== 11) {
+                            console.log('IFSC code length is not 11:', ifscCode.length);
+                            setErrors({ ...errors, ifsc_code: 'IFSC code must be exactly 11 characters' });
+                            return;
+                          }
+                          
+                          console.log('Calling handleIFSCLookup with:', ifscCode);
+                          try {
+                            await handleIFSCLookup(ifscCode);
+                          } catch (error) {
+                            console.error('Error in onClick handler:', error);
+                          }
+                        }} 
+                        disabled={ifscLoading}
+                        className="btn-secondary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {ifscLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
                       </button>
@@ -1290,7 +1329,11 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                     <div className="flex items-center gap-2">
                       <button 
                         type="button" 
-                        onClick={handleVerifyBankAccount}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleVerifyBankAccount();
+                        }}
                         disabled={verifyingBankAccount}
                         className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                           bankAccountVerified 

@@ -81,14 +81,19 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
   const [bankAccountVerified, setBankAccountVerified] = useState(false);
 
   const handleIFSCLookup = async (ifscCode: string) => {
-    // Only lookup if IFSC is exactly 11 characters
-    if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifscCode)) {
+    // Only lookup if IFSC is exactly 11 characters (basic validation, let API handle detailed validation)
+    if (!ifscCode || ifscCode.length !== 11) {
+      setErrors({ ...errors, ifsc_code: 'IFSC code must be exactly 11 characters' });
       return;
     }
 
     setIfscLoading(true);
+    setErrors({ ...errors, ifsc_code: '' });
+    
     try {
+      console.log('Calling IFSC lookup API for:', ifscCode);
       const response = await bankAPI.lookupIFSC(ifscCode);
+      console.log('IFSC lookup response:', response);
       
       if (response.bank_details) {
         setFormData({
@@ -100,6 +105,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
             ifsc_code: response.bank_details.ifsc_code || ifscCode,
           }
         });
+        setErrors({ ...errors, ifsc_code: '' });
       }
     } catch (error: any) {
       console.error('IFSC lookup error:', error);
@@ -125,7 +131,9 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
     setBankAccountVerified(false);
     
     try {
+      console.log('Calling verify bank account API:', { accountNumber, ifscCode });
       const response = await brokersAPI.verifyBankAccount(accountNumber, ifscCode);
+      console.log('Verify bank account response:', response);
       
       // Check if account exists
       if (!response.account_exists) {
@@ -1091,7 +1099,14 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                       />
                       <button 
                         type="button" 
-                        onClick={() => handleIFSCLookup(formData.bank_details?.ifsc_code || '')} 
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const ifscCode = formData.bank_details?.ifsc_code || '';
+                          if (ifscCode && ifscCode.length === 11) {
+                            handleIFSCLookup(ifscCode);
+                          }
+                        }} 
                         disabled={ifscLoading || !formData.bank_details?.ifsc_code || formData.bank_details.ifsc_code.length !== 11}
                         className="btn-secondary flex items-center gap-2"
                       >
@@ -1106,7 +1121,11 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                     <div className="flex items-center gap-2">
                       <button 
                         type="button" 
-                        onClick={handleVerifyBankAccount}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleVerifyBankAccount();
+                        }}
                         disabled={verifyingBankAccount}
                         className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                           bankAccountVerified 
