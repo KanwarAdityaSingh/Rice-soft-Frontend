@@ -137,46 +137,91 @@ export function InwardSlipPassPreviewDialog({ open, onOpenChange, isp }: InwardS
   const handleDownloadPDF = () => {
     if (!previewRef.current) return;
     
-    const printContent = previewRef.current.innerHTML;
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
+    try {
+      const printContent = previewRef.current.innerHTML;
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        alert('Please allow popups to download the PDF');
+        return;
+      }
 
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Inward Slip Pass - ${isp?.slip_number}</title>
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Courier New', monospace; padding: 20px; background: white; color: black; font-size: 11px; }
-            .preview-container { max-width: 700px; margin: 0 auto; border: 2px solid #333; padding: 15px; }
-            .thanks { text-align: center; font-size: 10px; margin-bottom: 20px; }
-            .header { text-align: center; border-bottom: 2px dashed #333; padding-bottom: 10px; margin-bottom: 15px; }
-            .header h2 { font-size: 20px; margin-bottom: 3px; letter-spacing: 2px; }
-            .header p { font-size: 9px; color: #666; }
-            .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; padding: 5px 0; border-bottom: 1px dotted #999; }
-            .info-pair { display: flex; gap: 8px; }
-            .info-label { color: #666; }
-            .info-value { font-weight: bold; }
-            .weight-section { margin: 15px 0; }
-            .weight-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px dotted #999; }
-            .weight-label { flex: 1; }
-            .weight-value { font-weight: bold; font-size: 14px; min-width: 100px; text-align: right; }
-            .weight-date { font-size: 10px; color: #666; margin-left: 20px; min-width: 150px; }
-            .net-weight { background: #f5f5f5; padding: 10px; font-size: 16px; font-weight: bold; border: 2px solid #333; }
-            .charges { margin-top: 15px; padding-top: 10px; border-top: 2px dashed #333; }
-            .sauda-section { margin-top: 15px; padding: 10px; background: #f9f9f9; }
-            .sauda-item { padding: 5px 0; border-bottom: 1px dotted #ccc; }
-            @media print { body { padding: 0; } .preview-container { border: none; } }
-          </style>
-        </head>
-        <body>
-          <div class="preview-container">${printContent}</div>
-          <script>window.onload = function() { window.print(); window.onafterprint = function() { window.close(); }; };</script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Inward Slip Pass - ${isp?.slip_number}</title>
+            <style>
+              * { margin: 0; padding: 0; box-sizing: border-box; }
+              body { font-family: 'Courier New', monospace; padding: 20px; background: white; color: black; font-size: 11px; }
+              .preview-container { max-width: 700px; margin: 0 auto; border: 2px solid #333; padding: 15px; }
+              .thanks { text-align: center; font-size: 10px; margin-bottom: 20px; }
+              .header { text-align: center; border-bottom: 2px dashed #333; padding-bottom: 10px; margin-bottom: 15px; }
+              .header h2 { font-size: 20px; margin-bottom: 3px; letter-spacing: 2px; }
+              .header p { font-size: 9px; color: #666; }
+              .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; padding: 5px 0; border-bottom: 1px dotted #999; }
+              .info-pair { display: flex; gap: 8px; }
+              .info-label { color: #666; }
+              .info-value { font-weight: bold; }
+              .weight-section { margin: 15px 0; }
+              .weight-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px dotted #999; }
+              .weight-label { flex: 1; }
+              .weight-value { font-weight: bold; font-size: 14px; min-width: 100px; text-align: right; }
+              .weight-date { font-size: 10px; color: #666; margin-left: 20px; min-width: 150px; }
+              .net-weight { background: #f5f5f5; padding: 10px; font-size: 16px; font-weight: bold; border: 2px solid #333; }
+              .charges { margin-top: 15px; padding-top: 10px; border-top: 2px dashed #333; }
+              .sauda-section { margin-top: 15px; padding: 10px; background: #f9f9f9; }
+              .sauda-item { padding: 5px 0; border-bottom: 1px dotted #ccc; }
+              @media print { body { padding: 0; } .preview-container { border: none; } }
+            </style>
+          </head>
+          <body>
+            <div class="preview-container">${printContent}</div>
+            <script>
+              (function() {
+                var printWindow = window;
+                var closed = false;
+                
+                function closeWindow() {
+                  if (!closed && printWindow && !printWindow.closed) {
+                    closed = true;
+                    try {
+                      printWindow.close();
+                    } catch (e) {
+                      // Ignore errors when closing
+                    }
+                  }
+                }
+                
+                // Use onafterprint event if available (more reliable)
+                if (printWindow.matchMedia) {
+                  var mediaQueryList = printWindow.matchMedia('print');
+                  mediaQueryList.addEventListener('change', function(mql) {
+                    if (!mql.matches) {
+                      // Print dialog was closed
+                      setTimeout(closeWindow, 100);
+                    }
+                  });
+                }
+                
+                // Fallback: use onafterprint event
+                printWindow.onafterprint = function() {
+                  setTimeout(closeWindow, 100);
+                };
+                
+                // Trigger print after a short delay
+                setTimeout(function() {
+                  printWindow.print();
+                }, 250);
+              })();
+            </script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Failed to generate PDF. Please try again.');
+    }
   };
 
   if (!isp) return null;
