@@ -119,7 +119,6 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   };
   const [formData, setFormData] = useState<CreateInwardSlipPassRequest>({
     sauda_ids: [],
-    slip_number: '',
     date: new Date().toISOString().split('T')[0],
     vehicle_id: '',
     party_name: '',
@@ -130,6 +129,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     transportation_cost: null,
     notes: null,
   });
+  const [displaySlipNumber, setDisplaySlipNumber] = useState<string>(''); // For display in edit mode
   const [pendingFiles, setPendingFiles] = useState<FileUploadState>({
     bill_image: null,
     transportation_bill: null,
@@ -179,7 +179,6 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
       const isp = await inwardSlipPassesAPI.getInwardSlipPassById(ispId);
       setFormData({
         sauda_ids: isp.sauda_ids || [],
-        slip_number: isp.slip_number,
         date: isp.date,
         vehicle_id: isp.vehicle_id,
         party_name: isp.party_name,
@@ -190,6 +189,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
         transportation_cost: isp.transportation_cost || null,
         notes: isp.notes || null,
       });
+      setDisplaySlipNumber(isp.slip_number); // Store for display only
       // Load selected vehicle details
       if (isp.vehicle_id) {
         try {
@@ -214,7 +214,6 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   const resetForm = () => {
     setFormData({
       sauda_ids: [],
-      slip_number: '',
       date: new Date().toISOString().split('T')[0],
       vehicle_id: '',
       party_name: '',
@@ -225,6 +224,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
       transportation_cost: null,
       notes: null,
     });
+    setDisplaySlipNumber('');
     setPendingFiles({
       bill_image: null,
       transportation_bill: null,
@@ -247,9 +247,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     if (!formData.sauda_ids || formData.sauda_ids.length === 0) {
       newErrors.sauda_ids = 'At least one sauda is required';
     }
-    if (!formData.slip_number.trim()) {
-      newErrors.slip_number = 'Slip number is required';
-    }
+    // slip_number is auto-generated, no validation needed
     if (!formData.date) {
       newErrors.date = 'Date is required';
     }
@@ -305,7 +303,9 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
         setAlertTitle('Success');
         setAlertMessage('ISP updated successfully');
       } else {
-        const newISP = await createInwardSlipPass(formData);
+        // Remove slip_number from create request - backend will auto-generate it
+        const { slip_number, ...createData } = formData;
+        const newISP = await createInwardSlipPass(createData);
         // Upload pending files after creation
         if (newISP && newISP.id) {
           await uploadPendingFiles(newISP.id);
@@ -851,12 +851,18 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
 
                   {/* Slip & Date */}
                   <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-xs font-medium mb-0.5">Slip No. <span className="text-red-500">*</span></label>
-                      <input type="text" value={formData.slip_number} onChange={(e) => setFormData({ ...formData, slip_number: e.target.value })}
-                        className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background ${errors.slip_number ? 'border-red-500' : 'border-border'}`} placeholder="ISP-001" />
-                    </div>
-                    <div>
+                    {isEditMode && displaySlipNumber && (
+                      <div>
+                        <label className="block text-xs font-medium mb-0.5">Slip No.</label>
+                        <input 
+                          type="text" 
+                          value={displaySlipNumber} 
+                          readOnly
+                          className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-muted/50 cursor-not-allowed" 
+                        />
+                      </div>
+                    )}
+                    <div className={isEditMode && displaySlipNumber ? '' : 'col-span-2'}>
                       <label className="block text-xs font-medium mb-0.5">Date <span className="text-red-500">*</span></label>
                       <div className="flex gap-1">
                         <button type="button" onClick={decrementDate} className="flex-shrink-0 p-1.5 border border-border rounded-md bg-background hover:bg-muted" title="Prev">
@@ -1075,7 +1081,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                         <div className="flex justify-between gap-4 flex-wrap">
                           <div className="flex gap-2">
                             <span className="text-muted-foreground">RST No.:</span>
-                            <span className="font-bold">{formData.slip_number || '-'}</span>
+                            <span className="font-bold">{isEditMode ? displaySlipNumber : (formData.slip_number || 'Auto-generated')}</span>
                           </div>
                           <div className="flex gap-2">
                             <span className="text-muted-foreground">Vehicle No.:</span>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { UserCircle, Plus, Mail, Phone, MapPin } from 'lucide-react'
 import { SearchBar } from '../../components/admin/shared/SearchBar'
 import { FilterDropdown } from '../../components/admin/shared/FilterDropdown'
@@ -6,8 +6,14 @@ import { LoadingSpinner } from '../../components/admin/shared/LoadingSpinner'
 import { EmptyState } from '../../components/admin/shared/EmptyState'
 import { ActionButtons } from '../../components/admin/shared/ActionButtons'
 import { ConfirmDialog } from '../../components/admin/shared/ConfirmDialog'
+import { AlertDialog } from '../../components/shared/AlertDialog'
 import { useBrokers } from '../../hooks/useBrokers'
 import { BrokerFormModal } from '../../components/admin/brokers/BrokerFormModal'
+import { saudasAPI } from '../../services/saudas.api'
+import { vendorsAPI } from '../../services/vendors.api'
+import { riceCodesAPI } from '../../services/riceCodes.api'
+import { getRiceTypeLabel } from '../../utils/riceType'
+import type { Sauda } from '../../types/entities'
 
 export default function BrokersPage() {
   const { brokers, loading, deleteBroker, refetch } = useBrokers()
@@ -17,6 +23,139 @@ export default function BrokersPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
+  const [saudas, setSaudas] = useState<Sauda[]>([])
+  const [alertOpen, setAlertOpen] = useState(false)
+  const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('error')
+  const [alertTitle, setAlertTitle] = useState('')
+  const [alertMessage, setAlertMessage] = useState('')
+
+  // Fetch saudas to check broker usage
+  useEffect(() => {
+    const fetchSaudas = async () => {
+      try {
+        const data = await saudasAPI.getAllSaudas();
+        setSaudas(data);
+      } catch (error) {
+        console.error('Failed to fetch saudas:', error);
+      }
+    };
+    fetchSaudas();
+  }, []);
+
+  // Check if a broker is used in any sauda
+  const isBrokerInUse = (brokerId: string): boolean => {
+    return saudas.some(sauda => sauda.broker_id === brokerId);
+  };
+
+  // Get count of saudas using a broker
+  const getSaudaCountForBroker = (brokerId: string): number => {
+    return saudas.filter(sauda => sauda.broker_id === brokerId).length;
+  };
+
+  // Get sauda names for a broker (for display in warning messages)
+  const getSaudaNamesForBroker = async (brokerId: string): Promise<string[]> => {
+    const saudasUsingBroker = saudas.filter(sauda => sauda.broker_id === brokerId);
+    
+    if (saudasUsingBroker.length === 0) return [];
+    
+    try {
+      // Fetch vendors, rice codes, and rice types to build display names
+      const [allVendors, allRiceCodes, allRiceTypes] = await Promise.all([
+        vendorsAPI.getAllVendors(false),
+        riceCodesAPI.getAllRiceCodes(),
+        riceCodesAPI.getRiceTypes()
+      ]);
+      
+      // Build sauda display names (Purchaser - Rice Code - Rice Type)
+      const saudaNames = saudasUsingBroker.map(sauda => {
+        const parts: string[] = [];
+        
+        // Get purchaser name
+        const purchaser = allVendors.find(v => v.id === sauda.purchaser_id);
+        if (purchaser?.business_name) parts.push(purchaser.business_name);
+        
+        // Get rice code name
+        const riceCode = allRiceCodes.find(rc => rc.rice_code_id === sauda.rice_code_id);
+        if (riceCode?.rice_code_name) parts.push(riceCode.rice_code_name);
+        
+        // Get rice type label
+        const riceTypeLabel = getRiceTypeLabel(sauda.rice_type, allRiceTypes);
+        if (riceTypeLabel) parts.push(riceTypeLabel);
+        
+        return parts.join(' - ') || 'Sauda';
+      });
+      
+      return saudaNames;
+    } catch (error) {
+      console.error('Failed to fetch sauda details:', error);
+      return [];
+    }
+  };
+
+  // Parse error message to detect foreign key constraint errors and fetch related entities
+  const parseBrokerForeignKeyError = async (error: any, brokerId: string): Promise<string | null> => {
+    const errorMessage = error?.data?.error || error?.error || error?.message || '';
+    
+    if (!errorMessage) return null;
+    
+    // Check for foreign key constraint violation
+    if (errorMessage.includes('violates foreign key constraint')) {
+      const errorParts: string[] = [];
+      
+      // Check for saudas constraint (broker_id in saudas)
+      if (errorMessage.includes('saudas') && errorMessage.includes('broker_id')) {
+        try {
+          const allSaudas = await saudasAPI.getAllSaudas();
+          const saudasUsingBroker = allSaudas.filter(sauda => sauda.broker_id === brokerId);
+          
+          if (saudasUsingBroker.length > 0) {
+            // Fetch vendors, rice codes, and rice types to build display names
+            const [allVendors, allRiceCodes, allRiceTypes] = await Promise.all([
+              vendorsAPI.getAllVendors(false),
+              riceCodesAPI.getAllRiceCodes(),
+              riceCodesAPI.getRiceTypes()
+            ]);
+            
+            // Build sauda display names (Purchaser - Rice Code - Rice Type)
+            const saudaNames = saudasUsingBroker.map(sauda => {
+              const parts: string[] = [];
+              
+              // Get purchaser name
+              const purchaser = allVendors.find(v => v.id === sauda.purchaser_id);
+              if (purchaser?.business_name) parts.push(purchaser.business_name);
+              
+              // Get rice code name
+              const riceCode = allRiceCodes.find(rc => rc.rice_code_id === sauda.rice_code_id);
+              if (riceCode?.rice_code_name) parts.push(riceCode.rice_code_name);
+              
+              // Get rice type label
+              const riceTypeLabel = getRiceTypeLabel(sauda.rice_type, allRiceTypes);
+              if (riceTypeLabel) parts.push(riceTypeLabel);
+              
+              return parts.join(' - ') || 'Sauda';
+            });
+            
+            const saudaCount = saudasUsingBroker.length;
+            const saudaText = saudaCount === 1 ? 'sauda' : 'saudas';
+            // Format saudas as a list
+            const saudaList = saudaNames.map((name, index) => `${index + 1}. ${name}`).join('\n');
+            errorParts.push(`${saudaCount} ${saudaText}:\n${saudaList}`);
+          }
+        } catch (fetchError) {
+          // If fetching saudas fails, continue
+        }
+      }
+      
+      if (errorParts.length > 0) {
+        return `This broker cannot be deleted because it is being used in:\n\n${errorParts.join('\n\n')}\n\nPlease remove the broker from all references before deleting it.`;
+      }
+      
+      // Generic foreign key error
+      return 'This broker cannot be deleted because it is being used by other records. Please remove all references to this broker before deleting it.';
+    }
+    
+    return null;
+  };
 
   const filtered = useMemo(() => {
     return brokers.filter((b) => {
@@ -128,14 +267,33 @@ export default function BrokersPage() {
                   </>
                 )}
               </div>
-              <div className="mt-3 flex items-center justify-end">
-                <ActionButtons
-                  isActive={b.is_active}
-                  onDelete={() => {
-                    setSelectedId(b.id)
-                    setDeleteDialogOpen(true)
-                  }}
-                />
+              <div className="mt-3 flex items-center justify-between">
+                {isBrokerInUse(b.id) && (
+                  <span className="text-xs text-amber-600 dark:text-amber-400">
+                    Used in {getSaudaCountForBroker(b.id)} sauda(s)
+                  </span>
+                )}
+                <div className="ml-auto">
+                  <ActionButtons
+                    isActive={b.is_active}
+                    onDelete={async () => {
+                      if (isBrokerInUse(b.id)) {
+                        const saudaNames = await getSaudaNamesForBroker(b.id);
+                        const saudaCount = saudaNames.length;
+                        const saudaText = saudaCount === 1 ? 'sauda' : 'saudas';
+                        const saudaList = saudaNames.map((name, index) => `${index + 1}. ${name}`).join('\n');
+                        
+                        setAlertType('warning');
+                        setAlertTitle('Cannot Delete Broker');
+                        setAlertMessage(`This broker is currently used in ${saudaCount} ${saudaText}:\n\n${saudaList}\n\nPlease remove it from all saudas before deleting.`);
+                        setAlertOpen(true);
+                        return;
+                      }
+                      setSelectedId(b.id);
+                      setDeleteDialogOpen(true);
+                    }}
+                  />
+                </div>
               </div>
             </article>
           ))}
@@ -147,14 +305,46 @@ export default function BrokersPage() {
         onOpenChange={setDeleteDialogOpen}
         onConfirm={async () => {
           if (selectedId) {
-            await deleteBroker(selectedId)
-            setSelectedId(null)
-            setDeleteDialogOpen(false)
+            try {
+              await deleteBroker(selectedId);
+              setSelectedId(null);
+              setDeleteDialogOpen(false);
+            } catch (error: any) {
+              // Parse foreign key constraint errors and fetch related saudas
+              const friendlyMessage = await parseBrokerForeignKeyError(error, selectedId);
+              
+              if (friendlyMessage) {
+                setAlertType('error');
+                setAlertTitle('Cannot Delete Broker');
+                setAlertMessage(friendlyMessage);
+                setAlertOpen(true);
+              } else {
+                // Generic error handling
+                setAlertType('error');
+                setAlertTitle('Failed to Delete Broker');
+                setAlertMessage(
+                  error?.message || 
+                  error?.data?.message || 
+                  error?.error || 
+                  'An error occurred while deleting the broker. Please try again.'
+                );
+                setAlertOpen(true);
+              }
+              setDeleteDialogOpen(false);
+            }
           }
         }}
         title="Delete Broker"
         description="Are you sure you want to delete this broker? This action cannot be undone."
         confirmText="Delete"
+      />
+
+      <AlertDialog
+        open={alertOpen}
+        onOpenChange={setAlertOpen}
+        type={alertType}
+        title={alertTitle}
+        message={alertMessage}
       />
 
       <BrokerFormModal 
