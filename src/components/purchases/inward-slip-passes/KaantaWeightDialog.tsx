@@ -150,12 +150,17 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
     
     newEntries[index] = { ...entry, [field]: value };
     
-    // Auto-calculate bags when bag_weight changes
-    if (field === 'bag_weight' && typeof value === 'string') {
-      const sauda = getSaudaById(entry.sauda_id);
-      const bagWeight = parseFloat(value);
-      if (sauda && sauda.quantity && bagWeight > 0) {
-        const calculatedBags = Math.ceil(sauda.quantity / bagWeight);
+    // Auto-calculate bags based on Kaanta weight (Full - Empty), not sauda quantity
+    // Recalculate when bag_weight, full_truck_weight, or empty_truck_weight changes
+    if ((field === 'bag_weight' || field === 'full_truck_weight' || field === 'empty_truck_weight') && typeof value === 'string') {
+      const updatedEntry = newEntries[index];
+      const fullWeight = parseFloat(updatedEntry.full_truck_weight) || 0;
+      const emptyWeight = parseFloat(updatedEntry.empty_truck_weight) || 0;
+      const kaantaWeight = Math.max(0, fullWeight - emptyWeight);
+      const bagWeight = parseFloat(updatedEntry.bag_weight) || 0;
+      
+      if (kaantaWeight > 0 && bagWeight > 0) {
+        const calculatedBags = Math.ceil(kaantaWeight / bagWeight);
         newEntries[index] = { ...newEntries[index], no_of_bags: calculatedBags.toString() };
       }
     }
@@ -572,7 +577,7 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                         <div className="text-sm text-blue-600 dark:text-blue-400">
                           <p className="font-medium">Create New Kaantas</p>
                           <p className="text-xs mt-1 text-muted-foreground">
-                            Each kaanta creates a lot automatically. Fill only the saudas you want. Bags are auto-calculated from sauda quantity ÷ bag weight.
+                            Each kaanta creates a lot automatically. Fill only the saudas you want. Bags are auto-calculated from Kaanta weight (Full - Empty) ÷ bag weight.
                           </p>
                         </div>
                       </div>
