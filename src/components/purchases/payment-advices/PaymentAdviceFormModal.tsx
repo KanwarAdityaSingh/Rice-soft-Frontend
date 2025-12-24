@@ -444,14 +444,19 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
   };
 
   const previewAmount = formData.amount || (summary?.final_total_amount ?? 0);
-  const activeSaudas = saudas.filter(s => s.status === 'active' || s.status === 'completed');
+  const activeSaudas = saudas.filter(s => s.status === 'active' || s.status === 'completed' || s.status === 'draft');
 
   // Calculate bill weight (sauda quantity), kaanta weight, final weight
   // Use payment advice fields if available, otherwise calculate from kaantas
-  const billWeight = createdPaymentAdvice?.bill_weight ?? loadedPaymentAdvice?.bill_weight ?? (kaantas.reduce((sum, k) => sum + (k.said_sent_weight || 0), 0));
-  const kaantaWeight = createdPaymentAdvice?.kanta_weight ?? loadedPaymentAdvice?.kanta_weight ?? (kaantas.reduce((sum, k) => sum + k.kaanta_weight, 0));
-  const danaDeduction = createdPaymentAdvice?.dana_deduction ?? loadedPaymentAdvice?.dana_deduction ?? 0;
-  const finalWeight = createdPaymentAdvice?.final_weight ?? loadedPaymentAdvice?.final_weight ?? (summary?.total_weight ?? kaantaWeight);
+  const totalSaidSentWeight = kaantas.reduce((sum, k) => sum + (k.said_sent_weight || 0), 0);
+  const totalKaantaWeight = kaantas.reduce((sum, k) => sum + k.kaanta_weight, 0);
+  // Dana deduction formula: (said_sent_weight * 300/1000) / 100 = 300gm per quintal
+  const calculatedDanaDeduction = totalSaidSentWeight > 0 ? (totalSaidSentWeight * 300 / 1000) / 100 : 0;
+  
+  const billWeight = createdPaymentAdvice?.bill_weight ?? loadedPaymentAdvice?.bill_weight ?? totalSaidSentWeight;
+  const kaantaWeight = createdPaymentAdvice?.kanta_weight ?? loadedPaymentAdvice?.kanta_weight ?? totalKaantaWeight;
+  const danaDeduction = createdPaymentAdvice?.dana_deduction ?? loadedPaymentAdvice?.dana_deduction ?? calculatedDanaDeduction;
+  const finalWeight = createdPaymentAdvice?.final_weight ?? loadedPaymentAdvice?.final_weight ?? (kaantaWeight - danaDeduction);
   const totalBags = summary?.total_bags ?? kaantas.reduce((sum, k) => sum + k.no_of_bags, 0);
 
   // Reference for PDF download
