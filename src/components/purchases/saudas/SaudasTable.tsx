@@ -1,22 +1,26 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { SearchBar } from '../../admin/shared/SearchBar';
 import { FilterDropdown } from '../../admin/shared/FilterDropdown';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { EmptyState } from '../../admin/shared/EmptyState';
 import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
+import { AlertDialog } from '../../shared/AlertDialog';
 import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
-import { Package, Eye, Image as ImageIcon, MoreVertical, Edit2, Trash2, UtensilsCrossed, Wheat, Mail, MessageCircle } from 'lucide-react';
+import { Package, Eye, MoreVertical, Edit2, Trash2, UtensilsCrossed, Wheat, Mail, MessageCircle } from 'lucide-react';
 import { useSaudas } from '../../../hooks/useSaudas';
 import { useVendors } from '../../../hooks/useVendors';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
+import { paymentAdvicesAPI } from '../../../services/paymentAdvices.api';
+import { inwardSlipPassesAPI } from '../../../services/inwardSlipPasses.api';
+import { kaantasAPI } from '../../../services/kaantas.api';
 import { getRiceTypeLabel } from '../../../utils/riceType';
 import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
 import { SaudaFormModal } from './SaudaFormModal';
 import { SaudaPreviewDialog } from './SaudaPreviewDialog';
 import { SaudaEmailModal } from './SaudaEmailModal';
 import { SaudaWhatsAppModal } from './SaudaWhatsAppModal';
-import type { Sauda, RiceCode, RiceType } from '../../../types/entities';
+import type { Sauda, RiceCode, RiceType, PaymentAdvice, InwardSlipPass, Kaanta } from '../../../types/entities';
 
 interface SaudasTableProps {
   onRefreshRef?: React.MutableRefObject<(() => void) | null>;
@@ -54,6 +58,15 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
   const [selectedSaudaForNotification, setSelectedSaudaForNotification] = useState<string | null>(null);
+  
+  // Usage tracking state
+  const [paymentAdvices, setPaymentAdvices] = useState<PaymentAdvice[]>([]);
+  const [inwardSlipPasses, setInwardSlipPasses] = useState<InwardSlipPass[]>([]);
+  const [kaantas, setKaantas] = useState<Kaanta[]>([]);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('warning');
+  const [alertTitle, setAlertTitle] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
 
   useEffect(() => {
     const fetchRiceCodes = async () => {
@@ -77,6 +90,25 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
       }
     };
     fetchRiceTypes();
+  }, []);
+
+  // Fetch usage data to check sauda dependencies
+  useEffect(() => {
+    const fetchUsageData = async () => {
+      try {
+        const [pas, isps, kaantasData] = await Promise.all([
+          paymentAdvicesAPI.getAllPaymentAdvices(),
+          inwardSlipPassesAPI.getAllInwardSlipPasses(),
+          kaantasAPI.getAllKaantas()
+        ]);
+        setPaymentAdvices(pas);
+        setInwardSlipPasses(isps);
+        setKaantas(kaantasData);
+      } catch (error) {
+        console.error('Failed to fetch usage data:', error);
+      }
+    };
+    fetchUsageData();
   }, []);
 
   const getRiceCodeName = (riceCodeId: string | null | undefined): string => {
@@ -106,15 +138,54 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
     return parts.join(' - ') || 'Sauda';
   };
 
-  const getSaudaDocuments = (sauda: Sauda): DocumentInfo[] => {
-    const docs: DocumentInfo[] = [];
-    if (sauda.cooked_rice_image_url) {
-      docs.push({ url: sauda.cooked_rice_image_url, label: 'Cooked Rice Sample', type: 'image' });
-    }
-    if (sauda.uncooked_rice_image_url) {
-      docs.push({ url: sauda.uncooked_rice_image_url, label: 'Uncooked Rice Sample', type: 'image' });
-    }
-    return docs;
+  // Check if sauda is used in any payment advice, ISP, or kaanta
+  const isSaudaInUse = (saudaId: string): boolean => {
+    const inPaymentAdvice = paymentAdvices.some(pa => pa.sauda_id === saudaId);
+    const inISP = inwardSlipPasses.some(isp => isp.sauda_ids?.includes(saudaId));
+    const inKaanta = kaantas.some(k => k.sauda_id === saudaId);
+    return inPaymentAdvice || inISP || inKaanta;
+  };
+
+  // Get usage counts for a sauda
+  const getSaudaUsageCounts = (saudaId: string): {
+    paymentAdvices: number;
+    isps: number;
+    kaantas: number;
+  } => {
+    const paCount = paymentAdvices.filter(pa => pa.sauda_id === saudaId).length;
+    const ispCount = inwardSlipPasses.filter(isp => isp.sauda_ids?.includes(saudaId)).length;
+    const kaantaCount = kaantas.filter(k => k.sauda_id === saudaId).length;
+    
+    return {
+      paymentAdvices: paCount,
+      isps: ispCount,
+      kaantas: kaantaCount
+    };
+  };
+
+  // Get usage details for a sauda (for delete warning)
+  const getSaudaUsageDetails = async (saudaId: string): Promise<{
+    paymentAdvices: string[];
+    isps: string[];
+    kaantas: string[];
+  }> => {
+    const paList = paymentAdvices
+      .filter(pa => pa.sauda_id === saudaId)
+      .map(pa => pa.transaction_id || pa.id);
+    
+    const ispList = inwardSlipPasses
+      .filter(isp => isp.sauda_ids?.includes(saudaId))
+      .map(isp => isp.slip_number || isp.id);
+    
+    const kaantaList = kaantas
+      .filter(k => k.sauda_id === saudaId)
+      .map(k => k.kaanta_id || k.id);
+    
+    return {
+      paymentAdvices: paList,
+      isps: ispList,
+      kaantas: kaantaList
+    };
   };
 
   const handleViewDocuments = (docs: DocumentInfo[]) => {
@@ -232,7 +303,26 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                   </div>
                 )}
               </div>
-              <div className="mt-3 flex items-center justify-end gap-1">
+              <div className="mt-3 flex items-center justify-between">
+                {isSaudaInUse(s.id) && (() => {
+                  const counts = getSaudaUsageCounts(s.id);
+                  const parts: string[] = [];
+                  if (counts.paymentAdvices > 0) {
+                    parts.push(`${counts.paymentAdvices} payment advice${counts.paymentAdvices !== 1 ? 's' : ''}`);
+                  }
+                  if (counts.isps > 0) {
+                    parts.push(`${counts.isps} ISP${counts.isps !== 1 ? 's' : ''}`);
+                  }
+                  if (counts.kaantas > 0) {
+                    parts.push(`${counts.kaantas} kaanta${counts.kaantas !== 1 ? 's' : ''}`);
+                  }
+                  return (
+                    <span className="text-xs text-amber-600 dark:text-amber-400">
+                      Used in {parts.join(', ')}
+                    </span>
+                  );
+                })()}
+                <div className="flex items-center justify-end gap-1">
                 <button
                   onClick={() => {
                     setPreviewSauda(s);
@@ -321,7 +411,27 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                       </DropdownMenu.Item>
                       <DropdownMenu.Item
                         className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-                        onSelect={() => {
+                        onSelect={async () => {
+                          if (isSaudaInUse(s.id)) {
+                            const usage = await getSaudaUsageDetails(s.id);
+                            const parts: string[] = [];
+                            
+                            if (usage.paymentAdvices.length > 0) {
+                              parts.push(`Payment Advices (${usage.paymentAdvices.length}):\n${usage.paymentAdvices.map((pa, i) => `${i + 1}. ${pa}`).join('\n')}`);
+                            }
+                            if (usage.isps.length > 0) {
+                              parts.push(`Inward Slip Passes (${usage.isps.length}):\n${usage.isps.map((isp, i) => `${i + 1}. ${isp}`).join('\n')}`);
+                            }
+                            if (usage.kaantas.length > 0) {
+                              parts.push(`Kaantas (${usage.kaantas.length}):\n${usage.kaantas.map((k, i) => `${i + 1}. ${k}`).join('\n')}`);
+                            }
+                            
+                            setAlertType('warning');
+                            setAlertTitle('Cannot Delete Sauda');
+                            setAlertMessage(`This sauda is currently used in:\n\n${parts.join('\n\n')}\n\nPlease remove it from all related records before deleting.`);
+                            setAlertOpen(true);
+                            return;
+                          }
                           setSelectedSauda(s);
                           setDeleteDialogOpen(true);
                         }}
@@ -331,6 +441,7 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                     </DropdownMenu.Content>
                   </DropdownMenu.Portal>
                 </DropdownMenu.Root>
+                </div>
               </div>
             </article>
           ))}
@@ -345,11 +456,28 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
             await deleteSauda(selectedSauda.id);
             setDeleteDialogOpen(false);
             setSelectedSauda(null);
+            // Refresh usage data after deletion
+            const [pas, isps, kaantasData] = await Promise.all([
+              paymentAdvicesAPI.getAllPaymentAdvices(),
+              inwardSlipPassesAPI.getAllInwardSlipPasses(),
+              kaantasAPI.getAllKaantas()
+            ]);
+            setPaymentAdvices(pas);
+            setInwardSlipPasses(isps);
+            setKaantas(kaantasData);
           }
         }}
         title="Delete Sauda"
-        description={`Are you sure you want to delete this sauda? This action cannot be undone.`}
+        description={`Are you sure you want to delete ${selectedSauda ? getSaudaDisplayName(selectedSauda) : 'this sauda'}? This action cannot be undone.`}
         confirmText="Delete"
+      />
+
+      <AlertDialog
+        open={alertOpen}
+        onOpenChange={setAlertOpen}
+        type={alertType}
+        title={alertTitle}
+        message={alertMessage}
       />
 
       <SaudaFormModal
