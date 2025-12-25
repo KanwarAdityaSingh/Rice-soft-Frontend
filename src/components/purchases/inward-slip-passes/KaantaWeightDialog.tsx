@@ -117,7 +117,6 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
     if (riceCodeName) parts.push(riceCodeName);
     const riceTypeLabel = getRiceTypeLabel(sauda.rice_type, riceTypes);
     if (riceTypeLabel) parts.push(riceTypeLabel);
-    parts.push(`₹${sauda.rate}/kg`);
     return parts.join(' - ');
   };
 
@@ -464,7 +463,7 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                 </button>
                               </div>
                               
-                              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
+                              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 text-sm">
                                 <div>
                                   <div className="text-xs text-muted-foreground">Full Wt</div>
                                   <div className="font-medium">{kaanta.full_truck_weight} kg</div>
@@ -478,14 +477,16 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                   <div className="font-bold text-emerald-600">{kaanta.kaanta_weight} kg</div>
                                 </div>
                                 <div>
-                                  <div className="text-xs text-muted-foreground">Bags</div>
-                                  <div className="font-medium">{kaanta.no_of_bags} ({kaanta.bag_type})</div>
+                                  <div className="text-xs text-muted-foreground">Weight as per bill</div>
+                                  <div className="font-medium">{kaanta.said_sent_weight ? `${kaanta.said_sent_weight} kg` : '-'}</div>
                                 </div>
                                 <div>
-                                  <div className="text-xs text-muted-foreground">Amount</div>
-                                  <div className="font-bold text-primary">
-                                    ₹{sauda ? (kaanta.kaanta_weight * sauda.rate).toFixed(2) : '-'}
-                                  </div>
+                                  <div className="text-xs text-muted-foreground">Bag Weight</div>
+                                  <div className="font-medium">{kaanta.bag_weight} kg</div>
+                                </div>
+                                <div>
+                                  <div className="text-xs text-muted-foreground">Bags</div>
+                                  <div className="font-medium">{kaanta.no_of_bags} ({kaanta.bag_type})</div>
                                 </div>
                               </div>
                               
@@ -712,7 +713,7 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                     </div>
 
                                     <div>
-                                      <label className="block text-xs font-medium mb-1">Committed Weight (kg)</label>
+                                      <label className="block text-xs font-medium mb-1">Weight as per bill (kg)</label>
                                       <input
                                         type="number"
                                         step="0.01"
@@ -796,11 +797,6 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                     <div className="text-right">
                                       <div className="text-xs text-muted-foreground">Kaanta Weight</div>
                                       <div className="font-bold text-primary">{kaantaWeight.toFixed(2)} kg</div>
-                                      {sauda && kaantaWeight > 0 && (
-                                        <div className="text-xs text-emerald-600">
-                                          ≈ ₹{(kaantaWeight * sauda.rate).toFixed(2)}
-                                        </div>
-                                      )}
                                     </div>
                                   </div>
                                 </>

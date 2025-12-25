@@ -831,33 +831,33 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   };
 
   const adjustDate = (days: number) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // const today = new Date();
+    // today.setHours(0, 0, 0, 0);
     
     const currentDate = new Date(formData.date);
     const newDate = new Date(currentDate);
     newDate.setDate(newDate.getDate() + days);
     
     // Calculate difference from today
-    const diffTime = newDate.getTime() - today.getTime();
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    // const diffTime = newDate.getTime() - today.getTime();
+    // const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
     
     // Check if new date is within allowed range (-1 to +1 from today)
-    if (diffDays < -1) {
-      setAlertType('warning');
-      setAlertTitle('Date Restriction');
-      setAlertMessage('You cannot select a date more than 1 day before today.');
-      setAlertOpen(true);
-      return;
-    }
+    // if (diffDays < -1) {
+    //   setAlertType('warning');
+    //   setAlertTitle('Date Restriction');
+    //   setAlertMessage('You cannot select a date more than 1 day before today.');
+    //   setAlertOpen(true);
+    //   return;
+    // }
     
-    if (diffDays > 1) {
-      setAlertType('warning');
-      setAlertTitle('Date Restriction');
-      setAlertMessage('You cannot select a date more than 1 day after today.');
-      setAlertOpen(true);
-      return;
-    }
+    // if (diffDays > 1) {
+    //   setAlertType('warning');
+    //   setAlertTitle('Date Restriction');
+    //   setAlertMessage('You cannot select a date more than 1 day after today.');
+    //   setAlertOpen(true);
+    //   return;
+    // }
     
     setFormData({ ...formData, date: newDate.toISOString().split('T')[0] });
   };
@@ -1202,8 +1202,32 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
 
                     <div>
                       <label className="block text-xs font-medium mb-0.5">Transport Cost (₹)</label>
-                      <input type="number" step="0.01" value={formData.transportation_cost || ''} onChange={(e) => setFormData({ ...formData, transportation_cost: parseFloat(e.target.value) || null })}
-                        className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background" placeholder="0" />
+                      <input 
+                        type="number" 
+                        step="0.01" 
+                        min="0"
+                        value={formData.transportation_cost || ''} 
+                        onChange={(e) => {
+                          const value = parseFloat(e.target.value);
+                          if (isNaN(value) || value === 0) {
+                            setFormData({ ...formData, transportation_cost: null });
+                            setErrors({ ...errors, transportation_cost: '' });
+                          } else if (value < 0) {
+                            setErrors({ ...errors, transportation_cost: 'Negative values not allowed' });
+                            setFormData({ ...formData, transportation_cost: null });
+                          } else {
+                            setFormData({ ...formData, transportation_cost: value });
+                            setErrors({ ...errors, transportation_cost: '' });
+                          }
+                        }}
+                        className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background ${
+                          errors.transportation_cost ? 'border-red-500' : 'border-border'
+                        }`}
+                        placeholder="0" 
+                      />
+                      {errors.transportation_cost && (
+                        <p className="text-xs text-red-500 mt-0.5">{errors.transportation_cost}</p>
+                      )}
                     </div>
                   </div>
 

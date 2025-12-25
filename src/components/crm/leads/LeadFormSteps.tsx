@@ -1467,10 +1467,27 @@ export function LeadFormSteps({
               <label className="text-sm font-medium mb-1.5 block">Estimated Value (₹)</label>
               <input
                 type="number"
+                min="0"
                 value={formData.estimated_value || ''}
-                onChange={(e) => setFormData({ ...formData, estimated_value: parseFloat(e.target.value) || 0 })}
-                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                onChange={(e) => {
+                  const value = parseFloat(e.target.value);
+                  if (value < 0) {
+                    setErrors({ ...errors, estimated_value: 'Negative values not allowed' });
+                    setFormData({ ...formData, estimated_value: 0 });
+                  } else {
+                    setFormData({ ...formData, estimated_value: (value >= 0 && !isNaN(value)) ? value : 0 });
+                    if (errors.estimated_value === 'Negative values not allowed') {
+                      setErrors({ ...errors, estimated_value: '' });
+                    }
+                  }
+                }}
+                className={`w-full rounded-lg border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
+                  errors.estimated_value ? 'border-red-500' : 'border-border'
+                }`}
               />
+              {errors.estimated_value && (
+                <p className="text-xs text-red-500 mt-1">{errors.estimated_value}</p>
+              )}
             </div>
 
             <div>

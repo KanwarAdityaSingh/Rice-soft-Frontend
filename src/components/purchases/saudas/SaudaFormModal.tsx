@@ -665,12 +665,26 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                           step="0.01"
                           min="0"
                           value={formData.rate || ''}
-                          onChange={(e) => setFormData({ ...formData, rate: parseFloat(e.target.value) || 0 })}
+                          onChange={(e) => {
+                            const value = parseFloat(e.target.value);
+                            if (value < 0) {
+                              setErrors({ ...errors, rate: 'Negative values not allowed' });
+                              setFormData({ ...formData, rate: 0 });
+                            } else {
+                              setFormData({ ...formData, rate: (value >= 0 && !isNaN(value)) ? value : 0 });
+                              if (errors.rate === 'Negative values not allowed') {
+                                setErrors({ ...errors, rate: '' });
+                              }
+                            }
+                          }}
                           className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background ${
                             errors.rate ? 'border-red-500' : 'border-border'
                           }`}
                           placeholder="0.00"
                         />
+                        {errors.rate && (
+                          <p className="text-xs text-red-500 mt-0.5">{errors.rate}</p>
+                        )}
                       </div>
 
                       <div>
@@ -678,10 +692,22 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                         <div className="flex gap-1">
                           <input
                             type="number"
-                            step="0.01"
+                            step="any"
                             min="0"
                             value={formData.quantity || ''}
-                            onChange={(e) => setFormData({ ...formData, quantity: parseFloat(e.target.value) || null })}
+                            onChange={(e) => {
+                              const value = parseFloat(e.target.value);
+                              if (isNaN(value) || value === 0) {
+                                setFormData({ ...formData, quantity: null });
+                                setErrors({ ...errors, quantity: '' });
+                              } else if (value < 0) {
+                                setErrors({ ...errors, quantity: 'Negative values not allowed' });
+                                setFormData({ ...formData, quantity: null });
+                              } else {
+                                setFormData({ ...formData, quantity: value });
+                                setErrors({ ...errors, quantity: '' });
+                              }
+                            }}
                             className={`flex-1 min-w-0 px-2 py-1.5 text-sm border rounded-md bg-background ${
                               errors.quantity ? 'border-red-500' : 'border-border'
                             }`}
@@ -712,6 +738,9 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                             <option value="ton">Ton</option>
                           </select>
                         </div>
+                        {errors.quantity && (
+                          <p className="text-xs text-red-500 mt-0.5">{errors.quantity}</p>
+                        )}
                       </div>
 
                       <div>
@@ -723,7 +752,21 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                             min="0"
                             max={formData.cash_discount_type === 'percentage' ? 100 : undefined}
                             value={formData.cash_discount || ''}
-                            onChange={(e) => setFormData({ ...formData, cash_discount: parseFloat(e.target.value) || null })}
+                            onChange={(e) => {
+                              const value = parseFloat(e.target.value);
+                              if (isNaN(value) || value === 0) {
+                                setFormData({ ...formData, cash_discount: null });
+                                setErrors({ ...errors, cash_discount: '' });
+                              } else if (value < 0) {
+                                setErrors({ ...errors, cash_discount: 'Negative values not allowed' });
+                                setFormData({ ...formData, cash_discount: null });
+                              } else {
+                                const maxValue = formData.cash_discount_type === 'percentage' ? 100 : undefined;
+                                const clampedValue = maxValue !== undefined ? Math.min(Math.max(value, 0), maxValue) : Math.max(value, 0);
+                                setFormData({ ...formData, cash_discount: clampedValue > 0 ? clampedValue : null });
+                                setErrors({ ...errors, cash_discount: '' });
+                              }
+                            }}
                             className={`flex-1 min-w-0 px-2 py-1.5 text-sm border rounded-md bg-background ${
                               errors.cash_discount ? 'border-red-500' : 'border-border'
                             }`}
@@ -738,6 +781,9 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                             <option value="percentage">%</option>
                           </select>
                         </div>
+                        {errors.cash_discount && (
+                          <p className="text-xs text-red-500 mt-0.5">{errors.cash_discount}</p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -846,7 +892,21 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                           min="0"
                           max={formData.broker_commission_type === 'percentage' ? 100 : undefined}
                           value={formData.broker_commission || ''}
-                          onChange={(e) => setFormData({ ...formData, broker_commission: parseFloat(e.target.value) || null })}
+                          onChange={(e) => {
+                            const value = parseFloat(e.target.value);
+                            if (isNaN(value) || value === 0) {
+                              setFormData({ ...formData, broker_commission: null });
+                              setErrors({ ...errors, broker_commission: '' });
+                            } else if (value < 0) {
+                              setErrors({ ...errors, broker_commission: 'Negative values not allowed' });
+                              setFormData({ ...formData, broker_commission: null });
+                            } else {
+                              const maxValue = formData.broker_commission_type === 'percentage' ? 100 : undefined;
+                              const clampedValue = maxValue !== undefined ? Math.min(Math.max(value, 0), maxValue) : Math.max(value, 0);
+                              setFormData({ ...formData, broker_commission: clampedValue > 0 ? clampedValue : null });
+                              setErrors({ ...errors, broker_commission: '' });
+                            }
+                          }}
                           className={`flex-1 min-w-0 px-2 py-1.5 text-sm border rounded-md bg-background ${
                             errors.broker_commission ? 'border-red-500' : 'border-border'
                           }`}

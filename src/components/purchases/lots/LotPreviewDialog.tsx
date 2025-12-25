@@ -103,13 +103,6 @@ export function LotPreviewDialog({ open, onOpenChange, lot }: LotPreviewDialogPr
                 <div>
                   <label className="text-xs text-muted-foreground uppercase tracking-wide flex items-center gap-1">
                     <Scale className="h-3 w-3" />
-                    Bill Weight
-                  </label>
-                  <p className="mt-1 text-sm font-medium">{lot.bill_weight} kg</p>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-                    <Scale className="h-3 w-3" />
                     Received Weight
                   </label>
                   <p className="mt-1 text-sm font-medium">{lot.received_weight} kg</p>

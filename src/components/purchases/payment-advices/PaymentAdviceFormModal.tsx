@@ -108,6 +108,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
     charge_value: 0,
     charge_type: 'fixed',
   });
+  const [chargeValueError, setChargeValueError] = useState<string>('');
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationInitialTab, setNotificationInitialTab] = useState<'email' | 'whatsapp'>('email');
   const [createdPaymentAdvice, setCreatedPaymentAdvice] = useState<PaymentAdvice | null>(null);
@@ -762,12 +763,32 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                         <input
                           type="number"
                           step="0.01"
+                          min="0"
                           value={formData.amount || ''}
-                          onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || undefined })}
-                          className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+                          onChange={(e) => {
+                            const value = parseFloat(e.target.value);
+                            if (isNaN(value) || value === 0) {
+                              setFormData({ ...formData, amount: undefined });
+                              setErrors({ ...errors, amount: '' });
+                            } else if (value < 0) {
+                              setErrors({ ...errors, amount: 'Negative values not allowed' });
+                              setFormData({ ...formData, amount: undefined });
+                            } else {
+                              setFormData({ ...formData, amount: value });
+                              setErrors({ ...errors, amount: '' });
+                            }
+                          }}
+                          className={`w-full px-3 py-2 border rounded-lg bg-background ${
+                            errors.amount ? 'border-red-500' : 'border-border'
+                          }`}
                           placeholder={summary ? `Auto: ₹${summary.final_total_amount.toFixed(2)}` : 'Leave empty to auto-calculate'}
                         />
-                        <p className="text-xs text-muted-foreground mt-1">Leave empty to auto-calculate</p>
+                        {errors.amount && (
+                          <p className="text-xs text-red-500 mt-1">{errors.amount}</p>
+                        )}
+                        {!errors.amount && (
+                          <p className="text-xs text-muted-foreground mt-1">Leave empty to auto-calculate</p>
+                        )}
                       </div>
                     </div>
 
@@ -800,14 +821,31 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                             className="flex-1 px-3 py-2 text-sm border border-border rounded-lg bg-background"
                             placeholder="e.g., RTGS Charges"
                           />
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={newCharge.charge_value || ''}
-                            onChange={(e) => setNewCharge({ ...newCharge, charge_value: parseFloat(e.target.value) || 0 })}
-                            className="w-20 px-2 py-2 text-sm border border-border rounded-lg bg-background"
-                            placeholder="Value"
-                          />
+                          <div className="flex flex-col">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={newCharge.charge_value || ''}
+                              onChange={(e) => {
+                                const value = parseFloat(e.target.value);
+                                if (value < 0) {
+                                  setChargeValueError('Negative values not allowed');
+                                  setNewCharge({ ...newCharge, charge_value: 0 });
+                                } else {
+                                  setChargeValueError('');
+                                  setNewCharge({ ...newCharge, charge_value: (value >= 0 && !isNaN(value)) ? value : 0 });
+                                }
+                              }}
+                              className={`w-20 px-2 py-2 text-sm border rounded-lg bg-background ${
+                                chargeValueError ? 'border-red-500' : 'border-border'
+                              }`}
+                              placeholder="Value"
+                            />
+                            {chargeValueError && (
+                              <p className="text-xs text-red-500 mt-0.5">{chargeValueError}</p>
+                            )}
+                          </div>
                           <select
                             value={newCharge.charge_type}
                             onChange={(e) => setNewCharge({ ...newCharge, charge_type: e.target.value as 'fixed' | 'percentage' })}

@@ -338,8 +338,20 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
                       </label>
                       <input
                         type="number"
+                        min="0"
                         value={formData.no_of_bags || ''}
-                        onChange={(e) => setFormData({ ...formData, no_of_bags: parseInt(e.target.value) || 0 })}
+                        onChange={(e) => {
+                          const value = parseInt(e.target.value);
+                          if (value < 0) {
+                            setErrors({ ...errors, no_of_bags: 'Negative values not allowed' });
+                            setFormData({ ...formData, no_of_bags: 0 });
+                          } else {
+                            setFormData({ ...formData, no_of_bags: (value >= 0 && !isNaN(value)) ? value : 0 });
+                            if (errors.no_of_bags === 'Negative values not allowed') {
+                              setErrors({ ...errors, no_of_bags: '' });
+                            }
+                          }
+                        }}
                         className={`w-full px-3 py-2 border rounded-lg bg-background ${
                           errors.no_of_bags ? 'border-red-500' : 'border-border'
                         }`}
@@ -355,11 +367,29 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
                       <input
                         type="number"
                         step="0.01"
+                        min="0"
                         value={formData.bag_weight || ''}
-                        onChange={(e) => setFormData({ ...formData, bag_weight: parseFloat(e.target.value) || null })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+                        onChange={(e) => {
+                          const value = parseFloat(e.target.value);
+                          if (isNaN(value) || value === 0) {
+                            setFormData({ ...formData, bag_weight: null });
+                            setErrors({ ...errors, bag_weight: '' });
+                          } else if (value < 0) {
+                            setErrors({ ...errors, bag_weight: 'Negative values not allowed' });
+                            setFormData({ ...formData, bag_weight: null });
+                          } else {
+                            setFormData({ ...formData, bag_weight: value });
+                            setErrors({ ...errors, bag_weight: '' });
+                          }
+                        }}
+                        className={`w-full px-3 py-2 border rounded-lg bg-background ${
+                          errors.bag_weight ? 'border-red-500' : 'border-border'
+                        }`}
                         placeholder="50.00"
                       />
+                      {errors.bag_weight && (
+                        <p className="text-xs text-red-500 mt-1">{errors.bag_weight}</p>
+                      )}
                     </div>
 
                     <div>
@@ -369,8 +399,20 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
                       <input
                         type="number"
                         step="0.01"
+                        min="0"
                         value={formData.bill_weight || ''}
-                        onChange={(e) => setFormData({ ...formData, bill_weight: parseFloat(e.target.value) || 0 })}
+                        onChange={(e) => {
+                          const value = parseFloat(e.target.value);
+                          if (value < 0) {
+                            setErrors({ ...errors, bill_weight: 'Negative values not allowed' });
+                            setFormData({ ...formData, bill_weight: 0 });
+                          } else {
+                            setFormData({ ...formData, bill_weight: (value >= 0 && !isNaN(value)) ? value : 0 });
+                            if (errors.bill_weight === 'Negative values not allowed') {
+                              setErrors({ ...errors, bill_weight: '' });
+                            }
+                          }
+                        }}
                         className={`w-full px-3 py-2 border rounded-lg bg-background ${
                           errors.bill_weight ? 'border-red-500' : 'border-border'
                         }`}
@@ -388,8 +430,20 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
                       <input
                         type="number"
                         step="0.01"
+                        min="0"
                         value={formData.received_weight || ''}
-                        onChange={(e) => setFormData({ ...formData, received_weight: parseFloat(e.target.value) || 0 })}
+                        onChange={(e) => {
+                          const value = parseFloat(e.target.value);
+                          if (value < 0) {
+                            setErrors({ ...errors, received_weight: 'Negative values not allowed' });
+                            setFormData({ ...formData, received_weight: 0 });
+                          } else {
+                            setFormData({ ...formData, received_weight: (value >= 0 && !isNaN(value)) ? value : 0 });
+                            if (errors.received_weight === 'Negative values not allowed') {
+                              setErrors({ ...errors, received_weight: '' });
+                            }
+                          }
+                        }}
                         className={`w-full px-3 py-2 border rounded-lg bg-background ${
                           errors.received_weight ? 'border-red-500' : 'border-border'
                         }`}
@@ -407,8 +461,20 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
                       <input
                         type="number"
                         step="0.01"
+                        min="0"
                         value={formData.rate || ''}
-                        onChange={(e) => setFormData({ ...formData, rate: parseFloat(e.target.value) || 0 })}
+                        onChange={(e) => {
+                          const value = parseFloat(e.target.value);
+                          if (value < 0) {
+                            setErrors({ ...errors, rate: 'Negative values not allowed' });
+                            setFormData({ ...formData, rate: 0 });
+                          } else {
+                            setFormData({ ...formData, rate: (value >= 0 && !isNaN(value)) ? value : 0 });
+                            if (errors.rate === 'Negative values not allowed') {
+                              setErrors({ ...errors, rate: '' });
+                            }
+                          }
+                        }}
                         className={`w-full px-3 py-2 border rounded-lg bg-background ${
                           errors.rate ? 'border-red-500' : 'border-border'
                         }`}

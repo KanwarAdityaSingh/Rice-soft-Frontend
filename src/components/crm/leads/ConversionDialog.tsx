@@ -37,6 +37,7 @@ export function ConversionDialog({ open, onOpenChange, lead, onSuccess }: Conver
     commission_rate: 0,
     notes: '',
   });
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const checkExistingVendor = useCallback(async () => {
     const { gst_number, pan_number } = lead?.business_details || {};
@@ -272,10 +273,27 @@ export function ConversionDialog({ open, onOpenChange, lead, onSuccess }: Conver
                   <label className="text-sm font-medium mb-1.5 block">Conversion Value (₹)</label>
                   <input
                     type="number"
+                    min="0"
                     value={formData.conversion_value}
-                    onChange={(e) => setFormData({ ...formData, conversion_value: parseFloat(e.target.value) || 0 })}
-                    className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                    onChange={(e) => {
+                      const value = parseFloat(e.target.value);
+                      if (value < 0) {
+                        setErrors({ ...errors, conversion_value: 'Negative values not allowed' });
+                        setFormData({ ...formData, conversion_value: 0 });
+                      } else {
+                        setFormData({ ...formData, conversion_value: (value >= 0 && !isNaN(value)) ? value : 0 });
+                        if (errors.conversion_value === 'Negative values not allowed') {
+                          setErrors({ ...errors, conversion_value: '' });
+                        }
+                      }
+                    }}
+                    className={`w-full rounded-lg border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
+                      errors.conversion_value ? 'border-red-500' : 'border-border'
+                    }`}
                   />
+                  {errors.conversion_value && (
+                    <p className="text-xs text-red-500 mt-1">{errors.conversion_value}</p>
+                  )}
                 </div>
 
                 <div>
@@ -283,10 +301,29 @@ export function ConversionDialog({ open, onOpenChange, lead, onSuccess }: Conver
                   <input
                     type="number"
                     step="0.1"
+                    min="0"
+                    max="100"
                     value={formData.commission_rate}
-                    onChange={(e) => setFormData({ ...formData, commission_rate: parseFloat(e.target.value) || 0 })}
-                    className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                    onChange={(e) => {
+                      const value = parseFloat(e.target.value);
+                      if (value < 0) {
+                        setErrors({ ...errors, commission_rate: 'Negative values not allowed' });
+                        setFormData({ ...formData, commission_rate: 0 });
+                      } else {
+                        const clampedValue = Math.min(Math.max(value, 0), 100);
+                        setFormData({ ...formData, commission_rate: (!isNaN(value)) ? clampedValue : 0 });
+                        if (errors.commission_rate === 'Negative values not allowed') {
+                          setErrors({ ...errors, commission_rate: '' });
+                        }
+                      }
+                    }}
+                    className={`w-full rounded-lg border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
+                      errors.commission_rate ? 'border-red-500' : 'border-border'
+                    }`}
                   />
+                  {errors.commission_rate && (
+                    <p className="text-xs text-red-500 mt-1">{errors.commission_rate}</p>
+                  )}
                 </div>
               </div>
 
