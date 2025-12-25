@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Search, Check } from 'lucide-react';
+import { X, Plus, Search } from 'lucide-react';
 import { useTransporters } from '../../../hooks/useTransporters';
 import { transportersAPI } from '../../../services/transporters.api';
 import { validateGST, validatePAN, validateAadhaar } from '../../../utils/validation';

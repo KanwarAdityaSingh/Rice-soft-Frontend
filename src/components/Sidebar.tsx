@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Users, BarChart3, Trophy, Store, UserCheck, UserCircle, ChevronRight, Settings, LogOut, X, Sprout, ShoppingCart, Package, FileText, CreditCard, Truck, Car } from 'lucide-react'
+import { Users, Store, UserCheck, UserCircle, ChevronRight, Settings, LogOut, X, Sprout, ShoppingCart, Package, FileText, CreditCard, Truck, Car } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { canRead, isCustomUser, getPermissions } from '../utils/permissions'
 import { Tooltip } from '@mui/material'

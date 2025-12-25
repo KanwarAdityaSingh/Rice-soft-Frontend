@@ -7,12 +7,11 @@ import { purchaseSummaryAPI } from '../../../services/purchaseSummary.api';
 import { useSaudas } from '../../../hooks/useSaudas';
 import { useInwardSlipPasses } from '../../../hooks/useInwardSlipPasses';
 import { useBrokers } from '../../../hooks/useBrokers';
-import { useTransporters } from '../../../hooks/useTransporters';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { getRiceTypeLabel } from '../../../utils/riceType';
 import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
 import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
-import type { PaymentAdvice, RiceCode, RiceType, Sauda, InwardSlipPass, Vehicle, PurchaseSummarySaudaDetail, ISPPurchaseSummary, SaudaPurchaseSummary } from '../../../types/entities';
+import type { PaymentAdvice, RiceCode, RiceType, Sauda, InwardSlipPass, Vehicle, ISPPurchaseSummary, SaudaPurchaseSummary } from '../../../types/entities';
 
 interface DefaultRecipient {
   name: string;
@@ -20,8 +19,6 @@ interface DefaultRecipient {
   llpin: string;
 }
 
-// Use the actual types from entities
-type PurchaseSummary = SaudaPurchaseSummary | ISPPurchaseSummary;
 
 interface PaymentAdvicePreviewDialogProps {
   open: boolean;
@@ -38,7 +35,6 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
   const { saudas } = useSaudas();
   const { inwardSlipPasses } = useInwardSlipPasses();
   const { brokers } = useBrokers();
-  const { transporters } = useTransporters();
   const previewRef = useRef<HTMLDivElement>(null);
   
   // Document viewer state
@@ -106,13 +102,7 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
   const getBrokerName = (brokerId: string | null | undefined): string => {
     if (!brokerId) return '-';
     const broker = brokers.find(b => b.id === brokerId);
-    return broker ? broker.business_name : '-';
-  };
-
-  const getTransporterName = (transporterId: string | null | undefined): string => {
-    if (!transporterId) return '-';
-    const transporter = transporters.find(t => t.id === transporterId);
-    return transporter ? transporter.business_name : '-';
+    return broker?.business_name ?? '-';
   };
 
   const getPaymentSlipUrl = (): string | null => {
@@ -305,11 +295,7 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
               </div>
 
               {/* Invoice Info */}
-              <div className="grid grid-cols-3 gap-2 border-b border-dotted border-border pb-2 mb-3">
-                <div>
-                  <span className="text-muted-foreground">SR.NO:</span>
-                  <span className="font-bold ml-1">{paymentAdvice.sr_number || '-'}</span>
-                </div>
+              <div className="grid grid-cols-2 gap-2 border-b border-dotted border-border pb-2 mb-3">
                 <div>
                   <span className="text-muted-foreground">Invoice:</span>
                   <span className="font-bold ml-1">{paymentAdvice.transaction_id || '-'}</span>
@@ -324,7 +310,7 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
               <div className="mb-3 border-b border-dotted border-border pb-2">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Party Name:</span>
-                  <span className="font-bold">{paymentAdvice.party_name || isp?.party_name || '-'}</span>
+                  <span className="font-bold">{isp?.party_name || '-'}</span>
                 </div>
                 {sauda?.broker_id && (
                   <div className="flex justify-between mt-1">
@@ -342,7 +328,7 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                       <span className="text-muted-foreground">Sauda:</span>
                       <span className="font-semibold">{getRiceCodeName(sauda.rice_code_id)} {getRiceTypeLabel(sauda.rice_type, riceTypes)} @ ₹{sauda.rate}/kg</span>
                     </div>
-                    {'sauda_details' in summary && summary.sauda_details && summary.sauda_details.completion_percentage !== null && (
+                    {summary && 'sauda_details' in summary && summary.sauda_details && summary.sauda_details.completion_percentage !== null && (
                       <div className="flex justify-between items-center mt-1">
                         <span className="text-muted-foreground text-xs">Completion:</span>
                         <div className="flex items-center gap-2">
@@ -365,7 +351,7 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                       <span className="text-muted-foreground">ISP:</span>
                       <span className="font-semibold">{isp.slip_number} - {vehicle?.vehicle_number || '-'}</span>
                     </div>
-                    {'saudas' in summary && summary.saudas && summary.saudas.length > 0 && (
+                    {summary && 'saudas' in summary && summary.saudas && summary.saudas.length > 0 && (
                       <div className="mt-2 space-y-1">
                         {summary.saudas.map((saudaItem) => (
                           <div key={saudaItem.sauda_id} className="text-xs">
@@ -537,13 +523,6 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                 </p>
               </div>
 
-              {/* Due Date */}
-              {paymentAdvice.due_date && (
-                <div className="text-center mt-2">
-                  <span className="text-muted-foreground">Due Date:</span>
-                  <span className="font-bold ml-1">{new Date(paymentAdvice.due_date).toLocaleDateString('en-IN')}</span>
-                </div>
-              )}
 
               {/* Payment Slip */}
               {getPaymentSlipUrl() && (

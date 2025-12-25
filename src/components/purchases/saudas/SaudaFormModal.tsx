@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Plus, RefreshCw, Check, Loader2, Image as ImageIcon, Download, FileText, Mail, MessageCircle } from 'lucide-react';
+import { X, Plus, RefreshCw, Check, Loader2, Download, FileText, Mail, MessageCircle } from 'lucide-react';
 import { useSaudas } from '../../../hooks/useSaudas';
 import { saudasAPI } from '../../../services/saudas.api';
 import { useVendors } from '../../../hooks/useVendors';
@@ -1090,11 +1090,11 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Rice Code:</span>
-                            <span className="font-semibold">{getRiceCodeName(formData.rice_code_id)}</span>
+                            <span className="font-semibold">{getRiceCodeName(formData.rice_code_id ?? null)}</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Rice Type:</span>
-                            <span className="font-semibold">{getRiceTypeName(formData.rice_type)}</span>
+                            <span className="font-semibold">{getRiceTypeName(formData.rice_type ?? null)}</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Date:</span>

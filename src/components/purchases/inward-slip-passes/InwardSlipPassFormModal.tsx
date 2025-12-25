@@ -1,7 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import React, { useState, useEffect, useRef } from 'react';
-import { X, FileText, Check, Loader2, Plus, Search, ChevronDown, RefreshCw, Minus, Download, Truck, Shield, AlertCircle } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { X, FileText, Check, Loader2, Plus, Search, ChevronDown, RefreshCw, Minus, Download, Truck, Shield } from 'lucide-react';
 import { useInwardSlipPasses } from '../../../hooks/useInwardSlipPasses';
 import { inwardSlipPassesAPI } from '../../../services/inwardSlipPasses.api';
 import { useSaudas } from '../../../hooks/useSaudas';
@@ -15,7 +14,7 @@ import { getRiceTypeLabel } from '../../../utils/riceType';
 import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
-import type { CreateInwardSlipPassRequest, UpdateInwardSlipPassRequest, InwardSlipPass, RiceCode, RiceType, Sauda, Vehicle, VehicleVerificationResponse, OtherBill } from '../../../types/entities';
+import type { CreateInwardSlipPassRequest, UpdateInwardSlipPassRequest, RiceCode, RiceType, Sauda, Vehicle, VehicleVerificationResponse, OtherBill } from '../../../types/entities';
 
 // Default recipient type
 interface DefaultRecipient {
@@ -42,12 +41,11 @@ interface InwardSlipPassFormModalProps {
 }
 
 export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSlipPassFormModalProps) {
-  const navigate = useNavigate();
   const { createInwardSlipPass, updateInwardSlipPass } = useInwardSlipPasses();
   const { saudas } = useSaudas();
   const { vendors } = useVendors();
   const { transporters, refetch: refetchTransporters, loading: loadingTransporters } = useTransporters();
-  const { vehicles, refetch: refetchVehicles, loading: loadingVehicles } = useVehicles(undefined, true);
+  const { vehicles, refetch: refetchVehicles } = useVehicles(undefined, true);
   const isEditMode = !!ispId;
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
@@ -616,13 +614,6 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     return transporter ? transporter.business_name : '-';
   };
 
-  // Get vehicle number for display
-  const getVehicleNumber = (vehicleId: string | null): string => {
-    if (!vehicleId) return '-';
-    if (selectedVehicle && selectedVehicle.id === vehicleId) return selectedVehicle.vehicle_number;
-    const vehicle = vehicles.find(v => v.id === vehicleId);
-    return vehicle ? vehicle.vehicle_number : '-';
-  };
 
   // Filter vehicles for dropdown
   const getFilteredVehicles = () => {
@@ -910,17 +901,14 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                         {getSelectedSaudas().map((sauda) => (
                           <div key={sauda.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 text-primary rounded-full text-xs">
                             <span>{getSaudaDisplayName(sauda)} - ₹{sauda.rate}</span>
-                            {!isEditMode && (
-                              <button type="button" onClick={() => removeSauda(sauda.id)} className="hover:bg-primary/20 rounded-full p-0.5">
-                                <X className="h-2.5 w-2.5" />
-                              </button>
-                            )}
+                            <button type="button" onClick={() => removeSauda(sauda.id)} className="hover:bg-primary/20 rounded-full p-0.5">
+                              <X className="h-2.5 w-2.5" />
+                            </button>
                           </div>
                         ))}
                       </div>
                     )}
-                    {!isEditMode && (
-                      <div ref={saudaDropdownRef} className="relative">
+                    <div ref={saudaDropdownRef} className="relative">
                         <button
                           type="button"
                           onClick={() => setSaudaDropdownOpen(!saudaDropdownOpen)}
@@ -993,7 +981,6 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                           </div>
                         )}
                       </div>
-                    )}
                   </div>
 
                   {/* Party Details */}
@@ -1117,7 +1104,11 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                           <div className="flex-1 min-w-0">
                             <span className="font-semibold text-sm">{selectedVehicle.vehicle_number}</span>
                             {selectedVehicle.owner_name && <span className="text-xs text-muted-foreground ml-2">({selectedVehicle.owner_name})</span>}
-                            {selectedVehicle.is_verified && <Shield className="inline h-3 w-3 text-emerald-600 ml-1" title="Verified" />}
+                            {selectedVehicle.is_verified && (
+                              <span title="Verified">
+                                <Shield className="inline h-3 w-3 text-emerald-600 ml-1" />
+                              </span>
+                            )}
                           </div>
                           <button type="button" onClick={() => { setSelectedVehicle(null); setFormData(prev => ({ ...prev, vehicle_id: '' })); setVehicleNumberInput(''); }} className="p-1 hover:bg-emerald-100 rounded">
                             <X className="h-3.5 w-3.5" />

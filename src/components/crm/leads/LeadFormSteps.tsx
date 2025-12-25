@@ -8,7 +8,7 @@ import { vendorsAPI } from '../../../services/vendors.api';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { pincodeAPI } from '../../../services/pincode.api';
-import { validateGST, validatePAN, validateEmail, validatePhone, validateGoogleLocationLink } from '../../../utils/validation';
+import { validateGST, validatePAN, validatePhone, validateGoogleLocationLink } from '../../../utils/validation';
 import type { CreateLeadRequest, Salesman, RiceCode, RiceType } from '../../../types/entities';
 
 // Utility function to convert string to title case
