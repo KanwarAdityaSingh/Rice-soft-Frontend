@@ -14,7 +14,7 @@ export default function PurchasesPage() {
             <span className="text-gradient">Purchase Summary</span>
           </h1>
           <p className="mt-1 sm:mt-2 text-sm sm:text-base text-muted-foreground">
-            View calculated purchase summaries by sauda or ISP
+            View calculated purchase summaries by sauda
           </p>
         </div>
       </header>
