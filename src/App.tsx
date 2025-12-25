@@ -24,6 +24,12 @@ import LotsPage from './pages/purchases/Lots'
 import PurchasesPage from './pages/purchases/Purchases'
 import PurchaseDetailPage from './pages/purchases/PurchaseDetail'
 import PaymentAdvicesPage from './pages/purchases/PaymentAdvices'
+import RecipesPage from './pages/production/Recipes'
+import ProductsPage from './pages/production/Products'
+import PackagingPage from './pages/production/Packaging'
+import BatchesPage from './pages/production/Batches'
+import BatchDetailPage from './pages/production/BatchDetail'
+import InventoryPage from './pages/production/Inventory'
 
 export default function App() {
   // Global error handler
@@ -236,6 +242,66 @@ function AnimatedRoutes() {
             <ProtectedRoute>
               <AppLayout>
                 <PaymentAdvicesPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/production/recipes"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <RecipesPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/production/products"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <ProductsPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/production/packaging"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <PackagingPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/production/batches"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <BatchesPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/production/batches/:id"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <BatchDetailPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/production/inventory"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <InventoryPage />
               </AppLayout>
             </ProtectedRoute>
           }

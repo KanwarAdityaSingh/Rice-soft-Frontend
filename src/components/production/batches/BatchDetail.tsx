@@ -1,0 +1,216 @@
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { ArrowLeft, FlaskConical } from 'lucide-react';
+import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
+import { AlertDialog } from '../../shared/AlertDialog';
+import { batchesAPI } from '../../../services/batches.api';
+import { lotsAPI } from '../../../services/lots.api';
+import { riceCodesAPI } from '../../../services/riceCodes.api';
+import type { BatchWithDetails, BatchLotUsage, BatchRiceCodeUsage } from '../../../types/entities';
+
+export function BatchDetail() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const [batch, setBatch] = useState<BatchWithDetails | null>(null);
+  const [lotUsage, setLotUsage] = useState<BatchLotUsage[]>([]);
+  const [riceCodeUsage, setRiceCodeUsage] = useState<BatchRiceCodeUsage[]>([]);
+  const [lots, setLots] = useState<any[]>([]);
+  const [riceCodes, setRiceCodes] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('error');
+  const [alertTitle, setAlertTitle] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
+
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!id) return;
+      setLoading(true);
+      try {
+        const [batchData, lotUsageData, riceCodeUsageData, lotsData, riceCodesData] = await Promise.all([
+          batchesAPI.getBatchById(id),
+          batchesAPI.getBatchLotUsage(id),
+          batchesAPI.getBatchRiceCodeUsage(id),
+          lotsAPI.getAllLots(),
+          riceCodesAPI.getAllRiceCodes(),
+        ]);
+        setBatch(batchData);
+        setLotUsage(lotUsageData);
+        setRiceCodeUsage(riceCodeUsageData);
+        setLots(lotsData);
+        setRiceCodes(riceCodesData);
+      } catch (error: any) {
+        setAlertType('error');
+        setAlertTitle('Error');
+        setAlertMessage(error?.message || 'Failed to load batch details.');
+        setAlertOpen(true);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [id]);
+
+  const getLotDisplayName = (lotId: string): string => {
+    const lot = lots.find((l) => l.id === lotId);
+    if (!lot) return lotId;
+    const riceCode = riceCodes.find((rc) => rc.rice_code_id === lot.rice_code_id);
+    return lot.lot_number || lotId;
+  };
+
+  const getRiceCodeName = (riceCodeId: string): string => {
+    const riceCode = riceCodes.find((rc) => rc.rice_code_id === riceCodeId);
+    return riceCode?.rice_code_name || riceCodeId;
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return 'bg-emerald-500/10 text-emerald-600';
+      case 'in_progress':
+        return 'bg-blue-500/10 text-blue-600';
+      case 'cancelled':
+        return 'bg-destructive/10 text-destructive';
+      default:
+        return 'bg-muted text-muted-foreground';
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-20">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  if (!batch) {
+    return (
+      <div className="text-center py-20">
+        <p className="text-muted-foreground">Batch not found</p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="space-y-6">
+        <button
+          onClick={() => navigate('/production/batches')}
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Batches
+        </button>
+
+        <div className="hero-bg rounded-xl p-6">
+          <div className="flex items-center gap-4">
+            <div className="h-12 w-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+              <FlaskConical className="h-6 w-6" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold">{batch.batch_number}</h1>
+              <div className="flex items-center gap-3 mt-2">
+                <span className={`px-3 py-1 rounded-md text-xs font-medium ${getStatusColor(batch.status)}`}>
+                  {batch.status.replace('_', ' ')}
+                </span>
+                {batch.product && (
+                  <span className="text-sm text-muted-foreground">Product: {batch.product.name}</span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Batch Info */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="p-4 border border-border rounded-lg">
+            <div className="text-sm text-muted-foreground">Quantity</div>
+            <div className="text-lg font-semibold mt-1">{batch.quantity.toFixed(2)} kg</div>
+          </div>
+          {batch.recipe && (
+            <div className="p-4 border border-border rounded-lg">
+              <div className="text-sm text-muted-foreground">Recipe</div>
+              <div className="text-lg font-semibold mt-1">{batch.recipe.recipe_name}</div>
+            </div>
+          )}
+          {batch.packaging && (
+            <div className="p-4 border border-border rounded-lg">
+              <div className="text-sm text-muted-foreground">Packaging</div>
+              <div className="text-lg font-semibold mt-1">
+                {batch.packaging.packet_type} ({batch.packaging.holding_capacity} kg)
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Lot Usage */}
+        {lotUsage.length > 0 && (
+          <div className="border border-border rounded-lg overflow-hidden">
+            <div className="p-4 bg-muted/50 border-b border-border">
+              <h2 className="font-semibold">Lot-Level Usage</h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30">
+                    <th className="text-left py-3 px-4 text-sm font-semibold">Lot</th>
+                    <th className="text-right py-3 px-4 text-sm font-semibold">Quantity Used (kg)</th>
+                    <th className="text-right py-3 px-4 text-sm font-semibold">Percentage</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lotUsage.map((usage) => (
+                    <tr key={usage.id} className="border-b border-border/60 hover:bg-muted/30">
+                      <td className="py-3 px-4 text-sm">{getLotDisplayName(usage.lot_id)}</td>
+                      <td className="py-3 px-4 text-sm text-right">{usage.quantity_used.toFixed(2)}</td>
+                      <td className="py-3 px-4 text-sm text-right">{usage.percentage_used.toFixed(2)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Rice Code Usage */}
+        {riceCodeUsage.length > 0 && (
+          <div className="border border-border rounded-lg overflow-hidden">
+            <div className="p-4 bg-muted/50 border-b border-border">
+              <h2 className="font-semibold">Rice Code-Level Usage (Aggregated)</h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30">
+                    <th className="text-left py-3 px-4 text-sm font-semibold">Rice Code</th>
+                    <th className="text-left py-3 px-4 text-sm font-semibold">Rice Type</th>
+                    <th className="text-right py-3 px-4 text-sm font-semibold">Total Quantity Used (kg)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {riceCodeUsage.map((usage) => (
+                    <tr key={usage.id} className="border-b border-border/60 hover:bg-muted/30">
+                      <td className="py-3 px-4 text-sm">{getRiceCodeName(usage.rice_code_id)}</td>
+                      <td className="py-3 px-4 text-sm">{usage.rice_type || 'N/A'}</td>
+                      <td className="py-3 px-4 text-sm text-right">{usage.total_quantity_used.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <AlertDialog
+        open={alertOpen}
+        onOpenChange={setAlertOpen}
+        type={alertType}
+        title={alertTitle}
+        message={alertMessage}
+      />
+    </>
+  );
+}
+

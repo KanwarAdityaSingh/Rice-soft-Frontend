@@ -1152,3 +1152,229 @@ export interface NetPayableResponse {
   net_payable: number;
 }
 
+// ============================================================================
+// PRODUCTION & INVENTORY MANAGEMENT TYPES
+// ============================================================================
+
+// Recipe Types
+export interface RecipeFormulaItem {
+  lot_id: string;
+  percentage: number;
+}
+
+export interface Recipe {
+  id: string;
+  recipe_name: string;
+  formula: RecipeFormulaItem[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateRecipeRequest {
+  recipe_name: string;
+  formula: RecipeFormulaItem[];
+}
+
+export interface UpdateRecipeRequest {
+  recipe_name?: string;
+  formula?: RecipeFormulaItem[];
+}
+
+// Product Types
+export interface Product {
+  id: string;
+  name: string;
+  description: string | null;
+  brand: string | null;
+  created_at: string;
+  updated_at: string;
+  recipes?: Array<{
+    id: string;
+    recipe_name: string;
+  }>;
+}
+
+export interface CreateProductRequest {
+  name: string;
+  description?: string;
+  brand?: string;
+}
+
+export interface UpdateProductRequest {
+  name?: string;
+  description?: string;
+  brand?: string;
+}
+
+export interface LinkRecipeToProductRequest {
+  recipe_id: string;
+}
+
+// Packaging Types
+export type PacketType = 'PP Bag' | 'Jute Bag' | 'HDPE Bag';
+
+export interface Packaging {
+  id: string;
+  holding_capacity: number;
+  packet_type: PacketType;
+  source: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePackagingRequest {
+  holding_capacity: number;
+  packet_type: PacketType;
+  source?: string;
+}
+
+export interface UpdatePackagingRequest {
+  holding_capacity?: number;
+  packet_type?: PacketType;
+  source?: string;
+}
+
+export interface AddPacketsInventoryRequest {
+  packaging_id: string;
+  available_quantity: number;
+}
+
+// Batch Types
+export type BatchStatus = 'planned' | 'in_progress' | 'completed' | 'cancelled';
+
+export interface Batch {
+  id: string;
+  batch_number: string;
+  product_id: string;
+  recipe_id: string;
+  packaging_id: string;
+  quantity: number;
+  status: BatchStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BatchWithDetails extends Batch {
+  product?: {
+    id: string;
+    name: string;
+  };
+  recipe?: {
+    id: string;
+    recipe_name: string;
+  };
+  packaging?: {
+    id: string;
+    holding_capacity: number;
+    packet_type: PacketType;
+  };
+  lot_usage?: BatchLotUsage[];
+  rice_code_usage?: BatchRiceCodeUsage[];
+}
+
+export interface BatchLotUsage {
+  id: string;
+  batch_id: string;
+  lot_id: string;
+  quantity_used: number;
+  percentage_used: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BatchRiceCodeUsage {
+  id: string;
+  batch_id: string;
+  rice_code_id: string;
+  rice_type: string | null;
+  total_quantity_used: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateBatchRequest {
+  product_id: string;
+  recipe_id: string;
+  packaging_id: string;
+  quantity: number;
+  status?: BatchStatus;
+}
+
+export interface UpdateBatchRequest {
+  status?: BatchStatus;
+  quantity?: number;
+}
+
+// Inventory Types
+export interface FinishedGoodsInventory {
+  id: string;
+  product_id: string;
+  batch_id: string;
+  packaging_id: string;
+  no_of_packets: number;
+  total_weight: number;
+  product?: {
+    id: string;
+    name: string;
+  };
+  batch?: {
+    id: string;
+    batch_number: string;
+  };
+  packaging?: {
+    id: string;
+    holding_capacity: number;
+    packet_type: PacketType;
+  };
+}
+
+export interface PacketsInventory {
+  packaging_id: string;
+  available_quantity: number;
+  packaging?: {
+    id: string;
+    holding_capacity: number;
+    packet_type: PacketType;
+    source: string | null;
+  };
+}
+
+export interface LotsInventory {
+  lot_id: string;
+  available_quantity: number;
+}
+
+export interface BagsInventory {
+  bag_type: 'jute' | 'pp';
+  bag_capacity: number;
+  filled_bags: number;
+  empty_bags: number;
+}
+
+export interface InventorySummary {
+  finished_goods: {
+    total_packets: number;
+    total_weight_kg: number;
+    items: number;
+  };
+  packets: {
+    total_empty_packets: number;
+    types: number;
+  };
+  lots: {
+    total_available_quantity_kg: number;
+    active_lots: number;
+  };
+  bags: {
+    total_filled_bags: number;
+    total_empty_bags: number;
+    types: number;
+  };
+}
+
+export interface InventoryFilters {
+  product_id?: string;
+  batch_id?: string;
+  bag_type?: 'jute' | 'pp';
+}
+
