@@ -1214,10 +1214,29 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                       className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background" placeholder="Additional notes" />
                   </div>
 
+                  {/* Bills Upload Section */}
+                  <div className="pt-2 border-t border-border">
+                    <div className="flex items-center justify-between mb-1">
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(['purchase_bill', 'bilti', 'eway_bill'] as const).map((field) => (
+                        <div key={field} className="relative">
+                          <label className="block text-[10px] font-medium mb-0.5 capitalize">{field.replace(/_/g, ' ')}</label>
+                          <div className="relative">
+                            <input type="file" accept="image/*,.pdf" onChange={(e) => { handleFileSelect(field, e.target.files?.[0] || null); }} disabled={uploading[field]}
+                              className="w-full px-1.5 py-1 text-[10px] border border-border rounded-md bg-background file:mr-1 file:py-0.5 file:px-1.5 file:rounded file:border-0 file:text-[10px] file:bg-primary/10 file:text-primary disabled:opacity-50" />
+                            {uploading[field] && <div className="absolute right-1.5 top-1/2 -translate-y-1/2"><Loader2 className="h-3 w-3 animate-spin text-primary" /></div>}
+                            {uploadSuccess[field] && !uploading[field] && <div className="absolute right-1.5 top-1/2 -translate-y-1/2"><Check className="h-3 w-3 text-emerald-500" /></div>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                   {/* Other Bills */}
                   <div className="pt-2 border-t border-border space-y-2">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-xs font-semibold text-muted-foreground uppercase">Other Bills</h3>
+                      <h3 className="text-xs font-semibold text-muted-foreground uppercase">Other Documents</h3>
                       {!isEditMode && <span className="text-[10px] text-muted-foreground">Upload after save</span>}
                     </div>
                     
@@ -1281,7 +1300,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                     {/* Upload new bill form */}
                     <div className="space-y-1.5 p-2 bg-muted/20 rounded border border-border">
                       <div>
-                        <label className="block text-[10px] font-medium mb-0.5">Bill Name</label>
+                        <label className="block text-[10px] font-medium mb-0.5">Document Name</label>
                         <input
                           type="text"
                           value={newBillName}
@@ -1315,28 +1334,8 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                         className="w-full px-2 py-1 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-1"
                       >
                         <Plus className="h-3 w-3" />
-                        {uploadingOtherBill ? 'Uploading...' : 'Add Bill'}
+                        {uploadingOtherBill ? 'Uploading...' : 'Add Document'}
                       </button>
-                    </div>
-
-                    {/* Other Documents */}
-                    <div className="pt-2 border-t border-border">
-                      <div className="flex items-center justify-between mb-1">
-                        <h4 className="text-[10px] font-semibold text-muted-foreground uppercase">Other Documents</h4>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        {(['purchase_bill', 'bilti', 'eway_bill'] as const).map((field) => (
-                          <div key={field} className="relative">
-                            <label className="block text-[10px] font-medium mb-0.5 capitalize">{field.replace(/_/g, ' ')}</label>
-                            <div className="relative">
-                              <input type="file" accept="image/*,.pdf" onChange={(e) => { handleFileSelect(field, e.target.files?.[0] || null); }} disabled={uploading[field]}
-                                className="w-full px-1.5 py-1 text-[10px] border border-border rounded-md bg-background file:mr-1 file:py-0.5 file:px-1.5 file:rounded file:border-0 file:text-[10px] file:bg-primary/10 file:text-primary disabled:opacity-50" />
-                              {uploading[field] && <div className="absolute right-1.5 top-1/2 -translate-y-1/2"><Loader2 className="h-3 w-3 animate-spin text-primary" /></div>}
-                              {uploadSuccess[field] && !uploading[field] && <div className="absolute right-1.5 top-1/2 -translate-y-1/2"><Check className="h-3 w-3 text-emerald-500" /></div>}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
                     </div>
                   </div>
 
