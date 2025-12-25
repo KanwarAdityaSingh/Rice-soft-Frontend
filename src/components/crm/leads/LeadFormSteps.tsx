@@ -11,6 +11,23 @@ import { pincodeAPI } from '../../../services/pincode.api';
 import { validateGST, validatePAN, validateEmail, validatePhone, validateGoogleLocationLink } from '../../../utils/validation';
 import type { CreateLeadRequest, Salesman, RiceCode, RiceType } from '../../../types/entities';
 
+// Utility function to convert string to title case
+const toTitleCase = (str: string | undefined | null): string => {
+  if (!str) return '';
+  // Check if the string is mostly uppercase (more than 60% uppercase letters)
+  const uppercaseCount = (str.match(/[A-Z]/g) || []).length;
+  const letterCount = (str.match(/[a-zA-Z]/g) || []).length;
+  const isAllCaps = letterCount > 0 && uppercaseCount / letterCount > 0.6;
+  
+  if (isAllCaps) {
+    // Convert all caps to title case
+    return str.toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+  
+  // If already in mixed case, return as is
+  return str;
+};
+
 interface LeadFormStepsProps {
   formData: CreateLeadRequest;
   setFormData: Dispatch<SetStateAction<CreateLeadRequest>>;
@@ -42,6 +59,7 @@ export function LeadFormSteps({
   const [loadingRiceTypes, setLoadingRiceTypes] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [pincodeLoading, setPincodeLoading] = useState(false);
+  const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set());
   
   // Filter to only active brokers for dropdown
   const brokers = allBrokers.filter(b => b.is_active);
@@ -150,35 +168,71 @@ export function LeadFormSteps({
       // The API service returns response.data, which is { gst_data: {...}, mapped_data: {...} }
       const mapped = response.mapped_data;
       
-      // Update form data with fetched details
-      const updates: CreateLeadRequest = {
-        ...formData,
-        company_name: mapped?.business_name || formData.company_name,
-      };
-
-      // Populate address fields (only fill non-empty values)
+      // Track which fields are being auto-filled
+      const autoFilledFieldsSet = new Set<string>();
+      
+      // Populate business name if available (convert to title case)
+      let companyName = formData.company_name;
+      if (mapped?.business_name) {
+        companyName = toTitleCase(mapped.business_name);
+        autoFilledFieldsSet.add('company_name');
+      }
+      
+      // Populate address fields (only fill non-empty values, convert to title case)
+      // Note: Address fields are NOT added to autoFilledFieldsSet, so they remain editable
+      const addressUpdate: any = { ...(formData.address || {}) };
       if (mapped?.address) {
-        updates.address = {
-          ...(formData.address || {}),
-          ...(mapped.address.street ? { street: mapped.address.street } : {}),
-          ...(mapped.address.city ? { city: mapped.address.city } : {}),
-          ...(mapped.address.state ? { state: mapped.address.state } : {}),
-          ...(mapped.address.pincode ? { pincode: mapped.address.pincode } : {}),
-          ...(mapped.address.country ? { country: mapped.address.country } : {}),
-        };
+        if (mapped.address.street) {
+          addressUpdate.street = toTitleCase(mapped.address.street);
+        }
+        if (mapped.address.city) {
+          addressUpdate.city = toTitleCase(mapped.address.city);
+        }
+        if (mapped.address.state) {
+          addressUpdate.state = toTitleCase(mapped.address.state);
+        }
+        if (mapped.address.pincode) {
+          addressUpdate.pincode = mapped.address.pincode;
+        }
+        if (mapped.address.country) {
+          addressUpdate.country = toTitleCase(mapped.address.country);
+        }
       }
 
       // Update business details
-      if (mapped?.business_details) {
-        updates.business_details = {
-          ...(formData.business_details || {}),
-          ...(mapped.business_details.gst_number ? { gst_number: mapped.business_details.gst_number } : {}),
-          ...(mapped.business_details.pan_number ? { pan_number: mapped.business_details.pan_number } : {}),
-          ...(mapped.business_details.business_type ? { business_type: mapped.business_details.business_type } : {}),
-        };
+      const businessDetailsUpdate: any = {
+        ...(formData.business_details || {}),
+      };
+      
+      // Set GST number if available
+      if (mapped?.business_details?.gst_number) {
+        businessDetailsUpdate.gst_number = mapped.business_details.gst_number;
+        autoFilledFieldsSet.add('gst_number');
+      }
+      
+      // Set PAN number if available
+      if (mapped?.business_details?.pan_number) {
+        businessDetailsUpdate.pan_number = mapped.business_details.pan_number;
+        autoFilledFieldsSet.add('pan_number');
+      }
+      
+      // Set business type if available
+      if (mapped?.business_details?.business_type) {
+        businessDetailsUpdate.business_type = mapped.business_details.business_type;
       }
 
-      setFormData(updates);
+      // Update form data
+      setFormData({
+        ...formData,
+        company_name: companyName,
+        address: addressUpdate,
+        business_details: businessDetailsUpdate,
+      });
+      
+      // Set the auto-filled fields
+      setAutoFilledFields(autoFilledFieldsSet);
+      
+      // Clear any previous errors
       setErrors({ ...errors, gst_number: '' });
     } catch (error: any) {
       console.error('GST lookup error:', error);
@@ -210,45 +264,75 @@ export function LeadFormSteps({
       const mapped = response.mapped_data;
       const panData = response.pan_data;
       
-      // Update form data with fetched details
-      const updates: CreateLeadRequest = {
-        ...formData,
-        company_name: mapped?.business_name || formData.company_name,
-      };
+      // Track which fields are being auto-filled
+      const autoFilledFieldsSet = new Set<string>();
       
-      // If PAN data is for a person, add to contact_persons if not already present
+      // Populate business name if available (convert to title case)
+      let companyName = formData.company_name;
+      if (mapped?.business_name) {
+        companyName = toTitleCase(mapped.business_name);
+        autoFilledFieldsSet.add('company_name');
+      }
+      
+      // Populate contact person if PAN is for a person (individual)
+      let updatedContactPersons = [...(formData.contact_persons || [])];
       if (panData?.category === 'person' && panData?.name) {
-        const existingContact = formData.contact_persons?.find(cp => cp.name === panData.name);
+        const existingContact = updatedContactPersons.find(cp => cp.name === panData.name);
         if (!existingContact) {
-          updates.contact_persons = [
-            ...(formData.contact_persons || []),
-            { name: panData.name, phones: [''] }
-          ];
+          updatedContactPersons[0] = { ...updatedContactPersons[0], name: toTitleCase(panData.name) };
+        }
+      }
+      
+      // Populate address fields (only fill non-empty values, convert to title case)
+      // Note: Address fields are NOT added to autoFilledFieldsSet, so they remain editable
+      const addressUpdate: any = { ...(formData.address || {}) };
+      if (mapped?.address) {
+        if (mapped.address.street) {
+          addressUpdate.street = toTitleCase(mapped.address.street);
+        }
+        if (mapped.address.city) {
+          addressUpdate.city = toTitleCase(mapped.address.city);
+        }
+        if (mapped.address.state) {
+          addressUpdate.state = toTitleCase(mapped.address.state);
+        }
+        if (mapped.address.pincode) {
+          addressUpdate.pincode = mapped.address.pincode;
+        }
+        if (mapped.address.country) {
+          addressUpdate.country = toTitleCase(mapped.address.country);
         }
       }
 
-      // Populate address fields (only fill non-empty values)
-      if (mapped?.address) {
-        updates.address = {
-          ...(formData.address || {}),
-          ...(mapped.address.street ? { street: mapped.address.street } : {}),
-          ...(mapped.address.city ? { city: mapped.address.city } : {}),
-          ...(mapped.address.state ? { state: mapped.address.state } : {}),
-          ...(mapped.address.pincode ? { pincode: mapped.address.pincode } : {}),
-          ...(mapped.address.country ? { country: mapped.address.country } : {}),
-        };
-      }
-
       // Update business details
-      if (mapped?.business_details) {
-        updates.business_details = {
-          ...(formData.business_details || {}),
-          ...(mapped.business_details.pan_number ? { pan_number: mapped.business_details.pan_number } : {}),
-          ...(mapped.business_details.business_type ? { business_type: mapped.business_details.business_type } : {}),
-        };
+      const businessDetailsUpdate: any = {
+        ...(formData.business_details || {}),
+      };
+      
+      // Ensure PAN number is set
+      if (mapped?.business_details?.pan_number) {
+        businessDetailsUpdate.pan_number = mapped.business_details.pan_number;
+        autoFilledFieldsSet.add('pan_number');
+      }
+      
+      // Set business type if available
+      if (mapped?.business_details?.business_type) {
+        businessDetailsUpdate.business_type = mapped.business_details.business_type;
       }
 
-      setFormData(updates);
+      // Update form data
+      setFormData({
+        ...formData,
+        company_name: companyName,
+        contact_persons: updatedContactPersons,
+        address: addressUpdate,
+        business_details: businessDetailsUpdate,
+      });
+      
+      // Set the auto-filled fields
+      setAutoFilledFields(autoFilledFieldsSet);
+      
+      // Clear any previous errors
       setErrors({ ...errors, pan_number: '' });
     } catch (error: any) {
       console.error('PAN lookup error:', error);
@@ -323,7 +407,10 @@ export function LeadFormSteps({
                 type="text"
                 value={formData.business_details?.gst_number || ''}
                 onChange={(e) => updateBusinessField('gst_number', e.target.value.toUpperCase())}
-                className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                readOnly={autoFilledFields.has('gst_number')}
+                className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
+                  autoFilledFields.has('gst_number') ? 'read-only:cursor-not-allowed opacity-75' : ''
+                }`}
                 placeholder="27ABCDE1234F1Z5"
               />
               <button type="button" onClick={handleGSTLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
@@ -340,7 +427,10 @@ export function LeadFormSteps({
                 type="text"
                 value={formData.business_details?.pan_number || ''}
                 onChange={(e) => updateBusinessField('pan_number', e.target.value.toUpperCase())}
-                className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                readOnly={autoFilledFields.has('pan_number')}
+                className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
+                  autoFilledFields.has('pan_number') ? 'read-only:cursor-not-allowed opacity-75' : ''
+                }`}
                 placeholder="ABCDE1234F"
               />
               <button type="button" onClick={handlePANLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
@@ -356,7 +446,10 @@ export function LeadFormSteps({
               type="text"
               value={formData.company_name}
               onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
-              className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+              readOnly={autoFilledFields.has('company_name')}
+              className={`w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
+                autoFilledFields.has('company_name') ? 'read-only:cursor-not-allowed opacity-75' : ''
+              }`}
             />
             {errors.company_name && <p className="mt-1 text-xs text-red-600">{errors.company_name}</p>}
           </div>
@@ -553,88 +646,6 @@ export function LeadFormSteps({
               </button>
             </div>
             {errors.contact_persons && <p className="mt-1 text-xs text-red-600">{errors.contact_persons}</p>}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">Phone</label>
-              <input
-                type="tel"
-                placeholder="10 digits only"
-                value={formData.phone || ''}
-                onChange={(e) => {
-                  // Only allow digits and limit to 10 digits
-                  const value = e.target.value.replace(/\D/g, '').slice(0, 10);
-                  setFormData({ ...formData, phone: value });
-                  // Validate and set error immediately (only if value is provided)
-                  if (value.length > 0 && value.length < 10) {
-                    setErrors({ ...errors, phone: 'Phone must be exactly 10 digits' });
-                  } else if (value.length === 10 && !validatePhone(value)) {
-                    setErrors({ ...errors, phone: 'Invalid phone number format' });
-                  } else {
-                    const newErrors = { ...errors };
-                    delete newErrors.phone;
-                    setErrors(newErrors);
-                  }
-                }}
-                onBlur={(e) => {
-                  const value = e.target.value.trim();
-                  if (value.length > 0) {
-                    if (value.length < 10) {
-                      setErrors({ ...errors, phone: 'Phone must be exactly 10 digits' });
-                    } else if (!validatePhone(value)) {
-                      setErrors({ ...errors, phone: 'Invalid phone number format' });
-                    } else {
-                      const newErrors = { ...errors };
-                      delete newErrors.phone;
-                      setErrors(newErrors);
-                    }
-                  } else {
-                    // Clear error if field is empty (optional field)
-                    const newErrors = { ...errors };
-                    delete newErrors.phone;
-                    setErrors(newErrors);
-                  }
-                }}
-                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                maxLength={10}
-              />
-              {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone}</p>}
-            </div>
-
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">Email</label>
-              <input
-                type="email"
-                placeholder="example@email.com"
-                value={formData.email}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setFormData({ ...formData, email: value });
-                  // Validate and set error immediately (email is optional in create mode)
-                  if (value.trim().length > 0 && !validateEmail(value.trim())) {
-                    setErrors({ ...errors, email: 'Please enter a valid email address' });
-                  } else {
-                    const newErrors = { ...errors };
-                    delete newErrors.email;
-                    setErrors(newErrors);
-                  }
-                }}
-                onBlur={(e) => {
-                  const value = e.target.value.trim();
-                  setFormData({ ...formData, email: value });
-                  if (value.length > 0 && !validateEmail(value)) {
-                    setErrors({ ...errors, email: 'Please enter a valid email address' });
-                  } else {
-                    const newErrors = { ...errors };
-                    delete newErrors.email;
-                    setErrors(newErrors);
-                  }
-                }}
-                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-              />
-              {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
-            </div>
           </div>
 
           <div>
@@ -920,7 +931,10 @@ export function LeadFormSteps({
                 type="text"
                 value={formData.business_details?.gst_number || ''}
                 onChange={(e) => updateBusinessField('gst_number', e.target.value.toUpperCase())}
-                className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                readOnly={autoFilledFields.has('gst_number')}
+                className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
+                  autoFilledFields.has('gst_number') ? 'read-only:cursor-not-allowed opacity-75' : ''
+                }`}
                 placeholder="27ABCDE1234F1Z5"
               />
               <button type="button" onClick={handleGSTLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
@@ -937,7 +951,10 @@ export function LeadFormSteps({
                 type="text"
                 value={formData.business_details?.pan_number || ''}
                 onChange={(e) => updateBusinessField('pan_number', e.target.value.toUpperCase())}
-                className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                readOnly={autoFilledFields.has('pan_number')}
+                className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
+                  autoFilledFields.has('pan_number') ? 'read-only:cursor-not-allowed opacity-75' : ''
+                }`}
                 placeholder="ABCDE1234F"
               />
               <button type="button" onClick={handlePANLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
@@ -953,7 +970,10 @@ export function LeadFormSteps({
               type="text"
               value={formData.company_name}
               onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
-              className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+              readOnly={autoFilledFields.has('company_name')}
+              className={`w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
+                autoFilledFields.has('company_name') ? 'read-only:cursor-not-allowed opacity-75' : ''
+              }`}
             />
             {errors.company_name && <p className="mt-1 text-xs text-red-600">{errors.company_name}</p>}
           </div>
@@ -1150,95 +1170,6 @@ export function LeadFormSteps({
               </button>
             </div>
             {errors.contact_persons && <p className="mt-1 text-xs text-red-600">{errors.contact_persons}</p>}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">Phone</label>
-              <input
-                type="tel"
-                placeholder="10 digits only"
-                value={formData.phone || ''}
-                onChange={(e) => {
-                  // Only allow digits and limit to 10 digits
-                  const value = e.target.value.replace(/\D/g, '').slice(0, 10);
-                  setFormData({ ...formData, phone: value });
-                  // Validate and set error immediately (only if value is provided)
-                  if (value.length > 0 && value.length < 10) {
-                    setErrors({ ...errors, phone: 'Phone must be exactly 10 digits' });
-                  } else if (value.length === 10 && !validatePhone(value)) {
-                    setErrors({ ...errors, phone: 'Invalid phone number format' });
-                  } else {
-                    const newErrors = { ...errors };
-                    delete newErrors.phone;
-                    setErrors(newErrors);
-                  }
-                }}
-                onBlur={(e) => {
-                  const value = e.target.value.trim();
-                  if (value.length > 0) {
-                    if (value.length < 10) {
-                      setErrors({ ...errors, phone: 'Phone must be exactly 10 digits' });
-                    } else if (!validatePhone(value)) {
-                      setErrors({ ...errors, phone: 'Invalid phone number format' });
-                    } else {
-                      const newErrors = { ...errors };
-                      delete newErrors.phone;
-                      setErrors(newErrors);
-                    }
-                  } else {
-                    // Clear error if field is empty (optional field)
-                    const newErrors = { ...errors };
-                    delete newErrors.phone;
-                    setErrors(newErrors);
-                  }
-                }}
-                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                maxLength={10}
-              />
-              {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone}</p>}
-            </div>
-
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">Email</label>
-              <input
-                type="email"
-                placeholder="example@email.com"
-                value={formData.email}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setFormData({ ...formData, email: value });
-                  // Validate and set error immediately (only if value is provided)
-                  if (value.trim().length > 0 && !validateEmail(value.trim())) {
-                    setErrors({ ...errors, email: 'Please enter a valid email address' });
-                  } else {
-                    const newErrors = { ...errors };
-                    delete newErrors.email;
-                    setErrors(newErrors);
-                  }
-                }}
-                onBlur={(e) => {
-                  const value = e.target.value.trim();
-                  setFormData({ ...formData, email: value });
-                  if (value.length > 0) {
-                    if (!validateEmail(value)) {
-                      setErrors({ ...errors, email: 'Please enter a valid email address' });
-                    } else {
-                      const newErrors = { ...errors };
-                      delete newErrors.email;
-                      setErrors(newErrors);
-                    }
-                  } else {
-                    // Clear error if field is empty (optional field)
-                    const newErrors = { ...errors };
-                    delete newErrors.email;
-                    setErrors(newErrors);
-                  }
-                }}
-                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-              />
-              {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
-            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

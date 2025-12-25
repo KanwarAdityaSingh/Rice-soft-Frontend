@@ -82,12 +82,6 @@ export function LeadInfoCards({ lead }: LeadInfoCardsProps) {
             <h3 className="font-semibold">Contact Information</h3>
           </div>
           <div className="space-y-2 text-sm">
-            <div>
-              <span className="text-muted-foreground">Email:</span> {lead.email}
-            </div>
-            <div>
-              <span className="text-muted-foreground">Phone:</span> {lead.phone}
-            </div>
             {lead.contact_persons && lead.contact_persons.length > 0 && (
               <div>
                 <span className="text-muted-foreground">Contact Persons:</span>

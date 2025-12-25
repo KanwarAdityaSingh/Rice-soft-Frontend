@@ -8,7 +8,7 @@ import { LeadStatusBadge } from '../../admin/shared/LeadStatusBadge';
 import { LeadPriorityBadge } from '../../admin/shared/LeadPriorityBadge';
 import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
 import { Users, Edit, Trash2, TrendingUp, Copy, Check } from 'lucide-react';
-import { canDelete, canUpdate, isAdmin, isCustomUser } from '../../../utils/permissions';
+import { canUpdate, isAdmin, isCustomUser } from '../../../utils/permissions';
 import type { Lead, LeadFilters } from '../../../types/entities';
 
 interface LeadsTableProps {
@@ -44,7 +44,6 @@ export function LeadsTable({
     const matchesSearch =
       lead.company_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       contactPersonsText.includes(searchQuery.toLowerCase()) ||
-      lead.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
       lead.business_details?.business_keyword?.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesSearch;
   });
@@ -94,7 +93,7 @@ export function LeadsTable({
           <SearchBar 
             value={searchQuery} 
             onChange={setSearchQuery} 
-            placeholder="Search by business name, contact, email, or keyword..." 
+            placeholder="Search by business name, contact, or keyword..." 
           />
         </div>
         <div className="flex gap-2">
@@ -132,8 +131,6 @@ export function LeadsTable({
               <th className="text-left py-3 px-4 text-sm font-semibold">Lead ID</th>
               <th className="text-left py-3 px-4 text-sm font-semibold">Business Name</th>
               <th className="text-left py-3 px-4 text-sm font-semibold">Contact Person</th>
-              <th className="text-left py-3 px-4 text-sm font-semibold">Email</th>
-              <th className="text-left py-3 px-4 text-sm font-semibold">Phone</th>
               <th className="text-left py-3 px-4 text-sm font-semibold">Status</th>
               <th className="text-left py-3 px-4 text-sm font-semibold">Priority</th>
               <th className="text-left py-3 px-4 text-sm font-semibold">Estimated Value</th>
@@ -176,8 +173,6 @@ export function LeadsTable({
                       ))
                     : '-'}
                 </td>
-                <td className="py-3 px-4 text-sm">{lead.email}</td>
-                <td className="py-3 px-4 text-sm">{lead.phone}</td>
                 <td className="py-3 px-4 text-sm">
                   <LeadStatusBadge status={lead.lead_status} />
                 </td>
@@ -259,14 +254,6 @@ export function LeadsTable({
 
             {/* Details Grid */}
             <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <span className="text-muted-foreground text-xs">Email</span>
-                <p className="truncate">{lead.email}</p>
-              </div>
-              <div>
-                <span className="text-muted-foreground text-xs">Phone</span>
-                <p className="truncate">{lead.phone}</p>
-              </div>
               <div>
                 <span className="text-muted-foreground text-xs">Priority</span>
                 <div className="mt-0.5">

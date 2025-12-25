@@ -414,8 +414,6 @@ export interface Lead {
 export interface CreateLeadRequest {
   company_name: string;
   contact_persons: ContactPerson[];
-  email: string;
-  phone?: string;
   address?: Partial<LeadAddress>;
   business_details?: Partial<LeadBusinessDetails>;
   is_existing_customer?: boolean;

@@ -99,8 +99,6 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
   const [formData, setFormData] = useState<CreateLeadRequest>({
     company_name: '',
     contact_persons: [{ name: '', phones: [''], emails: [''] }],
-    email: '',
-    phone: '',
     address: {
       street: '',
       city: '',
@@ -149,8 +147,6 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
       setFormData({
         company_name: lead.company_name,
         contact_persons: contactPersons,
-        email: lead.email,
-        phone: lead.phone,
         address: {
           street: lead.address?.street || '',
           city: lead.address?.city || '',
@@ -178,8 +174,6 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
       setFormData({
         company_name: '',
         contact_persons: [{ name: '', phones: [''], emails: [''] }],
-        email: '',
-        phone: '',
         address: {
           street: '',
           city: '',
@@ -231,20 +225,6 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
       }
     }
     
-    // Phone field validation - optional, but if provided, must be valid
-    if (formData.phone && formData.phone.trim().length > 0) {
-      if (formData.phone.trim().length < 10) {
-        newErrors.phone = 'Phone must be exactly 10 digits';
-      } else if (!validatePhone(formData.phone.trim())) {
-        newErrors.phone = 'Invalid phone number format';
-      }
-    }
-    
-    // Email validation - optional in both create and edit mode, but if provided, must be valid
-    if (formData.email && formData.email.trim().length > 0 && !validateEmail(formData.email.trim())) {
-      newErrors.email = 'Please enter a valid email address';
-    }
-    
     // Step 2 validations (Address is required)
     if (!formData.address?.street?.trim()) newErrors.street = 'Street is required';
     if (!formData.address?.city?.trim()) newErrors.city = 'City is required';
@@ -255,7 +235,7 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       // Go to the step with errors
-      if (newErrors.company_name || newErrors.contact_persons || newErrors.phone || newErrors.email) {
+      if (newErrors.company_name || newErrors.contact_persons) {
         setStep(1);
       } else if (newErrors.street || newErrors.city || newErrors.state || newErrors.pincode || newErrors.country) {
         setStep(2);

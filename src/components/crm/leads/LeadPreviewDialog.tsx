@@ -194,8 +194,6 @@ export function LeadPreviewDialog({ open, onOpenChange, formData, onConfirm }: L
                     </div>
                   </div>
                 )}
-                <InfoRow label="Email" value={formData.email} />
-                <InfoRow label="Phone" value={formData.phone || undefined} />
               </InfoSection>
 
               {/* Address Information */}
