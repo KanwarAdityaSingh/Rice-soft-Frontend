@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { inventoryAPI } from '../services/inventory.api';
 import type { FinishedGoodsInventory, PacketsInventory, LotsInventory, BagsInventory, InventorySummary, InventoryFilters } from '../types/entities';
 
@@ -11,52 +11,52 @@ export function useInventory() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchFinishedGoods = async (filters?: InventoryFilters) => {
+  const fetchFinishedGoods = useCallback(async (filters?: InventoryFilters) => {
     try {
       const data = await inventoryAPI.getFinishedGoods(filters);
       setFinishedGoods(data);
     } catch (err: any) {
       setError(err.message);
     }
-  };
+  }, []);
 
-  const fetchPackets = async () => {
+  const fetchPackets = useCallback(async () => {
     try {
       const data = await inventoryAPI.getPackets();
       setPackets(data);
     } catch (err: any) {
       setError(err.message);
     }
-  };
+  }, []);
 
-  const fetchLots = async () => {
+  const fetchLots = useCallback(async () => {
     try {
       const data = await inventoryAPI.getLots();
       setLots(data);
     } catch (err: any) {
       setError(err.message);
     }
-  };
+  }, []);
 
-  const fetchBags = async (filters?: InventoryFilters) => {
+  const fetchBags = useCallback(async (filters?: InventoryFilters) => {
     try {
       const data = await inventoryAPI.getBags(filters);
       setBags(data);
     } catch (err: any) {
       setError(err.message);
     }
-  };
+  }, []);
 
-  const fetchSummary = async () => {
+  const fetchSummary = useCallback(async () => {
     try {
       const data = await inventoryAPI.getSummary();
       setSummary(data);
     } catch (err: any) {
       setError(err.message);
     }
-  };
+  }, []);
 
-  const fetchAll = async (filters?: InventoryFilters) => {
+  const fetchAll = useCallback(async (filters?: InventoryFilters) => {
     setLoading(true);
     setError(null);
     try {
@@ -72,11 +72,11 @@ export function useInventory() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchFinishedGoods, fetchPackets, fetchLots, fetchBags, fetchSummary]);
 
   useEffect(() => {
     fetchAll();
-  }, []);
+  }, [fetchAll]);
 
   return {
     finishedGoods,
@@ -94,4 +94,3 @@ export function useInventory() {
     refetch: fetchAll,
   };
 }
-

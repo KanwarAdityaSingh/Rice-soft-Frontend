@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
-import { Box, Plus, PackagePlus } from 'lucide-react';
+import { Box, Plus, PackagePlus, Scale, TrendingUp, Package } from 'lucide-react';
 import { SearchBar } from '../../admin/shared/SearchBar';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { EmptyState } from '../../admin/shared/EmptyState';
@@ -26,7 +26,7 @@ export function PackagingTable() {
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
 
-  // Fetch packets inventory when component mounts
+  // Fetch packets inventory when component mounts (fetchPackets is now memoized)
   useEffect(() => {
     fetchPackets();
   }, [fetchPackets]);
@@ -43,6 +43,21 @@ export function PackagingTable() {
       ? parseInt(inventory.available_quantity) 
       : inventory.available_quantity;
     return isNaN(qty) ? 0 : qty;
+  };
+
+  // Get style based on packet type
+  const getTypeStyle = (type: string): { gradient: string; bgLight: string; text: string } => {
+    const lowerType = type.toLowerCase();
+    if (lowerType.includes('pp')) {
+      return { gradient: 'from-sky-500 to-cyan-500', bgLight: 'bg-sky-500/10', text: 'text-sky-600' };
+    }
+    if (lowerType.includes('jute')) {
+      return { gradient: 'from-amber-500 to-orange-500', bgLight: 'bg-amber-500/10', text: 'text-amber-600' };
+    }
+    if (lowerType.includes('hdpe')) {
+      return { gradient: 'from-violet-500 to-purple-500', bgLight: 'bg-violet-500/10', text: 'text-violet-600' };
+    }
+    return { gradient: 'from-primary to-accent', bgLight: 'bg-primary/10', text: 'text-primary' };
   };
 
   const filtered = useMemo(() => {
@@ -85,62 +100,112 @@ export function PackagingTable() {
           description="Create your first packaging type to get started."
         />
       ) : (
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((pkg) => (
-            <article
-              key={pkg.id}
-              className="group rounded-2xl p-4 bg-gradient-to-br from-background to-muted/40 border border-border/60 hover:border-primary/40 transition-all duration-300 shadow-sm hover:shadow-md"
-            >
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shadow-inner">
-                    <Box className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-semibold leading-tight">{pkg.packet_type}</h3>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      {pkg.holding_capacity} kg capacity
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {filtered.map((pkg) => {
+            const available = getAvailableQuantity(pkg.id, pkg.holding_capacity, pkg.packet_type);
+            const typeStyle = getTypeStyle(pkg.packet_type);
+            const hasStock = available > 0;
+
+            return (
+              <article
+                key={pkg.id}
+                className="group relative rounded-2xl bg-card border border-border overflow-hidden transition-all duration-300 hover:shadow-xl hover:border-primary/30"
+              >
+                {/* Top gradient bar */}
+                <div className={`h-1.5 bg-gradient-to-r ${typeStyle.gradient}`} />
+
+                <div className="p-5">
+                  {/* Weight (Primary - Large at Top) */}
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-4xl font-bold text-foreground tracking-tight">
+                          {pkg.holding_capacity}
+                        </span>
+                        <span className="text-xl text-muted-foreground font-medium">kg</span>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1 uppercase tracking-wide">
+                        Holding Capacity
+                      </div>
                     </div>
-                    {(() => {
-                      const available = getAvailableQuantity(pkg.id, pkg.holding_capacity, pkg.packet_type);
-                      return available > 0 ? (
-                        <div className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 font-medium">
-                          {available} available
-                        </div>
-                      ) : null;
-                    })()}
-                    {pkg.source && (
-                      <div className="text-xs text-muted-foreground mt-1">Source: {pkg.source}</div>
-                    )}
+                    <div className={`p-3 rounded-xl ${typeStyle.bgLight}`}>
+                      <Scale className={`h-6 w-6 ${typeStyle.text}`} />
+                    </div>
+                  </div>
+
+                  {/* Packet Type (Secondary - Below) */}
+                  <div className="mb-4">
+                    <span className={`inline-flex items-center gap-2 px-3 py-1.5 text-sm font-semibold rounded-lg ${typeStyle.bgLight} ${typeStyle.text}`}>
+                      <Box className="h-4 w-4" />
+                      {pkg.packet_type}
+                    </span>
+                  </div>
+
+                  {/* Stock Status */}
+                  <div className="flex items-center justify-between py-3 border-t border-border/60">
+                    <div>
+                      <div className="text-xs text-muted-foreground mb-1">Available Stock</div>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xl font-bold font-mono ${hasStock ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+                          {available.toLocaleString('en-IN')}
+                        </span>
+                        <span className="text-sm text-muted-foreground">pcs</span>
+                      </div>
+                    </div>
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full ${
+                      hasStock 
+                        ? 'bg-emerald-500/10 text-emerald-600' 
+                        : 'bg-muted text-muted-foreground'
+                    }`}>
+                      {hasStock ? (
+                        <>
+                          <TrendingUp className="h-3 w-3" />
+                          In Stock
+                        </>
+                      ) : (
+                        <>
+                          <Package className="h-3 w-3" />
+                          Empty
+                        </>
+                      )}
+                    </span>
+                  </div>
+
+                  {/* Source (if available) */}
+                  {pkg.source && (
+                    <div className="text-xs text-muted-foreground pt-2 border-t border-border/40">
+                      <span className="font-medium">Source:</span> {pkg.source}
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="mt-4 flex items-center justify-between pt-3 border-t border-border/60">
+                    <button
+                      onClick={() => {
+                        setInventoryPackagingId(pkg.id);
+                        setInventoryOpen(true);
+                      }}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${typeStyle.bgLight} ${typeStyle.text} hover:opacity-80`}
+                    >
+                      <PackagePlus className="h-3.5 w-3.5" />
+                      Add Stock
+                    </button>
+                    <ActionButtons
+                      isActive={true}
+                      onEdit={() => {
+                        setEditId(pkg.id);
+                        setCreateOpen(true);
+                      }}
+                      onDelete={() => {
+                        setSelectedId(pkg.id);
+                        setDeleteDialogOpen(true);
+                      }}
+                    />
                   </div>
                 </div>
-              </div>
-
-              <div className="mt-4 flex items-center justify-between">
-                <button
-                  onClick={() => {
-                    setInventoryPackagingId(pkg.id);
-                    setInventoryOpen(true);
-                  }}
-                  className="text-xs text-primary hover:underline inline-flex items-center gap-1"
-                >
-                  <PackagePlus className="h-3 w-3" />
-                  Add Inventory
-                </button>
-                <ActionButtons
-                  isActive={true}
-                  onEdit={() => {
-                    setEditId(pkg.id);
-                    setCreateOpen(true);
-                  }}
-                  onDelete={() => {
-                    setSelectedId(pkg.id);
-                    setDeleteDialogOpen(true);
-                  }}
-                />
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
       )}
 
@@ -207,4 +272,3 @@ export function PackagingTable() {
     </div>
   );
 }
-
