@@ -6,6 +6,8 @@ import { ActionButtons } from '../../admin/shared/ActionButtons';
 import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
 import { Package, Info, Copy, Check } from 'lucide-react';
 import { useLots } from '../../../hooks/useLots';
+import { useSaudas } from '../../../hooks/useSaudas';
+import { useVendors } from '../../../hooks/useVendors';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { getRiceTypeLabel } from '../../../utils/riceType';
 // LotFormModal import removed - edit functionality disabled
@@ -16,6 +18,8 @@ import type { Lot, RiceCode, RiceType } from '../../../types/entities';
 export function LotsTable() {
   const [saudaFilter, setSaudaFilter] = useState<string | undefined>();
   const { lots, loading, deleteLot, refetch } = useLots(saudaFilter);
+  const { saudas } = useSaudas();
+  const { vendors } = useVendors();
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedLot, setSelectedLot] = useState<Lot | null>(null);
@@ -52,6 +56,14 @@ export function LotsTable() {
     if (!riceCodeId) return '';
     const riceCode = riceCodes.find((rc) => rc.rice_code_id === riceCodeId);
     return riceCode ? riceCode.rice_code_name : '';
+  };
+
+  const getVendorName = (lot: Lot): string => {
+    if (!lot.sauda_id) return '-';
+    const sauda = saudas.find((s) => s.id === lot.sauda_id);
+    if (!sauda || !sauda.purchaser_id) return '-';
+    const vendor = vendors.find((v) => v.id === sauda.purchaser_id);
+    return vendor ? vendor.business_name : '-';
   };
 
   const getLotDisplayName = (lot: Lot): string => {
@@ -153,6 +165,7 @@ export function LotsTable() {
               <tr className="border-b border-border">
                 <th className="text-left py-3 px-4 text-sm font-semibold">Lot Number</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold">Rice Code / Type</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold">Vendor</th>
                 <th className="text-right py-3 px-4 text-sm font-semibold">Bags</th>
                 <th className="text-right py-3 px-4 text-sm font-semibold">Received Weight</th>
                 <th className="text-right py-3 px-4 text-sm font-semibold">Rate</th>
@@ -197,6 +210,9 @@ export function LotsTable() {
                         {getRiceTypeLabel(lot.rice_type, riceTypes) || '-'}
                       </div>
                     </div>
+                  </td>
+                  <td className="py-3 px-4">
+                    <div className="text-sm font-medium">{getVendorName(lot)}</div>
                   </td>
                   <td className="py-3 px-4 text-right text-sm">{lot.no_of_bags}</td>
                   <td className="py-3 px-4 text-right text-sm">{lot.received_weight.toFixed(2)} kg</td>

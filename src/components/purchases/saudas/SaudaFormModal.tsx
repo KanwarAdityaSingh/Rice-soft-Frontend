@@ -61,6 +61,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
     cooked_rice_image_url: null,
     uncooked_rice_image_url: null,
     notes: null,
+    is_dana_required: true, // Default to true
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -151,6 +152,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
         cooked_rice_image_url: sauda.cooked_rice_image_url || null,
         uncooked_rice_image_url: sauda.uncooked_rice_image_url || null,
         notes: sauda.notes || null,
+        is_dana_required: sauda.is_dana_required ?? true, // Default to true if not set
       });
       setErrors({});
       setPendingFiles({
@@ -186,6 +188,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
       cooked_rice_image_url: null,
       uncooked_rice_image_url: null,
       notes: null,
+      is_dana_required: true, // Default to true
     });
     setErrors({});
     setUnit('kg');
@@ -949,6 +952,26 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                       rows={2}
                       maxLength={100}
                     />
+                  </div>
+
+                  {/* Section: Dana Required */}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="is_dana_required"
+                        checked={formData.is_dana_required ?? true}
+                        onChange={(e) => setFormData({ ...formData, is_dana_required: e.target.checked })}
+                        className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
+                      />
+                      <label htmlFor="is_dana_required" className="text-xs font-medium cursor-pointer">
+                        Is Dana Required
+                      </label>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground pl-6">
+                      If checked, dana deduction (300gm per quintal) will be calculated in payment advice for this sauda. 
+                      If unchecked, no dana deduction will be applied.
+                    </p>
                   </div>
 
                   {/* Section: Rice Images */}

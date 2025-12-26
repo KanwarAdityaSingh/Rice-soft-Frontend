@@ -62,7 +62,7 @@ export function BatchesTable() {
           <FilterDropdown
             label="Status"
             options={[
-              { label: 'All', value: undefined },
+              { label: 'All', value: '' },
               { label: 'Planned', value: 'planned' },
               { label: 'In Progress', value: 'in_progress' },
               { label: 'Completed', value: 'completed' },

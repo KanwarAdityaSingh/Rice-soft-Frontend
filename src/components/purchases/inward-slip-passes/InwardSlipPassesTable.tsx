@@ -120,11 +120,6 @@ export function InwardSlipPassesTable() {
                     <div className="text-xs text-muted-foreground">{isp.party_name}</div>
                   </div>
                 </div>
-                <span className={`whitespace-nowrap px-2 py-1 rounded-md text-[10px] ${
-                  isp.status === 'completed' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-yellow-500/10 text-yellow-600'
-                }`}>
-                  {isp.status}
-                </span>
               </div>
               <div className="mt-3 grid gap-1.5 text-xs">
                 <div className="inline-flex items-center gap-2">
@@ -145,6 +140,18 @@ export function InwardSlipPassesTable() {
                   <span className="text-muted-foreground w-20">Saudas:</span>
                   <span className="font-medium">{isp.sauda_ids?.length || 0}</span>
                 </div>
+                {isp.bill_number && (
+                  <div className="inline-flex items-center gap-2">
+                    <span className="text-muted-foreground w-20">Bill #:</span>
+                    <span className="font-medium">{isp.bill_number}</span>
+                  </div>
+                )}
+                {isp.bill_date && (
+                  <div className="inline-flex items-center gap-2">
+                    <span className="text-muted-foreground w-20">Bill Date:</span>
+                    <span className="font-medium">{new Date(isp.bill_date).toLocaleDateString('en-IN')}</span>
+                  </div>
+                )}
               </div>
               <div className="mt-3 flex items-center justify-end gap-1">
                 <button

@@ -147,6 +147,8 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   const [uploadingOtherBill, setUploadingOtherBill] = useState(false);
   const [newBillName, setNewBillName] = useState('');
   const [newBillFile, setNewBillFile] = useState<File | null>(null);
+  const [billNumber, setBillNumber] = useState<string>('');
+  const [billDate, setBillDate] = useState<string>('');
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
@@ -196,6 +198,9 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
       });
       setDisplaySlipNumber(isp.slip_number); // Store for display only
       setOtherBills(isp.other_bills || []); // Load other_bills array
+      // Load bill number and date
+      setBillNumber(isp.bill_number || '');
+      setBillDate(isp.bill_date || '');
       // Load selected vehicle details
       if (isp.vehicle_id) {
         try {
@@ -242,6 +247,8 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     setErrors({});
     setNewBillName('');
     setNewBillFile(null);
+    setBillNumber('');
+    setBillDate('');
     // Reset vehicle state
     setVehicleNumberInput('');
     setSelectedVehicle(null);
@@ -376,20 +383,23 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     setUploading(prev => ({ ...prev, [field]: true }));
     try {
       let uploadFn;
+      let uploadPromise;
       switch (field) {
         case 'purchase_bill':
-          uploadFn = inwardSlipPassesAPI.uploadPurchaseBill;
+          uploadPromise = inwardSlipPassesAPI.uploadPurchaseBill(uploadIspId, file, billNumber || undefined, billDate || undefined);
           break;
         case 'bilti':
           uploadFn = inwardSlipPassesAPI.uploadBilti;
+          uploadPromise = uploadFn(uploadIspId, file);
           break;
         case 'eway_bill':
           uploadFn = inwardSlipPassesAPI.uploadEwayBill;
+          uploadPromise = uploadFn(uploadIspId, file);
           break;
         default:
           throw new Error('Unknown upload field');
       }
-      await uploadFn(uploadIspId, file);
+      await uploadPromise;
       setUploadSuccess(prev => ({ ...prev, [field]: true }));
       if (isEditMode) {
         setAlertType('success');
@@ -1243,7 +1253,46 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                     <div className="flex items-center justify-between mb-1">
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                      {(['purchase_bill', 'bilti', 'eway_bill'] as const).map((field) => (
+                      {/* Purchase Bill with Number and Date */}
+                      <div className="relative col-span-2">
+                        <label className="block text-[10px] font-medium mb-0.5">Purchase Bill</label>
+                        <div className="space-y-1.5">
+                          <div className="relative">
+                            <input 
+                              type="file" 
+                              accept="image/*,.pdf" 
+                              onChange={(e) => { handleFileSelect('purchase_bill', e.target.files?.[0] || null); }} 
+                              disabled={uploading.purchase_bill}
+                              className="w-full px-1.5 py-1 text-[10px] border border-border rounded-md bg-background file:mr-1 file:py-0.5 file:px-1.5 file:rounded file:border-0 file:text-[10px] file:bg-primary/10 file:text-primary disabled:opacity-50" 
+                            />
+                            {uploading.purchase_bill && <div className="absolute right-1.5 top-1/2 -translate-y-1/2"><Loader2 className="h-3 w-3 animate-spin text-primary" /></div>}
+                            {uploadSuccess.purchase_bill && !uploading.purchase_bill && <div className="absolute right-1.5 top-1/2 -translate-y-1/2"><Check className="h-3 w-3 text-emerald-500" /></div>}
+                          </div>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <div>
+                              <label className="block text-[9px] text-muted-foreground mb-0.5">Bill Number (Optional)</label>
+                              <input
+                                type="text"
+                                value={billNumber}
+                                onChange={(e) => setBillNumber(e.target.value)}
+                                placeholder="e.g., BILL-2024-001"
+                                className="w-full px-1.5 py-1 text-[10px] border border-border rounded-md bg-background"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[9px] text-muted-foreground mb-0.5">Bill Date (Optional)</label>
+                              <input
+                                type="date"
+                                value={billDate}
+                                onChange={(e) => setBillDate(e.target.value)}
+                                className="w-full px-1.5 py-1 text-[10px] border border-border rounded-md bg-background"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Bilti and Eway Bill */}
+                      {(['bilti', 'eway_bill'] as const).map((field) => (
                         <div key={field} className="relative">
                           <label className="block text-[10px] font-medium mb-0.5 capitalize">{field.replace(/_/g, ' ')}</label>
                           <div className="relative">

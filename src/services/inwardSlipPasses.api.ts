@@ -72,12 +72,18 @@ export const inwardSlipPassesAPI = {
   },
 
   // Upload purchase bill
-  uploadPurchaseBill: async (id: string, file: File) => {
+  uploadPurchaseBill: async (id: string, file: File, billNumber?: string, billDate?: string) => {
     const formData = new FormData();
     formData.append('file', file);
+    if (billNumber && billNumber.trim()) {
+      formData.append('bill_number', billNumber.trim());
+    }
+    if (billDate) {
+      formData.append('bill_date', billDate);
+    }
     const token = localStorage.getItem('auth:token');
     const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3000/api';
-    const response = await fetch(`${API_BASE_URL}/inward-slip-passes/${id}/upload-purchase-bill`, {
+    const response = await fetch(`${API_BASE_URL}/v1/inward-slip-passes/${id}/upload-purchase-bill`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,

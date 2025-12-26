@@ -308,6 +308,25 @@ export function InwardSlipPassPreviewDialog({ open, onOpenChange, isp }: InwardS
                 <span className="font-bold">{new Date(isp.date).toLocaleDateString('en-IN')}</span>
               </div>
 
+              {/* Purchase Bill Info */}
+              {(isp.bill_number || isp.bill_date) && (
+                <div className="border-b border-dotted border-border pb-2 mb-3">
+                  <div className="font-semibold mb-1 text-xs">Purchase Bill Details:</div>
+                  {isp.bill_number && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Bill Number:</span>
+                      <span className="font-semibold">{isp.bill_number}</span>
+                    </div>
+                  )}
+                  {isp.bill_date && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Bill Date:</span>
+                      <span className="font-semibold">{new Date(isp.bill_date).toLocaleDateString('en-IN')}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Charges */}
               {isp.transportation_cost != null && (
                 <div className="border-t-2 border-dashed border-border pt-3 mt-3">

@@ -687,6 +687,7 @@ export interface Sauda {
   uncooked_rice_image_url?: string | null;
   status: 'draft' | 'active' | 'completed' | 'cancelled';
   notes?: string | null;
+  is_dana_required?: boolean; // Controls whether dana deduction is calculated in payment advice
   created_at: string;
   updated_at: string;
 }
@@ -708,6 +709,7 @@ export interface CreateSaudaRequest {
   uncooked_rice_image_url?: string | null;
   notes?: string | null;
   status?: 'draft' | 'active' | 'completed' | 'cancelled';
+  is_dana_required?: boolean; // Optional, defaults to true if not provided
 }
 
 export interface UpdateSaudaRequest {
@@ -727,6 +729,7 @@ export interface UpdateSaudaRequest {
   uncooked_rice_image_url?: string | null;
   notes?: string | null;
   status?: 'draft' | 'active' | 'completed' | 'cancelled';
+  is_dana_required?: boolean;
 }
 
 export interface SaudaFilters {
@@ -760,6 +763,8 @@ export interface InwardSlipPass {
   status: 'pending' | 'completed';
   other_bills?: OtherBill[];
   bill_pdf_url?: string | null;
+  bill_number?: string | null; // Purchase bill number
+  bill_date?: string | null; // Purchase bill date (YYYY-MM-DD)
   bilti_image_url?: string | null;
   bilti_pdf_url?: string | null;
   eway_bill_number?: string | null;
@@ -1104,6 +1109,7 @@ export interface PaymentAdvice {
   status: 'pending' | 'completed' | 'failed';
   transaction_id?: string | null;
   payment_slip_url?: string | null;
+  bill_number?: string | null; // Purchase bill number from ISP
   bill_weight?: number | null; // Sum of said_sent_weight from kaantas
   kanta_weight?: number | null; // Sum of kaanta_weight from kaantas
   dana_deduction?: number | null; // Calculated as (said_sent_weight * 300/1000)/100
@@ -1124,6 +1130,7 @@ export interface CreatePaymentAdviceRequest {
   date_of_payment: string;
   status?: 'pending' | 'completed' | 'failed';
   transaction_id?: string | null;
+  bill_number?: string | null; // Purchase bill number from ISP
   charges?: Array<{
     charge_name: string;
     charge_value: number;
@@ -1140,6 +1147,7 @@ export interface UpdatePaymentAdviceRequest {
   date_of_payment?: string;
   status?: 'pending' | 'completed' | 'failed';
   transaction_id?: string | null;
+  bill_number?: string | null; // Purchase bill number from ISP
 }
 
 export interface AddChargeRequest {

@@ -252,13 +252,22 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                       {getSaudaDisplayName(s)}
                     </h3>
                     <div className="text-xs text-muted-foreground">Rate: ₹{(s.rate ?? 0).toFixed(2)}</div>
+                    <div className="mt-1 flex items-center gap-2">
                     {s.completion_percentage !== null && (
-                      <div className="mt-1">
                         <span className={`text-[10px] px-2 py-0.5 rounded-full ${getCompletionStatus(s.completion_percentage).bgColor} ${getCompletionStatus(s.completion_percentage).color} border ${getCompletionStatus(s.completion_percentage).borderColor}`}>
                           {getCompletionStatus(s.completion_percentage).label}
                         </span>
+                      )}
+                      {(s.is_dana_required ?? true) ? (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700">
+                          Dana Required
+                        </span>
+                      ) : (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700">
+                          Dana Not Required
+                        </span>
+                      )}
                       </div>
-                    )}
                   </div>
                 </div>
               </div>

@@ -9,7 +9,7 @@ import { useInwardSlipPasses } from '../../../hooks/useInwardSlipPasses';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { getRiceTypeLabel } from '../../../utils/riceType';
-import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
+import { formatWeightDisplay } from '../../../utils/saudaCompletion';
 import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
 import type { PaymentAdvice, RiceCode, RiceType, Sauda, InwardSlipPass, Vehicle, ISPPurchaseSummary, SaudaPurchaseSummary } from '../../../types/entities';
 
@@ -304,6 +304,12 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                   <span className="text-muted-foreground">Date:</span>
                   <span className="font-bold ml-1">{new Date(paymentAdvice.date_of_payment).toLocaleDateString('en-IN')}</span>
                 </div>
+                {paymentAdvice.bill_number && (
+                  <div className="col-span-2">
+                    <span className="text-muted-foreground">Bill Number:</span>
+                    <span className="font-bold ml-1">{paymentAdvice.bill_number}</span>
+                  </div>
+                )}
               </div>
 
               {/* Party Info */}
@@ -328,21 +334,6 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                       <span className="text-muted-foreground">Sauda:</span>
                       <span className="font-semibold">{getRiceCodeName(sauda.rice_code_id)} {getRiceTypeLabel(sauda.rice_type, riceTypes)} @ ₹{sauda.rate}/kg</span>
                     </div>
-                    {summary && 'sauda_details' in summary && summary.sauda_details && summary.sauda_details.completion_percentage !== null && (
-                      <div className="flex justify-between items-center mt-1">
-                        <span className="text-muted-foreground text-xs">Completion:</span>
-                        <div className="flex items-center gap-2">
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${getCompletionStatus(summary.sauda_details.completion_percentage).bgColor} ${getCompletionStatus(summary.sauda_details.completion_percentage).color} border ${getCompletionStatus(summary.sauda_details.completion_percentage).borderColor}`}>
-                            {formatCompletionPercentage(summary.sauda_details.completion_percentage)}
-                          </span>
-                          {summary.sauda_details.quantity && (
-                            <span className="text-xs text-muted-foreground">
-                              {formatWeightDisplay(summary.sauda_details.received_until_now, summary.sauda_details.quantity)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
                 {isp && (
@@ -359,11 +350,6 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                               <span className="text-muted-foreground">
                                 {getRiceCodeName(saudaItem.sauda_details.rice_code_id)} {getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes)}
                               </span>
-                              {saudaItem.sauda_details.completion_percentage !== null && (
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).bgColor} ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).color} border ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).borderColor}`}>
-                                  {formatCompletionPercentage(saudaItem.sauda_details.completion_percentage)}
-                                </span>
-                              )}
                             </div>
                             {saudaItem.sauda_details.quantity && (
                               <div className="text-[10px] text-muted-foreground mt-0.5">
@@ -387,13 +373,23 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                   {isp && 'saudas' in summary && summary.saudas && summary.saudas.length > 0 && (
                     <div className="mb-3 space-y-2">
                       <div className="text-xs font-semibold text-muted-foreground">Per Sauda Breakdown:</div>
-                      {summary.saudas.map((saudaItem, idx) => (
+                      {summary.saudas.map((saudaItem, idx) => {
+                        const sauda = saudas.find(s => s.id === saudaItem.sauda_id);
+                        const isDanaRequired = sauda?.is_dana_required ?? true;
+                        
+                        return (
                         <div key={saudaItem.sauda_id} className="border border-border/50 rounded p-2 bg-muted/20">
-                          <div className="font-semibold text-xs mb-1">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="font-semibold text-xs">
                             {idx + 1}. {getRiceCodeName(saudaItem.sauda_details.rice_code_id)} {getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes) || 'N/A'}
-                            {saudaItem.sauda_details.completion_percentage !== null && (
-                              <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-full ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).bgColor} ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).color} border ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).borderColor}`}>
-                                {formatCompletionPercentage(saudaItem.sauda_details.completion_percentage)}
+                            </div>
+                            {isDanaRequired ? (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700">
+                                Dana Required
+                              </span>
+                            ) : (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700">
+                                Dana Not Required
                               </span>
                             )}
                           </div>
@@ -430,7 +426,8 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                             </div>
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                       <div className="text-xs font-semibold text-muted-foreground pt-1 border-t border-border">Total Summary:</div>
                     </div>
                   )}
@@ -451,11 +448,18 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                           <span>{paymentAdvice.kanta_weight.toFixed(2)} kg</span>
                         </div>
                       )}
-                      {paymentAdvice.dana_deduction && paymentAdvice.dana_deduction > 0 && (
+                      {paymentAdvice.dana_deduction && paymentAdvice.dana_deduction > 0 ? (
                         <div className="flex justify-between text-[10px] text-red-600">
                           <span className="text-muted-foreground">Less: Dana (300gm per Qtl):</span>
                           <span>-{paymentAdvice.dana_deduction.toFixed(2)} kg</span>
                         </div>
+                      ) : (
+                        sauda && !(sauda.is_dana_required ?? true) && (
+                          <div className="flex justify-between text-[10px] text-muted-foreground">
+                            <span className="text-muted-foreground">Dana Deduction:</span>
+                            <span>Not Applicable (Dana not required for this sauda)</span>
+                          </div>
+                        )
                       )}
                       {paymentAdvice.final_weight && (
                         <div className="flex justify-between text-[10px] font-semibold border-t border-border/30 pt-0.5 mt-0.5">

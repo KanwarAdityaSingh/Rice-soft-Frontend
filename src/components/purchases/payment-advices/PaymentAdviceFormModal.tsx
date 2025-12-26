@@ -7,6 +7,7 @@ import { purchaseSummaryAPI } from '../../../services/purchaseSummary.api';
 import { kaantasAPI } from '../../../services/kaantas.api';
 import { vendorsAPI } from '../../../services/vendors.api';
 import { vehiclesAPI } from '../../../services/vehicles.api';
+import { inwardSlipPassesAPI } from '../../../services/inwardSlipPasses.api';
 import { useVendors } from '../../../hooks/useVendors';
 import { useSaudas } from '../../../hooks/useSaudas';
 import { useInwardSlipPasses } from '../../../hooks/useInwardSlipPasses';
@@ -80,12 +81,20 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
   const [formData, setFormData] = useState<CreatePaymentAdviceRequest>({
     sauda_id: null,
     inward_slip_pass_id: null,
-    payer_id: '',
+    payer_id: '', // Not used anymore but kept for type compatibility
     recipient_id: '', // Will be auto-set
     amount: undefined,
     date_of_payment: new Date().toISOString().split('T')[0],
     transaction_id: null,
-    charges: [],
+    bill_number: null, // Purchase bill number from ISP
+    charges: [
+      // Default RTGS Charge
+      {
+        charge_name: 'RTGS Charge',
+        charge_value: 0,
+        charge_type: 'fixed',
+      },
+    ],
   });
   
   const [invoiceNo, setInvoiceNo] = useState<string>('');
@@ -166,12 +175,17 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
       } else if (linkType === 'isp' && formData.inward_slip_pass_id) {
         setLoadingSummary(true);
         try {
-          const [data, kaantaData] = await Promise.all([
+          const [data, kaantaData, ispData] = await Promise.all([
             purchaseSummaryAPI.getISPSummary(formData.inward_slip_pass_id),
-            kaantasAPI.getAllKaantas(undefined, formData.inward_slip_pass_id)
+            kaantasAPI.getAllKaantas(undefined, formData.inward_slip_pass_id),
+            inwardSlipPassesAPI.getInwardSlipPassById(formData.inward_slip_pass_id)
           ]);
           setSummary(data);
           setKaantas(kaantaData);
+          // Auto-populate bill_number from ISP if available
+          if (ispData.bill_number && !formData.bill_number) {
+            setFormData(prev => ({ ...prev, bill_number: ispData.bill_number || null }));
+          }
         } catch (error) {
           console.error('Failed to fetch ISP summary:', error);
           setSummary(null);
@@ -200,16 +214,24 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
       setFormData({
         sauda_id: pa.sauda_id || null,
         inward_slip_pass_id: pa.inward_slip_pass_id || null,
-        payer_id: pa.payer_id,
-        recipient_id: pa.recipient_id,
+        payer_id: '', // Not used anymore but kept for type compatibility
+        recipient_id: pa.recipient_id, // Keep recipient_id from loaded payment advice
         amount: pa.amount,
         date_of_payment: pa.date_of_payment,
         transaction_id: pa.transaction_id || null,
-        charges: pa.charges.map(c => ({
+        bill_number: pa.bill_number || null, // Load bill_number from payment advice
+        charges: pa.charges && pa.charges.length > 0 ? pa.charges.map(c => ({
           charge_name: c.charge_name,
           charge_value: c.charge_value,
           charge_type: c.charge_type,
-        })),
+        })) : [
+          // Default RTGS Charge if no charges exist
+          {
+            charge_name: 'RTGS Charge',
+            charge_value: 0,
+            charge_type: 'fixed',
+          },
+        ],
       });
       setInvoiceNo(pa.transaction_id || '');
       setErrors({});
@@ -228,12 +250,20 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
     setFormData({
       sauda_id: null,
       inward_slip_pass_id: null,
-      payer_id: '',
+      payer_id: '', // Not used anymore but kept for type compatibility
       recipient_id: '',
       amount: undefined,
       date_of_payment: new Date().toISOString().split('T')[0],
       transaction_id: null,
-      charges: [],
+      bill_number: null, // Reset bill_number
+      charges: [
+        // Default RTGS Charge
+        {
+          charge_name: 'RTGS Charge',
+          charge_value: 0,
+          charge_type: 'fixed',
+        },
+      ],
     });
     setInvoiceNo(generateInvoiceNumber());
     // Set due date to 10 days from now
@@ -341,9 +371,6 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
       newErrors.link = 'Please select an ISP';
     }
 
-    if (!formData.payer_id) {
-      newErrors.payer_id = 'Payer is required';
-    }
     if (!formData.date_of_payment) {
       newErrors.date_of_payment = 'Date of payment is required';
     }
@@ -361,12 +388,13 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
       const submitData: CreatePaymentAdviceRequest = {
         sauda_id: linkType === 'sauda' ? formData.sauda_id : null,
         inward_slip_pass_id: linkType === 'isp' ? formData.inward_slip_pass_id : null,
-        payer_id: formData.payer_id,
-        recipient_id: formData.payer_id, // Using payer as recipient for now (actual recipient is hardcoded in display)
+        payer_id: '', // Not used anymore, kept for type compatibility
+        recipient_id: formData.recipient_id, // Keep recipient_id as it's still needed
         amount: formData.amount,
         date_of_payment: formData.date_of_payment,
         transaction_id: invoiceNo || null,
-        charges: formData.charges,
+        bill_number: formData.bill_number || null, // Include bill_number if provided
+        charges: formData.charges?.filter(c => c.charge_name && c.charge_value > 0) || [], // Filter out empty charges
       };
 
       if (isEditMode && paymentAdviceId) {
@@ -451,8 +479,42 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
   // Use payment advice fields if available, otherwise calculate from kaantas
   const totalSaidSentWeight = kaantas.reduce((sum, k) => sum + (k.said_sent_weight || 0), 0);
   const totalKaantaWeight = kaantas.reduce((sum, k) => sum + k.kaanta_weight, 0);
-  // Dana deduction formula: (said_sent_weight * 300/1000) / 100 = 300gm per quintal
-  const calculatedDanaDeduction = totalSaidSentWeight > 0 ? (totalSaidSentWeight * 300 / 1000) / 100 : 0;
+  
+  // Calculate dana deduction based on is_dana_required flag
+  // For single sauda: check selectedSauda.is_dana_required
+  // For ISP: calculate separately per sauda and sum
+  let calculatedDanaDeduction = 0;
+  
+  if (linkType === 'sauda' && selectedSauda) {
+    // Single sauda: only calculate if is_dana_required is true
+    const isDanaRequired = selectedSauda.is_dana_required ?? true; // Default to true
+    if (isDanaRequired && totalSaidSentWeight > 0) {
+      calculatedDanaDeduction = (totalSaidSentWeight * 300 / 1000) / 100;
+    }
+  } else if (linkType === 'isp' && kaantas.length > 0) {
+    // ISP: calculate separately per sauda
+    const kaantasBySauda = new Map<string, typeof kaantas>();
+    kaantas.forEach(kaanta => {
+      if (!kaantasBySauda.has(kaanta.sauda_id)) {
+        kaantasBySauda.set(kaanta.sauda_id, []);
+      }
+      kaantasBySauda.get(kaanta.sauda_id)!.push(kaanta);
+    });
+    
+    // Calculate dana deduction for each sauda group
+    for (const [saudaId, saudaKaantas] of kaantasBySauda.entries()) {
+      const sauda = saudas.find(s => s.id === saudaId);
+      const isDanaRequired = sauda?.is_dana_required ?? true; // Default to true
+      
+      if (isDanaRequired) {
+        const saudaSaidSentWeight = saudaKaantas.reduce((sum, k) => sum + (k.said_sent_weight || 0), 0);
+        if (saudaSaidSentWeight > 0) {
+          const saudaDanaDeduction = (saudaSaidSentWeight * 300 / 1000) / 100;
+          calculatedDanaDeduction += saudaDanaDeduction;
+        }
+      }
+    }
+  }
   
   const billWeight = createdPaymentAdvice?.bill_weight ?? loadedPaymentAdvice?.bill_weight ?? totalSaidSentWeight;
   const kaantaWeight = createdPaymentAdvice?.kanta_weight ?? loadedPaymentAdvice?.kanta_weight ?? totalKaantaWeight;
@@ -690,31 +752,48 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                       )}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium mb-1">
-                          Payer (Party) <span className="text-red-500">*</span>
-                        </label>
-                        <select
-                          value={formData.payer_id}
-                          onChange={(e) => setFormData({ ...formData, payer_id: e.target.value })}
-                          className={`w-full px-3 py-2 border rounded-lg bg-background ${
-                            errors.payer_id ? 'border-red-500' : 'border-border'
-                          }`}
-                        >
-                          <option value="">Select Payer</option>
-                          {vendors.map((v) => (
-                            <option key={v.id} value={v.id}>
-                              {v.business_name}
-                            </option>
-                          ))}
-                        </select>
-                        {errors.payer_id && (
-                          <p className="text-xs text-red-500 mt-1">{errors.payer_id}</p>
-                        )}
+                    {/* Completion Display */}
+                    {linkType === 'sauda' && summary && 'sauda_details' in summary && summary.sauda_details && summary.sauda_details.completion_percentage !== null && (
+                      <div className="p-3 bg-muted/50 rounded-lg border border-border">
+                        <label className="block text-sm font-medium mb-2">Completion Status</label>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs px-2 py-1 rounded-full ${getCompletionStatus(summary.sauda_details.completion_percentage).bgColor} ${getCompletionStatus(summary.sauda_details.completion_percentage).color} border ${getCompletionStatus(summary.sauda_details.completion_percentage).borderColor}`}>
+                            {formatCompletionPercentage(summary.sauda_details.completion_percentage)}
+                          </span>
+                          {summary.sauda_details.quantity && (
+                            <span className="text-xs text-muted-foreground">
+                              {formatWeightDisplay(summary.sauda_details.received_until_now, summary.sauda_details.quantity)}
+                            </span>
+                          )}
+                        </div>
                       </div>
+                    )}
+                    {linkType === 'isp' && summary && 'saudas' in summary && summary.saudas && summary.saudas.length > 0 && (
+                      <div className="p-3 bg-muted/50 rounded-lg border border-border">
+                        <label className="block text-sm font-medium mb-2">Completion Status</label>
+                        <div className="space-y-2">
+                          {summary.saudas.map((saudaItem, idx) => (
+                            saudaItem.sauda_details.completion_percentage !== null && (
+                              <div key={saudaItem.sauda_id} className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground">
+                                  {idx + 1}. {getRiceCodeName(saudaItem.sauda_details.rice_code_id)} {getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes)}:
+                                </span>
+                                <span className={`text-xs px-2 py-1 rounded-full ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).bgColor} ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).color} border ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).borderColor}`}>
+                                  {formatCompletionPercentage(saudaItem.sauda_details.completion_percentage)}
+                                </span>
+                                {saudaItem.sauda_details.quantity && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {formatWeightDisplay(saudaItem.sauda_details.received_until_now, saudaItem.sauda_details.quantity)}
+                                  </span>
+                                )}
+                              </div>
+                            )
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
-
+                    <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium mb-1">
                           Invoice No
@@ -754,6 +833,24 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                           onChange={(e) => setDueDate(e.target.value)}
                           className="w-full px-3 py-2 border border-border rounded-lg bg-background"
                         />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Bill Number <span className="text-muted-foreground text-xs">(Optional)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.bill_number || ''}
+                          onChange={(e) => setFormData({ ...formData, bill_number: e.target.value || null })}
+                          className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+                          placeholder="e.g., BILL-2024-001"
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {linkType === 'isp' && selectedISP?.bill_number 
+                            ? `Auto-filled from ISP: ${selectedISP.bill_number}` 
+                            : 'Purchase bill number from ISP'}
+                        </p>
                       </div>
 
                       <div>
@@ -798,19 +895,47 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                       <div className="space-y-2">
                         {(formData.charges || []).map((charge, index) => (
                           <div key={index} className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg">
-                            <div className="flex-1">
-                              <span className="text-sm font-medium">{charge.charge_name}</span>
-                              <span className="text-sm text-muted-foreground ml-2">
-                                {charge.charge_type === 'fixed' ? `₹${(charge.charge_value ?? 0).toFixed(2)}` : `${charge.charge_value ?? 0}%`}
-                              </span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveCharge(index)}
-                              className="p-1 hover:bg-muted rounded"
-                            >
-                              <Trash2 className="h-4 w-4 text-red-500" />
-                            </button>
+                            {charge.charge_name === 'RTGS Charge' ? (
+                              <>
+                                <span className="text-sm font-medium">{charge.charge_name}</span>
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    value={charge.charge_value || ''}
+                                    onChange={(e) => {
+                                      const value = parseFloat(e.target.value);
+                                      const updatedCharges = [...(formData.charges || [])];
+                                      updatedCharges[index] = {
+                                        ...updatedCharges[index],
+                                        charge_value: (value >= 0 && !isNaN(value)) ? value : 0,
+                                      };
+                                      setFormData({ ...formData, charges: updatedCharges });
+                                    }}
+                                    className="w-24 px-2 py-1 text-sm border border-border rounded bg-background"
+                                    placeholder="0.00"
+                                  />
+                                  <span className="text-sm text-muted-foreground">₹</span>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="flex-1">
+                                  <span className="text-sm font-medium">{charge.charge_name}</span>
+                                  <span className="text-sm text-muted-foreground ml-2">
+                                    {charge.charge_type === 'fixed' ? `₹${(charge.charge_value ?? 0).toFixed(2)}` : `${charge.charge_value ?? 0}%`}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveCharge(index)}
+                                  className="p-1 hover:bg-muted rounded"
+                                >
+                                  <Trash2 className="h-4 w-4 text-red-500" />
+                                </button>
+                              </>
+                            )}
                           </div>
                         ))}
                         <div className="flex gap-2">
@@ -943,6 +1068,9 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                           <div className="text-right">
                             <div><span className="text-muted-foreground">inv No</span> <span className="font-medium">{invoiceNo}</span></div>
                             <div><span className="text-muted-foreground">Date</span> <span className="font-medium">{formData.date_of_payment ? new Date(formData.date_of_payment).toLocaleDateString('en-IN') : '-'}</span></div>
+                            {formData.bill_number && (
+                              <div><span className="text-muted-foreground">Bill No</span> <span className="font-medium">{formData.bill_number}</span></div>
+                            )}
                           </div>
                         </div>
 
@@ -955,11 +1083,6 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                 <div key={saudaItem.sauda_id} className="border border-border/50 rounded p-2 bg-muted/20">
                                   <div className="font-semibold text-xs mb-1">
                                     {idx + 1}. {getRiceCodeName(saudaItem.sauda_details.rice_code_id)} {getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes) || 'N/A'}
-                                    {saudaItem.sauda_details.completion_percentage !== null && (
-                                      <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-full ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).bgColor} ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).color} border ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).borderColor}`}>
-                                        {formatCompletionPercentage(saudaItem.sauda_details.completion_percentage)}
-                                      </span>
-                                    )}
                                   </div>
                                   <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[10px]">
                                     <div className="flex justify-between">
@@ -1015,11 +1138,11 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                             <div className="grid grid-cols-2 gap-x-6 gap-y-1">
                               <div className="flex justify-between">
                                 <span className="text-muted-foreground">Party Name</span>
-                                <span className="font-medium text-right">{getVendorName(formData.payer_id) || selectedISP?.party_name || '-'}</span>
+                                <span className="font-medium text-right">{selectedISP?.party_name || '-'}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-muted-foreground">Address</span>
-                                <span className="text-right text-xs">{getVendorAddress(formData.payer_id) || selectedISP?.party_address || '-'}</span>
+                                <span className="text-right text-xs">{selectedISP?.party_address || '-'}</span>
                               </div>
                             </div>
                             
@@ -1029,19 +1152,35 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                 Sauda-wise Details
                               </div>
                               <div className="divide-y divide-border">
-                                {summary.saudas.map((saudaItem, idx) => (
+                                {summary.saudas.map((saudaItem, idx) => {
+                                  const sauda = saudas.find(s => s.id === saudaItem.sauda_id);
+                                  const isDanaRequired = sauda?.is_dana_required ?? true;
+                                  // Calculate dana deduction for this sauda's kaantas
+                                  const saudaKaantas = kaantas.filter(k => k.sauda_id === saudaItem.sauda_id);
+                                  const saudaSaidSentWeight = saudaKaantas.reduce((sum, k) => sum + (k.said_sent_weight || 0), 0);
+                                  const saudaDanaDeduction = isDanaRequired && saudaSaidSentWeight > 0 
+                                    ? (saudaSaidSentWeight * 300 / 1000) / 100 
+                                    : 0;
+                                  
+                                  return (
                                   <div key={saudaItem.sauda_id} className="p-3">
                                     <div className="flex items-center justify-between mb-2">
                                       <div className="font-semibold text-xs">
                                         {idx + 1}. {getRiceCodeName(saudaItem.sauda_details.rice_code_id)} {getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes) || 'N/A'}
-                                        {saudaItem.sauda_details.completion_percentage !== null && (
-                                          <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-full ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).bgColor} ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).color} border ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).borderColor}`}>
-                                            {formatCompletionPercentage(saudaItem.sauda_details.completion_percentage)}
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        {isDanaRequired ? (
+                                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700">
+                                            Dana Required
+                                          </span>
+                                        ) : (
+                                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700">
+                                            Dana Not Required
                                           </span>
                                         )}
-                                      </div>
-                                      <div className="text-xs font-bold text-primary">
-                                        ₹{saudaItem.final_total_amount.toFixed(2)}
+                                        <div className="text-xs font-bold text-primary">
+                                          ₹{saudaItem.final_total_amount.toFixed(2)}
+                                        </div>
                                       </div>
                                     </div>
                                     <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[10px]">
@@ -1081,9 +1220,24 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                           <span className="text-xs">{getBrokerName(saudaItem.sauda_details.broker_id)}</span>
                                         </div>
                                       )}
+                                      {/* Dana Deduction for this sauda */}
+                                      {isDanaRequired ? (
+                                        saudaDanaDeduction > 0 ? (
+                                          <div className="flex justify-between col-span-2 text-red-600">
+                                            <span className="text-muted-foreground">Less: Dana (300gm per Qtl):</span>
+                                            <span>-{saudaDanaDeduction.toFixed(2)} kg</span>
+                                          </div>
+                                        ) : null
+                                      ) : (
+                                        <div className="flex justify-between col-span-2 text-muted-foreground">
+                                          <span className="text-muted-foreground">Dana Deduction:</span>
+                                          <span className="text-[9px]">Not Applicable</span>
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
-                                ))}
+                                );
+                                })}
                               </div>
                               {/* Total Row */}
                               <div className="bg-primary/10 px-3 py-2 border-t-2 border-primary/30">
@@ -1106,10 +1260,15 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                         <span>{kaantaWeight.toFixed(2)} kg</span>
                                       </div>
                                     )}
-                                    {danaDeduction > 0 && (
+                                    {danaDeduction > 0 ? (
                                       <div className="flex justify-between text-red-600">
                                         <span className="text-muted-foreground">Less: Dana (300gm per Qtl):</span>
                                         <span>-{danaDeduction.toFixed(2)} kg</span>
+                                      </div>
+                                    ) : (
+                                      <div className="flex justify-between text-muted-foreground">
+                                        <span className="text-muted-foreground">Dana Deduction:</span>
+                                        <span className="text-xs">Not Applicable (No saudas require dana)</span>
                                       </div>
                                     )}
                                     {finalWeight > 0 && (
@@ -1195,11 +1354,11 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                             <div className="space-y-1">
                               <div className="flex justify-between">
                                 <span className="text-muted-foreground">Party Name</span>
-                                <span className="font-medium text-right">{getVendorName(formData.payer_id) || selectedISP?.party_name || '-'}</span>
+                                <span className="font-medium text-right">{selectedISP?.party_name || (selectedSauda ? getVendorName(selectedSauda.purchaser_id) : '-') || '-'}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-muted-foreground">Address</span>
-                                <span className="text-right text-xs">{getVendorAddress(formData.payer_id) || selectedISP?.party_address || '-'}</span>
+                                <span className="text-right text-xs">{selectedISP?.party_address || (selectedSauda ? getVendorAddress(selectedSauda.purchaser_id) : '-') || '-'}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-muted-foreground">Broker</span>
@@ -1213,10 +1372,17 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                 <span className="text-muted-foreground">Kaanta Weight</span>
                                 <span className="font-medium">{kaantaWeight.toFixed(2)} kg</span>
                               </div>
-                              {danaDeduction > 0 && (
-                                <div className="flex justify-between text-red-600">
-                                  <span className="text-muted-foreground">Less: Dana (300gm per Qtl)</span>
-                                  <span className="font-medium">-{danaDeduction.toFixed(2)} kg</span>
+                              {selectedSauda && (selectedSauda.is_dana_required ?? true) ? (
+                                danaDeduction > 0 && (
+                                  <div className="flex justify-between text-red-600">
+                                    <span className="text-muted-foreground">Less: Dana (300gm per Qtl)</span>
+                                    <span className="font-medium">-{danaDeduction.toFixed(2)} kg</span>
+                                  </div>
+                                )
+                              ) : (
+                                <div className="flex justify-between text-muted-foreground">
+                                  <span className="text-muted-foreground">Dana Deduction</span>
+                                  <span className="font-medium text-xs">Not Applicable (Dana not required for this sauda)</span>
                                 </div>
                               )}
                               <div className="flex justify-between font-semibold">
@@ -1267,21 +1433,6 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                               <span className="text-muted-foreground">Item</span>
                               <span className="font-medium">{getRiceCodeName(selectedSauda?.rice_code_id) || 'RICE'}</span>
                             </div>
-                            {linkType === 'sauda' && summary && 'sauda_details' in summary && summary.sauda_details && summary.sauda_details.completion_percentage !== null && (
-                              <div className="flex justify-between items-center">
-                                <span className="text-muted-foreground">Completion</span>
-                                <div className="flex items-center gap-1">
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${getCompletionStatus(summary.sauda_details.completion_percentage).bgColor} ${getCompletionStatus(summary.sauda_details.completion_percentage).color} border ${getCompletionStatus(summary.sauda_details.completion_percentage).borderColor}`}>
-                                    {formatCompletionPercentage(summary.sauda_details.completion_percentage)}
-                                  </span>
-                                  {summary.sauda_details.quantity && (
-                                    <span className="text-[10px] text-muted-foreground">
-                                      {formatWeightDisplay(summary.sauda_details.received_until_now, summary.sauda_details.quantity)}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            )}
                             <div className="flex justify-between">
                               <span className="text-muted-foreground">Bag</span>
                               <span className="font-medium">{totalBags}</span>
@@ -1340,7 +1491,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
         initialTab={notificationInitialTab}
         paymentAdviceData={createdPaymentAdvice ? {
           adviceNumber: createdPaymentAdvice.transaction_id || invoiceNo,
-          vendorName: getVendorName(createdPaymentAdvice.payer_id),
+          vendorName: selectedISP?.party_name || (selectedSauda ? getVendorName(selectedSauda.purchaser_id) : '') || '',
           amount: createdPaymentAdvice.amount || 0,
           date: createdPaymentAdvice.date_of_payment,
         } : undefined}
