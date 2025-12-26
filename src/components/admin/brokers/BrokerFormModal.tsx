@@ -601,30 +601,30 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       // Remove contact_person field (not allowed by backend)
       delete (cleanedFormData as any).contact_person;
       
-      // Clean business_name: convert empty string to null (optional field, can be null or empty)
+      // Clean business_name: convert empty string to undefined (optional field)
       if (cleanedFormData.business_name !== undefined) {
         const trimmed = cleanedFormData.business_name.trim();
-        cleanedFormData.business_name = trimmed || null;
+        cleanedFormData.business_name = trimmed || undefined;
       }
       
       // Clean business_details
       if (cleanedFormData.business_details) {
-        // PAN number: ensure uppercase and convert empty to null (API contract: automatically converted to uppercase)
+        // PAN number: ensure uppercase and convert empty to undefined (API contract: automatically converted to uppercase)
         if (cleanedFormData.business_details.pan_number !== undefined) {
           const pan = cleanedFormData.business_details.pan_number.trim().toUpperCase();
-          cleanedFormData.business_details.pan_number = pan || null;
+          cleanedFormData.business_details.pan_number = pan || undefined;
         }
         
-        // Aadhaar number: remove spaces and convert empty to null (API contract: spaces removed automatically)
+        // Aadhaar number: remove spaces and convert empty to undefined (API contract: spaces removed automatically)
         if (cleanedFormData.business_details.aadhaar_number !== undefined) {
           const aadhaar = cleanedFormData.business_details.aadhaar_number.replace(/\s/g, '').trim();
-          cleanedFormData.business_details.aadhaar_number = aadhaar || null;
+          cleanedFormData.business_details.aadhaar_number = aadhaar || undefined;
         }
         
-        // GST number: ensure uppercase and convert empty to null (API contract: automatically converted to uppercase)
+        // GST number: ensure uppercase and convert empty to undefined (API contract: automatically converted to uppercase)
         if (cleanedFormData.business_details.gst_number !== undefined) {
           const gst = cleanedFormData.business_details.gst_number.trim().toUpperCase();
-          cleanedFormData.business_details.gst_number = gst || null;
+          cleanedFormData.business_details.gst_number = gst || undefined;
         }
       }
       
@@ -635,28 +635,28 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         }
       }
       
-      // Clean bank_details: all fields optional, convert empty strings to null (API contract: can be null or empty)
+      // Clean bank_details: all fields optional, convert empty strings to undefined
       if (cleanedFormData.bank_details) {
         const bankDetails = cleanedFormData.bank_details;
         if (bankDetails.account_holder_name !== undefined) {
           const trimmed = bankDetails.account_holder_name?.trim();
-          bankDetails.account_holder_name = trimmed || null;
+          bankDetails.account_holder_name = trimmed || undefined;
         }
         if (bankDetails.account_number !== undefined) {
           const trimmed = bankDetails.account_number?.trim();
-          bankDetails.account_number = trimmed || null;
+          bankDetails.account_number = trimmed || undefined;
         }
         if (bankDetails.ifsc_code !== undefined) {
           const trimmed = bankDetails.ifsc_code?.trim().toUpperCase();
-          bankDetails.ifsc_code = trimmed || null;
+          bankDetails.ifsc_code = trimmed || undefined;
         }
         if (bankDetails.bank_name !== undefined) {
           const trimmed = bankDetails.bank_name?.trim();
-          bankDetails.bank_name = trimmed || null;
+          bankDetails.bank_name = trimmed || undefined;
         }
         if (bankDetails.branch !== undefined) {
           const trimmed = bankDetails.branch?.trim();
-          bankDetails.branch = trimmed || null;
+          bankDetails.branch = trimmed || undefined;
         }
       }
       
