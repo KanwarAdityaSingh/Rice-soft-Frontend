@@ -1156,6 +1156,33 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                     </div>
                   </div>
 
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium mb-1.5 block">Pincode</label>
+                      <input
+                        type="text"
+                        value={formData.address.pincode}
+                        onChange={(e) => setFormData({ ...formData, address: { ...formData.address, pincode: e.target.value } })}
+                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                        placeholder="Enter pincode"
+                        maxLength={10}
+                      />
+                      {errors.pincode && <p className="mt-1 text-xs text-red-600">{errors.pincode}</p>}
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-medium mb-1.5 block">Country *</label>
+                      <input
+                        type="text"
+                        value={formData.address.country}
+                        onChange={(e) => setFormData({ ...formData, address: { ...formData.address, country: e.target.value } })}
+                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
+                        readOnly={gstAutoFilledFields.has('address.country')}
+                      />
+                      {errors.country && <p className="mt-1 text-xs text-red-600">{errors.country}</p>}
+                    </div>
+                  </div>
+
                   {errors.business_details && (
                     <div className="rounded-lg bg-red-50 border border-red-200 p-3">
                       <p className="text-xs text-red-600">{errors.business_details}</p>
