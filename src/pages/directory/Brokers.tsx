@@ -270,31 +270,31 @@ export default function BrokersPage() {
                 {/* Business Details Section */}
                 <div className="mt-2 pt-2 border-t border-border/40 space-y-1">
                   {b.business_details?.pan_number && (
-                    <div className="inline-flex items-center gap-2">
+                    <div className="flex items-center gap-2">
                       <span className="text-muted-foreground w-16">PAN</span>
                       <span className="font-medium">{b.business_details.pan_number}</span>
                     </div>
                   )}
                   {b.business_details?.gst_number && (
-                    <div className="inline-flex items-center gap-2">
+                    <div className="flex items-center gap-2">
                       <span className="text-muted-foreground w-16">GST</span>
                       <span className="font-medium">{b.business_details.gst_number}</span>
                     </div>
                   )}
                   {b.business_details?.business_type && (
-                    <div className="inline-flex items-center gap-2">
+                    <div className="flex items-center gap-2">
                       <span className="text-muted-foreground w-16">Entity</span>
                       <span className="font-medium capitalize">{b.business_details.business_type}</span>
                     </div>
                   )}
                   {b.address?.state && (
-                    <div className="inline-flex items-center gap-2">
+                    <div className="flex items-center gap-2">
                       <span className="text-muted-foreground w-16">State</span>
                       <span className="font-medium">{b.address.state}</span>
                     </div>
                   )}
                   {b.bank_details?.ifsc_code && (
-                    <div className="inline-flex items-center gap-2">
+                    <div className="flex items-center gap-2">
                       <span className="text-muted-foreground w-16">IFSC</span>
                       <span className="font-medium">{b.bank_details.ifsc_code}</span>
                     </div>
