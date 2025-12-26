@@ -778,8 +778,29 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       const errorMessage = 
         error?.message || 
         error?.data?.message || 
-        error?.response?.data?.message || 
+        error?.response?.data?.message ||
+        error?.error ||
         `An error occurred while ${isEditMode ? 'updating' : 'creating'} the vendor. Please try again.`;
+      
+      // Check for errors and clear auto-filled fields so user can edit them
+      const errorText = (error?.error || errorMessage || '').toLowerCase();
+      const updatedAutoFilledFields = new Set(gstAutoFilledFields);
+      
+      // Check for PAN/GST number already exists errors and clear those fields from auto-filled
+      if (errorText.includes('pan number already exists') || errorText.includes('pan already exists')) {
+        updatedAutoFilledFields.delete('pan_number');
+      }
+      if (errorText.includes('gst number already exists') || errorText.includes('gst already exists')) {
+        updatedAutoFilledFields.delete('gst_number');
+      }
+      
+      // If any validation error occurs, clear all auto-filled fields to allow editing
+      if (errorText.includes('already exists') || errorText.includes('duplicate') || errorText.includes('invalid')) {
+        setGstAutoFilledFields(new Set());
+      } else {
+        setGstAutoFilledFields(updatedAutoFilledFields);
+      }
+      
       setAlertMessage(errorMessage);
       setAlertOpen(true);
       setPreviewOpen(false);

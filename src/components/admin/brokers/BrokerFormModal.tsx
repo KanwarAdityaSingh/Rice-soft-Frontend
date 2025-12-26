@@ -718,12 +718,30 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       const errorText = (error?.error || errorMessage || '').toLowerCase();
       const fullErrorString = JSON.stringify(error || {}).toLowerCase();
       
+      // Clear auto-filled fields when error occurs so user can edit them
+      const updatedAutoFilledFields = new Set(gstAutoFilledFields);
+      
       if (errorText.includes('brokers_email_unique_idx') || 
           errorText.includes('duplicate key value violates unique constraint') ||
           fullErrorString.includes('brokers_email_unique_idx') ||
           fullErrorString.includes('duplicate key value violates unique constraint') ||
           (errorText.includes('duplicate') && errorText.includes('email'))) {
         errorMessage = 'A broker with this email address already exists. Please use a different email address.';
+      }
+      
+      // Check for PAN/GST number already exists errors and clear those fields from auto-filled
+      if (errorText.includes('pan number already exists') || errorText.includes('pan already exists')) {
+        updatedAutoFilledFields.delete('pan_number');
+      }
+      if (errorText.includes('gst number already exists') || errorText.includes('gst already exists')) {
+        updatedAutoFilledFields.delete('gst_number');
+      }
+      
+      // If any validation error occurs, clear all auto-filled fields to allow editing
+      if (errorText.includes('already exists') || errorText.includes('duplicate') || errorText.includes('invalid')) {
+        setGstAutoFilledFields(new Set());
+      } else {
+        setGstAutoFilledFields(updatedAutoFilledFields);
       }
       
       setAlertMessage(errorMessage);
