@@ -298,12 +298,23 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       // If PAN data is for a person, add to contact_persons if not already present
       let contactPersons = [...(formData.contact_persons || [])];
       if (panData?.category === 'person' && panData?.name) {
-        const existingContact = contactPersons.find(cp => cp.name === panData.name);
+        const panName = toTitleCase(panData.name);
+        const existingContact = contactPersons.find(cp => cp.name && cp.name.trim() === panName.trim());
+        
         if (!existingContact) {
-          contactPersons = [
-            ...contactPersons,
-            { name: toTitleCase(panData.name), phones: [''], emails: [''] }
-          ];
+          // Check if there's an empty contact person to replace
+          const emptyContactIndex = contactPersons.findIndex(cp => !cp.name || cp.name.trim() === '');
+          
+          if (emptyContactIndex >= 0) {
+            // Replace the empty contact person
+            contactPersons[emptyContactIndex] = { name: panName, phones: [''], emails: [''] };
+          } else {
+            // No empty contact person, add a new one
+            contactPersons = [
+              ...contactPersons,
+              { name: panName, phones: [''], emails: [''] }
+            ];
+          }
         }
       }
       
@@ -335,12 +346,11 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         autoFilledFields.add('business_type');
       }
       
-      // Auto-fill account holder name with business name and mark it as read-only
+      // Auto-fill account holder name with business name (editable)
       const bankDetailsUpdate = {
         ...formData.bank_details,
         account_holder_name: businessName,
       };
-      autoFilledFields.add('account_holder_name');
       
       setFormData({
         ...formData,
@@ -438,12 +448,11 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         autoFilledFields.add('business_type');
       }
       
-      // Auto-fill account holder name with business name
+      // Auto-fill account holder name with business name (editable)
       const bankDetailsUpdate = {
         ...formData.bank_details,
         account_holder_name: businessName,
       };
-      autoFilledFields.add('account_holder_name');
       
       setFormData({
         ...formData,
@@ -598,12 +607,28 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       // Show error alert with API response
       setAlertType('error');
       setAlertTitle('Failed to Create Broker');
+      
       // Extract error message from various possible locations
-      const errorMessage = 
+      let errorMessage = 
         error?.message || 
         error?.data?.message || 
-        error?.response?.data?.message || 
+        error?.response?.data?.message ||
+        error?.error ||
         'An error occurred while creating the broker. Please try again.';
+      
+      // Check for duplicate email constraint error
+      // The error can be in error.error (string) or in the error message
+      const errorText = (error?.error || errorMessage || '').toLowerCase();
+      const fullErrorString = JSON.stringify(error || {}).toLowerCase();
+      
+      if (errorText.includes('brokers_email_unique_idx') || 
+          errorText.includes('duplicate key value violates unique constraint') ||
+          fullErrorString.includes('brokers_email_unique_idx') ||
+          fullErrorString.includes('duplicate key value violates unique constraint') ||
+          (errorText.includes('duplicate') && errorText.includes('email'))) {
+        errorMessage = 'A broker with this email address already exists. Please use a different email address.';
+      }
+      
       setAlertMessage(errorMessage);
       setAlertOpen(true);
       setPreviewOpen(false);
@@ -1046,8 +1071,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                           account_holder_name: e.target.value 
                         } 
                       })}
-                      readOnly={gstAutoFilledFields.has('account_holder_name')}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
+                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                     />
                   </div>
 

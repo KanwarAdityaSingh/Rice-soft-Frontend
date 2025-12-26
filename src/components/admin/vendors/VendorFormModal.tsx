@@ -376,12 +376,11 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
         autoFilledFields.add('business_type');
       }
       
-      // Auto-fill account holder name with business name and mark it as read-only
+      // Auto-fill account holder name with business name (editable)
       const bankDetailsUpdate = {
         ...formData.bank_details,
         account_holder_name: businessName,
       };
-      autoFilledFields.add('account_holder_name');
       
       setFormData({
         ...formData,
@@ -468,12 +467,11 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
         businessDetailsUpdate.business_type = mapped.business_details.business_type;
       }
       
-      // Auto-fill account holder name with business name and mark it as read-only
+      // Auto-fill account holder name with business name (editable)
       const bankDetailsUpdate = {
         ...formData.bank_details,
         account_holder_name: businessName,
       };
-      autoFilledFields.add('account_holder_name');
       
       setFormData({
         ...formData,
@@ -1228,10 +1226,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                           account_holder_name: e.target.value 
                         } 
                       })}
-                      readOnly={gstAutoFilledFields.has('account_holder_name')}
-                      className={`w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
-                        gstAutoFilledFields.has('account_holder_name') ? 'read-only:cursor-not-allowed' : ''
-                      }`}
+                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                     />
                   </div>
 
