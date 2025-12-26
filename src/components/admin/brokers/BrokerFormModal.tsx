@@ -236,10 +236,10 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         newErrors.business_details = 'Either PAN or Aadhaar is required for individual';
       }
     } else {
-      // Company/Partnership/LLP requires GST
+      // Company requires GST
       const gst = formData.business_details.gst_number?.trim();
       if (!gst) {
-        newErrors.gst_number = 'GST number is required for company/partnership/LLP';
+        newErrors.gst_number = 'GST number is required for company';
       }
     }
 
@@ -813,9 +813,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                       })}
                       options={[
                         { value: 'individual', label: 'Individual (Person)' },
-                        { value: 'company', label: 'Company (Pvt Ltd / Ltd)' },
-                        { value: 'partnership', label: 'Partnership Firm' },
-                        { value: 'llp', label: 'LLP (Limited Liability Partnership)' }
+                        { value: 'company', label: 'Company (Pvt Ltd / Ltd)' }
                       ]}
                       placeholder="Select Business Type"
                       disabled={gstAutoFilledFields.has('business_type')}
@@ -826,11 +824,11 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                     <p className="text-sm text-primary/90">
                       <span className="font-medium">Note:</span> {formData.business_details.business_type === 'individual' 
                         ? 'For individuals, either PAN or Aadhaar is required.' 
-                        : 'For companies/partnerships/LLPs, GST number is required.'}
+                        : 'For companies, GST number is required.'}
                     </p>
                   </div>
 
-                  {/* GST Number - shown for company/partnership/llp */}
+                  {/* GST Number - shown for company */}
                   {formData.business_details.business_type !== 'individual' && (
                     <div>
                       <label className="text-sm font-medium mb-1.5 block">GST Number *</label>
