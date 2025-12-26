@@ -10,6 +10,7 @@ import { useVehicles } from '../../../hooks/useVehicles';
 import { vehiclesAPI } from '../../../services/vehicles.api';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { vendorsAPI } from '../../../services/vendors.api';
+import { kaantasAPI } from '../../../services/kaantas.api';
 import { getRiceTypeLabel } from '../../../utils/riceType';
 import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
 import { AlertDialog } from '../../shared/AlertDialog';
@@ -793,8 +794,37 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   };
 
   // PDF Download function
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
     if (!previewRef.current) return;
+    
+    // Check if ISP has kaantas before allowing download
+    if (!ispId) {
+      setAlertType('error');
+      setAlertTitle('Error');
+      setAlertMessage('Cannot download PDF. ISP must be saved first.');
+      setAlertOpen(true);
+      return;
+    }
+    
+    try {
+      // Check if kaantas exist for this ISP
+      const kaantas = await kaantasAPI.getAllKaantas(undefined, ispId);
+      
+      if (!kaantas || kaantas.length === 0) {
+        setAlertType('error');
+        setAlertTitle('Kaanta Required');
+        setAlertMessage('Cannot download PDF. Please create a kaanta first before downloading the PDF.');
+        setAlertOpen(true);
+        return;
+      }
+    } catch (error: any) {
+      // If error fetching kaantas, still show error
+      setAlertType('error');
+      setAlertTitle('Error');
+      setAlertMessage('Cannot download PDF. Please create a kaanta first before downloading the PDF.');
+      setAlertOpen(true);
+      return;
+    }
     
     try {
       const printContent = previewRef.current.innerHTML;
