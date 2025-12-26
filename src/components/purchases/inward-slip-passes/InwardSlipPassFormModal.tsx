@@ -259,21 +259,66 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.sauda_ids || formData.sauda_ids.length === 0) {
-      newErrors.sauda_ids = 'At least one sauda is required';
+    // sauda_ids is optional, but if provided must have at least 1 item (API contract)
+    if (formData.sauda_ids && formData.sauda_ids.length === 0) {
+      newErrors.sauda_ids = 'If provided, at least one sauda is required';
     }
-    // slip_number is auto-generated, no validation needed
+    
+    // date is required (API contract: ISO date format YYYY-MM-DD)
     if (!formData.date) {
       newErrors.date = 'Date is required';
+    } else {
+      // Validate ISO date format (YYYY-MM-DD)
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(formData.date)) {
+        newErrors.date = 'Date must be in ISO format (YYYY-MM-DD)';
+      } else {
+        // Validate it's a valid date
+        const dateObj = new Date(formData.date);
+        if (isNaN(dateObj.getTime())) {
+          newErrors.date = 'Invalid date';
+        }
+      }
     }
-    if (!formData.vehicle_id) {
+    
+    // vehicle_id is required (API contract: UUID, must exist in vehicles table)
+    if (!formData.vehicle_id || formData.vehicle_id.trim() === '') {
       newErrors.vehicle_id = 'Vehicle is required';
     }
-    if (!formData.party_name.trim()) {
+    
+    // party_name is required, max 255 chars (API contract)
+    if (!formData.party_name || !formData.party_name.trim()) {
       newErrors.party_name = 'Party name is required';
+    } else if (formData.party_name.trim().length > 255) {
+      newErrors.party_name = 'Party name must be at most 255 characters';
     }
-    if (formData.transportation_cost && formData.transportation_cost < 0) {
-      newErrors.transportation_cost = 'Transportation cost cannot be negative';
+    
+    // party_gst_number is optional, but if provided must be exactly 15 chars (API contract)
+    if (formData.party_gst_number && formData.party_gst_number.trim().length !== 15) {
+      newErrors.party_gst_number = 'GST number must be exactly 15 characters';
+    }
+    
+    // party_pan_number is optional, but if provided must be exactly 10 chars (API contract)
+    if (formData.party_pan_number && formData.party_pan_number.trim().length !== 10) {
+      newErrors.party_pan_number = 'PAN number must be exactly 10 characters';
+    }
+    
+    // transportation_cost is optional, but if provided must be >= 0 with 2 decimal places (API contract)
+    if (formData.transportation_cost != null) {
+      if (formData.transportation_cost < 0) {
+        newErrors.transportation_cost = 'Transportation cost cannot be negative';
+      }
+      // Check precision (2 decimal places)
+      const costStr = formData.transportation_cost.toString();
+      const decimalParts = costStr.split('.');
+      if (decimalParts.length > 1 && decimalParts[1].length > 2) {
+        newErrors.transportation_cost = 'Transportation cost must have at most 2 decimal places';
+      }
+    }
+    
+    // notes is optional, max 1000 chars (API contract)
+    if (formData.notes && formData.notes.length > 1000) {
+      newErrors.notes = 'Notes cannot exceed 1000 characters';
     }
 
     setErrors(newErrors);
@@ -338,8 +383,22 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
 
     setLoading(true);
     try {
+      // Clean and prepare data according to API contract
+      const cleanedData: CreateInwardSlipPassRequest | UpdateInwardSlipPassRequest = {
+        sauda_ids: formData.sauda_ids && formData.sauda_ids.length > 0 ? formData.sauda_ids : [],
+        date: formData.date, // Already in ISO format (YYYY-MM-DD)
+        vehicle_id: formData.vehicle_id.trim(),
+        party_name: formData.party_name.trim(),
+        party_address: formData.party_address?.trim() || null,
+        party_gst_number: formData.party_gst_number?.trim().toUpperCase() || null, // Convert to uppercase
+        party_pan_number: formData.party_pan_number?.trim().toUpperCase() || null, // Convert to uppercase
+        transporter_id: formData.transporter_id || null,
+        transportation_cost: formData.transportation_cost != null ? parseFloat(formData.transportation_cost.toFixed(2)) : null, // API contract: precision 2 decimal places
+        notes: formData.notes?.trim() || null, // Convert empty string to null
+      };
+      
       if (isEditMode && ispId) {
-        await updateInwardSlipPass(ispId, formData as UpdateInwardSlipPassRequest);
+        await updateInwardSlipPass(ispId, cleanedData as UpdateInwardSlipPassRequest);
         // Upload any new pending files
         await uploadPendingFiles(ispId);
         setAlertType('success');
@@ -347,8 +406,8 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
         setAlertMessage('ISP updated successfully');
       } else {
         // Remove slip_number from create request - backend will auto-generate it
-        const { slip_number, ...createData } = formData;
-        const newISP = await createInwardSlipPass(createData);
+        const { slip_number, ...createData } = cleanedData;
+        const newISP = await createInwardSlipPass(createData as CreateInwardSlipPassRequest);
         // Upload pending files after creation
         if (newISP && newISP.id) {
           await uploadPendingFiles(newISP.id);
@@ -904,7 +963,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                   {/* Sauda Selection */}
                   <div>
                     <label className="block text-xs font-medium mb-1">
-                      Saudas <span className="text-red-500">*</span>
+                      Saudas
                     </label>
                     {getSelectedSaudas().length > 0 && (
                       <div className="flex flex-wrap gap-1 mb-1">
@@ -991,6 +1050,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                           </div>
                         )}
                       </div>
+                    {errors.sauda_ids && <p className="mt-0.5 text-xs text-red-500">{errors.sauda_ids}</p>}
                   </div>
 
                   {/* Party Details */}
@@ -1014,22 +1074,26 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                         <input 
                           type="text" 
                           value={formData.party_gst_number || ''} 
-                          onChange={(e) => setFormData({ ...formData, party_gst_number: e.target.value || null })}
-                          className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background read-only:cursor-not-allowed" 
+                          onChange={(e) => setFormData({ ...formData, party_gst_number: e.target.value.toUpperCase() || null })}
+                          className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background read-only:cursor-not-allowed ${errors.party_gst_number ? 'border-red-500' : 'border-border'}`} 
                           placeholder="27ABCDE1234F1Z5"
                           readOnly={formData.sauda_ids && formData.sauda_ids.length > 0}
+                          maxLength={15}
                         />
+                        {errors.party_gst_number && <p className="mt-0.5 text-xs text-red-500">{errors.party_gst_number}</p>}
                       </div>
                       <div>
                         <label className="block text-xs font-medium mb-0.5">PAN No.</label>
                         <input 
                           type="text" 
                           value={formData.party_pan_number || ''} 
-                          onChange={(e) => setFormData({ ...formData, party_pan_number: e.target.value || null })}
-                          className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background read-only:cursor-not-allowed" 
+                          onChange={(e) => setFormData({ ...formData, party_pan_number: e.target.value.toUpperCase() || null })}
+                          className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background read-only:cursor-not-allowed ${errors.party_pan_number ? 'border-red-500' : 'border-border'}`} 
                           placeholder="ABCDE1234F"
                           readOnly={formData.sauda_ids && formData.sauda_ids.length > 0}
+                          maxLength={10}
                         />
+                        {errors.party_pan_number && <p className="mt-0.5 text-xs text-red-500">{errors.party_pan_number}</p>}
                       </div>
                       <div className="col-span-2">
                         <label className="block text-xs font-medium mb-0.5">Party Name <span className="text-red-500">*</span></label>
@@ -1040,7 +1104,9 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                           className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background read-only:cursor-not-allowed ${errors.party_name ? 'border-red-500' : 'border-border'}`} 
                           placeholder="Party Name"
                           readOnly={formData.sauda_ids && formData.sauda_ids.length > 0}
+                          maxLength={255}
                         />
+                        {errors.party_name && <p className="mt-0.5 text-xs text-red-500">{errors.party_name}</p>}
                       </div>
                       <div className="col-span-2">
                         <label className="block text-xs font-medium mb-0.5">Address</label>
@@ -1081,6 +1147,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                           <Plus className="h-3.5 w-3.5" />
                         </button>
                       </div>
+                      {errors.date && <p className="mt-0.5 text-xs text-red-500">{errors.date}</p>}
                     </div>
                   </div>
 
@@ -1244,8 +1311,15 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                   {/* Notes */}
                   <div className="space-y-1">
                     <label className="block text-xs font-medium">Notes</label>
-                    <input type="text" value={formData.notes || ''} onChange={(e) => setFormData({ ...formData, notes: e.target.value || null })}
-                      className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background" placeholder="Additional notes" />
+                    <textarea 
+                      value={formData.notes || ''} 
+                      onChange={(e) => setFormData({ ...formData, notes: e.target.value || null })}
+                      className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background resize-none ${errors.notes ? 'border-red-500' : 'border-border'}`} 
+                      placeholder="Additional notes (max 1000 chars)"
+                      rows={3}
+                      maxLength={1000}
+                    />
+                    {errors.notes && <p className="mt-0.5 text-xs text-red-500">{errors.notes}</p>}
                   </div>
 
                   {/* Bills Upload Section */}
