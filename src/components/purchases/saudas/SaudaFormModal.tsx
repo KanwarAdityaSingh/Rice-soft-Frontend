@@ -206,15 +206,25 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    // Required fields
+    // Required fields (API contract)
+    if (!formData.sauda_type) {
+      newErrors.sauda_type = 'Sauda type is required';
+    } else if (!['exgodown', 'for'].includes(formData.sauda_type)) {
+      newErrors.sauda_type = 'Sauda type must be one of: exgodown, for';
+    }
+    
     if (!formData.rice_type) {
       newErrors.rice_type = 'Rice type is required';
     }
-    if (!formData.rate || formData.rate < 0) {
-      newErrors.rate = 'Rate is required and must be 0 or greater';
+    
+    if (formData.rate === undefined || formData.rate === null || isNaN(formData.rate)) {
+      newErrors.rate = 'Rate is required';
+    } else if (formData.rate < 0) {
+      newErrors.rate = 'Rate must be 0 or greater';
     }
-    if (!formData.purchaser_id) {
-      newErrors.purchaser_id = 'Vendor is required';
+    
+    if (!formData.purchaser_id || formData.purchaser_id.trim() === '') {
+      newErrors.purchaser_id = 'Vendor (purchaser) is required';
     }
 
     // Optional fields with constraints
@@ -235,8 +245,22 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
     if (formData.quantity != null && formData.quantity < 0) {
       newErrors.quantity = 'Quantity cannot be negative';
     }
-    if (formData.notes != null && formData.notes.length > 100) {
-      newErrors.notes = 'Notes cannot exceed 100 characters';
+    // Validate notes max length (API contract: max 1000 chars)
+    if (formData.notes != null && formData.notes.length > 1000) {
+      newErrors.notes = 'Notes cannot exceed 1000 characters';
+    }
+    
+    // Validate rice_type against API contract allowed values
+    const allowedRiceTypes = ['basmati', 'non_basmati', 'parboiled', 'raw', 'raw_basmati', 'steam_basmati', 'white_sella', 'golden_sella'];
+    if (formData.rice_type && !allowedRiceTypes.includes(formData.rice_type)) {
+      newErrors.rice_type = 'Invalid rice type';
+    }
+    
+    // Validate estimated_delivery_time is integer if provided (API contract: integer, minimum 0)
+    if (formData.estimated_delivery_time != null) {
+      if (!Number.isInteger(formData.estimated_delivery_time) || formData.estimated_delivery_time < 0) {
+        newErrors.estimated_delivery_time = 'Estimated delivery time must be a non-negative integer (days)';
+      }
     }
 
     setErrors(newErrors);
@@ -344,12 +368,32 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
         brokerCommissionInKg = formData.broker_commission / commissionFactor;
       }
       
-      const payload: CreateSaudaRequest | UpdateSaudaRequest = {
-        ...formData,
-        rate: (formData.rate || 0) / f,
-        quantity: formData.quantity != null ? (formData.quantity as number) * f : null,
-        broker_commission: brokerCommissionInKg,
+      // Clean and prepare data according to API contract
+      const cleanedData: CreateSaudaRequest | UpdateSaudaRequest = {
+        sauda_type: formData.sauda_type,
+        rice_type: formData.rice_type || null,
+        rice_code_id: formData.rice_code_id || null,
+        rate: parseFloat(((formData.rate || 0) / f).toFixed(2)), // API contract: precision 2 decimal places
+        purchaser_id: formData.purchaser_id,
+        broker_id: formData.broker_id || null,
+        broker_commission: brokerCommissionInKg != null ? parseFloat(brokerCommissionInKg.toFixed(2)) : null, // API contract: precision 2 decimal places
+        broker_commission_type: formData.broker_commission_type || 'percentage',
+        cash_discount: formData.cash_discount != null ? parseFloat(formData.cash_discount.toFixed(2)) : null, // API contract: precision 2 decimal places
+        cash_discount_type: formData.cash_discount_type || 'rupees',
+        quantity: formData.quantity != null ? parseFloat(((formData.quantity as number) * f).toFixed(2)) : null, // API contract: precision 2 decimal places
+        estimated_delivery_time: formData.estimated_delivery_time != null ? Math.floor(formData.estimated_delivery_time) : null, // API contract: integer
+        cooked_rice_image_url: formData.cooked_rice_image_url || null,
+        uncooked_rice_image_url: formData.uncooked_rice_image_url || null,
+        notes: formData.notes?.trim() || null, // Convert empty string to null
+        is_dana_required: formData.is_dana_required ?? true,
       };
+      
+      // Add status only if provided (optional field)
+      if (formData.status) {
+        cleanedData.status = formData.status;
+      }
+      
+      const payload = cleanedData;
       if (isEditMode && saudaId) {
         await updateSauda(saudaId, payload as UpdateSaudaRequest);
         // Upload any new pending files
@@ -948,9 +992,9 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                       className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background resize-none ${
                         errors.notes ? 'border-red-500' : 'border-border'
                       }`}
-                      placeholder="Additional notes (max 100 chars)"
+                      placeholder="Additional notes (max 1000 chars)"
                       rows={2}
-                      maxLength={100}
+                      maxLength={1000}
                     />
                   </div>
 

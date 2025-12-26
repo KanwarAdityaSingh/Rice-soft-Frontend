@@ -226,16 +226,19 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       });
     }
 
-    // Business type validation
+    // Business type validation (API contract rules)
     const businessType = formData.business_details.business_type;
     if (businessType === 'individual') {
-      // Individual requires PAN or Aadhaar
-      if (!formData.business_details.pan_number && !formData.business_details.aadhaar_number) {
+      // Individual requires PAN or Aadhaar (at least one must be provided)
+      const pan = formData.business_details.pan_number?.trim();
+      const aadhaar = formData.business_details.aadhaar_number?.replace(/\s/g, '').trim();
+      if (!pan && !aadhaar) {
         newErrors.business_details = 'Either PAN or Aadhaar is required for individual';
       }
     } else {
       // Company/Partnership/LLP requires GST
-      if (!formData.business_details.gst_number) {
+      const gst = formData.business_details.gst_number?.trim();
+      if (!gst) {
         newErrors.gst_number = 'GST number is required for company/partnership/LLP';
       }
     }
@@ -250,12 +253,47 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       newErrors.aadhaar_number = 'Invalid Aadhaar format (12 digits, cannot start with 0 or 1)';
     }
 
+    // Validate GST format if provided (API contract: exactly 15 characters, uppercase)
+    if (formData.business_details.gst_number && !validateGST(formData.business_details.gst_number)) {
+      newErrors.gst_number = 'Invalid GST format (exactly 15 characters, e.g., 27ABCDE1234F1Z5)';
+    }
+
+    // Validate address (API contract: street, city, state, country are REQUIRED)
+    if (!formData.address.street?.trim()) {
+      newErrors.street = 'Street address is required';
+    } else if (formData.address.street.trim().length > 255) {
+      newErrors.street = 'Street address must be max 255 characters';
+    }
+    
+    if (!formData.address.city?.trim()) {
+      newErrors.city = 'City is required';
+    } else if (formData.address.city.trim().length > 100) {
+      newErrors.city = 'City must be max 100 characters';
+    }
+    
+    if (!formData.address.state?.trim()) {
+      newErrors.state = 'State is required';
+    } else if (formData.address.state.trim().length > 100) {
+      newErrors.state = 'State must be max 100 characters';
+    }
+    
+    if (!formData.address.country?.trim()) {
+      newErrors.country = 'Country is required';
+    } else if (formData.address.country.trim().length > 100) {
+      newErrors.country = 'Country must be max 100 characters';
+    }
+    
+    // Pincode is optional but has max length
+    if (formData.address.pincode && formData.address.pincode.trim().length > 10) {
+      newErrors.pincode = 'Pincode must be max 10 characters';
+    }
+
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       // Navigate to step with errors
-      if (newErrors.business_name || newErrors.contact_persons || newErrors.email || newErrors.phone || newErrors.pan_number || newErrors.aadhaar_number || newErrors.business_details) {
+      if (newErrors.business_name || newErrors.contact_persons || newErrors.email || newErrors.phone || newErrors.pan_number || newErrors.aadhaar_number || newErrors.gst_number || newErrors.business_details) {
         setStep(1);
-      } else if (newErrors.street || newErrors.city || newErrors.state || newErrors.pincode) {
+      } else if (newErrors.street || newErrors.city || newErrors.state || newErrors.country || newErrors.pincode) {
         setStep(2);
       }
       return false;
@@ -557,11 +595,70 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
   const handlePreviewConfirm = async (data: CreateBrokerRequest) => {
     setLoading(true);
     try {
-      // Clean up form data before submission
+      // Clean up form data before submission according to API contract
       const cleanedFormData: CreateBrokerRequest = { ...data };
       
       // Remove contact_person field (not allowed by backend)
       delete (cleanedFormData as any).contact_person;
+      
+      // Clean business_name: convert empty string to null (optional field, can be null or empty)
+      if (cleanedFormData.business_name !== undefined) {
+        const trimmed = cleanedFormData.business_name.trim();
+        cleanedFormData.business_name = trimmed || null;
+      }
+      
+      // Clean business_details
+      if (cleanedFormData.business_details) {
+        // PAN number: ensure uppercase and convert empty to null (API contract: automatically converted to uppercase)
+        if (cleanedFormData.business_details.pan_number !== undefined) {
+          const pan = cleanedFormData.business_details.pan_number.trim().toUpperCase();
+          cleanedFormData.business_details.pan_number = pan || null;
+        }
+        
+        // Aadhaar number: remove spaces and convert empty to null (API contract: spaces removed automatically)
+        if (cleanedFormData.business_details.aadhaar_number !== undefined) {
+          const aadhaar = cleanedFormData.business_details.aadhaar_number.replace(/\s/g, '').trim();
+          cleanedFormData.business_details.aadhaar_number = aadhaar || null;
+        }
+        
+        // GST number: ensure uppercase and convert empty to null (API contract: automatically converted to uppercase)
+        if (cleanedFormData.business_details.gst_number !== undefined) {
+          const gst = cleanedFormData.business_details.gst_number.trim().toUpperCase();
+          cleanedFormData.business_details.gst_number = gst || null;
+        }
+      }
+      
+      // Clean address: pincode can be empty string (optional), others are required
+      if (cleanedFormData.address) {
+        if (cleanedFormData.address.pincode !== undefined) {
+          cleanedFormData.address.pincode = cleanedFormData.address.pincode.trim();
+        }
+      }
+      
+      // Clean bank_details: all fields optional, convert empty strings to null (API contract: can be null or empty)
+      if (cleanedFormData.bank_details) {
+        const bankDetails = cleanedFormData.bank_details;
+        if (bankDetails.account_holder_name !== undefined) {
+          const trimmed = bankDetails.account_holder_name?.trim();
+          bankDetails.account_holder_name = trimmed || null;
+        }
+        if (bankDetails.account_number !== undefined) {
+          const trimmed = bankDetails.account_number?.trim();
+          bankDetails.account_number = trimmed || null;
+        }
+        if (bankDetails.ifsc_code !== undefined) {
+          const trimmed = bankDetails.ifsc_code?.trim().toUpperCase();
+          bankDetails.ifsc_code = trimmed || null;
+        }
+        if (bankDetails.bank_name !== undefined) {
+          const trimmed = bankDetails.bank_name?.trim();
+          bankDetails.bank_name = trimmed || null;
+        }
+        if (bankDetails.branch !== undefined) {
+          const trimmed = bankDetails.branch?.trim();
+          bankDetails.branch = trimmed || null;
+        }
+      }
       
       // Filter out empty contact persons (ones with no name) and clean up phones and emails arrays
       if (cleanedFormData.contact_persons) {
@@ -570,7 +667,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
           .map(cp => ({
             name: cp.name.trim(),
             phones: cp.phones.filter(phone => phone && phone.trim().length > 0),
-            emails: cp.emails ? cp.emails.filter(email => email && email.trim().length > 0) : []
+            emails: cp.emails ? cp.emails.filter(email => email && email.trim().length > 0).map(email => email.trim()) : []
           }))
           .filter(cp => cp.phones.length > 0); // Remove contact persons with no valid phones
       }
@@ -761,7 +858,11 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                         <input
                           type="text"
                           value={formData.business_details.aadhaar_number}
-                          onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, aadhaar_number: e.target.value } })}
+                          onChange={(e) => {
+                            // Remove spaces from Aadhaar number (API contract: spaces removed automatically)
+                            const value = e.target.value.replace(/\s/g, '').replace(/\D/g, '').slice(0, 12);
+                            setFormData({ ...formData, business_details: { ...formData.business_details, aadhaar_number: value } });
+                          }}
                           className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                           placeholder="234567890123"
                           maxLength={12}
@@ -1000,7 +1101,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
               {step === 2 && (
                 <div className="space-y-4">
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block">Street</label>
+                    <label className="text-sm font-medium mb-1.5 block">Street *</label>
                     <input
                       type="text"
                       value={formData.address.street}
@@ -1008,11 +1109,12 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                       className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
                       readOnly={gstAutoFilledFields.has('address.street')}
                     />
+                    {errors.street && <p className="mt-1 text-xs text-red-600">{errors.street}</p>}
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-sm font-medium mb-1.5 block">City</label>
+                      <label className="text-sm font-medium mb-1.5 block">City *</label>
                       <input
                         type="text"
                         value={formData.address.city}
@@ -1020,10 +1122,11 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                         className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
                         readOnly={gstAutoFilledFields.has('address.city')}
                       />
+                      {errors.city && <p className="mt-1 text-xs text-red-600">{errors.city}</p>}
                     </div>
 
                     <div>
-                      <label className="text-sm font-medium mb-1.5 block">State</label>
+                      <label className="text-sm font-medium mb-1.5 block">State *</label>
                       <input
                         type="text"
                         value={formData.address.state}
@@ -1031,6 +1134,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                         className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
                         readOnly={gstAutoFilledFields.has('address.state')}
                       />
+                      {errors.state && <p className="mt-1 text-xs text-red-600">{errors.state}</p>}
                     </div>
                   </div>
 
