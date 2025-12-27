@@ -6,7 +6,9 @@ import { AlertDialog } from '../../shared/AlertDialog';
 import { useProducts } from '../../../hooks/useProducts';
 import { useRecipes } from '../../../hooks/useRecipes';
 import { productsAPI } from '../../../services/products.api';
-import type { CreateProductRequest, UpdateProductRequest } from '../../../types/entities';
+import type { CreateProductRequest, UpdateProductRequest, PacketType } from '../../../types/entities';
+
+const PACKET_TYPES: PacketType[] = ['PP Bag', 'Jute Bag', 'HDPE Bag'];
 
 interface ProductFormModalProps {
   open: boolean;
@@ -16,11 +18,12 @@ interface ProductFormModalProps {
 
 export function ProductFormModal({ open, onOpenChange, productId }: ProductFormModalProps) {
   const { createProduct, updateProduct, products, linkRecipe, unlinkRecipe, refetch } = useProducts();
-  const { recipes, refetch: refetchRecipes, loading: recipesLoading } = useRecipes();
+  const { recipes, loading: recipesLoading } = useRecipes();
   const [formData, setFormData] = useState<CreateProductRequest>({
     name: '',
     description: '',
     brand: '',
+    packet_type: 'PP Bag', // Required field
   });
   const [selectedRecipeIds, setSelectedRecipeIds] = useState<string[]>([]);
   const [newRecipeId, setNewRecipeId] = useState<string>('');
@@ -70,11 +73,12 @@ export function ProductFormModal({ open, onOpenChange, productId }: ProductFormM
           name: product.name,
           description: product.description || '',
           brand: product.brand || '',
+          packet_type: 'PP Bag', // Default for editing (packet_type is not stored on product, it's used for packaging creation)
         });
         setSelectedRecipeIds(product.recipes?.map((r) => r.id) || []);
       }
     } else if (open) {
-      setFormData({ name: '', description: '', brand: '' });
+      setFormData({ name: '', description: '', brand: '', packet_type: 'PP Bag' });
       setSelectedRecipeIds([]);
       setNewRecipeId('');
       setRecipeToAdd('');
@@ -85,6 +89,9 @@ export function ProductFormModal({ open, onOpenChange, productId }: ProductFormM
     const newErrors: Record<string, string> = {};
     if (!formData.name.trim()) {
       newErrors.name = 'Product name is required';
+    }
+    if (!formData.packet_type) {
+      newErrors.packet_type = 'Packet type is required';
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -265,6 +272,30 @@ export function ProductFormModal({ open, onOpenChange, productId }: ProductFormM
                   </select>
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium mb-2">Packet Type *</label>
+                  <select
+                    value={formData.packet_type}
+                    onChange={(e) => {
+                      setFormData({ ...formData, packet_type: e.target.value as PacketType });
+                      if (errors.packet_type) setErrors({ ...errors, packet_type: '' });
+                    }}
+                    className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    {PACKET_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.packet_type && (
+                    <p className="mt-1 text-sm text-destructive">{errors.packet_type}</p>
+                  )}
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    This will be used for all auto-created packaging entries (10kg, 25kg, 50kg)
+                  </p>
+                </div>
+
                 {/* Recipe Linking Section */}
                 <div className="pt-4 border-t border-border">
                   <label className="block text-sm font-medium mb-3">Recipes</label>
@@ -318,7 +349,10 @@ export function ProductFormModal({ open, onOpenChange, productId }: ProductFormM
                             </select>
                             <button
                               type="button"
-                              onClick={handleAddRecipe}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                handleAddRecipe();
+                              }}
                               disabled={!newRecipeId || linkingRecipe}
                               className="btn-primary px-4 py-2 rounded-lg inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                             >

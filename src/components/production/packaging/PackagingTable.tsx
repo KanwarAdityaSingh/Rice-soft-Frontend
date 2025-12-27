@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
-import { Box, Plus, PackagePlus, Scale, TrendingUp, Package } from 'lucide-react';
+import { Box, Plus, PackagePlus, Scale, TrendingUp, Package, FlaskConical } from 'lucide-react';
 import { SearchBar } from '../../admin/shared/SearchBar';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { EmptyState } from '../../admin/shared/EmptyState';
@@ -8,12 +8,14 @@ import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { usePackaging } from '../../../hooks/usePackaging';
 import { useInventory } from '../../../hooks/useInventory';
+import { useProducts } from '../../../hooks/useProducts';
 import { PackagingFormModal } from './PackagingFormModal';
 import { AddPacketsInventoryModal } from './AddPacketsInventoryModal';
 
 export function PackagingTable() {
   const { packaging, loading, deletePackaging, refetch } = usePackaging();
   const { packets: packetsInventory, fetchPackets } = useInventory();
+  const { products } = useProducts();
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -25,6 +27,15 @@ export function PackagingTable() {
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('error');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+
+  // Create product map for quick lookup
+  const productMap = useMemo(() => {
+    const map = new Map<string, string>();
+    products.forEach(product => {
+      map.set(product.id, product.name);
+    });
+    return map;
+  }, [products]);
 
   // Fetch packets inventory when component mounts (fetchPackets is now memoized)
   useEffect(() => {
@@ -61,15 +72,19 @@ export function PackagingTable() {
   };
 
   const filtered = useMemo(() => {
+    if (!searchQuery) return packaging;
+    
+    const q = searchQuery.toLowerCase();
     return packaging.filter((p) => {
-      const q = searchQuery.toLowerCase();
+      const productName = productMap.get(p.product_id)?.toLowerCase() || '';
       return (
+        productName.includes(q) ||
         p.packet_type.toLowerCase().includes(q) ||
         p.source?.toLowerCase().includes(q) ||
-        false
+        p.holding_capacity.toString().includes(q)
       );
     });
-  }, [packaging, searchQuery]);
+  }, [packaging, searchQuery, productMap]);
 
   return (
     <div className="space-y-4">
@@ -81,12 +96,12 @@ export function PackagingTable() {
             placeholder="Search packaging..."
           />
         </div>
-        <button
+        {/* <button
           className="btn-primary rounded-xl inline-flex items-center justify-center gap-2 w-full sm:w-auto"
           onClick={() => setCreateOpen(true)}
         >
           <Plus className="h-4 w-4" /> Create Packaging
-        </button>
+        </button> */}
       </div>
 
       {loading ? (
@@ -105,6 +120,7 @@ export function PackagingTable() {
             const available = getAvailableQuantity(pkg.id, pkg.holding_capacity, pkg.packet_type);
             const typeStyle = getTypeStyle(pkg.packet_type);
             const hasStock = available > 0;
+            const productName = productMap.get(pkg.product_id) || 'Unknown Product';
 
             return (
               <article
@@ -115,44 +131,57 @@ export function PackagingTable() {
                 <div className={`h-1.5 bg-gradient-to-r ${typeStyle.gradient}`} />
 
                 <div className="p-5">
-                  {/* Weight (Primary - Large at Top) */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="text-4xl font-bold text-foreground tracking-tight">
-                          {pkg.holding_capacity}
-                        </span>
-                        <span className="text-xl text-muted-foreground font-medium">kg</span>
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-1 uppercase tracking-wide">
-                        Holding Capacity
-                      </div>
+                  {/* Product Name (Primary - Top) */}
+                  <div className="mb-3">
+                    <div className="flex items-start gap-2 mb-1">
+                      <FlaskConical className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                      <h3 className="text-sm font-semibold text-foreground line-clamp-2 leading-tight">
+                        {productName}
+                      </h3>
                     </div>
-                    <div className={`p-3 rounded-xl ${typeStyle.bgLight}`}>
-                      <Scale className={`h-6 w-6 ${typeStyle.text}`} />
+                    <div className="text-xs text-muted-foreground ml-6">
+                      Product + Weight
                     </div>
                   </div>
 
-                  {/* Packet Type (Secondary - Below) */}
-                  <div className="mb-4">
-                    <span className={`inline-flex items-center gap-2 px-3 py-1.5 text-sm font-semibold rounded-lg ${typeStyle.bgLight} ${typeStyle.text}`}>
-                      <Box className="h-4 w-4" />
+                  {/* Weight (Secondary - Below Product) */}
+                  <div className="flex items-start justify-between mb-3 pb-3 border-b border-border/60">
+                    <div>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-3xl font-bold text-foreground tracking-tight">
+                          {pkg.holding_capacity}
+                        </span>
+                        <span className="text-lg text-muted-foreground font-medium">kg</span>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        Weight
+                      </div>
+                    </div>
+                    <div className={`p-2.5 rounded-xl ${typeStyle.bgLight}`}>
+                      <Scale className={`h-5 w-5 ${typeStyle.text}`} />
+                    </div>
+                  </div>
+
+                  {/* Packet Type */}
+                  <div className="mb-3">
+                    <span className={`inline-flex items-center gap-2 px-2.5 py-1 text-xs font-semibold rounded-lg ${typeStyle.bgLight} ${typeStyle.text}`}>
+                      <Box className="h-3.5 w-3.5" />
                       {pkg.packet_type}
                     </span>
                   </div>
 
                   {/* Stock Status */}
-                  <div className="flex items-center justify-between py-3 border-t border-border/60">
+                  <div className="flex items-center justify-between py-2.5 border-t border-border/60">
                     <div>
-                      <div className="text-xs text-muted-foreground mb-1">Available Stock</div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xl font-bold font-mono ${hasStock ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+                      <div className="text-xs text-muted-foreground mb-0.5">Available Stock</div>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-lg font-bold font-mono ${hasStock ? 'text-emerald-600' : 'text-muted-foreground'}`}>
                           {available.toLocaleString('en-IN')}
                         </span>
-                        <span className="text-sm text-muted-foreground">pcs</span>
+                        <span className="text-xs text-muted-foreground">pcs</span>
                       </div>
                     </div>
-                    <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full ${
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full ${
                       hasStock 
                         ? 'bg-emerald-500/10 text-emerald-600' 
                         : 'bg-muted text-muted-foreground'
@@ -179,7 +208,7 @@ export function PackagingTable() {
                   )}
 
                   {/* Actions */}
-                  <div className="mt-4 flex items-center justify-between pt-3 border-t border-border/60">
+                  <div className="mt-3 flex items-center justify-between pt-3 border-t border-border/60">
                     <button
                       onClick={() => {
                         setInventoryPackagingId(pkg.id);

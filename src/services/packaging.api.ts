@@ -2,9 +2,13 @@ import { apiService } from './api';
 import type { Packaging, CreatePackagingRequest, UpdatePackagingRequest, AddPacketsInventoryRequest, PacketsInventory } from '../types/entities';
 
 export const packagingAPI = {
-  // Get all packaging types
-  getAllPackaging: () => {
-    return apiService.get<Packaging[]>('/packaging');
+  // Get all packaging types (optionally filtered by product_id)
+  getAllPackaging: (productId?: string) => {
+    let url = '/packaging';
+    if (productId) {
+      url += `?product_id=${productId}`;
+    }
+    return apiService.get<Packaging[]>(url);
   },
 
   // Get packaging by ID

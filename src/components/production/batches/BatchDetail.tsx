@@ -6,7 +6,8 @@ import { AlertDialog } from '../../shared/AlertDialog';
 import { batchesAPI } from '../../../services/batches.api';
 import { lotsAPI } from '../../../services/lots.api';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
-import type { BatchWithDetails, BatchLotUsage, BatchRiceCodeUsage } from '../../../types/entities';
+import { inventoryAPI } from '../../../services/inventory.api';
+import type { BatchWithDetails, BatchLotUsage, BatchRiceCodeUsage, FinishedGoodsInventory } from '../../../types/entities';
 
 export function BatchDetail() {
   const { id } = useParams<{ id: string }>();
@@ -16,6 +17,7 @@ export function BatchDetail() {
   const [riceCodeUsage, setRiceCodeUsage] = useState<BatchRiceCodeUsage[]>([]);
   const [lots, setLots] = useState<any[]>([]);
   const [riceCodes, setRiceCodes] = useState<any[]>([]);
+  const [finishedGoods, setFinishedGoods] = useState<FinishedGoodsInventory[]>([]);
   const [loading, setLoading] = useState(true);
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('error');
@@ -27,18 +29,20 @@ export function BatchDetail() {
       if (!id) return;
       setLoading(true);
       try {
-        const [batchData, lotUsageData, riceCodeUsageData, lotsData, riceCodesData] = await Promise.all([
+        const [batchData, lotUsageData, riceCodeUsageData, lotsData, riceCodesData, finishedGoodsData] = await Promise.all([
           batchesAPI.getBatchById(id),
           batchesAPI.getBatchLotUsage(id),
           batchesAPI.getBatchRiceCodeUsage(id),
           lotsAPI.getAllLots(),
           riceCodesAPI.getAllRiceCodes(),
+          inventoryAPI.getFinishedGoods({ batch_id: id }),
         ]);
         setBatch(batchData);
         setLotUsage(lotUsageData);
         setRiceCodeUsage(riceCodeUsageData);
         setLots(lotsData);
         setRiceCodes(riceCodesData);
+        setFinishedGoods(finishedGoodsData);
       } catch (error: any) {
         setAlertType('error');
         setAlertTitle('Error');
@@ -136,13 +140,85 @@ export function BatchDetail() {
           )}
           {batch.packaging && (
             <div className="p-4 border border-border rounded-lg">
-              <div className="text-sm text-muted-foreground">Packaging</div>
+              <div className="text-sm text-muted-foreground">Primary Packaging</div>
               <div className="text-lg font-semibold mt-1">
                 {batch.packaging.packet_type} ({batch.packaging.holding_capacity} kg)
               </div>
             </div>
           )}
         </div>
+
+        {/* Finished Goods Inventory (Multiple entries per batch) */}
+        {finishedGoods.length > 0 && (
+          <div className="border border-border rounded-lg overflow-hidden">
+            <div className="p-4 bg-muted/50 border-b border-border">
+              <h2 className="font-semibold">Finished Goods Inventory</h2>
+              <p className="text-xs text-muted-foreground mt-1">
+                This batch produced {finishedGoods.length} packaging size{finishedGoods.length > 1 ? 's' : ''}
+              </p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30">
+                    <th className="text-left py-3 px-4 text-sm font-semibold">Packaging</th>
+                    <th className="text-right py-3 px-4 text-sm font-semibold">Packets</th>
+                    <th className="text-right py-3 px-4 text-sm font-semibold">Total Weight (kg)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {finishedGoods.map((fg) => {
+                    const packets = typeof fg.no_of_packets === 'string' 
+                      ? parseInt(fg.no_of_packets) 
+                      : fg.no_of_packets;
+                    const weight = typeof fg.total_weight === 'string' 
+                      ? parseFloat(fg.total_weight) 
+                      : (fg.total_weight || 0);
+                    
+                    return (
+                      <tr key={fg.id} className="border-b border-border/60 hover:bg-muted/30">
+                        <td className="py-3 px-4 text-sm">
+                          {fg.packaging ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-sm rounded-lg bg-sky-500/10 text-sky-700">
+                              {fg.packaging.packet_type} ({fg.packaging.holding_capacity}kg)
+                            </span>
+                          ) : (
+                            'N/A'
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-right font-mono">{packets.toLocaleString()}</td>
+                        <td className="py-3 px-4 text-sm text-right font-mono">{weight.toFixed(2)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                {finishedGoods.length > 1 && (
+                  <tfoot className="bg-muted/20">
+                    <tr>
+                      <td className="py-3 px-4 text-sm font-semibold">Total</td>
+                      <td className="py-3 px-4 text-sm text-right font-mono font-semibold">
+                        {finishedGoods.reduce((sum, fg) => {
+                          const packets = typeof fg.no_of_packets === 'string' 
+                            ? parseInt(fg.no_of_packets) 
+                            : fg.no_of_packets;
+                          return sum + packets;
+                        }, 0).toLocaleString()}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-right font-mono font-semibold">
+                        {finishedGoods.reduce((sum, fg) => {
+                          const weight = typeof fg.total_weight === 'string' 
+                            ? parseFloat(fg.total_weight) 
+                            : (fg.total_weight || 0);
+                          return sum + weight;
+                        }, 0).toFixed(2)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* Lot Usage */}
         {lotUsage.length > 0 && (

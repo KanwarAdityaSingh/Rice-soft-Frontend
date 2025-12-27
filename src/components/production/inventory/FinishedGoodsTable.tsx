@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Package, Eye, Search, Box } from 'lucide-react';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { EmptyState } from '../../admin/shared/EmptyState';
@@ -22,6 +22,18 @@ export function FinishedGoodsTable({ onViewAudit }: FinishedGoodsTableProps) {
   const [auditLoading, setAuditLoading] = useState(false);
   const [selectedItem, setSelectedItem] = useState<{ id: string; name: string } | null>(null);
 
+  // Group finished goods by batch for better visualization
+  const groupedByBatch = useMemo(() => {
+    const grouped: Record<string, typeof finishedGoods> = {};
+    finishedGoods.forEach(fg => {
+      if (!grouped[fg.batch_id]) {
+        grouped[fg.batch_id] = [];
+      }
+      grouped[fg.batch_id].push(fg);
+    });
+    return grouped;
+  }, [finishedGoods]);
+
   const filtered = useMemo(() => {
     return finishedGoods.filter((fg) => {
       const q = searchQuery.toLowerCase();
@@ -33,6 +45,18 @@ export function FinishedGoodsTable({ onViewAudit }: FinishedGoodsTableProps) {
       );
     });
   }, [finishedGoods, searchQuery, products]);
+
+  // Group filtered results by batch
+  const filteredGroupedByBatch = useMemo(() => {
+    const grouped: Record<string, typeof filtered> = {};
+    filtered.forEach(fg => {
+      if (!grouped[fg.batch_id]) {
+        grouped[fg.batch_id] = [];
+      }
+      grouped[fg.batch_id].push(fg);
+    });
+    return grouped;
+  }, [filtered]);
 
   const openItemAudit = async (fgId: string, productName: string, batchNumber: string) => {
     setSelectedItem({ id: fgId, name: `${productName} - ${batchNumber}` });
@@ -115,81 +139,134 @@ export function FinishedGoodsTable({ onViewAudit }: FinishedGoodsTableProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
-              {filtered.map((fg) => {
-                const product = products.find((p) => p.id === fg.product_id);
-                const packets = typeof fg.no_of_packets === 'string' 
-                  ? parseInt(fg.no_of_packets) 
-                  : fg.no_of_packets;
-                const weight = typeof fg.total_weight === 'string' 
-                  ? parseFloat(fg.total_weight) 
-                  : (fg.total_weight || 0);
+              {Object.entries(filteredGroupedByBatch).map(([batchId, entries]) => {
+                const firstEntry = entries[0];
+                const product = products.find((p) => p.id === firstEntry.product_id);
+                const hasMultipleSizes = entries.length > 1;
+                
+                // Calculate totals for this batch
+                const totalPackets = entries.reduce((sum, fg) => {
+                  const packets = typeof fg.no_of_packets === 'string' 
+                    ? parseInt(fg.no_of_packets) 
+                    : fg.no_of_packets;
+                  return sum + packets;
+                }, 0);
+                const totalWeight = entries.reduce((sum, fg) => {
+                  const weight = typeof fg.total_weight === 'string' 
+                    ? parseFloat(fg.total_weight) 
+                    : (fg.total_weight || 0);
+                  return sum + weight;
+                }, 0);
 
                 return (
-                  <tr 
-                    key={fg.id} 
-                    className="group hover:bg-muted/30 transition-colors"
-                  >
-                    <td className="py-4 px-5">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-lg bg-violet-500/10">
-                          <Package className="h-4 w-4 text-violet-600" />
-                        </div>
-                        <div>
-                          <div className="font-medium text-foreground">
-                            {product?.name || 'Unknown Product'}
-                          </div>
-                          <div className="text-xs text-muted-foreground mt-0.5">
-                            {product?.brand || 'No brand'}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-4 px-5">
-                      <span className="inline-flex items-center px-2.5 py-1 text-sm font-mono font-medium rounded-lg bg-muted">
-                        {fg.batch?.batch_number || 'N/A'}
-                      </span>
-                    </td>
-                    <td className="py-4 px-5 text-center">
-                      {fg.packaging ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-sm rounded-lg bg-sky-500/10 text-sky-700">
-                          <Box className="h-3.5 w-3.5" />
-                          {fg.packaging.packet_type} ({fg.packaging.holding_capacity}kg)
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">N/A</span>
-                      )}
-                    </td>
-                    <td className="py-4 px-5 text-right">
-                      <div className="inline-flex items-center gap-2">
-                        <span className="text-lg font-bold font-mono text-foreground">
-                          {formatNumber(packets)}
-                        </span>
-                        <span className="text-sm text-muted-foreground">pcs</span>
-                      </div>
-                    </td>
-                    <td className="py-4 px-5 text-right">
-                      <div className="inline-flex items-center gap-2">
-                        <span className="text-lg font-bold font-mono text-foreground">
-                          {formatNumber(weight, 2)}
-                        </span>
-                        <span className="text-sm text-muted-foreground">kg</span>
-                      </div>
-                    </td>
-                    <td className="py-4 px-5 text-center">
-                      <button
-                        onClick={() => openItemAudit(
-                          fg.id, 
-                          product?.name || 'Product',
-                          fg.batch?.batch_number || 'N/A'
-                        )}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-violet-600 bg-violet-500/10 hover:bg-violet-500/20 rounded-lg transition-colors"
-                        title="View Audit Log"
-                      >
-                        <Eye className="h-3.5 w-3.5" />
-                        <span>History</span>
-                      </button>
-                    </td>
-                  </tr>
+                  <React.Fragment key={batchId}>
+                    {entries.map((fg, idx) => {
+                      const packets = typeof fg.no_of_packets === 'string' 
+                        ? parseInt(fg.no_of_packets) 
+                        : fg.no_of_packets;
+                      const weight = typeof fg.total_weight === 'string' 
+                        ? parseFloat(fg.total_weight) 
+                        : (fg.total_weight || 0);
+                      const isFirstRow = idx === 0;
+                      const rowSpan = entries.length;
+
+                      return (
+                        <tr 
+                          key={fg.id} 
+                          className={`group hover:bg-muted/30 transition-colors ${hasMultipleSizes && idx > 0 ? 'border-t border-border/40' : ''}`}
+                        >
+                          {/* Product - Only show on first row with rowspan if multiple sizes */}
+                          {isFirstRow ? (
+                            <td 
+                              rowSpan={hasMultipleSizes ? rowSpan : 1}
+                              className="py-4 px-5 border-r border-border/40"
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 rounded-lg bg-violet-500/10">
+                                  <Package className="h-4 w-4 text-violet-600" />
+                                </div>
+                                <div>
+                                  <div className="font-medium text-foreground">
+                                    {product?.name || 'Unknown Product'}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground mt-0.5">
+                                    {product?.brand || 'No brand'}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                          ) : null}
+                          {/* Batch - Only show on first row with rowspan if multiple sizes */}
+                          {isFirstRow ? (
+                            <td 
+                              rowSpan={hasMultipleSizes ? rowSpan : 1}
+                              className="py-4 px-5 border-r border-border/40"
+                            >
+                              <span className="inline-flex items-center px-2.5 py-1 text-sm font-mono font-medium rounded-lg bg-muted">
+                                {fg.batch?.batch_number || 'N/A'}
+                              </span>
+                              {hasMultipleSizes && (
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  {entries.length} sizes
+                                </div>
+                              )}
+                            </td>
+                          ) : null}
+                          {/* Packaging */}
+                          <td className="py-4 px-5 text-center">
+                            {fg.packaging ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-sm rounded-lg bg-sky-500/10 text-sky-700">
+                                <Box className="h-3.5 w-3.5" />
+                                {fg.packaging.packet_type} ({fg.packaging.holding_capacity}kg)
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">N/A</span>
+                            )}
+                          </td>
+                          {/* Packets */}
+                          <td className="py-4 px-5 text-right">
+                            <div className="inline-flex items-center gap-2">
+                              <span className="text-lg font-bold font-mono text-foreground">
+                                {formatNumber(packets)}
+                              </span>
+                              <span className="text-sm text-muted-foreground">pcs</span>
+                            </div>
+                          </td>
+                          {/* Weight */}
+                          <td className="py-4 px-5 text-right">
+                            <div className="inline-flex items-center gap-2">
+                              <span className="text-lg font-bold font-mono text-foreground">
+                                {formatNumber(weight, 2)}
+                              </span>
+                              <span className="text-sm text-muted-foreground">kg</span>
+                            </div>
+                          </td>
+                          {/* Actions */}
+                          <td className="py-4 px-5 text-center">
+                            <button
+                              onClick={() => openItemAudit(
+                                fg.id, 
+                                product?.name || 'Product',
+                                fg.batch?.batch_number || 'N/A'
+                              )}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-violet-600 bg-violet-500/10 hover:bg-violet-500/20 rounded-lg transition-colors"
+                              title="View Audit Log"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                              <span>History</span>
+                            </button>
+                            {hasMultipleSizes && idx === entries.length - 1 && (
+                              <div className="text-xs text-muted-foreground mt-2 pt-2 border-t border-border/40">
+                                <div className="font-semibold">Batch Total:</div>
+                                <div>{formatNumber(totalPackets)} pcs</div>
+                                <div>{formatNumber(totalWeight, 2)} kg</div>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </React.Fragment>
                 );
               })}
             </tbody>

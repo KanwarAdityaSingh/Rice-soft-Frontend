@@ -1206,6 +1206,7 @@ export interface CreateProductRequest {
   name: string;
   description?: string;
   brand?: string;
+  packet_type: PacketType; // Required - used for auto-creating packaging entries
 }
 
 export interface UpdateProductRequest {
@@ -1223,6 +1224,7 @@ export type PacketType = 'PP Bag' | 'Jute Bag' | 'HDPE Bag';
 
 export interface Packaging {
   id: string;
+  product_id: string; // NEW: Packaging is now product-specific
   holding_capacity: number;
   packet_type: PacketType;
   source: string | null;
@@ -1231,7 +1233,8 @@ export interface Packaging {
 }
 
 export interface CreatePackagingRequest {
-  holding_capacity: number;
+  product_id: string; // Required - packaging must belong to a product
+  holding_capacity: number; // Must be 10, 25, or 50
   packet_type: PacketType;
   source?: string;
 }
@@ -1300,11 +1303,20 @@ export interface BatchRiceCodeUsage {
   updated_at: string;
 }
 
+// Packaging quantity entry for batch creation
+export interface PackagingQuantity {
+  weight: 10 | 25 | 50; // Must be exactly 10, 25, or 50
+  quantity: number; // Quantity in kg for this packaging size
+}
+
 export interface CreateBatchRequest {
   product_id: string;
   recipe_id: string;
-  packaging_id: string;
-  quantity: number;
+  // New format: packaging_quantities array (recommended)
+  packaging_quantities?: PackagingQuantity[];
+  // Old format: single packaging (backward compatible)
+  packaging_id?: string;
+  quantity?: number; // Required if using old format, calculated from packaging_quantities if using new format
   status?: BatchStatus;
 }
 

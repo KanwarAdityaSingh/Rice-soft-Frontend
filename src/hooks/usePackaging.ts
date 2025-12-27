@@ -7,14 +7,29 @@ export function usePackaging() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchPackaging = async () => {
+  const fetchPackaging = async (productId?: string) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await packagingAPI.getAllPackaging();
+      const data = await packagingAPI.getAllPackaging(productId);
       setPackaging(data);
     } catch (err: any) {
       setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch packaging for a specific product
+  const fetchPackagingByProduct = async (productId: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await packagingAPI.getAllPackaging(productId);
+      return data;
+    } catch (err: any) {
+      setError(err.message);
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -71,6 +86,7 @@ export function usePackaging() {
     deletePackaging,
     addPacketsInventory,
     refetch: fetchPackaging,
+    fetchPackagingByProduct,
   };
 }
 
