@@ -284,7 +284,11 @@ export function SaudaPreviewDialog({ open, onOpenChange, sauda }: SaudaPreviewDi
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Date:</span>
-                    <span className="font-semibold">{new Date(sauda.created_at).toLocaleDateString('en-IN')}</span>
+                    <span className="font-semibold">
+                      {sauda.sauda_date 
+                        ? new Date(sauda.sauda_date + 'T00:00:00').toLocaleDateString('en-IN')
+                        : new Date(sauda.created_at).toLocaleDateString('en-IN')}
+                    </span>
                   </div>
                 </div>
               </div>

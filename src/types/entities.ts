@@ -688,6 +688,7 @@ export interface Sauda {
   status: 'draft' | 'active' | 'completed' | 'cancelled';
   notes?: string | null;
   is_dana_required?: boolean; // Controls whether dana deduction is calculated in payment advice
+  sauda_date?: string | null; // Date of the sauda in YYYY-MM-DD format
   created_at: string;
   updated_at: string;
 }
@@ -710,6 +711,7 @@ export interface CreateSaudaRequest {
   notes?: string | null;
   status?: 'draft' | 'active' | 'completed' | 'cancelled';
   is_dana_required?: boolean; // Optional, defaults to true if not provided
+  sauda_date?: string | null; // Date of the sauda in YYYY-MM-DD format
 }
 
 export interface UpdateSaudaRequest {
@@ -730,6 +732,7 @@ export interface UpdateSaudaRequest {
   notes?: string | null;
   status?: 'draft' | 'active' | 'completed' | 'cancelled';
   is_dana_required?: boolean;
+  sauda_date?: string | null; // Date of the sauda in YYYY-MM-DD format
 }
 
 export interface SaudaFilters {

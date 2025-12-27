@@ -62,6 +62,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
     uncooked_rice_image_url: null,
     notes: null,
     is_dana_required: true, // Default to true
+    sauda_date: new Date().toISOString().split('T')[0], // Default to today's date in YYYY-MM-DD format
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -153,6 +154,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
         uncooked_rice_image_url: sauda.uncooked_rice_image_url || null,
         notes: sauda.notes || null,
         is_dana_required: sauda.is_dana_required ?? true, // Default to true if not set
+        sauda_date: sauda.sauda_date || new Date().toISOString().split('T')[0],
       });
       setErrors({});
       setPendingFiles({
@@ -189,6 +191,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
       uncooked_rice_image_url: null,
       notes: null,
       is_dana_required: true, // Default to true
+      sauda_date: new Date().toISOString().split('T')[0], // Default to today's date
     });
     setErrors({});
     setUnit('kg');
@@ -386,6 +389,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
         uncooked_rice_image_url: formData.uncooked_rice_image_url || null,
         notes: formData.notes?.trim() || null, // Convert empty string to null
         is_dana_required: formData.is_dana_required ?? true,
+        sauda_date: formData.sauda_date || null, // Date in YYYY-MM-DD format
       };
       
       // Add status only if provided (optional field)
@@ -694,6 +698,15 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                           </div>
                         )}
                       </div>
+                    </div>
+                    <div className="mt-2">
+                      <label className="block text-xs font-medium mb-0.5">Sauda Date</label>
+                      <input
+                        type="date"
+                        value={formData.sauda_date || ''}
+                        onChange={(e) => setFormData({ ...formData, sauda_date: e.target.value || null })}
+                        className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background"
+                      />
                     </div>
                   </div>
 
@@ -1225,7 +1238,11 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Date:</span>
-                            <span className="font-semibold">{new Date().toLocaleDateString('en-IN')}</span>
+                            <span className="font-semibold">
+                              {formData.sauda_date 
+                                ? new Date(formData.sauda_date + 'T00:00:00').toLocaleDateString('en-IN')
+                                : new Date().toLocaleDateString('en-IN')}
+                            </span>
                           </div>
                         </div>
                       </div>

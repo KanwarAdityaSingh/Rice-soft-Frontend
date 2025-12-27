@@ -235,7 +235,247 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
       ) : filtered.length === 0 ? (
         <EmptyState icon={Package} title="No saudas found" description="Create your first sauda or adjust filters." />
       ) : (
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+        <>
+          {/* Desktop Table View */}
+          <div className="hidden lg:block overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left py-3 px-4 text-sm font-semibold">Type</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold">Sauda Details</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold">Date</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold">Rate</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold">Quantity/Received</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold">Status</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold">Broker Comm</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold">Cash Discount</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold">Usage</th>
+                  <th className="text-right py-3 px-4 text-sm font-semibold">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((s) => {
+                  const counts = getSaudaUsageCounts(s.id);
+                  const usageParts: string[] = [];
+                  if (counts.paymentAdvices > 0) {
+                    usageParts.push(`${counts.paymentAdvices} PA`);
+                  }
+                  if (counts.isps > 0) {
+                    usageParts.push(`${counts.isps} ISP`);
+                  }
+                  if (counts.kaantas > 0) {
+                    usageParts.push(`${counts.kaantas} Kaanta`);
+                  }
+                  
+                  return (
+                    <tr key={s.id} className="border-b border-border/60 hover:bg-muted/30 transition-colors">
+                      <td className="py-3 px-4 text-sm">
+                        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{s.sauda_type}</span>
+                      </td>
+                      <td className="py-3 px-4 text-sm">
+                        <div className="font-medium">{getSaudaDisplayName(s)}</div>
+                      </td>
+                      <td className="py-3 px-4 text-sm">
+                        {s.sauda_date 
+                          ? new Date(s.sauda_date + 'T00:00:00').toLocaleDateString('en-IN')
+                          : new Date(s.created_at).toLocaleDateString('en-IN')}
+                      </td>
+                      <td className="py-3 px-4 text-sm">₹{(s.rate ?? 0).toFixed(2)}</td>
+                      <td className="py-3 px-4 text-sm">
+                        {s.quantity ? (
+                          <div className="flex items-center gap-2">
+                            <span>{formatWeightDisplay(s.received_until_now, s.quantity)}</span>
+                            {s.completion_percentage !== null && (
+                              <span className={`text-xs px-1.5 py-0.5 rounded-full ${getCompletionStatus(s.completion_percentage).bgColor} ${getCompletionStatus(s.completion_percentage).color}`}>
+                                {formatCompletionPercentage(s.completion_percentage)}
+                              </span>
+                            )}
+                          </div>
+                        ) : s.received_until_now > 0 ? (
+                          <span>{s.received_until_now.toFixed(2)} kg</span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-sm min-w-[120px]">
+                        <div className="flex flex-col gap-1.5">
+                          {s.completion_percentage !== null && (
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${getCompletionStatus(s.completion_percentage).bgColor} ${getCompletionStatus(s.completion_percentage).color} border ${getCompletionStatus(s.completion_percentage).borderColor}`}>
+                              {getCompletionStatus(s.completion_percentage).label}
+                            </span>
+                          )}
+                          {(s.is_dana_required ?? true) ? (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700 whitespace-nowrap">
+                              Dana Required
+                            </span>
+                          ) : (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700 whitespace-nowrap">
+                              Dana Not Required
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-sm">
+                        {s.broker_commission != null ? (
+                          <span>
+                            {s.broker_commission_type === 'rupees' 
+                              ? `₹${s.broker_commission.toFixed(2)}` 
+                              : s.broker_commission_type === 'weight'
+                              ? `₹${s.broker_commission.toFixed(2)}/Kg`
+                              : `${s.broker_commission}%`}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-sm">
+                        {s.cash_discount != null ? (
+                          <span>
+                            {s.cash_discount_type === 'percentage' 
+                              ? `${s.cash_discount}%` 
+                              : `₹${s.cash_discount.toFixed(2)}`}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-sm">
+                        {usageParts.length > 0 ? (
+                          <span className="text-xs text-amber-600 dark:text-amber-400">
+                            {usageParts.join(', ')}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => {
+                              setPreviewSauda(s);
+                              setPreviewOpen(true);
+                            }}
+                            className="p-1.5 text-primary hover:bg-primary/10 rounded-md transition-colors"
+                            title="View Preview"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          
+                          <button
+                            onClick={() => {
+                              setSelectedSaudaForNotification(s.id);
+                              setEmailModalOpen(true);
+                            }}
+                            className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
+                            title="Send Email"
+                          >
+                            <Mail className="h-4 w-4" />
+                          </button>
+                          
+                          <button
+                            onClick={() => {
+                              setSelectedSaudaForNotification(s.id);
+                              setWhatsappModalOpen(true);
+                            }}
+                            className="p-1.5 text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-md transition-colors"
+                            title="Send WhatsApp"
+                          >
+                            <MessageCircle className="h-4 w-4" />
+                          </button>
+                          
+                          <DropdownMenu.Root>
+                            <DropdownMenu.Trigger asChild>
+                              <button className="rounded-lg p-2 hover:bg-muted transition-colors">
+                                <MoreVertical className="h-4 w-4" />
+                              </button>
+                            </DropdownMenu.Trigger>
+                            <DropdownMenu.Portal>
+                              <DropdownMenu.Content
+                                className="glass min-w-[10rem] rounded-xl p-1 shadow-lg z-50"
+                                sideOffset={8}
+                                align="end"
+                              >
+                                <DropdownMenu.Label className="px-3 py-1.5 text-xs text-muted-foreground font-medium">
+                                  View Images
+                                </DropdownMenu.Label>
+                                <DropdownMenu.Item
+                                  className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+                                    s.cooked_rice_image_url 
+                                      ? 'hover:bg-accent hover:text-accent-foreground text-amber-600' 
+                                      : 'text-muted-foreground/50 cursor-not-allowed'
+                                  }`}
+                                  disabled={!s.cooked_rice_image_url}
+                                  onSelect={() => s.cooked_rice_image_url && handleViewDocuments([{ url: s.cooked_rice_image_url, label: 'Cooked Rice Sample', type: 'image' }])}
+                                >
+                                  <UtensilsCrossed className="h-4 w-4" /> Cooked Rice
+                                  {!s.cooked_rice_image_url && <span className="ml-auto text-[10px]">N/A</span>}
+                                </DropdownMenu.Item>
+                                <DropdownMenu.Item
+                                  className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+                                    s.uncooked_rice_image_url 
+                                      ? 'hover:bg-accent hover:text-accent-foreground text-amber-600' 
+                                      : 'text-muted-foreground/50 cursor-not-allowed'
+                                  }`}
+                                  disabled={!s.uncooked_rice_image_url}
+                                  onSelect={() => s.uncooked_rice_image_url && handleViewDocuments([{ url: s.uncooked_rice_image_url, label: 'Uncooked Rice Sample', type: 'image' }])}
+                                >
+                                  <Wheat className="h-4 w-4" /> Uncooked Rice
+                                  {!s.uncooked_rice_image_url && <span className="ml-auto text-[10px]">N/A</span>}
+                                </DropdownMenu.Item>
+                                <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                                
+                                <DropdownMenu.Item
+                                  className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+                                  onSelect={() => {
+                                    setSelectedSaudaId(s.id);
+                                    setEditModalOpen(true);
+                                  }}
+                                >
+                                  <Edit2 className="h-4 w-4" /> Edit
+                                </DropdownMenu.Item>
+                                <DropdownMenu.Item
+                                  className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                  onSelect={async () => {
+                                    if (isSaudaInUse(s.id)) {
+                                      const usage = await getSaudaUsageDetails(s.id);
+                                      const parts: string[] = [];
+                                      
+                                      if (usage.paymentAdvices.length > 0) {
+                                        parts.push(`Payment Advices (${usage.paymentAdvices.length}):\n${usage.paymentAdvices.map((pa, i) => `${i + 1}. ${pa}`).join('\n')}`);
+                                      }
+                                      if (usage.isps.length > 0) {
+                                        parts.push(`Inward Slip Passes (${usage.isps.length}):\n${usage.isps.map((isp, i) => `${i + 1}. ${isp}`).join('\n')}`);
+                                      }
+                                      if (usage.kaantas.length > 0) {
+                                        parts.push(`Kaantas (${usage.kaantas.length}):\n${usage.kaantas.map((k, i) => `${i + 1}. ${k}`).join('\n')}`);
+                                      }
+                                      
+                                      setAlertType('warning');
+                                      setAlertTitle('Cannot Delete Sauda');
+                                      setAlertMessage(`This sauda is currently used in:\n\n${parts.join('\n\n')}\n\nPlease remove it from all related records before deleting.`);
+                                      setAlertOpen(true);
+                                      return;
+                                    }
+                                    setSelectedSauda(s);
+                                    setDeleteDialogOpen(true);
+                                  }}
+                                >
+                                  <Trash2 className="h-4 w-4" /> Delete
+                                </DropdownMenu.Item>
+                              </DropdownMenu.Content>
+                            </DropdownMenu.Portal>
+                          </DropdownMenu.Root>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile Card View */}
+          <div className="lg:hidden grid gap-4 grid-cols-1 sm:grid-cols-2">
           {filtered.map((s) => (
             <article
               key={s.id}
@@ -252,6 +492,11 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                       {getSaudaDisplayName(s)}
                     </h3>
                     <div className="text-xs text-muted-foreground">Rate: ₹{(s.rate ?? 0).toFixed(2)}</div>
+                    <div className="text-xs text-muted-foreground">
+                      Date: {s.sauda_date 
+                        ? new Date(s.sauda_date + 'T00:00:00').toLocaleDateString('en-IN')
+                        : new Date(s.created_at).toLocaleDateString('en-IN')}
+                    </div>
                     <div className="mt-1 flex items-center gap-2">
                     {s.completion_percentage !== null && (
                         <span className={`text-[10px] px-2 py-0.5 rounded-full ${getCompletionStatus(s.completion_percentage).bgColor} ${getCompletionStatus(s.completion_percentage).color} border ${getCompletionStatus(s.completion_percentage).borderColor}`}>
@@ -455,6 +700,11 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
             </article>
           ))}
         </div>
+
+          <div className="mt-6 flex items-center justify-between text-sm text-muted-foreground">
+            <span>Showing {filtered.length} of {saudas.length} saudas</span>
+          </div>
+        </>
       )}
 
       <ConfirmDialog
