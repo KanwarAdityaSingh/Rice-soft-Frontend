@@ -1,5 +1,5 @@
 import { apiService } from './api';
-import type { FinishedGoodsInventory, PacketsInventory, LotsInventory, BagsInventory, InventorySummary, InventoryFilters } from '../types/entities';
+import type { FinishedGoodsInventory, PacketsInventory, LotsInventory, BagsInventory, InventorySummary, InventoryFilters, HierarchicalInventory } from '../types/entities';
 
 export const inventoryAPI = {
   // Get finished goods inventory
@@ -34,6 +34,11 @@ export const inventoryAPI = {
   // Get inventory summary
   getSummary: () => {
     return apiService.get<InventorySummary>('/inventory/summary');
+  },
+
+  // Get hierarchical inventory
+  getHierarchicalInventory: () => {
+    return apiService.get<HierarchicalInventory[]>('/inventory/hierarchical');
   },
 };
 

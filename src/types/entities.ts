@@ -1197,29 +1197,54 @@ export interface Product {
   name: string;
   description: string | null;
   brand: string | null;
+  rice_type: string | null;
   created_at: string;
   updated_at: string;
-  recipes?: Array<{
-    id: string;
-    recipe_name: string;
-  }>;
 }
 
 export interface CreateProductRequest {
   name: string;
   description?: string;
   brand?: string;
-  packet_type: PacketType; // Required - used for auto-creating packaging entries
+  rice_type?: string | null;
 }
 
 export interface UpdateProductRequest {
   name?: string;
   description?: string;
   brand?: string;
+  rice_type?: string | null;
 }
 
-export interface LinkRecipeToProductRequest {
-  recipe_id: string;
+// Packaging Vendor Types
+export interface PackagingVendor {
+  id: string;
+  name: string;
+  contact_person: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  gst_number: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePackagingVendorRequest {
+  name: string;
+  contact_person?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  gst_number?: string | null;
+}
+
+export interface UpdatePackagingVendorRequest {
+  name?: string;
+  contact_person?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  gst_number?: string | null;
 }
 
 // Packaging Types
@@ -1230,7 +1255,8 @@ export interface Packaging {
   product_id: string; // NEW: Packaging is now product-specific
   holding_capacity: number;
   packet_type: PacketType;
-  source: string | null;
+  packaging_vendor_id: string | null;
+  ordered_weight: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -1239,13 +1265,15 @@ export interface CreatePackagingRequest {
   product_id: string; // Required - packaging must belong to a product
   holding_capacity: number; // Must be 10, 25, or 50
   packet_type: PacketType;
-  source?: string;
+  packaging_vendor_id?: string | null;
+  ordered_weight?: number | null;
 }
 
 export interface UpdatePackagingRequest {
   holding_capacity?: number;
   packet_type?: PacketType;
-  source?: string;
+  packaging_vendor_id?: string | null;
+  ordered_weight?: number | null;
 }
 
 export interface AddPacketsInventoryRequest {
@@ -1254,16 +1282,34 @@ export interface AddPacketsInventoryRequest {
 }
 
 // Batch Types
-export type BatchStatus = 'planned' | 'in_progress' | 'completed' | 'cancelled';
+export type BatchStatus = 'planned' | 'in_progress' | 'recipe_attached' | 'ready_to_pack' | 'packaged' | 'completed' | 'cancelled';
 
 export interface Batch {
   id: string;
   batch_number: string;
-  product_id: string;
+  product_id: string | null;
   recipe_id: string;
-  packaging_id: string;
+  packaging_id: string | null;
   quantity: number;
   status: BatchStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BatchProduct {
+  id: string;
+  batch_id: string;
+  product_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BatchPackaging {
+  id: string;
+  batch_id: string;
+  product_id: string;
+  packaging_id: string;
+  quantity: number;
   created_at: string;
   updated_at: string;
 }
@@ -1284,6 +1330,8 @@ export interface BatchWithDetails extends Batch {
   };
   lot_usage?: BatchLotUsage[];
   rice_code_usage?: BatchRiceCodeUsage[];
+  products?: BatchProduct[];
+  packaging_list?: BatchPackaging[];
 }
 
 export interface BatchLotUsage {
@@ -1313,13 +1361,8 @@ export interface PackagingQuantity {
 }
 
 export interface CreateBatchRequest {
-  product_id: string;
   recipe_id: string;
-  // New format: packaging_quantities array (recommended)
-  packaging_quantities?: PackagingQuantity[];
-  // Old format: single packaging (backward compatible)
-  packaging_id?: string;
-  quantity?: number; // Required if using old format, calculated from packaging_quantities if using new format
+  quantity: number;
   status?: BatchStatus;
 }
 
@@ -1358,7 +1401,8 @@ export interface PacketsInventory {
     id: string;
     holding_capacity: number;
     packet_type: PacketType;
-    source: string | null;
+    packaging_vendor_id: string | null;
+    ordered_weight: number | null;
   };
 }
 
@@ -1399,5 +1443,45 @@ export interface InventoryFilters {
   product_id?: string;
   batch_id?: string;
   bag_type?: 'jute' | 'pp';
+  // Extended filters
+  brands?: string[];
+  product_ids?: string[];
+  rice_types?: string[];
+  holding_capacities?: number[];
+  packet_types?: string[];
+  vendor_ids?: string[];
+  ordered_weight_range?: { min?: number; max?: number };
+  batch_ids?: string[];
+  min_quantity?: number;
+  max_quantity?: number;
+  bag_types?: ('jute' | 'pp')[];
+  bag_capacities?: number[];
+  search_text?: string;
+}
+
+// Hierarchical Inventory Types
+export interface HierarchicalInventory {
+  brand: string;
+  products: {
+    product_id: string;
+    product_name: string;
+    rice_type: string | null;
+    packaging: {
+      packaging_id: string;
+      holding_capacity: number;
+      packet_type: string;
+      vendor: {
+        id: string;
+        name: string;
+      } | null;
+      finished_goods: {
+        batch_id: string;
+        batch_number: string;
+        quantity: number;
+        packets: number;
+        weight: number;
+      }[];
+    }[];
+  }[];
 }
 

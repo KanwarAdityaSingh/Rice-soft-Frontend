@@ -27,6 +27,7 @@ import PaymentAdvicesPage from './pages/purchases/PaymentAdvices'
 import RecipesPage from './pages/production/Recipes'
 import ProductsPage from './pages/production/Products'
 import PackagingPage from './pages/production/Packaging'
+import PackagingVendorsPage from './pages/production/PackagingVendors'
 import BatchesPage from './pages/production/Batches'
 import BatchDetailPage from './pages/production/BatchDetail'
 import InventoryPage from './pages/production/Inventory'
@@ -272,6 +273,16 @@ function AnimatedRoutes() {
             <ProtectedRoute>
               <AppLayout>
                 <PackagingPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/production/packaging-vendors"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <PackagingVendorsPage />
               </AppLayout>
             </ProtectedRoute>
           }

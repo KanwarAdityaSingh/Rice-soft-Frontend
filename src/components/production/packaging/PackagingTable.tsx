@@ -9,6 +9,7 @@ import { AlertDialog } from '../../shared/AlertDialog';
 import { usePackaging } from '../../../hooks/usePackaging';
 import { useInventory } from '../../../hooks/useInventory';
 import { useProducts } from '../../../hooks/useProducts';
+import { usePackagingVendors } from '../../../hooks/usePackagingVendors';
 import { PackagingFormModal } from './PackagingFormModal';
 import { AddPacketsInventoryModal } from './AddPacketsInventoryModal';
 
@@ -16,6 +17,7 @@ export function PackagingTable() {
   const { packaging, loading, deletePackaging, refetch } = usePackaging();
   const { packets: packetsInventory, fetchPackets } = useInventory();
   const { products } = useProducts();
+  const { packagingVendors } = usePackagingVendors();
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -36,6 +38,15 @@ export function PackagingTable() {
     });
     return map;
   }, [products]);
+
+  // Create vendor map for quick lookup
+  const vendorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    packagingVendors.forEach(vendor => {
+      map.set(vendor.id, vendor.name);
+    });
+    return map;
+  }, [packagingVendors]);
 
   // Fetch packets inventory when component mounts (fetchPackets is now memoized)
   useEffect(() => {
@@ -77,14 +88,15 @@ export function PackagingTable() {
     const q = searchQuery.toLowerCase();
     return packaging.filter((p) => {
       const productName = productMap.get(p.product_id)?.toLowerCase() || '';
+      const vendorName = p.packaging_vendor_id ? vendorMap.get(p.packaging_vendor_id)?.toLowerCase() || '' : '';
       return (
         productName.includes(q) ||
         p.packet_type.toLowerCase().includes(q) ||
-        p.source?.toLowerCase().includes(q) ||
+        vendorName.includes(q) ||
         p.holding_capacity.toString().includes(q)
       );
     });
-  }, [packaging, searchQuery, productMap]);
+  }, [packaging, searchQuery, productMap, vendorMap]);
 
   return (
     <div className="space-y-4">
@@ -96,12 +108,12 @@ export function PackagingTable() {
             placeholder="Search packaging..."
           />
         </div>
-        {/* <button
+        <button
           className="btn-primary rounded-xl inline-flex items-center justify-center gap-2 w-full sm:w-auto"
           onClick={() => setCreateOpen(true)}
         >
           <Plus className="h-4 w-4" /> Create Packaging
-        </button> */}
+        </button>
       </div>
 
       {loading ? (
@@ -200,10 +212,15 @@ export function PackagingTable() {
                     </span>
                   </div>
 
-                  {/* Source (if available) */}
-                  {pkg.source && (
+                  {/* Vendor (if available) */}
+                  {pkg.packaging_vendor_id && (
                     <div className="text-xs text-muted-foreground pt-2 border-t border-border/40">
-                      <span className="font-medium">Source:</span> {pkg.source}
+                      <span className="font-medium">Vendor:</span> {vendorMap.get(pkg.packaging_vendor_id) || 'Unknown'}
+                    </div>
+                  )}
+                  {pkg.ordered_weight && (
+                    <div className="text-xs text-muted-foreground pt-1">
+                      <span className="font-medium">Ordered:</span> {pkg.ordered_weight.toLocaleString('en-IN')} kg
                     </div>
                   )}
 

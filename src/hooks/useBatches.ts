@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { batchesAPI } from '../services/batches.api';
-import type { Batch, BatchWithDetails, CreateBatchRequest, UpdateBatchRequest } from '../types/entities';
+import type { Batch, BatchWithDetails, CreateBatchRequest, UpdateBatchRequest, BatchProduct, BatchPackaging } from '../types/entities';
 
 export function useBatches() {
   const [batches, setBatches] = useState<Batch[]>([]);
@@ -61,6 +61,60 @@ export function useBatches() {
     }
   };
 
+  // Batch Products (Stage 2)
+  const addProductToBatch = async (batchId: string, productId: string) => {
+    try {
+      await batchesAPI.addProductToBatch(batchId, { product_id: productId });
+      await fetchBatches();
+    } catch (err: any) {
+      throw err;
+    }
+  };
+
+  const getBatchProducts = async (batchId: string) => {
+    try {
+      return await batchesAPI.getBatchProducts(batchId);
+    } catch (err: any) {
+      throw err;
+    }
+  };
+
+  const removeProductFromBatch = async (batchId: string, productId: string) => {
+    try {
+      await batchesAPI.removeProductFromBatch(batchId, productId);
+      await fetchBatches();
+    } catch (err: any) {
+      throw err;
+    }
+  };
+
+  // Batch Packaging (Stage 3)
+  const addPackagingToBatch = async (batchId: string, productId: string, packagingId: string, quantity: number) => {
+    try {
+      await batchesAPI.addPackagingToBatch(batchId, { product_id: productId, packaging_id: packagingId, quantity });
+      await fetchBatches();
+    } catch (err: any) {
+      throw err;
+    }
+  };
+
+  const getBatchPackaging = async (batchId: string, productId?: string) => {
+    try {
+      return await batchesAPI.getBatchPackaging(batchId, productId);
+    } catch (err: any) {
+      throw err;
+    }
+  };
+
+  const removePackagingFromBatch = async (batchId: string, packagingId: string) => {
+    try {
+      await batchesAPI.removePackagingFromBatch(batchId, packagingId);
+      await fetchBatches();
+    } catch (err: any) {
+      throw err;
+    }
+  };
+
   return {
     batches,
     loading,
@@ -69,6 +123,12 @@ export function useBatches() {
     updateBatch,
     getBatchDetails,
     deleteBatch,
+    addProductToBatch,
+    getBatchProducts,
+    removeProductFromBatch,
+    addPackagingToBatch,
+    getBatchPackaging,
+    removePackagingFromBatch,
     refetch: fetchBatches,
   };
 }

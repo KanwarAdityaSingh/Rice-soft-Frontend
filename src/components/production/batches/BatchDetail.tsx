@@ -1,17 +1,21 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FlaskConical } from 'lucide-react';
+import { ArrowLeft, FlaskConical, Package, Box } from 'lucide-react';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { batchesAPI } from '../../../services/batches.api';
 import { lotsAPI } from '../../../services/lots.api';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { inventoryAPI } from '../../../services/inventory.api';
+import { useProducts } from '../../../hooks/useProducts';
+import { usePackaging } from '../../../hooks/usePackaging';
 import type { BatchWithDetails, BatchLotUsage, BatchRiceCodeUsage, FinishedGoodsInventory } from '../../../types/entities';
 
 export function BatchDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { products } = useProducts();
+  const { packaging } = usePackaging();
   const [batch, setBatch] = useState<BatchWithDetails | null>(null);
   const [lotUsage, setLotUsage] = useState<BatchLotUsage[]>([]);
   const [riceCodeUsage, setRiceCodeUsage] = useState<BatchRiceCodeUsage[]>([]);
@@ -69,6 +73,12 @@ export function BatchDetail() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
+      case 'recipe_attached':
+        return 'bg-blue-500/10 text-blue-600';
+      case 'ready_to_pack':
+        return 'bg-yellow-500/10 text-yellow-600';
+      case 'packaged':
+        return 'bg-green-500/10 text-green-600';
       case 'completed':
         return 'bg-emerald-500/10 text-emerald-600';
       case 'in_progress':
@@ -116,11 +126,8 @@ export function BatchDetail() {
               <h1 className="text-2xl font-bold">{batch.batch_number}</h1>
               <div className="flex items-center gap-3 mt-2">
                 <span className={`px-3 py-1 rounded-md text-xs font-medium ${getStatusColor(batch.status)}`}>
-                  {batch.status.replace('_', ' ')}
+                  {batch.status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
                 </span>
-                {batch.product && (
-                  <span className="text-sm text-muted-foreground">Product: {batch.product.name}</span>
-                )}
               </div>
             </div>
           </div>
@@ -138,15 +145,66 @@ export function BatchDetail() {
               <div className="text-lg font-semibold mt-1">{batch.recipe.recipe_name}</div>
             </div>
           )}
-          {batch.packaging && (
-            <div className="p-4 border border-border rounded-lg">
-              <div className="text-sm text-muted-foreground">Primary Packaging</div>
-              <div className="text-lg font-semibold mt-1">
-                {batch.packaging.packet_type} ({batch.packaging.holding_capacity} kg)
-              </div>
-            </div>
-          )}
         </div>
+
+        {/* Attached Products (Stage 2) */}
+        {batch.products && batch.products.length > 0 && (
+          <div className="rounded-xl border border-border bg-card p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 rounded-lg bg-primary/10">
+                <Package className="h-5 w-5 text-primary" />
+              </div>
+              <h2 className="text-lg font-semibold">Attached Products</h2>
+            </div>
+            <div className="space-y-2">
+              {batch.products.map((bp) => {
+                const product = products.find(p => p.id === bp.product_id);
+                return (
+                  <div key={bp.id} className="p-3 rounded-lg bg-muted/30 border border-border">
+                    <span className="text-sm font-medium">{product?.name || 'Unknown Product'}</span>
+                    {product?.brand && (
+                      <span className="text-xs text-muted-foreground ml-2">({product.brand})</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Attached Packaging (Stage 3) */}
+        {batch.packaging_list && batch.packaging_list.length > 0 && (
+          <div className="rounded-xl border border-border bg-card p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 rounded-lg bg-primary/10">
+                <Box className="h-5 w-5 text-primary" />
+              </div>
+              <h2 className="text-lg font-semibold">Attached Packaging</h2>
+            </div>
+            <div className="space-y-2">
+              {batch.packaging_list.map((bpkg) => {
+                const product = products.find(p => p.id === bpkg.product_id);
+                const pkg = packaging.find(p => p.id === bpkg.packaging_id);
+                const packetsNeeded = pkg ? Math.ceil(bpkg.quantity / pkg.holding_capacity) : 0;
+                return (
+                  <div key={bpkg.id} className="p-3 rounded-lg bg-muted/30 border border-border">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-sm font-medium">{product?.name || 'Unknown Product'}</span>
+                        <span className="text-xs text-muted-foreground ml-2">
+                          - {pkg?.holding_capacity}kg {pkg?.packet_type}
+                        </span>
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {bpkg.quantity.toFixed(2)} kg ({packetsNeeded} packets)
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Finished Goods Inventory (Multiple entries per batch) */}
         {finishedGoods.length > 0 && (

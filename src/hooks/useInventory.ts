@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { inventoryAPI } from '../services/inventory.api';
-import type { FinishedGoodsInventory, PacketsInventory, LotsInventory, BagsInventory, InventorySummary, InventoryFilters } from '../types/entities';
+import type { FinishedGoodsInventory, PacketsInventory, LotsInventory, BagsInventory, InventorySummary, InventoryFilters, HierarchicalInventory } from '../types/entities';
+import { getUniqueFilterValues } from '../utils/inventoryTransform';
 
 export function useInventory() {
   const [finishedGoods, setFinishedGoods] = useState<FinishedGoodsInventory[]>([]);
@@ -8,6 +9,7 @@ export function useInventory() {
   const [lots, setLots] = useState<LotsInventory[]>([]);
   const [bags, setBags] = useState<BagsInventory[]>([]);
   const [summary, setSummary] = useState<InventorySummary | null>(null);
+  const [hierarchical, setHierarchical] = useState<HierarchicalInventory[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,6 +58,15 @@ export function useInventory() {
     }
   }, []);
 
+  const fetchHierarchicalInventory = useCallback(async () => {
+    try {
+      const data = await inventoryAPI.getHierarchicalInventory();
+      setHierarchical(data);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  }, []);
+
   const fetchAll = useCallback(async (filters?: InventoryFilters) => {
     setLoading(true);
     setError(null);
@@ -78,12 +89,48 @@ export function useInventory() {
     fetchAll();
   }, [fetchAll]);
 
+  // Get unique filter values from hierarchical data
+  const uniqueFilterValues = useMemo(() => {
+    if (!hierarchical || hierarchical.length === 0) {
+      return {
+        brands: [],
+        rice_types: [],
+        capacities: [],
+        packet_types: [],
+        vendors: [],
+      };
+    }
+    return getUniqueFilterValues(hierarchical);
+  }, [hierarchical]);
+
+  // Helper functions for filter options
+  const getUniqueBrands = useCallback(() => {
+    return uniqueFilterValues.brands;
+  }, [uniqueFilterValues]);
+
+  const getUniqueRiceTypes = useCallback(() => {
+    return uniqueFilterValues.rice_types;
+  }, [uniqueFilterValues]);
+
+  const getUniqueCapacities = useCallback(() => {
+    return uniqueFilterValues.capacities;
+  }, [uniqueFilterValues]);
+
+  const getUniquePacketTypes = useCallback(() => {
+    return uniqueFilterValues.packet_types;
+  }, [uniqueFilterValues]);
+
+  const getUniqueVendors = useCallback(() => {
+    return uniqueFilterValues.vendors;
+  }, [uniqueFilterValues]);
+
   return {
     finishedGoods,
     packets,
     lots,
     bags,
     summary,
+    hierarchical,
     loading,
     error,
     fetchFinishedGoods,
@@ -91,6 +138,14 @@ export function useInventory() {
     fetchLots,
     fetchBags,
     fetchSummary,
+    fetchHierarchicalInventory,
     refetch: fetchAll,
+    // Filter helpers
+    uniqueFilterValues,
+    getUniqueBrands,
+    getUniqueRiceTypes,
+    getUniqueCapacities,
+    getUniquePacketTypes,
+    getUniqueVendors,
   };
 }

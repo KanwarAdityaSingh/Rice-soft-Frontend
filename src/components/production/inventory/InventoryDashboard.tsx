@@ -1,328 +1,231 @@
-import { useState } from 'react';
-import { Package, Box, Database, ShoppingBag, Eye, TrendingUp, TrendingDown, Activity } from 'lucide-react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { Layers, Network, ListTree } from 'lucide-react';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { useInventory } from '../../../hooks/useInventory';
-import { FinishedGoodsTable } from './FinishedGoodsTable';
-import { PacketsTable } from './PacketsTable';
-import { LotsTable } from './LotsTable';
-import { BagsTable } from './BagsTable';
-import { InventoryAuditModal } from './InventoryAuditModal';
-import { inventoryAuditAPI } from '../../../services/inventoryAudit.api';
-import type {
-  LotInventoryAuditResponse,
-  PacketsInventoryAuditResponse,
-  BagsInventoryAuditResponse,
-  FinishedGoodsInventoryAuditResponse,
-} from '../../../services/inventoryAudit.api';
-
-type TabId = 'finished' | 'packets' | 'lots' | 'bags';
-
-interface Tab {
-  id: TabId;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  color: string;
-  bgColor: string;
-  borderColor: string;
-}
-
-const tabs: Tab[] = [
-  { 
-    id: 'finished', 
-    label: 'Finished Goods', 
-    icon: Package,
-    color: 'text-violet-600',
-    bgColor: 'bg-violet-500/10',
-    borderColor: 'border-violet-500/30',
-  },
-  { 
-    id: 'packets', 
-    label: 'Packets', 
-    icon: Box,
-    color: 'text-sky-600',
-    bgColor: 'bg-sky-500/10',
-    borderColor: 'border-sky-500/30',
-  },
-  { 
-    id: 'lots', 
-    label: 'Lots', 
-    icon: Database,
-    color: 'text-amber-600',
-    bgColor: 'bg-amber-500/10',
-    borderColor: 'border-amber-500/30',
-  },
-  { 
-    id: 'bags', 
-    label: 'Bags', 
-    icon: ShoppingBag,
-    color: 'text-emerald-600',
-    bgColor: 'bg-emerald-500/10',
-    borderColor: 'border-emerald-500/30',
-  },
-];
+import { InventoryFlow } from './InventoryFlow';
+import { InventoryTreeView } from './InventoryTreeView';
+import { InventoryTable } from './InventoryTable';
+import { FlowControls } from './flow/FlowControls';
+import { InventoryFilters } from './InventoryFilters';
+import type { FlowNodeData } from '../../../types/inventoryFlow';
+import type { ReactFlowInstance } from '../../../types/reactflow';
+import type { GroupingStrategy } from '../../../types/inventoryFlow';
+import type { ExtendedInventoryFilters } from '../../../utils/inventoryTransform';
 
 export function InventoryDashboard() {
-  const { summary, loading, refetch } = useInventory();
-  const [activeTab, setActiveTab] = useState<TabId>('finished');
+  const { loading, hierarchical, fetchHierarchicalInventory } = useInventory();
+  const [viewMode, setViewMode] = useState<'diagram' | 'tree'>('diagram');
+  const [groupingStrategy, setGroupingStrategy] = useState<GroupingStrategy>('default');
+  const [filters, setFilters] = useState<ExtendedInventoryFilters>({});
+  const [filtersOpen, setFiltersOpen] = useState(false);
   
-  // Audit modal state
-  const [auditModalOpen, setAuditModalOpen] = useState(false);
-  const [auditModalTitle, setAuditModalTitle] = useState('');
-  const [auditModalSubtitle, setAuditModalSubtitle] = useState('');
-  const [auditType, setAuditType] = useState<'lot' | 'packets' | 'bags' | 'finished_goods'>('lot');
-  const [auditData, setAuditData] = useState<any[]>([]);
-  const [auditLoading, setAuditLoading] = useState(false);
+  // Ensure hierarchical data is fetched on mount
+  useEffect(() => {
+    fetchHierarchicalInventory();
+  }, [fetchHierarchicalInventory]);
+  const [selectedNode, setSelectedNode] = useState<FlowNodeData | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
+  const focusMatchesRef = useRef<(() => void) | null>(null);
+  const resetToBrandsRef = useRef<(() => void) | null>(null);
+  const navigateNextRef = useRef<(() => void) | null>(null);
+  const navigatePreviousRef = useRef<(() => void) | null>(null);
+  const [matchingCount, setMatchingCount] = useState(0);
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
 
-  const openAuditModal = async (type: 'lot' | 'packets' | 'bags' | 'finished_goods') => {
-    setAuditType(type);
-    setAuditLoading(true);
-    setAuditModalOpen(true);
-
-    const titles: Record<typeof type, { title: string; subtitle: string }> = {
-      lot: { title: 'Lots Inventory Ledger', subtitle: 'Complete history of all lot inventory changes' },
-      packets: { title: 'Packets Inventory Ledger', subtitle: 'Complete history of all packet inventory changes' },
-      bags: { title: 'Bags Inventory Ledger', subtitle: 'Complete history of all bag inventory changes' },
-      finished_goods: { title: 'Finished Goods Ledger', subtitle: 'Complete history of all finished goods changes' },
-    };
-    
-    setAuditModalTitle(titles[type].title);
-    setAuditModalSubtitle(titles[type].subtitle);
-
-    try {
-      let data: any[] = [];
-      switch (type) {
-        case 'lot':
-          data = await inventoryAuditAPI.getLotAuditRecent(200);
+  const handleNodeSelect = (nodeData: FlowNodeData | null) => {
+    setSelectedNode(nodeData);
+    if (nodeData) {
+      // Generate node ID based on type
+      let nodeId = '';
+      switch (nodeData.type) {
+        case 'brand':
+          nodeId = `brand-${nodeData.brand || 'unbranded'}`;
           break;
-        case 'packets':
-          data = await inventoryAuditAPI.getPacketsAuditRecent(200);
+        case 'product':
+          nodeId = `product-${nodeData.productId}`;
           break;
-        case 'bags':
-          data = await inventoryAuditAPI.getBagsAuditRecent(200);
+        case 'packaging':
+          nodeId = `packaging-${nodeData.packagingId}`;
           break;
-        case 'finished_goods':
-          data = await inventoryAuditAPI.getFinishedGoodsAuditRecent(200);
+        case 'finishedGoods':
+          nodeId = `finishedGoods-${nodeData.batchId}`;
+          break;
+        case 'vendor':
+          nodeId = `vendor-${nodeData.vendor?.id || 'unassigned'}`;
+          break;
+        case 'capacity':
+          nodeId = `capacity-${nodeData.capacity}`;
+          break;
+        case 'riceType':
+          nodeId = `riceType-${nodeData.riceType}`;
+          break;
+        case 'packetType':
+          nodeId = `packetType-${nodeData.packetType}`;
           break;
       }
-      setAuditData(data);
-    } catch (error) {
-      console.error('Failed to fetch audit data:', error);
-      setAuditData([]);
-    } finally {
-      setAuditLoading(false);
+      setSelectedNodeId(nodeId);
+    } else {
+      setSelectedNodeId(null);
     }
   };
 
-  const getStatValue = (val: any, decimals = 0): string => {
-    const num = typeof val === 'string' ? parseFloat(val) : (val || 0);
-    return isNaN(num) ? '0' : num.toLocaleString('en-IN', { 
-      minimumFractionDigits: decimals, 
-      maximumFractionDigits: decimals 
-    });
+  const handleFlowInstanceReady = (instance: ReactFlowInstance | null) => {
+    setReactFlowInstance(instance);
   };
 
-  const activeTabData = tabs.find(t => t.id === activeTab);
+  const handleFocusMatches = useCallback(() => {
+    if (focusMatchesRef.current) {
+      focusMatchesRef.current();
+    }
+  }, []);
+
+  const handleResetToBrands = useCallback(() => {
+    if (resetToBrandsRef.current) {
+      resetToBrandsRef.current();
+    }
+  }, []);
+
+  const groupingStrategies: Array<{ value: GroupingStrategy; label: string; description: string }> = [
+    { value: 'default', label: 'Default', description: 'Brand → Product → Packaging → Finished Goods' },
+    { value: 'by_capacity', label: 'By Capacity', description: 'Brand → Product → Capacity → Packaging' },
+    { value: 'by_vendor', label: 'By Vendor', description: 'Brand → Product → Vendor → Packaging' },
+    { value: 'by_rice_type', label: 'By Rice Type', description: 'Brand → Rice Type → Product → Packaging' },
+    { value: 'by_vendor_top', label: 'Vendor First', description: 'Vendor → Brand → Product → Packaging' },
+    { value: 'by_capacity_top', label: 'Capacity First', description: 'Capacity → Brand → Product → Packaging' },
+    { value: 'by_packet_type_top', label: 'Packet Type First', description: 'Packet Type → Brand → Product → Packaging' },
+  ];
 
   return (
-    <div className="space-y-6">
-      {/* Inventory Overview Cards */}
-      {summary && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Finished Goods Card */}
-          <button 
-            onClick={() => setActiveTab('finished')}
-            className={`group relative p-5 rounded-2xl border transition-all duration-300 text-left ${
-              activeTab === 'finished' 
-                ? 'bg-violet-500/10 border-violet-500/40 shadow-lg shadow-violet-500/10' 
-                : 'bg-card border-border hover:border-violet-500/30 hover:bg-violet-500/5'
-            }`}
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                  <Package className={`h-4 w-4 ${activeTab === 'finished' ? 'text-violet-600' : ''}`} />
-                  Finished Goods
-                </div>
-                <div className="text-3xl font-bold text-foreground">
-                  {getStatValue(summary.finished_goods.total_packets)}
-                </div>
-                <div className="text-sm text-muted-foreground mt-1">
-                  {getStatValue(summary.finished_goods.total_weight_kg, 2)} kg total
-                </div>
-              </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); openAuditModal('finished_goods'); }}
-                className="p-2 rounded-lg bg-violet-500/10 text-violet-600 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-violet-500/20"
-                title="View Ledger"
-              >
-                <Eye className="h-4 w-4" />
-              </button>
-            </div>
-            <div className={`absolute bottom-0 left-0 right-0 h-1 rounded-b-2xl bg-gradient-to-r from-violet-500 to-purple-500 ${activeTab === 'finished' ? 'opacity-100' : 'opacity-0'}`} />
-          </button>
-
-          {/* Packets Card */}
-          <button 
-            onClick={() => setActiveTab('packets')}
-            className={`group relative p-5 rounded-2xl border transition-all duration-300 text-left ${
-              activeTab === 'packets' 
-                ? 'bg-sky-500/10 border-sky-500/40 shadow-lg shadow-sky-500/10' 
-                : 'bg-card border-border hover:border-sky-500/30 hover:bg-sky-500/5'
-            }`}
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                  <Box className={`h-4 w-4 ${activeTab === 'packets' ? 'text-sky-600' : ''}`} />
-                  Empty Packets
-                </div>
-                <div className="text-3xl font-bold text-foreground">
-                  {getStatValue(summary.packets.total_empty_packets)}
-                </div>
-                <div className="text-sm text-muted-foreground mt-1">
-                  {getStatValue(summary.packets.types)} types available
-                </div>
-              </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); openAuditModal('packets'); }}
-                className="p-2 rounded-lg bg-sky-500/10 text-sky-600 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-sky-500/20"
-                title="View Ledger"
-              >
-                <Eye className="h-4 w-4" />
-              </button>
-            </div>
-            <div className={`absolute bottom-0 left-0 right-0 h-1 rounded-b-2xl bg-gradient-to-r from-sky-500 to-cyan-500 ${activeTab === 'packets' ? 'opacity-100' : 'opacity-0'}`} />
-          </button>
-
-          {/* Lots Card */}
-          <button 
-            onClick={() => setActiveTab('lots')}
-            className={`group relative p-5 rounded-2xl border transition-all duration-300 text-left ${
-              activeTab === 'lots' 
-                ? 'bg-amber-500/10 border-amber-500/40 shadow-lg shadow-amber-500/10' 
-                : 'bg-card border-border hover:border-amber-500/30 hover:bg-amber-500/5'
-            }`}
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                  <Database className={`h-4 w-4 ${activeTab === 'lots' ? 'text-amber-600' : ''}`} />
-                  Lots Inventory
-                </div>
-                <div className="text-3xl font-bold text-foreground">
-                  {getStatValue(summary.lots.total_available_quantity_kg, 2)}
-                </div>
-                <div className="text-sm text-muted-foreground mt-1">
-                  {getStatValue(summary.lots.active_lots)} active lots
-                </div>
-              </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); openAuditModal('lot'); }}
-                className="p-2 rounded-lg bg-amber-500/10 text-amber-600 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-amber-500/20"
-                title="View Ledger"
-              >
-                <Eye className="h-4 w-4" />
-              </button>
-            </div>
-            <div className={`absolute bottom-0 left-0 right-0 h-1 rounded-b-2xl bg-gradient-to-r from-amber-500 to-orange-500 ${activeTab === 'lots' ? 'opacity-100' : 'opacity-0'}`} />
-          </button>
-
-          {/* Bags Card */}
-          <button 
-            onClick={() => setActiveTab('bags')}
-            className={`group relative p-5 rounded-2xl border transition-all duration-300 text-left ${
-              activeTab === 'bags' 
-                ? 'bg-emerald-500/10 border-emerald-500/40 shadow-lg shadow-emerald-500/10' 
-                : 'bg-card border-border hover:border-emerald-500/30 hover:bg-emerald-500/5'
-            }`}
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                  <ShoppingBag className={`h-4 w-4 ${activeTab === 'bags' ? 'text-emerald-600' : ''}`} />
-                  Bags
-                </div>
-                <div className="text-3xl font-bold text-foreground">
-                  {getStatValue(Number(summary.bags.total_filled_bags) + Number(summary.bags.total_empty_bags))}
-                </div>
-                <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
-                  <span className="flex items-center gap-1">
-                    <TrendingUp className="h-3 w-3 text-emerald-500" />
-                    {getStatValue(summary.bags.total_filled_bags)} filled
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <TrendingDown className="h-3 w-3 text-muted-foreground" />
-                    {getStatValue(summary.bags.total_empty_bags)} empty
-                  </span>
-                </div>
-              </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); openAuditModal('bags'); }}
-                className="p-2 rounded-lg bg-emerald-500/10 text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-emerald-500/20"
-                title="View Ledger"
-              >
-                <Eye className="h-4 w-4" />
-              </button>
-            </div>
-            <div className={`absolute bottom-0 left-0 right-0 h-1 rounded-b-2xl bg-gradient-to-r from-emerald-500 to-teal-500 ${activeTab === 'bags' ? 'opacity-100' : 'opacity-0'}`} />
-          </button>
+    <div className="h-[calc(100vh-200px)] flex flex-col space-y-4">
+      {/* Header with Controls */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
+            <Layers className="h-5 w-5" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold">Inventory Hierarchy</h2>
+            <p className="text-sm text-muted-foreground">
+              {groupingStrategies.find(s => s.value === groupingStrategy)?.description || 'Interactive flow visualization'}
+            </p>
+          </div>
         </div>
-      )}
+        <FlowControls
+          reactFlowInstance={reactFlowInstance}
+          onSearchChange={setSearchQuery}
+          searchQuery={searchQuery}
+          onFocusMatches={handleFocusMatches}
+          onResetToBrands={handleResetToBrands}
+          onNavigateNext={() => navigateNextRef.current?.()}
+          onNavigatePrevious={() => navigatePreviousRef.current?.()}
+          matchingCount={matchingCount}
+          currentMatchIndex={currentMatchIndex}
+        />
+      </div>
 
-      {/* Tab Content Header */}
-      {activeTabData && (
-        <div className={`flex items-center justify-between p-4 rounded-xl ${activeTabData.bgColor} border ${activeTabData.borderColor}`}>
-          <div className="flex items-center gap-3">
-            <div className={`p-2.5 rounded-xl ${activeTabData.bgColor} ${activeTabData.color}`}>
-              <activeTabData.icon className="h-5 w-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold">{activeTabData.label}</h2>
-              <p className="text-sm text-muted-foreground">
-                {activeTab === 'finished' && 'Packaged products ready for sale'}
-                {activeTab === 'packets' && 'Empty packaging materials in stock'}
-                {activeTab === 'lots' && 'Raw material lots from purchases'}
-                {activeTab === 'bags' && 'Jute and PP bags inventory'}
-              </p>
+      {/* Grouping Strategy Tabs */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-2">
+        {groupingStrategies.map((strategy) => (
+          <button
+            key={strategy.value}
+            onClick={() => setGroupingStrategy(strategy.value)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+              groupingStrategy === strategy.value
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'bg-muted text-muted-foreground hover:bg-muted/80'
+            }`}
+            title={strategy.description}
+          >
+            {strategy.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Main Content Area - 50/50 Split */}
+      <div className="flex-1 flex gap-4 min-h-0">
+        {/* Flow Visualization Panel - Left 50% */}
+        <div className="w-1/2 relative bg-card rounded-xl border border-border shadow-sm">
+          {/* View Switcher */}
+          <div className="absolute top-3 right-3 z-10">
+            <div className="flex items-center gap-1 bg-muted/50 backdrop-blur-sm rounded-lg p-1 border border-border/50">
+              <button
+                onClick={() => setViewMode('diagram')}
+                className={`p-2 rounded-md transition-all ${
+                  viewMode === 'diagram'
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+                title="Diagram View"
+                aria-label="Switch to Diagram View"
+              >
+                <Network className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setViewMode('tree')}
+                className={`p-2 rounded-md transition-all ${
+                  viewMode === 'tree'
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+                title="Tree View"
+                aria-label="Switch to Tree View"
+              >
+                <ListTree className="h-4 w-4" />
+              </button>
             </div>
           </div>
-          <button
-            onClick={() => openAuditModal(
-              activeTab === 'finished' ? 'finished_goods' : 
-              activeTab === 'packets' ? 'packets' : 
-              activeTab === 'lots' ? 'lot' : 'bags'
-            )}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg ${activeTabData.bgColor} ${activeTabData.color} hover:opacity-80 transition-opacity font-medium text-sm`}
-          >
-            <Activity className="h-4 w-4" />
-            View Ledger
-          </button>
-        </div>
-      )}
 
-      {/* Tab Content */}
-      {loading ? (
-        <div className="flex justify-center py-20">
-          <LoadingSpinner />
+          {loading ? (
+            <div className="flex items-center justify-center h-full">
+              <LoadingSpinner />
+            </div>
+          ) : viewMode === 'diagram' ? (
+            <div className="w-full h-full">
+              <InventoryFlow
+                onNodeSelect={handleNodeSelect}
+                selectedNodeId={selectedNodeId}
+                searchQuery={searchQuery}
+                groupingStrategy={groupingStrategy}
+                filters={filters}
+                onFlowInstanceReady={handleFlowInstanceReady}
+                onFocusMatchesRef={(fn) => { focusMatchesRef.current = fn; }}
+                onResetToBrandsRef={(fn) => { resetToBrandsRef.current = fn; }}
+                onNavigateNextRef={(fn) => { navigateNextRef.current = fn; }}
+                onNavigatePreviousRef={(fn) => { navigatePreviousRef.current = fn; }}
+                onMatchingInfoChange={(count, index) => {
+                  setMatchingCount(count);
+                  setCurrentMatchIndex(index);
+                }}
+              />
+            </div>
+          ) : (
+            <div className="w-full h-full">
+              <InventoryTreeView
+                hierarchical={hierarchical || []}
+                selectedNodeId={selectedNodeId}
+                onNodeSelect={handleNodeSelect}
+                searchQuery={searchQuery}
+                loading={loading}
+              />
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="rounded-xl border border-border bg-card overflow-hidden">
-          {activeTab === 'finished' && <FinishedGoodsTable onViewAudit={(id) => openAuditModal('finished_goods')} />}
-          {activeTab === 'packets' && <PacketsTable onViewAudit={(id) => openAuditModal('packets')} />}
-          {activeTab === 'lots' && <LotsTable onViewAudit={(id) => openAuditModal('lot')} />}
-          {activeTab === 'bags' && <BagsTable onViewAudit={(type, capacity) => openAuditModal('bags')} />}
-        </div>
-      )}
 
-      {/* Audit Modal */}
-      <InventoryAuditModal
-        open={auditModalOpen}
-        onOpenChange={setAuditModalOpen}
-        title={auditModalTitle}
-        subtitle={auditModalSubtitle}
-        auditType={auditType}
-        data={auditData}
-        loading={auditLoading}
+        {/* Table Panel - Right 50% */}
+        <div className="w-1/2 bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col">
+          <InventoryTable selectedNode={selectedNode} />
+        </div>
+      </div>
+
+      {/* Filter Sidebar */}
+      <InventoryFilters
+        hierarchical={hierarchical || []}
+        filters={filters}
+        onFiltersChange={setFilters}
+        isOpen={filtersOpen}
+        onToggle={() => setFiltersOpen(!filtersOpen)}
       />
     </div>
   );

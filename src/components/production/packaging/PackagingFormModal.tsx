@@ -4,6 +4,8 @@ import { X } from 'lucide-react';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { usePackaging } from '../../../hooks/usePackaging';
+import { usePackagingVendors } from '../../../hooks/usePackagingVendors';
+import { useProducts } from '../../../hooks/useProducts';
 import type { CreatePackagingRequest, UpdatePackagingRequest, PacketType } from '../../../types/entities';
 
 interface PackagingFormModalProps {
@@ -16,10 +18,14 @@ const PACKET_TYPES: PacketType[] = ['PP Bag', 'Jute Bag', 'HDPE Bag'];
 
 export function PackagingFormModal({ open, onOpenChange, packagingId }: PackagingFormModalProps) {
   const { createPackaging, updatePackaging, packaging } = usePackaging();
+  const { packagingVendors } = usePackagingVendors();
+  const { products } = useProducts();
   const [formData, setFormData] = useState<CreatePackagingRequest>({
+    product_id: '',
     holding_capacity: 0,
     packet_type: 'PP Bag',
-    source: '',
+    packaging_vendor_id: null,
+    ordered_weight: null,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -33,20 +39,34 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
       const pkg = packaging.find((p) => p.id === packagingId);
       if (pkg) {
         setFormData({
+          product_id: pkg.product_id,
           holding_capacity: pkg.holding_capacity,
           packet_type: pkg.packet_type,
-          source: pkg.source || '',
+          packaging_vendor_id: pkg.packaging_vendor_id,
+          ordered_weight: pkg.ordered_weight,
         });
       }
     } else if (open) {
-      setFormData({ holding_capacity: 0, packet_type: 'PP Bag', source: '' });
+      setFormData({
+        product_id: '',
+        holding_capacity: 0,
+        packet_type: 'PP Bag',
+        packaging_vendor_id: null,
+        ordered_weight: null,
+      });
     }
   }, [packagingId, open, packaging]);
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
+    if (!formData.product_id) {
+      newErrors.product_id = 'Product is required';
+    }
     if (formData.holding_capacity <= 0) {
       newErrors.holding_capacity = 'Holding capacity must be greater than 0';
+    }
+    if (formData.holding_capacity !== 10 && formData.holding_capacity !== 25 && formData.holding_capacity !== 50) {
+      newErrors.holding_capacity = 'Holding capacity must be 10, 25, or 50 kg';
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -103,19 +123,42 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
+                  <label className="block text-sm font-medium mb-2">Product *</label>
+                  <select
+                    value={formData.product_id}
+                    onChange={(e) => {
+                      setFormData({ ...formData, product_id: e.target.value });
+                      if (errors.product_id) setErrors({ ...errors, product_id: '' });
+                    }}
+                    className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="">Select a product</option>
+                    {products.map((product) => (
+                      <option key={product.id} value={product.id}>
+                        {product.name}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.product_id && (
+                    <p className="mt-1 text-sm text-destructive">{errors.product_id}</p>
+                  )}
+                </div>
+
+                <div>
                   <label className="block text-sm font-medium mb-2">Holding Capacity (kg) *</label>
-                  <input
-                    type="number"
-                    min="0.01"
-                    step="0.01"
+                  <select
                     value={formData.holding_capacity || ''}
                     onChange={(e) => {
                       setFormData({ ...formData, holding_capacity: parseFloat(e.target.value) || 0 });
                       if (errors.holding_capacity) setErrors({ ...errors, holding_capacity: '' });
                     }}
                     className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
-                    placeholder="e.g., 25"
-                  />
+                  >
+                    <option value="">Select capacity</option>
+                    <option value="10">10 kg</option>
+                    <option value="25">25 kg</option>
+                    <option value="50">50 kg</option>
+                  </select>
                   {errors.holding_capacity && (
                     <p className="mt-1 text-sm text-destructive">{errors.holding_capacity}</p>
                   )}
@@ -137,14 +180,35 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Source</label>
-                  <input
-                    type="text"
-                    value={formData.source}
-                    onChange={(e) => setFormData({ ...formData, source: e.target.value })}
+                  <label className="block text-sm font-medium mb-2">Packaging Vendor</label>
+                  <select
+                    value={formData.packaging_vendor_id || ''}
+                    onChange={(e) => setFormData({ ...formData, packaging_vendor_id: e.target.value || null })}
                     className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
-                    placeholder="Optional source information"
+                  >
+                    <option value="">Select a vendor (optional)</option>
+                    {packagingVendors.map((vendor) => (
+                      <option key={vendor.id} value={vendor.id}>
+                        {vendor.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Ordered Weight (kg)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formData.ordered_weight || ''}
+                    onChange={(e) => setFormData({ ...formData, ordered_weight: e.target.value ? parseFloat(e.target.value) : null })}
+                    className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="Initial ordered quantity from vendor"
                   />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Initial quantity ordered from vendor (static, not incremented/decremented)
+                  </p>
                 </div>
 
                 <div className="flex justify-end gap-3 pt-4 border-t border-border">
