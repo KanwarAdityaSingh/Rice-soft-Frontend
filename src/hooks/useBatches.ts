@@ -12,7 +12,13 @@ export function useBatches() {
     setError(null);
     try {
       const data = await batchesAPI.getAllBatches();
-      setBatches(data);
+      // Sort by created_at descending (latest first)
+      const sorted = [...data].sort((a, b) => {
+        const dateA = new Date(a.created_at).getTime();
+        const dateB = new Date(b.created_at).getTime();
+        return dateB - dateA;
+      });
+      setBatches(sorted);
     } catch (err: any) {
       setError(err.message);
     } finally {

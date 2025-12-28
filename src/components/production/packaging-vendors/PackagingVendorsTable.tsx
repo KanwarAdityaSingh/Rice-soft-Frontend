@@ -21,12 +21,18 @@ export function PackagingVendorsTable() {
     
     const q = searchQuery.toLowerCase();
     return packagingVendors.filter((v) => {
+      const contactNames = v.contact_persons?.map(cp => cp.name || '').join(' ') || '';
+      const phones = v.contact_persons?.flatMap(cp => cp.phones || []).join(' ') || '';
+      const emails = v.contact_persons?.flatMap(cp => cp.emails || []).join(' ') || '';
+      const addressStr = v.address ? `${v.address.street} ${v.address.city} ${v.address.state} ${v.address.pincode}`.toLowerCase() : '';
+      
       return (
         v.name.toLowerCase().includes(q) ||
-        (v.contact_person || '').toLowerCase().includes(q) ||
-        (v.email || '').toLowerCase().includes(q) ||
-        (v.phone || '').includes(q) ||
-        (v.gst_number || '').toLowerCase().includes(q)
+        contactNames.toLowerCase().includes(q) ||
+        emails.toLowerCase().includes(q) ||
+        phones.includes(q) ||
+        (v.gst_number || '').toLowerCase().includes(q) ||
+        addressStr.includes(q)
       );
     });
   }, [packagingVendors, searchQuery]);
@@ -97,30 +103,63 @@ export function PackagingVendorsTable() {
                       </div>
                     </td>
                     <td className="py-4 px-5 text-sm text-foreground">
-                      {vendor.contact_person || 'N/A'}
+                      {vendor.contact_persons && vendor.contact_persons.length > 0 ? (
+                        <div className="space-y-1">
+                          {vendor.contact_persons.map((cp, idx) => (
+                            <div key={idx} className="font-medium">
+                              {cp.name || 'N/A'}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        'N/A'
+                      )}
                     </td>
                     <td className="py-4 px-5">
-                      <div className="space-y-1">
-                        {vendor.phone && (
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Phone className="h-3.5 w-3.5" />
-                            <span>{vendor.phone}</span>
-                          </div>
-                        )}
-                        {vendor.email && (
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Mail className="h-3.5 w-3.5" />
-                            <span>{vendor.email}</span>
-                          </div>
-                        )}
-                        {!vendor.phone && !vendor.email && <span className="text-sm text-muted-foreground">N/A</span>}
-                      </div>
+                      {vendor.contact_persons && vendor.contact_persons.length > 0 ? (
+                        <div className="space-y-2">
+                          {vendor.contact_persons.map((cp, cpIdx) => (
+                            <div key={cpIdx} className="space-y-1">
+                              {cp.phones && cp.phones.length > 0 && (
+                                <div className="space-y-1">
+                                  {cp.phones.map((phone, phoneIdx) => (
+                                    phone && (
+                                      <div key={phoneIdx} className="flex items-center gap-2 text-sm text-muted-foreground">
+                                        <Phone className="h-3.5 w-3.5" />
+                                        <span>{phone}</span>
+                                      </div>
+                                    )
+                                  ))}
+                                </div>
+                              )}
+                              {cp.emails && cp.emails.length > 0 && (
+                                <div className="space-y-1">
+                                  {cp.emails.map((email, emailIdx) => (
+                                    email && (
+                                      <div key={emailIdx} className="flex items-center gap-2 text-sm text-muted-foreground">
+                                        <Mail className="h-3.5 w-3.5" />
+                                        <span>{email}</span>
+                                      </div>
+                                    )
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">N/A</span>
+                      )}
                     </td>
                     <td className="py-4 px-5">
                       {vendor.address ? (
                         <div className="flex items-start gap-2 text-sm text-muted-foreground">
                           <MapPin className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
-                          <span className="line-clamp-2">{vendor.address}</span>
+                          <div className="line-clamp-2">
+                            {[vendor.address.street, vendor.address.city, vendor.address.state, vendor.address.pincode]
+                              .filter(Boolean)
+                              .join(', ')}
+                          </div>
                         </div>
                       ) : (
                         <span className="text-sm text-muted-foreground">N/A</span>

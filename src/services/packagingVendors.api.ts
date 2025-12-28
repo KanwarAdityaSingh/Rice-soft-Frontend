@@ -1,5 +1,5 @@
 import { apiService } from './api';
-import type { PackagingVendor, CreatePackagingVendorRequest, UpdatePackagingVendorRequest } from '../types/entities';
+import type { PackagingVendor, CreatePackagingVendorRequest, UpdatePackagingVendorRequest, GSTLookupResponseData } from '../types/entities';
 
 export const packagingVendorsAPI = {
   // Get all packaging vendors
@@ -25,6 +25,11 @@ export const packagingVendorsAPI = {
   // Delete packaging vendor
   deletePackagingVendor: (id: string) => {
     return apiService.delete<{ success: boolean; message: string }>(`/packaging-vendors/${id}`);
+  },
+
+  // Lookup GST
+  lookupGST: (gstNumber: string) => {
+    return apiService.get<GSTLookupResponseData>(`/packaging-vendors/gst/lookup?gst_number=${gstNumber}`);
   },
 };
 

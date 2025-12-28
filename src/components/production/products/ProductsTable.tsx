@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Package, Plus, Link2 } from 'lucide-react';
+import { Package, Plus } from 'lucide-react';
 import { SearchBar } from '../../admin/shared/SearchBar';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { EmptyState } from '../../admin/shared/EmptyState';
@@ -8,7 +8,6 @@ import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { useProducts } from '../../../hooks/useProducts';
 import { ProductFormModal } from './ProductFormModal';
-import { ProductRecipeLinkModal } from './ProductRecipeLinkModal';
 
 export function ProductsTable() {
   const { products, loading, deleteProduct, refetch } = useProducts();
@@ -17,8 +16,6 @@ export function ProductsTable() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [linkOpen, setLinkOpen] = useState(false);
-  const [linkProductId, setLinkProductId] = useState<string | null>(null);
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('error');
   const [alertTitle, setAlertTitle] = useState('');
@@ -75,37 +72,54 @@ export function ProductsTable() {
                   <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shadow-inner">
                     <Package className="h-5 w-5" />
                   </div>
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <h3 className="text-sm font-semibold leading-tight">{product.name}</h3>
-                    {product.brand && (
-                      <div className="text-xs text-muted-foreground mt-1">{product.brand}</div>
-                    )}
-                    {product.recipes && product.recipes.length > 0 && (
-                      <div className="text-xs text-muted-foreground mt-1">
-                        {product.recipes.length} recipe{product.recipes.length !== 1 ? 's' : ''} linked
-                      </div>
-                    )}
                   </div>
                 </div>
               </div>
 
-              {product.description && (
-                <p className="text-xs text-muted-foreground mt-2 line-clamp-2">
-                  {product.description}
-                </p>
-              )}
+              <div className="mt-3 space-y-2 text-xs">
+                {product.brand && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Brand:</span>
+                    <span className="font-medium">{product.brand}</span>
+                  </div>
+                )}
+                {product.rice_type && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Rice Type:</span>
+                    <span className="font-medium capitalize">{product.rice_type.replace(/_/g, ' ')}</span>
+                  </div>
+                )}
+                {product.description && (
+                  <div className="pt-2 border-t border-border/60">
+                    <span className="text-muted-foreground block mb-1">Description:</span>
+                    <p className="text-xs text-foreground line-clamp-3">{product.description}</p>
+                  </div>
+                )}
+                {product.recipes && product.recipes.length > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Recipes:</span>
+                    <span className="font-medium">
+                      {product.recipes.length} linked
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between pt-2 border-t border-border/60">
+                  <span className="text-muted-foreground">Created:</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {new Date(product.created_at).toLocaleDateString('en-IN')}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Updated:</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {new Date(product.updated_at).toLocaleDateString('en-IN')}
+                  </span>
+                </div>
+              </div>
 
-              <div className="mt-4 flex items-center justify-between">
-                <button
-                  onClick={() => {
-                    setLinkProductId(product.id);
-                    setLinkOpen(true);
-                  }}
-                  className="text-xs text-primary hover:underline inline-flex items-center gap-1"
-                >
-                  <Link2 className="h-3 w-3" />
-                  Manage Recipes
-                </button>
+              <div className="mt-4 flex items-center justify-end">
                 <ActionButtons
                   isActive={true}
                   onEdit={() => {
@@ -169,18 +183,6 @@ export function ProductsTable() {
           }
         }}
         productId={editId}
-      />
-
-      <ProductRecipeLinkModal
-        open={linkOpen}
-        onOpenChange={(open) => {
-          setLinkOpen(open);
-          if (!open) {
-            setLinkProductId(null);
-            refetch();
-          }
-        }}
-        productId={linkProductId}
       />
     </div>
   );

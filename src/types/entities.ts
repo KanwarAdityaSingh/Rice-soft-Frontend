@@ -1220,30 +1220,26 @@ export interface UpdateProductRequest {
 export interface PackagingVendor {
   id: string;
   name: string;
-  contact_person: string | null;
-  phone: string | null;
-  email: string | null;
-  address: string | null;
+  contact_persons: ContactPerson[];
+  address: VendorAddress;
   gst_number: string | null;
   created_at: string;
   updated_at: string;
+  created_by: string | null;
+  updated_by: string | null;
 }
 
 export interface CreatePackagingVendorRequest {
   name: string;
-  contact_person?: string | null;
-  phone?: string | null;
-  email?: string | null;
-  address?: string | null;
+  contact_persons: ContactPerson[];
+  address: VendorAddress;
   gst_number?: string | null;
 }
 
 export interface UpdatePackagingVendorRequest {
   name?: string;
-  contact_person?: string | null;
-  phone?: string | null;
-  email?: string | null;
-  address?: string | null;
+  contact_persons?: ContactPerson[];
+  address?: VendorAddress;
   gst_number?: string | null;
 }
 

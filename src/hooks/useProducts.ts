@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { productsAPI } from '../services/products.api';
-import type { Product, CreateProductRequest, UpdateProductRequest, LinkRecipeToProductRequest } from '../types/entities';
+import type { Product, CreateProductRequest, UpdateProductRequest } from '../types/entities';
 
 export function useProducts() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -12,7 +12,13 @@ export function useProducts() {
     setError(null);
     try {
       const data = await productsAPI.getAllProducts();
-      setProducts(data);
+      // Sort by created_at descending (latest first)
+      const sorted = [...data].sort((a, b) => {
+        const dateA = new Date(a.created_at).getTime();
+        const dateB = new Date(b.created_at).getTime();
+        return dateB - dateA;
+      });
+      setProducts(sorted);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -53,24 +59,6 @@ export function useProducts() {
     }
   };
 
-  const linkRecipe = async (productId: string, data: LinkRecipeToProductRequest) => {
-    try {
-      await productsAPI.linkRecipe(productId, data);
-      await fetchProducts();
-    } catch (err: any) {
-      throw err;
-    }
-  };
-
-  const unlinkRecipe = async (productId: string, recipeId: string) => {
-    try {
-      await productsAPI.unlinkRecipe(productId, recipeId);
-      await fetchProducts();
-    } catch (err: any) {
-      throw err;
-    }
-  };
-
   return {
     products,
     loading,
@@ -78,8 +66,6 @@ export function useProducts() {
     createProduct,
     updateProduct,
     deleteProduct,
-    linkRecipe,
-    unlinkRecipe,
     refetch: fetchProducts,
   };
 }

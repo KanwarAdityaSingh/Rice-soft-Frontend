@@ -1,5 +1,5 @@
 import { apiService } from './api';
-import type { Product, CreateProductRequest, UpdateProductRequest, LinkRecipeToProductRequest } from '../types/entities';
+import type { Product, CreateProductRequest, UpdateProductRequest } from '../types/entities';
 
 export const productsAPI = {
   // Get all products
@@ -25,16 +25,6 @@ export const productsAPI = {
   // Delete product
   deleteProduct: (id: string) => {
     return apiService.delete<{ success: boolean; message: string }>(`/products/${id}`);
-  },
-
-  // Link recipe to product
-  linkRecipe: (productId: string, data: LinkRecipeToProductRequest) => {
-    return apiService.post<{ success: boolean; message: string }>(`/products/${productId}/recipes`, data);
-  },
-
-  // Unlink recipe from product
-  unlinkRecipe: (productId: string, recipeId: string) => {
-    return apiService.delete<{ success: boolean; message: string }>(`/products/${productId}/recipes/${recipeId}`);
   },
 
   // Get brands

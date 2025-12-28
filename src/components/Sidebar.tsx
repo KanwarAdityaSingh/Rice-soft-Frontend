@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Users, Store, UserCheck, UserCircle, ChevronRight, Settings, LogOut, X, Sprout, ShoppingCart, Package, FileText, CreditCard, Truck, Car, BookOpen, FlaskConical, Box, TrendingUp } from 'lucide-react'
+import { Users, Store, UserCheck, UserCircle, ChevronRight, Settings, LogOut, X, Sprout, ShoppingCart, Package, FileText, CreditCard, Truck, Car, BookOpen, FlaskConical, Box, TrendingUp, ShoppingBag } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { canRead, isCustomUser, getPermissions } from '../utils/permissions'
 import { Tooltip } from '@mui/material'
@@ -54,6 +54,7 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
     { to: '/production/recipes', label: 'Recipes', icon: BookOpen, key: null as any },
     { to: '/production/products', label: 'Products', icon: Package, key: null as any },
     { to: '/production/packaging', label: 'Packaging', icon: Box, key: null as any },
+    { to: '/production/packaging-vendors', label: 'Packaging Vendors', icon: ShoppingBag, key: null as any },
     { to: '/production/batches', label: 'Batches', icon: FlaskConical, key: null as any },
     { to: '/production/inventory', label: 'Inventory', icon: TrendingUp, key: null as any },
   ]

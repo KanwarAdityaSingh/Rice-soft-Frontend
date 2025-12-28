@@ -7,11 +7,10 @@ import { useBatches } from '../../../hooks/useBatches';
 import { useProducts } from '../../../hooks/useProducts';
 import { useRecipes } from '../../../hooks/useRecipes';
 import { usePackaging } from '../../../hooks/usePackaging';
-import { packagingAPI } from '../../../services/packaging.api';
 import { useInventory } from '../../../hooks/useInventory';
 import { lotsAPI } from '../../../services/lots.api';
 import { inventoryAPI } from '../../../services/inventory.api';
-import type { CreateBatchRequest, Batch, BatchProduct, BatchPackaging, Recipe, Lot, LotsInventory } from '../../../types/entities';
+import type { Batch, BatchProduct, BatchPackaging, Recipe, Lot, LotsInventory } from '../../../types/entities';
 
 interface BatchFormModalProps {
   open: boolean;
