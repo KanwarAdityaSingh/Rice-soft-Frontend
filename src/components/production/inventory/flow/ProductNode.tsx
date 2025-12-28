@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position } from 'reactflow';
-import { Package, Circle } from 'lucide-react';
+import { Package, Circle, ChevronDown, ChevronRight } from 'lucide-react';
 import type { ProductNodeData } from '../../../../types/inventoryFlow';
 
 interface ProductNodeProps {
@@ -9,6 +9,7 @@ interface ProductNodeProps {
 }
 
 export const ProductNode = memo(({ data, selected }: ProductNodeProps) => {
+  const expanded = (data as any).expanded || false;
   const totalPackaging = data.hierarchicalData.packaging.length;
   const totalFinishedGoods = data.hierarchicalData.packaging.reduce(
     (sum, pack) => sum + pack.finished_goods.length,
@@ -49,7 +50,18 @@ export const ProductNode = memo(({ data, selected }: ProductNodeProps) => {
           <Package className="h-5 w-5" />
         </div>
         <div className="flex-1 min-w-0">
-          <h4 className="text-base font-semibold text-foreground mb-1 truncate">{data.productName}</h4>
+          <div className="flex items-center gap-2 mb-1">
+            <h4 className="text-base font-semibold text-foreground truncate">{data.productName}</h4>
+            {totalPackaging > 0 && (
+              <div className={`transition-transform duration-300 ${expanded ? 'rotate-0' : 'rotate-0'}`}>
+                {expanded ? (
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                )}
+              </div>
+            )}
+          </div>
           {data.riceType && (
             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border ${riceTypeColor}`}>
               <Circle className="h-2 w-2 fill-current" />

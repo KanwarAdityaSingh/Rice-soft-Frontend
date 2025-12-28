@@ -26,6 +26,7 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
     packet_type: 'PP Bag',
     packaging_vendor_id: null,
     ordered_weight: null,
+    initial_packets: null,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -44,6 +45,7 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
           packet_type: pkg.packet_type,
           packaging_vendor_id: pkg.packaging_vendor_id,
           ordered_weight: pkg.ordered_weight,
+          initial_packets: null, // Not used in edit mode
         });
       }
     } else if (open) {
@@ -53,6 +55,7 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
         packet_type: 'PP Bag',
         packaging_vendor_id: null,
         ordered_weight: null,
+        initial_packets: null,
       });
     }
   }, [packagingId, open, packaging]);
@@ -67,6 +70,14 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
     }
     if (formData.holding_capacity !== 10 && formData.holding_capacity !== 25 && formData.holding_capacity !== 50) {
       newErrors.holding_capacity = 'Holding capacity must be 10, 25, or 50 kg';
+    }
+    // Validate initial_packets if provided (only for create mode)
+    if (!packagingId && formData.initial_packets !== undefined && formData.initial_packets !== null) {
+      if (!Number.isInteger(formData.initial_packets)) {
+        newErrors.initial_packets = 'Initial packets must be an integer';
+      } else if (formData.initial_packets < 0) {
+        newErrors.initial_packets = 'Initial packets cannot be negative';
+      }
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -84,10 +95,17 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
         setAlertTitle('Packaging Updated');
         setAlertMessage('Packaging has been updated successfully.');
       } else {
-        await createPackaging(formData);
+        // Only include initial_packets if it's provided and > 0
+        const createData: CreatePackagingRequest = {
+          ...formData,
+          initial_packets: formData.initial_packets !== undefined && formData.initial_packets !== null && formData.initial_packets > 0
+            ? formData.initial_packets
+            : undefined,
+        };
+        await createPackaging(createData);
         setAlertType('success');
         setAlertTitle('Packaging Created');
-        setAlertMessage('Packaging has been created successfully.');
+        setAlertMessage('Packaging lot has been created successfully.');
       }
       setAlertOpen(true);
       setTimeout(() => {
@@ -210,6 +228,30 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
                     Initial quantity ordered from vendor (static, not incremented/decremented)
                   </p>
                 </div>
+
+                {!packagingId && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Initial Packets</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={formData.initial_packets || ''}
+                      onChange={(e) => {
+                        setFormData({ ...formData, initial_packets: e.target.value ? parseInt(e.target.value, 10) : null });
+                        if (errors.initial_packets) setErrors({ ...errors, initial_packets: '' });
+                      }}
+                      className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                      placeholder="Initial number of empty packets (optional)"
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Sets initial stock for this specific packaging lot. Each lot has its own separate inventory.
+                    </p>
+                    {errors.initial_packets && (
+                      <p className="mt-1 text-sm text-destructive">{errors.initial_packets}</p>
+                    )}
+                  </div>
+                )}
 
                 <div className="flex justify-end gap-3 pt-4 border-t border-border">
                   <Dialog.Close asChild>

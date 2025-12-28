@@ -279,8 +279,15 @@ export function HierarchicalInventoryView() {
                                           <Box className="h-4 w-4 text-sky-600" />
                                         </div>
                                         <div className="text-left">
-                                          <div className="font-medium text-sm">
-                                            {pkg.holding_capacity}kg {pkg.packet_type}
+                                          <div className="flex items-center gap-2">
+                                            <div className="font-medium text-sm">
+                                              {pkg.holding_capacity}kg {pkg.packet_type}
+                                            </div>
+                                            {pkg.packaging_number && (
+                                              <span className="text-xs font-mono font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                                                {pkg.packaging_number}
+                                              </span>
+                                            )}
                                           </div>
                                           {pkg.vendor && (
                                             <div className="text-xs text-muted-foreground">

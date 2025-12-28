@@ -29,6 +29,7 @@ export function PacketsTable({ onViewAudit }: PacketsTableProps) {
       product: { id: string; name: string; brand?: string };
       packets: Array<{
         packaging_id: string;
+        packaging_number: string | null;
         weight: number;
         packet_type: string;
         source: string | null;
@@ -62,6 +63,7 @@ export function PacketsTable({ onViewAudit }: PacketsTableProps) {
 
       grouped[productId].packets.push({
         packaging_id: pkt.packaging_id,
+        packaging_number: pkg.packaging_number || null,
         weight: pkg.holding_capacity,
         packet_type: pkg.packet_type,
         source: pkg.source,
@@ -210,6 +212,11 @@ export function PacketsTable({ onViewAudit }: PacketsTableProps) {
                               </span>
                               <span className="text-base text-muted-foreground font-medium">kg</span>
                             </div>
+                            {pkt.packaging_number && (
+                              <div className="text-xs font-mono text-primary mt-0.5">
+                                {pkt.packaging_number}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </td>

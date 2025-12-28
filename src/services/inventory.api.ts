@@ -37,8 +37,13 @@ export const inventoryAPI = {
   },
 
   // Get hierarchical inventory
-  getHierarchicalInventory: () => {
-    return apiService.get<HierarchicalInventory[]>('/inventory/hierarchical');
+  getHierarchicalInventory: (filters?: InventoryFilters) => {
+    let url = '/inventory/hierarchical';
+    const params = new URLSearchParams();
+    if (filters?.date_range?.from) params.append('date_from', filters.date_range.from);
+    if (filters?.date_range?.to) params.append('date_to', filters.date_range.to);
+    if (params.toString()) url += `?${params.toString()}`;
+    return apiService.get<HierarchicalInventory[]>(url);
   },
 };
 

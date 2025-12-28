@@ -39,7 +39,7 @@ export const batchesAPI = {
 
   // Batch Products (Stage 2)
   addProductToBatch: (batchId: string, data: { product_id: string }) => {
-    return apiService.post<{ success: boolean; message: string }>(`/batches/${batchId}/products`, data);
+    return apiService.post<Batch>(`/batches/${batchId}/products`, data);
   },
 
   getBatchProducts: (batchId: string) => {

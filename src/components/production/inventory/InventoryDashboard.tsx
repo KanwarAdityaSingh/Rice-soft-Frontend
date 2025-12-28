@@ -1,10 +1,11 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Layers, Network, ListTree } from 'lucide-react';
+import { Layers, Network, ListTree, BarChart3 } from 'lucide-react';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { useInventory } from '../../../hooks/useInventory';
 import { InventoryFlow } from './InventoryFlow';
 import { InventoryTreeView } from './InventoryTreeView';
 import { InventoryTable } from './InventoryTable';
+import { InventorySummaryPanel } from './InventorySummaryPanel';
 import { FlowControls } from './flow/FlowControls';
 import { InventoryFilters } from './InventoryFilters';
 import type { FlowNodeData } from '../../../types/inventoryFlow';
@@ -14,7 +15,7 @@ import type { ExtendedInventoryFilters } from '../../../utils/inventoryTransform
 
 export function InventoryDashboard() {
   const { loading, hierarchical, fetchHierarchicalInventory } = useInventory();
-  const [viewMode, setViewMode] = useState<'diagram' | 'tree'>('diagram');
+  const [viewMode, setViewMode] = useState<'diagram' | 'tree' | 'table' | 'summary'>('diagram');
   const [groupingStrategy, setGroupingStrategy] = useState<GroupingStrategy>('default');
   const [filters, setFilters] = useState<ExtendedInventoryFilters>({});
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -181,24 +182,26 @@ export function InventoryDashboard() {
             <div className="flex items-center justify-center h-full">
               <LoadingSpinner />
             </div>
-          ) : viewMode === 'diagram' ? (
+          ) : (viewMode === 'diagram' || viewMode === 'table' || viewMode === 'summary') ? (
             <div className="w-full h-full">
-              <InventoryFlow
-                onNodeSelect={handleNodeSelect}
-                selectedNodeId={selectedNodeId}
-                searchQuery={searchQuery}
-                groupingStrategy={groupingStrategy}
-                filters={filters}
-                onFlowInstanceReady={handleFlowInstanceReady}
-                onFocusMatchesRef={(fn) => { focusMatchesRef.current = fn; }}
-                onResetToBrandsRef={(fn) => { resetToBrandsRef.current = fn; }}
-                onNavigateNextRef={(fn) => { navigateNextRef.current = fn; }}
-                onNavigatePreviousRef={(fn) => { navigatePreviousRef.current = fn; }}
-                onMatchingInfoChange={(count, index) => {
-                  setMatchingCount(count);
-                  setCurrentMatchIndex(index);
-                }}
-              />
+              {viewMode === 'diagram' || viewMode === 'table' || viewMode === 'summary' ? (
+                <InventoryFlow
+                  onNodeSelect={handleNodeSelect}
+                  selectedNodeId={selectedNodeId}
+                  searchQuery={searchQuery}
+                  groupingStrategy={groupingStrategy}
+                  filters={filters}
+                  onFlowInstanceReady={handleFlowInstanceReady}
+                  onFocusMatchesRef={(fn) => { focusMatchesRef.current = fn; }}
+                  onResetToBrandsRef={(fn) => { resetToBrandsRef.current = fn; }}
+                  onNavigateNextRef={(fn) => { navigateNextRef.current = fn; }}
+                  onNavigatePreviousRef={(fn) => { navigatePreviousRef.current = fn; }}
+                  onMatchingInfoChange={(count, index) => {
+                    setMatchingCount(count);
+                    setCurrentMatchIndex(index);
+                  }}
+                />
+              ) : null}
             </div>
           ) : (
             <div className="w-full h-full">
@@ -213,9 +216,52 @@ export function InventoryDashboard() {
           )}
         </div>
 
-        {/* Table Panel - Right 50% */}
+        {/* Right Panel - 50% */}
         <div className="w-1/2 bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col">
-          <InventoryTable selectedNode={selectedNode} />
+          {/* Tab Switcher */}
+          <div className="flex items-center gap-1 border-b border-border p-2 bg-muted/30">
+            <button
+              onClick={() => {
+                if (selectedNode) {
+                  setViewMode('table');
+                }
+              }}
+              className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                selectedNode && viewMode === 'table'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : selectedNode
+                  ? 'bg-muted text-muted-foreground hover:bg-muted/80'
+                  : 'bg-muted/50 text-muted-foreground cursor-not-allowed opacity-50'
+              }`}
+              disabled={!selectedNode}
+            >
+              Details
+            </button>
+            <button
+              onClick={() => {
+                setViewMode('summary');
+                setSelectedNode(null);
+                setSelectedNodeId(null);
+              }}
+              className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${
+                !selectedNode || viewMode === 'summary'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
+              }`}
+            >
+              <BarChart3 className="h-4 w-4" />
+              Summary
+            </button>
+          </div>
+          
+          {/* Content */}
+          <div className="flex-1 overflow-auto">
+            {selectedNode && viewMode === 'table' ? (
+              <InventoryTable selectedNode={selectedNode} />
+            ) : (
+              <InventorySummaryPanel hierarchical={hierarchical || []} filters={filters} />
+            )}
+          </div>
         </div>
       </div>
 

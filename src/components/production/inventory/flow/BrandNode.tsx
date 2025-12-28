@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position } from 'reactflow';
-import { Store, TrendingUp } from 'lucide-react';
+import { Store, TrendingUp, ChevronDown, ChevronRight } from 'lucide-react';
 import type { BrandNodeData } from '../../../../types/inventoryFlow';
 
 interface BrandNodeProps {
@@ -9,6 +9,7 @@ interface BrandNodeProps {
 }
 
 export const BrandNode = memo(({ data, selected }: BrandNodeProps) => {
+  const expanded = (data as any).expanded || false;
   const totalProducts = data.hierarchicalData.products.length;
   const totalPackaging = data.hierarchicalData.products.reduce(
     (sum, p) => sum + p.packaging.length,
@@ -40,7 +41,18 @@ export const BrandNode = memo(({ data, selected }: BrandNodeProps) => {
           <Store className="h-6 w-6" />
         </div>
         <div className="flex-1">
-          <h3 className="text-lg font-bold text-foreground mb-1">{data.brand || 'Unbranded'}</h3>
+          <div className="flex items-center gap-2 mb-1">
+            <h3 className="text-lg font-bold text-foreground">{data.brand || 'Unbranded'}</h3>
+            {totalProducts > 0 && (
+              <div className={`transition-transform duration-300 ${expanded ? 'rotate-0' : 'rotate-0'}`}>
+                {expanded ? (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                )}
+              </div>
+            )}
+          </div>
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             <span className="flex items-center gap-1">
               <TrendingUp className="h-3 w-3" />

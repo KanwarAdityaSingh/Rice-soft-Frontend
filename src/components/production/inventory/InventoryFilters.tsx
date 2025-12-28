@@ -125,6 +125,52 @@ export function InventoryFilters({
               />
             </div>
 
+            {/* Date Range Filter */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Date Range</label>
+              <div className="space-y-2">
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">From Date</label>
+                  <input
+                    type="date"
+                    value={filters.date_range?.from || ''}
+                    onChange={(e) => {
+                      const from = e.target.value || undefined;
+                      updateFilter('date_range', {
+                        ...filters.date_range,
+                        from,
+                      });
+                    }}
+                    className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">To Date</label>
+                  <input
+                    type="date"
+                    value={filters.date_range?.to || ''}
+                    onChange={(e) => {
+                      const to = e.target.value || undefined;
+                      updateFilter('date_range', {
+                        ...filters.date_range,
+                        to,
+                      });
+                    }}
+                    min={filters.date_range?.from}
+                    className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+                {(filters.date_range?.from || filters.date_range?.to) && (
+                  <button
+                    onClick={() => updateFilter('date_range', undefined)}
+                    className="w-full px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground rounded-lg hover:bg-muted/50 transition-colors"
+                  >
+                    Clear Date Range
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* Brands */}
             <div>
               <label className="block text-sm font-medium mb-2">Brands</label>

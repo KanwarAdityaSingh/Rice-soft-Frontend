@@ -190,10 +190,17 @@ export function BatchDetail() {
                   <div key={bpkg.id} className="p-3 rounded-lg bg-muted/30 border border-border">
                     <div className="flex items-center justify-between">
                       <div>
-                        <span className="text-sm font-medium">{product?.name || 'Unknown Product'}</span>
-                        <span className="text-xs text-muted-foreground ml-2">
-                          - {pkg?.holding_capacity}kg {pkg?.packet_type}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">{product?.name || 'Unknown Product'}</span>
+                          <span className="text-xs text-muted-foreground">
+                            - {pkg?.holding_capacity}kg {pkg?.packet_type}
+                          </span>
+                          {pkg?.packaging_number && (
+                            <span className="text-xs font-mono font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                              {pkg.packaging_number}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="text-sm text-muted-foreground">
                         {bpkg.quantity.toFixed(2)} kg ({packetsNeeded} packets)

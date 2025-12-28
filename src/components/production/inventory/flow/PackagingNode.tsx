@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position } from 'reactflow';
-import { Box, Building2 } from 'lucide-react';
+import { Box, Building2, ChevronDown, ChevronRight } from 'lucide-react';
 import type { PackagingNodeData } from '../../../../types/inventoryFlow';
 
 interface PackagingNodeProps {
@@ -9,6 +9,7 @@ interface PackagingNodeProps {
 }
 
 export const PackagingNode = memo(({ data, selected }: PackagingNodeProps) => {
+  const expanded = (data as any).expanded || false;
   const totalFinishedGoods = data.hierarchicalData.finished_goods.length;
   const totalPackets = data.hierarchicalData.finished_goods.reduce((sum, fg) => sum + fg.packets, 0);
   const totalWeight = data.hierarchicalData.finished_goods.reduce((sum, fg) => sum + fg.weight, 0);
@@ -38,6 +39,20 @@ export const PackagingNode = memo(({ data, selected }: PackagingNodeProps) => {
             <span className="text-sm font-semibold text-foreground">
               {data.holdingCapacity} {data.packetType}
             </span>
+            {data.hierarchicalData.packaging_number && (
+              <span className="text-xs font-mono font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                {data.hierarchicalData.packaging_number}
+              </span>
+            )}
+            {totalFinishedGoods > 0 && (
+              <div className={`transition-transform duration-300 ${expanded ? 'rotate-0' : 'rotate-0'}`}>
+                {expanded ? (
+                  <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                )}
+              </div>
+            )}
           </div>
           {data.vendor && (
             <div className="flex items-center gap-1 text-xs text-muted-foreground">

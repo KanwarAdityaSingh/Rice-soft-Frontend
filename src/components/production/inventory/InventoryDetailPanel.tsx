@@ -195,9 +195,16 @@ export const InventoryDetailPanel = memo(({ selectedNode, onClose }: InventoryDe
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <h4 className="font-semibold">
-                      {pack.holding_capacity} {pack.packet_type}
-                    </h4>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-semibold">
+                        {pack.holding_capacity} {pack.packet_type}
+                      </h4>
+                      {pack.packaging_number && (
+                        <span className="text-xs font-mono font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-md">
+                          {pack.packaging_number}
+                        </span>
+                      )}
+                    </div>
                     {pack.vendor && (
                       <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1">
                         <Building2 className="h-3 w-3" />

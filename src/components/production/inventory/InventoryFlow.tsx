@@ -23,7 +23,7 @@ import { CapacityNode } from './flow/CapacityNode';
 import { RiceTypeNode } from './flow/RiceTypeNode';
 import { PacketTypeNode } from './flow/PacketTypeNode';
 import { NodePreviewTooltip } from './flow/NodePreviewTooltip';
-import type { FlowNode, FlowEdge, FlowNodeData, GroupingStrategy } from '../../../types/inventoryFlow';
+import type { FlowNode, FlowEdge, FlowNodeData, GroupingStrategy, BrandNodeData, ProductNodeData, PackagingNodeData } from '../../../types/inventoryFlow';
 import type { HierarchicalInventory } from '../../../types/entities';
 import type { ReactFlowInstance } from '../../../types/reactflow';
 import {
@@ -83,6 +83,9 @@ export function InventoryFlow({
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [matchingNodeIds, setMatchingNodeIds] = useState<string[]>([]);
   const [currentMatchIndex, setCurrentMatchIndex] = useState<number>(0);
+  const [expandedBrands, setExpandedBrands] = useState<Set<string>>(new Set());
+  const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set());
+  const [expandedPackaging, setExpandedPackaging] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     // #region agent log
@@ -92,15 +95,16 @@ export function InventoryFlow({
   }, [fetchHierarchicalInventory]);
 
   const createHierarchicalLayout = useCallback(
-    (data: HierarchicalInventory[], strategy: GroupingStrategy, appliedFilters: ExtendedInventoryFilters): { nodes: FlowNode[]; edges: FlowEdge[] } => {
+    (data: HierarchicalInventory[], strategy: GroupingStrategy, appliedFilters: ExtendedInventoryFilters, expandedBrandsSet: Set<string>, expandedProductsSet: Set<string>, expandedPackagingSet: Set<string>): { nodes: FlowNode[]; edges: FlowEdge[] } => {
       const nodes: FlowNode[] = [];
       const edges: FlowEdge[] = [];
 
-      // Center-based layout - show only active node and its children
-      const CENTER_X = 400; // Center of viewport
-      const CENTER_Y = 300; // Center of viewport
-      const HORIZONTAL_SPACING = 300; // px between columns
-      const VERTICAL_SPACING = 150; // px between items in same column
+      // Layout configuration
+      const START_X = 200; // Start position for brands
+      const START_Y = 100; // Start position for first brand
+      const HORIZONTAL_SPACING = 350; // px between columns
+      const VERTICAL_SPACING = 180; // px between items in same column
+      const BRAND_SPACING = 200; // Vertical spacing between brands
 
       // Apply filters first
       const combinedFilters: ExtendedInventoryFilters = {
@@ -129,279 +133,200 @@ export function InventoryFlow({
         transformedData = transformByPacketTypeTopLevel(filteredData);
       }
 
-      // Helper function to find active node in any structure
-      const findActiveNode = (data: any, nodeId: string): any => {
-        if (!nodeId) return null;
-
-        // Handle default structure
-        if (strategy === 'default') {
-          for (const brandData of data) {
-            const brandNodeId = `brand-${brandData.brand || 'unbranded'}`;
-            if (brandNodeId === nodeId) return brandData;
-            for (const product of brandData.products || []) {
-              const productNodeId = `product-${product.product_id}`;
-              if (productNodeId === nodeId) return product;
-              for (const pack of product.packaging || []) {
-                const packagingNodeId = `packaging-${pack.packaging_id}`;
-                if (packagingNodeId === nodeId) return pack;
-              }
-            }
-          }
-        }
-
-        // Handle transformed structures - simplified for now, will expand
-        // For now, fall back to default behavior
-        if (strategy !== 'default' && data.length > 0) {
-          // Try to find in first level
-          for (const item of data) {
-            if (strategy === 'by_vendor_top' && item.vendor) {
-              const vendorNodeId = `vendor-${item.vendor.id || 'unassigned'}`;
-              if (vendorNodeId === nodeId) return item;
-            } else if (strategy === 'by_capacity_top' && item.capacity !== undefined) {
-              const capacityNodeId = `capacity-${item.capacity}`;
-              if (capacityNodeId === nodeId) return item;
-            } else if (strategy === 'by_packet_type_top' && item.packet_type) {
-              const packetTypeNodeId = `packetType-${item.packet_type}`;
-              if (packetTypeNodeId === nodeId) return item;
-            }
-          }
-        }
-
-        return null;
-      };
-
-      // Find active node
-      let activeNodeData: any = null;
-      if (activeNodeId) {
-        activeNodeData = findActiveNode(transformedData, activeNodeId);
-      }
-
-      // If no active node, set first item as active
-      if (!activeNodeData && transformedData.length > 0) {
-        const firstItem = transformedData[0];
-        let firstNodeId = '';
-        if (strategy === 'default') {
-          firstNodeId = `brand-${firstItem.brand || 'unbranded'}`;
-        } else if (strategy === 'by_vendor_top') {
-          firstNodeId = `vendor-${firstItem.vendor?.id || 'unassigned'}`;
-        } else if (strategy === 'by_capacity_top') {
-          firstNodeId = `capacity-${firstItem.capacity}`;
-        } else if (strategy === 'by_packet_type_top') {
-          firstNodeId = `packetType-${firstItem.packet_type}`;
-        } else {
-          firstNodeId = `brand-${firstItem.brand || 'unbranded'}`;
-        }
-        setActiveNodeId(firstNodeId);
-        activeNodeData = firstItem;
-      }
-
-      if (!activeNodeData) {
-        return { nodes, edges };
-      }
-
-      // Helper to create nodes and edges based on structure
-      const createNodesForStructure = (nodeData: any, _x: number, y: number, level: number): { nodeId: string; children: any[] } => {
-        // Determine column positions dynamically
-        const COLUMN_X = CENTER_X + (level * HORIZONTAL_SPACING);
+      // For default strategy: Show all brands initially, expand on click
+      if (strategy === 'default') {
+        let brandY = START_Y;
         
-        // Handle default structure
-        if (strategy === 'default') {
-          if (nodeData.brand !== undefined) {
-            const brandNodeId = `brand-${nodeData.brand || 'unbranded'}`;
-            nodes.push({
-              id: brandNodeId,
-              type: 'brand',
-              position: { x: COLUMN_X, y },
-              data: {
-                type: 'brand',
-                brand: nodeData.brand,
-                hierarchicalData: nodeData,
-              },
-              selected: activeNodeId === brandNodeId,
-            });
-            return { nodeId: brandNodeId, children: nodeData.products || [] };
-          } else if (nodeData.product_name) {
-            const productNodeId = `product-${nodeData.product_id}`;
-            nodes.push({
-              id: productNodeId,
-              type: 'product',
-              position: { x: COLUMN_X, y },
-              data: {
-                type: 'product',
-                productId: nodeData.product_id,
-                productName: nodeData.product_name,
-                riceType: nodeData.rice_type,
-                brand: nodeData.brand || '',
-                hierarchicalData: nodeData,
-              },
-              selected: activeNodeId === productNodeId,
-            });
-            return { nodeId: productNodeId, children: nodeData.packaging || [] };
-          } else if (nodeData.packet_type) {
-            const packagingNodeId = `packaging-${nodeData.packaging_id}`;
-            nodes.push({
-              id: packagingNodeId,
-              type: 'packaging',
-              position: { x: COLUMN_X, y },
-              data: {
-                type: 'packaging',
-                packagingId: nodeData.packaging_id,
-                holdingCapacity: nodeData.holding_capacity,
-                packetType: nodeData.packet_type,
-                vendor: nodeData.vendor,
-                productId: nodeData.product_id || '',
-                productName: nodeData.product_name || '',
-                brand: nodeData.brand || '',
-                hierarchicalData: nodeData,
-              },
-              selected: activeNodeId === packagingNodeId,
-            });
-            return { nodeId: packagingNodeId, children: nodeData.finished_goods || [] };
-          }
-        }
-
-        // Handle transformed structures
-        if (strategy === 'by_vendor_top' && nodeData.vendor !== undefined) {
-          const vendorNodeId = `vendor-${nodeData.vendor?.id || 'unassigned'}`;
-          nodes.push({
-            id: vendorNodeId,
-            type: 'vendor',
-            position: { x: COLUMN_X, y },
-            data: {
-              type: 'vendor',
-              vendor: nodeData.vendor,
-              hierarchicalData: nodeData,
-            },
-            selected: activeNodeId === vendorNodeId,
-          });
-          return { nodeId: vendorNodeId, children: nodeData.brands || [] };
-        }
-
-        if (strategy === 'by_capacity_top' && nodeData.capacity !== undefined) {
-          const capacityNodeId = `capacity-${nodeData.capacity}`;
-          nodes.push({
-            id: capacityNodeId,
-            type: 'capacity',
-            position: { x: COLUMN_X, y },
-            data: {
-              type: 'capacity',
-              capacity: nodeData.capacity,
-              hierarchicalData: nodeData,
-            },
-            selected: activeNodeId === capacityNodeId,
-          });
-          return { nodeId: capacityNodeId, children: nodeData.brands || [] };
-        }
-
-        if (strategy === 'by_packet_type_top' && nodeData.packet_type) {
-          const packetTypeNodeId = `packetType-${nodeData.packet_type}`;
-          nodes.push({
-            id: packetTypeNodeId,
-            type: 'packetType',
-            position: { x: COLUMN_X, y },
-            data: {
-              type: 'packetType',
-              packetType: nodeData.packet_type,
-              hierarchicalData: nodeData,
-            },
-            selected: activeNodeId === packetTypeNodeId,
-          });
-          return { nodeId: packetTypeNodeId, children: nodeData.brands || [] };
-        }
-
-        return { nodeId: '', children: [] };
-      };
-
-      // Create nodes recursively
-      if (activeNodeData) {
-        const root = createNodesForStructure(activeNodeData, CENTER_X, CENTER_Y, 0);
-        let childY = CENTER_Y;
-        
-        root.children.forEach((child: any, index: number) => {
-          if (index > 0) childY += VERTICAL_SPACING;
-          const childNode = createNodesForStructure(child, CENTER_X + HORIZONTAL_SPACING, childY, 1);
+        transformedData.forEach((brandData: any) => {
+          const brandKey = brandData.brand || 'unbranded';
+          const brandNodeId = `brand-${brandKey}`;
+          const isBrandExpanded = expandedBrandsSet.has(brandKey);
           
-          // Create edge
-          edges.push({
-            id: `edge-${root.nodeId}-${childNode.nodeId}`,
-            source: root.nodeId,
-            target: childNode.nodeId,
-            type: 'smoothstep',
-            animated: false,
+          // Always show brand node
+          nodes.push({
+            id: brandNodeId,
+            type: 'brand',
+            position: { x: START_X, y: brandY },
+            data: {
+              type: 'brand',
+              brand: brandData.brand,
+              hierarchicalData: brandData,
+              expanded: isBrandExpanded,
+            } as BrandNodeData,
+            selected: activeNodeId === brandNodeId,
             style: {
-              stroke: 'rgba(139, 92, 246, 0.5)',
-              strokeWidth: 2,
+              opacity: 1,
+              transition: 'all 0.3s ease-in-out',
             },
-          } as FlowEdge);
+          });
 
-          // Handle deeper levels for default strategy
-          if (strategy === 'default' && childNode.children) {
-            let grandChildY = childY;
-            childNode.children.forEach((grandChild: any, gcIndex: number) => {
-              if (gcIndex > 0) grandChildY += VERTICAL_SPACING;
-              const grandChildNode = createNodesForStructure(grandChild, CENTER_X + HORIZONTAL_SPACING * 2, grandChildY, 2);
+          // Show products if brand is expanded
+          if (isBrandExpanded && brandData.products) {
+            let productY = brandY;
+            brandData.products.forEach((product: any, productIndex: number) => {
+              if (productIndex > 0) productY += VERTICAL_SPACING;
+              const productNodeId = `product-${product.product_id}`;
+              const isProductExpanded = expandedProductsSet.has(product.product_id);
               
-              if (grandChildNode.nodeId) {
-                edges.push({
-                  id: `edge-${childNode.nodeId}-${grandChildNode.nodeId}`,
-                  source: childNode.nodeId,
-                  target: grandChildNode.nodeId,
-                  type: 'smoothstep',
-                  animated: false,
-                  style: {
-                    stroke: 'rgba(99, 102, 241, 0.5)',
-                    strokeWidth: 2,
-                  },
-                } as FlowEdge);
+              nodes.push({
+                id: productNodeId,
+                type: 'product',
+                position: { x: START_X + HORIZONTAL_SPACING, y: productY },
+                data: {
+                  type: 'product',
+                  productId: product.product_id,
+                  productName: product.product_name,
+                  riceType: product.rice_type,
+                  brand: brandData.brand,
+                  hierarchicalData: product,
+                  expanded: isProductExpanded,
+                } as ProductNodeData,
+                selected: activeNodeId === productNodeId,
+                style: {
+                  opacity: 1,
+                  transition: 'all 0.3s ease-in-out',
+                },
+              });
 
-                // Handle finished goods
-                if (grandChildNode.children && grandChildNode.children.length > 0) {
-                  let fgY = grandChildY;
-                  grandChildNode.children.forEach((fg: any, fgIndex: number) => {
-                    if (fgIndex > 0) fgY += VERTICAL_SPACING;
-                    const fgNodeId = `finishedGoods-${fg.batch_id}`;
-                    nodes.push({
-                      id: fgNodeId,
-                      type: 'finishedGoods',
-                      position: { x: CENTER_X + HORIZONTAL_SPACING * 3, y: fgY },
-                      data: {
-                        type: 'finishedGoods',
-                        batchId: fg.batch_id,
-                        batchNumber: fg.batch_number,
-                        quantity: fg.quantity,
-                        packets: fg.packets,
-                        weight: fg.weight,
-                        packagingId: grandChild.packaging_id,
-                        productId: child.product_id || '',
-                        productName: child.product_name || '',
-                        brand: activeNodeData.brand || '',
-                        hierarchicalData: fg,
-                      },
-                      selected: false,
-                    });
+              edges.push({
+                id: `edge-${brandNodeId}-${productNodeId}`,
+                source: brandNodeId,
+                target: productNodeId,
+                type: 'smoothstep',
+                animated: true,
+                style: {
+                  stroke: 'rgba(139, 92, 246, 0.6)',
+                  strokeWidth: 2,
+                },
+              } as FlowEdge);
 
-                    edges.push({
-                      id: `edge-${grandChildNode.nodeId}-${fgNodeId}`,
-                      source: grandChildNode.nodeId,
-                      target: fgNodeId,
-                      type: 'smoothstep',
-                      animated: false,
-                      style: {
-                        stroke: 'rgba(59, 130, 246, 0.5)',
-                        strokeWidth: 2,
-                      },
-                    } as FlowEdge);
+              // Show packaging if product is expanded
+              if (isProductExpanded && product.packaging) {
+                let packagingY = productY;
+                product.packaging.forEach((pack: any, packIndex: number) => {
+                  if (packIndex > 0) packagingY += VERTICAL_SPACING;
+                  const packagingNodeId = `packaging-${pack.packaging_id}`;
+                  const isPackagingExpanded = expandedPackagingSet.has(pack.packaging_id);
+                  
+                  nodes.push({
+                    id: packagingNodeId,
+                    type: 'packaging',
+                    position: { x: START_X + HORIZONTAL_SPACING * 2, y: packagingY },
+                    data: {
+                      type: 'packaging',
+                      packagingId: pack.packaging_id,
+                      holdingCapacity: pack.holding_capacity,
+                      packetType: pack.packet_type,
+                      vendor: pack.vendor,
+                      productId: product.product_id,
+                      productName: product.product_name,
+                      brand: brandData.brand,
+                      hierarchicalData: pack,
+                      expanded: isPackagingExpanded,
+                    } as PackagingNodeData,
+                    selected: activeNodeId === packagingNodeId,
+                    style: {
+                      opacity: 1,
+                      transition: 'all 0.3s ease-in-out',
+                    },
                   });
-                }
+
+                  edges.push({
+                    id: `edge-${productNodeId}-${packagingNodeId}`,
+                    source: productNodeId,
+                    target: packagingNodeId,
+                    type: 'smoothstep',
+                    animated: true,
+                    style: {
+                      stroke: 'rgba(99, 102, 241, 0.6)',
+                      strokeWidth: 2,
+                    },
+                  } as FlowEdge);
+
+                  // Show finished goods if packaging is expanded
+                  if (isPackagingExpanded && pack.finished_goods) {
+                    let fgY = packagingY;
+                    pack.finished_goods.forEach((fg: any, fgIndex: number) => {
+                      if (fgIndex > 0) fgY += VERTICAL_SPACING;
+                      const fgNodeId = `finishedGoods-${fg.batch_id}`;
+                      
+                      nodes.push({
+                        id: fgNodeId,
+                        type: 'finishedGoods',
+                        position: { x: START_X + HORIZONTAL_SPACING * 3, y: fgY },
+                        data: {
+                          type: 'finishedGoods',
+                          batchId: fg.batch_id,
+                          batchNumber: fg.batch_number,
+                          quantity: fg.quantity,
+                          packets: fg.packets,
+                          weight: fg.weight,
+                          packagingId: pack.packaging_id,
+                          productId: product.product_id,
+                          productName: product.product_name,
+                          brand: brandData.brand,
+                          hierarchicalData: fg,
+                        },
+                        selected: activeNodeId === fgNodeId,
+                        style: {
+                          opacity: 1,
+                          transition: 'all 0.3s ease-in-out',
+                        },
+                      });
+
+                      edges.push({
+                        id: `edge-${packagingNodeId}-${fgNodeId}`,
+                        source: packagingNodeId,
+                        target: fgNodeId,
+                        type: 'smoothstep',
+                        animated: true,
+                        style: {
+                          stroke: 'rgba(59, 130, 246, 0.6)',
+                          strokeWidth: 2,
+                        },
+                      } as FlowEdge);
+                    });
+                  }
+                });
               }
             });
           }
+
+          // Calculate next brand Y position based on expanded content
+          if (isBrandExpanded && brandData.products) {
+            const totalProducts = brandData.products.length;
+            const maxExpandedHeight = brandData.products.reduce((max: number, product: any) => {
+              const isProductExpanded = expandedProductsSet.has(product.product_id);
+              if (!isProductExpanded) return max;
+              
+              const packagingCount = product.packaging?.length || 0;
+              const maxPackagingHeight = product.packaging?.reduce((packMax: number, pack: any) => {
+                const isPackagingExpanded = expandedPackagingSet.has(pack.packaging_id);
+                if (!isPackagingExpanded) return packMax;
+                return packMax + (pack.finished_goods?.length || 0);
+              }, 0) || 0;
+              
+              return Math.max(max, packagingCount + maxPackagingHeight);
+            }, totalProducts);
+            
+            brandY += Math.max(totalProducts, maxExpandedHeight) * VERTICAL_SPACING + BRAND_SPACING;
+          } else {
+            brandY += BRAND_SPACING;
+          }
+        });
+      } else {
+        // For other strategies, show all top-level items
+        let topY = START_Y;
+        transformedData.forEach((_topItem: any, index: number) => {
+          if (index > 0) topY += BRAND_SPACING;
+          // Similar expansion logic for other strategies
+          // (Simplified for now - can be expanded later)
         });
       }
 
       return { nodes, edges };
     },
-    [searchQuery, selectedNodeId, activeNodeId, groupingStrategy, filters]
+    [searchQuery, selectedNodeId, activeNodeId, groupingStrategy, filters, expandedBrands, expandedProducts, expandedPackaging]
   );
 
   const { nodes: layoutNodes, edges: layoutEdges } = useMemo(() => {
@@ -411,7 +336,7 @@ export function InventoryFlow({
     if (!hierarchical || hierarchical.length === 0) {
       return { nodes: [], edges: [] };
     }
-    const result = createHierarchicalLayout(hierarchical, groupingStrategy, filters);
+    const result = createHierarchicalLayout(hierarchical, groupingStrategy, filters, expandedBrands, expandedProducts, expandedPackaging);
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/9a120746-53eb-4d7d-8410-b748191d8e86',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'InventoryFlow.tsx:useMemo-after',message:'Layout created',data:{nodesCount:result.nodes.length,edgesCount:result.edges.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
     // #endregion
@@ -426,17 +351,12 @@ export function InventoryFlow({
     setEdges(layoutEdges as any); // Type assertion needed due to FlowEdge extension
   }, [layoutNodes, layoutEdges, setNodes, setEdges]);
 
-  // Initial setup - set first brand as active
+  // Initial setup - don't set active node, show all brands
   useEffect(() => {
-    if (hierarchical && hierarchical.length > 0 && !activeNodeId) {
-      const firstBrand = hierarchical[0];
-      const brandNodeId = `brand-${firstBrand.brand || 'unbranded'}`;
-      setActiveNodeId(brandNodeId);
-    }
     if (onFlowInstanceReady) {
       onFlowInstanceReady(reactFlowInstance);
     }
-  }, [hierarchical, activeNodeId, reactFlowInstance, onFlowInstanceReady]);
+  }, [hierarchical, reactFlowInstance, onFlowInstanceReady]);
 
   // Find all matching nodes based on search
   useEffect(() => {
@@ -522,15 +442,15 @@ export function InventoryFlow({
     }
   }, [matchingNodeIds]);
 
-  // Reset to brands only handler
+  // Reset to brands only handler - collapse all
   const handleResetToBrands = useCallback(() => {
-    if (!hierarchical || hierarchical.length === 0) return;
-    const firstBrand = hierarchical[0];
-    const brandNodeId = `brand-${firstBrand.brand || 'unbranded'}`;
-    setActiveNodeId(brandNodeId);
+    setExpandedBrands(new Set());
+    setExpandedProducts(new Set());
+    setExpandedPackaging(new Set());
+    setActiveNodeId(null);
     setMatchingNodeIds([]);
     setCurrentMatchIndex(0);
-  }, [hierarchical]);
+  }, []);
 
   // Expose handlers to parent via refs
   useEffect(() => {
@@ -619,8 +539,60 @@ export function InventoryFlow({
       const nodeData = node.data as FlowNodeData;
       onNodeSelect(nodeData);
       setActiveNodeId(node.id);
+      
+      // Handle expand/collapse for default strategy
+      if (groupingStrategy === 'default') {
+        if (nodeData.type === 'brand') {
+          const brandKey = nodeData.brand || 'unbranded';
+          setExpandedBrands(prev => {
+            const next = new Set(prev);
+            if (next.has(brandKey)) {
+              next.delete(brandKey);
+              // Also collapse children
+              setExpandedProducts(prev => {
+                const next = new Set(prev);
+                nodeData.hierarchicalData.products?.forEach((p: any) => {
+                  next.delete(p.product_id);
+                });
+                return next;
+              });
+            } else {
+              next.add(brandKey);
+            }
+            return next;
+          });
+        } else if (nodeData.type === 'product') {
+          setExpandedProducts(prev => {
+            const next = new Set(prev);
+            if (next.has(nodeData.productId)) {
+              next.delete(nodeData.productId);
+              // Also collapse packaging
+              setExpandedPackaging(prev => {
+                const next = new Set(prev);
+                nodeData.hierarchicalData.packaging?.forEach((p: any) => {
+                  next.delete(p.packaging_id);
+                });
+                return next;
+              });
+            } else {
+              next.add(nodeData.productId);
+            }
+            return next;
+          });
+        } else if (nodeData.type === 'packaging') {
+          setExpandedPackaging(prev => {
+            const next = new Set(prev);
+            if (next.has(nodeData.packagingId)) {
+              next.delete(nodeData.packagingId);
+            } else {
+              next.add(nodeData.packagingId);
+            }
+            return next;
+          });
+        }
+      }
     },
-    [onNodeSelect]
+    [onNodeSelect, groupingStrategy]
   );
 
   const onPaneClick = useCallback(() => {

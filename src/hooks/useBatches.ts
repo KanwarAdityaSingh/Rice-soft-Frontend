@@ -70,8 +70,9 @@ export function useBatches() {
   // Batch Products (Stage 2)
   const addProductToBatch = async (batchId: string, productId: string) => {
     try {
-      await batchesAPI.addProductToBatch(batchId, { product_id: productId });
+      const response = await batchesAPI.addProductToBatch(batchId, { product_id: productId });
       await fetchBatches();
+      return response;
     } catch (err: any) {
       throw err;
     }

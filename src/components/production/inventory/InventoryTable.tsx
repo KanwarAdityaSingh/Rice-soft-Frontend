@@ -190,7 +190,12 @@ export function InventoryTable({ selectedNode }: InventoryTableProps) {
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <Box className="h-4 w-4 text-blue-500" />
-                            <span className="font-medium">{pack.holding_capacity} kg</span>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{pack.holding_capacity} kg</span>
+                              {pack.packaging_number && (
+                                <span className="text-xs text-muted-foreground font-mono">{pack.packaging_number}</span>
+                              )}
+                            </div>
                           </div>
                         </td>
                         <td className="px-4 py-3 text-sm">{pack.packet_type}</td>

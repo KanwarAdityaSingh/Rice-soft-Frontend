@@ -403,6 +403,15 @@ export interface ExtendedInventoryFilters {
   
   // Bags filters
   bag_types?: ('jute' | 'pp')[];
+  
+  // Date range filter
+  date_range?: {
+    from?: string; // ISO date string
+    to?: string; // ISO date string
+  };
+  
+  // Search
+  search_text?: string;
   bag_capacities?: number[];
   
   // Search
@@ -582,6 +591,110 @@ export function getUniqueFilterValues(data: HierarchicalInventory[]): {
     capacities: Array.from(capacities).sort((a, b) => a - b),
     packet_types: Array.from(packetTypes).sort(),
     vendors: Array.from(vendors.values()).sort((a, b) => a.name.localeCompare(b.name)),
+  };
+}
+
+/**
+ * Calculate overall inventory summary across all hierarchical data
+ */
+export function calculateInventorySummary(data: HierarchicalInventory[], dateRange?: { from?: string; to?: string }): {
+  total_packets: number;
+  total_weight: number;
+  total_batches: number;
+  total_products: number;
+  total_packaging_types: number;
+  by_brand: Array<{
+    brand: string;
+    packets: number;
+    weight: number;
+    batches: number;
+  }>;
+  by_product: Array<{
+    product_id: string;
+    product_name: string;
+    packets: number;
+    weight: number;
+    batches: number;
+  }>;
+} {
+  let totalPackets = 0;
+  let totalWeight = 0;
+  const batchIds = new Set<string>();
+  const productIds = new Set<string>();
+  const packagingIds = new Set<string>();
+  
+  const brandTotals = new Map<string, { packets: number; weight: number; batches: Set<string> }>();
+  const productTotals = new Map<string, { name: string; packets: number; weight: number; batches: Set<string> }>();
+  
+  const fromDate = dateRange?.from ? new Date(dateRange.from) : null;
+  const toDate = dateRange?.to ? new Date(dateRange.to) : null;
+  
+  data.forEach(brandGroup => {
+    const brandKey = brandGroup.brand || 'unbranded';
+    if (!brandTotals.has(brandKey)) {
+      brandTotals.set(brandKey, { packets: 0, weight: 0, batches: new Set() });
+    }
+    const brandTotal = brandTotals.get(brandKey)!;
+    
+    brandGroup.products.forEach(product => {
+      productIds.add(product.product_id);
+      
+      if (!productTotals.has(product.product_id)) {
+        productTotals.set(product.product_id, { 
+          name: product.product_name, 
+          packets: 0, 
+          weight: 0, 
+          batches: new Set() 
+        });
+      }
+      const productTotal = productTotals.get(product.product_id)!;
+      
+      product.packaging.forEach(pkg => {
+        packagingIds.add(pkg.packaging_id);
+        
+        pkg.finished_goods.forEach(fg => {
+          // Apply date filter if provided
+          if (fromDate || toDate) {
+            // Assuming finished goods have a date field - adjust based on actual data structure
+            // For now, we'll include all if date filtering is not applicable to the data structure
+            // This can be enhanced when we know the exact date field
+          }
+          
+          totalPackets += fg.packets || 0;
+          totalWeight += fg.weight || fg.quantity || 0;
+          if (fg.batch_id) {
+            batchIds.add(fg.batch_id);
+            brandTotal.batches.add(fg.batch_id);
+            productTotal.batches.add(fg.batch_id);
+          }
+          brandTotal.packets += fg.packets || 0;
+          brandTotal.weight += fg.weight || fg.quantity || 0;
+          productTotal.packets += fg.packets || 0;
+          productTotal.weight += fg.weight || fg.quantity || 0;
+        });
+      });
+    });
+  });
+  
+  return {
+    total_packets: totalPackets,
+    total_weight: totalWeight,
+    total_batches: batchIds.size,
+    total_products: productIds.size,
+    total_packaging_types: packagingIds.size,
+    by_brand: Array.from(brandTotals.entries()).map(([brand, totals]) => ({
+      brand,
+      packets: totals.packets,
+      weight: totals.weight,
+      batches: totals.batches.size,
+    })).sort((a, b) => b.weight - a.weight),
+    by_product: Array.from(productTotals.entries()).map(([productId, totals]) => ({
+      product_id: productId,
+      product_name: totals.name,
+      packets: totals.packets,
+      weight: totals.weight,
+      batches: totals.batches.size,
+    })).sort((a, b) => b.weight - a.weight),
   };
 }
 

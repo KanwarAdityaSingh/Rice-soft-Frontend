@@ -1248,6 +1248,7 @@ export type PacketType = 'PP Bag' | 'Jute Bag' | 'HDPE Bag';
 
 export interface Packaging {
   id: string;
+  packaging_number: string | null; // Sequential number: PACK-001, PACK-002, etc.
   product_id: string; // NEW: Packaging is now product-specific
   holding_capacity: number;
   packet_type: PacketType;
@@ -1263,6 +1264,7 @@ export interface CreatePackagingRequest {
   packet_type: PacketType;
   packaging_vendor_id?: string | null;
   ordered_weight?: number | null;
+  initial_packets?: number | null; // Optional - Initial number of empty packets to set
 }
 
 export interface UpdatePackagingRequest {
@@ -1360,6 +1362,7 @@ export interface CreateBatchRequest {
   recipe_id: string;
   quantity: number;
   status?: BatchStatus;
+  batch_number?: string | null;
 }
 
 export interface UpdateBatchRequest {
@@ -1385,6 +1388,7 @@ export interface FinishedGoodsInventory {
   };
   packaging?: {
     id: string;
+    packaging_number: string | null; // Sequential number: PACK-001, PACK-002, etc.
     holding_capacity: number;
     packet_type: PacketType;
   };
@@ -1395,6 +1399,7 @@ export interface PacketsInventory {
   available_quantity: number;
   packaging?: {
     id: string;
+    packaging_number: string | null; // Sequential number: PACK-001, PACK-002, etc.
     holding_capacity: number;
     packet_type: PacketType;
     packaging_vendor_id: string | null;
@@ -1453,6 +1458,10 @@ export interface InventoryFilters {
   bag_types?: ('jute' | 'pp')[];
   bag_capacities?: number[];
   search_text?: string;
+  date_range?: {
+    from?: string; // ISO date string
+    to?: string; // ISO date string
+  };
 }
 
 // Hierarchical Inventory Types
@@ -1464,6 +1473,7 @@ export interface HierarchicalInventory {
     rice_type: string | null;
     packaging: {
       packaging_id: string;
+      packaging_number: string | null; // Sequential number: PACK-001, PACK-002, etc.
       holding_capacity: number;
       packet_type: string;
       vendor: {

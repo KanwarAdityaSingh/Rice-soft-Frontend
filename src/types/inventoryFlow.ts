@@ -16,6 +16,7 @@ export interface BrandNodeData {
   type: 'brand';
   brand: string;
   hierarchicalData: HierarchicalInventory;
+  expanded?: boolean;
 }
 
 export interface ProductNodeData {
@@ -25,6 +26,7 @@ export interface ProductNodeData {
   riceType: string | null;
   brand: string;
   hierarchicalData: HierarchicalInventory['products'][0];
+  expanded?: boolean;
 }
 
 export interface PackagingNodeData {
@@ -37,6 +39,7 @@ export interface PackagingNodeData {
   productName: string;
   brand: string;
   hierarchicalData: HierarchicalInventory['products'][0]['packaging'][0];
+  expanded?: boolean;
 }
 
 export interface FinishedGoodsNodeData {

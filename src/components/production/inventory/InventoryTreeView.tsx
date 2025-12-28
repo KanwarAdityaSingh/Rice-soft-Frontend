@@ -38,6 +38,7 @@ export function InventoryTreeView({
             product.packaging.some(
               (pack) =>
                 pack.packet_type.toLowerCase().includes(q) ||
+                (pack.packaging_number && pack.packaging_number.toLowerCase().includes(q)) ||
                 (pack.vendor && pack.vendor.name.toLowerCase().includes(q)) ||
                 pack.finished_goods.some((fg) => fg.batch_number.toLowerCase().includes(q))
             )
@@ -64,6 +65,7 @@ export function InventoryTreeView({
             packaging: product.packaging.filter(
               (pack) =>
                 pack.packet_type.toLowerCase().includes(q) ||
+                (pack.packaging_number && pack.packaging_number.toLowerCase().includes(q)) ||
                 (pack.vendor && pack.vendor.name.toLowerCase().includes(q)) ||
                 pack.finished_goods.some((fg) => fg.batch_number.toLowerCase().includes(q))
             ),
@@ -254,31 +256,43 @@ export function InventoryTreeView({
               {/* Brand Level */}
               <div
                 ref={isBrandSelected ? selectedNodeRef : null}
-                className={`group flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-all ${
+                className={`group relative flex items-center gap-3 px-4 py-3 rounded-xl cursor-pointer transition-all duration-300 ${
                   isBrandSelected
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'hover:bg-muted/50 text-foreground'
+                    ? 'bg-gradient-to-r from-violet-500/20 to-purple-600/20 text-foreground shadow-lg ring-2 ring-violet-500/50 scale-[1.02]'
+                    : 'hover:bg-gradient-to-r hover:from-violet-500/10 hover:to-purple-600/10 text-foreground hover:shadow-md'
                 }`}
                 onClick={() => handleBrandClick(brandData)}
+                style={{
+                  borderLeft: '4px solid',
+                  borderColor: isBrandSelected ? 'rgb(139, 92, 246)' : 'rgba(139, 92, 246, 0.3)',
+                }}
               >
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     toggleBrand(brandKey);
                   }}
-                  className="p-0.5 hover:bg-background/20 rounded transition-colors"
+                  className={`p-1.5 rounded-lg transition-all duration-300 ${
+                    isBrandExpanded 
+                      ? 'bg-violet-500/20 rotate-0' 
+                      : 'hover:bg-violet-500/10 rotate-0'
+                  }`}
                 >
                   {isBrandExpanded ? (
-                    <ChevronDown className="h-4 w-4" />
+                    <ChevronDown className="h-4 w-4 text-violet-600" />
                   ) : (
-                    <ChevronRight className="h-4 w-4" />
+                    <ChevronRight className="h-4 w-4 text-violet-600" />
                   )}
                 </button>
-                <Store className="h-4 w-4 flex-shrink-0" />
-                <span className="font-medium flex-1">{brandKey}</span>
-                <span className="text-xs opacity-70">
-                  {brandData.products.length} {brandData.products.length === 1 ? 'product' : 'products'}
-                </span>
+                <div className="p-2 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 text-white shadow-sm">
+                  <Store className="h-4 w-4" />
+                </div>
+                <span className="font-semibold flex-1 text-base">{brandKey}</span>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-1 rounded-full bg-violet-500/10 text-violet-700 text-xs font-medium border border-violet-500/20">
+                    {brandData.products.length} {brandData.products.length === 1 ? 'Product' : 'Products'}
+                  </span>
+                </div>
               </div>
 
               {/* Products Level */}
@@ -293,35 +307,45 @@ export function InventoryTreeView({
                       <div key={product.product_id} className="select-none">
                         <div
                           ref={isProductSelected ? selectedNodeRef : null}
-                          className={`group flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all ${
+                          className={`group relative flex items-center gap-3 px-4 py-2.5 ml-8 rounded-lg cursor-pointer transition-all duration-300 ${
                             isProductSelected
-                              ? 'bg-primary/80 text-primary-foreground shadow-sm'
-                              : 'hover:bg-muted/30 text-foreground'
+                              ? 'bg-gradient-to-r from-indigo-500/20 to-blue-600/20 text-foreground shadow-md ring-2 ring-indigo-500/50 scale-[1.01]'
+                              : 'hover:bg-gradient-to-r hover:from-indigo-500/10 hover:to-blue-600/10 text-foreground hover:shadow-sm'
                           }`}
                           onClick={() => handleProductClick(product, brandData.brand)}
+                          style={{
+                            borderLeft: '3px solid',
+                            borderColor: isProductSelected ? 'rgb(99, 102, 241)' : 'rgba(99, 102, 241, 0.25)',
+                          }}
                         >
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               toggleProduct(product.product_id);
                             }}
-                            className="p-0.5 hover:bg-background/20 rounded transition-colors"
+                            className={`p-1 rounded-md transition-all duration-300 ${
+                              isProductExpanded 
+                                ? 'bg-indigo-500/20' 
+                                : 'hover:bg-indigo-500/10'
+                            }`}
                           >
                             {isProductExpanded ? (
-                              <ChevronDown className="h-4 w-4" />
+                              <ChevronDown className="h-3.5 w-3.5 text-indigo-600" />
                             ) : (
-                              <ChevronRight className="h-4 w-4" />
+                              <ChevronRight className="h-3.5 w-3.5 text-indigo-600" />
                             )}
                           </button>
-                          <Package className="h-4 w-4 flex-shrink-0" />
-                          <span className="font-medium flex-1">{product.product_name}</span>
+                          <div className="p-1.5 rounded-md bg-gradient-to-br from-indigo-500 to-blue-600 text-white shadow-sm">
+                            <Package className="h-3.5 w-3.5" />
+                          </div>
+                          <span className="font-medium flex-1 text-sm">{product.product_name}</span>
                           {product.rice_type && (
-                            <span className="text-xs opacity-70 px-2 py-0.5 rounded bg-background/50">
+                            <span className="text-xs px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-700 border border-amber-500/20 font-medium">
                               {product.rice_type.replace(/_/g, ' ')}
                             </span>
                           )}
-                          <span className="text-xs opacity-70">
-                            {product.packaging.length} {product.packaging.length === 1 ? 'packaging' : 'packaging'}
+                          <span className="px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-700 text-xs font-medium border border-indigo-500/20">
+                            {product.packaging.length} {product.packaging.length === 1 ? 'Packaging' : 'Packaging'}
                           </span>
                         </div>
 
@@ -337,40 +361,57 @@ export function InventoryTreeView({
                                 <div key={pack.packaging_id} className="select-none">
                                   <div
                                     ref={isPackagingSelected ? selectedNodeRef : null}
-                                    className={`group flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all ${
+                                    className={`group relative flex items-center gap-3 px-3 py-2 ml-12 rounded-lg cursor-pointer transition-all duration-300 ${
                                       isPackagingSelected
-                                        ? 'bg-primary/60 text-primary-foreground shadow-sm'
-                                        : 'hover:bg-muted/20 text-foreground'
+                                        ? 'bg-gradient-to-r from-blue-500/20 to-cyan-600/20 text-foreground shadow-md ring-2 ring-blue-500/50 scale-[1.01]'
+                                        : 'hover:bg-gradient-to-r hover:from-blue-500/10 hover:to-cyan-600/10 text-foreground hover:shadow-sm'
                                     }`}
                                     onClick={() =>
                                       handlePackagingClick(pack, product.product_id, product.product_name, brandData.brand)
                                     }
+                                    style={{
+                                      borderLeft: '3px solid',
+                                      borderColor: isPackagingSelected ? 'rgb(59, 130, 246)' : 'rgba(59, 130, 246, 0.25)',
+                                    }}
                                   >
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         togglePackaging(pack.packaging_id);
                                       }}
-                                      className="p-0.5 hover:bg-background/20 rounded transition-colors"
+                                      className={`p-1 rounded-md transition-all duration-300 ${
+                                        isPackagingExpanded 
+                                          ? 'bg-blue-500/20' 
+                                          : 'hover:bg-blue-500/10'
+                                      }`}
                                     >
                                       {isPackagingExpanded ? (
-                                        <ChevronDown className="h-4 w-4" />
+                                        <ChevronDown className="h-3 w-3 text-blue-600" />
                                       ) : (
-                                        <ChevronRight className="h-4 w-4" />
+                                        <ChevronRight className="h-3 w-3 text-blue-600" />
                                       )}
                                     </button>
-                                    <Box className="h-4 w-4 flex-shrink-0" />
-                                    <span className="font-medium flex-1">
-                                      {pack.holding_capacity} {pack.packet_type}
-                                    </span>
+                                    <div className="p-1.5 rounded-md bg-gradient-to-br from-blue-500 to-cyan-600 text-white shadow-sm">
+                                      <Box className="h-3.5 w-3.5" />
+                                    </div>
+                                    <div className="flex items-center gap-2 flex-1">
+                                      <span className="font-medium text-sm">
+                                        {pack.holding_capacity}kg {pack.packet_type}
+                                      </span>
+                                      {pack.packaging_number && (
+                                        <span className="text-xs font-mono font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                                          {pack.packaging_number}
+                                        </span>
+                                      )}
+                                    </div>
                                     {pack.vendor && (
-                                      <div className="flex items-center gap-1 text-xs opacity-70">
+                                      <div className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-md bg-slate-500/10 text-slate-700 border border-slate-500/20">
                                         <Building2 className="h-3 w-3" />
-                                        <span>{pack.vendor.name}</span>
+                                        <span className="font-medium">{pack.vendor.name}</span>
                                       </div>
                                     )}
-                                    <span className="text-xs opacity-70">
-                                      {pack.finished_goods.length} {pack.finished_goods.length === 1 ? 'batch' : 'batches'}
+                                    <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-700 text-xs font-medium border border-blue-500/20">
+                                      {pack.finished_goods.length} {pack.finished_goods.length === 1 ? 'Batch' : 'Batches'}
                                     </span>
                                   </div>
 
@@ -385,10 +426,10 @@ export function InventoryTreeView({
                                           <div
                                             key={fg.batch_id}
                                             ref={isFinishedGoodsSelected ? selectedNodeRef : null}
-                                            className={`group flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer transition-all ${
+                                            className={`group relative flex items-center gap-2 px-3 py-2 ml-16 rounded-md cursor-pointer transition-all duration-300 ${
                                               isFinishedGoodsSelected
-                                                ? 'bg-primary/40 text-primary-foreground shadow-sm'
-                                                : 'hover:bg-muted/10 text-foreground'
+                                                ? 'bg-gradient-to-r from-emerald-500/20 to-teal-600/20 text-foreground shadow-sm ring-2 ring-emerald-500/50'
+                                                : 'hover:bg-gradient-to-r hover:from-emerald-500/10 hover:to-teal-600/10 text-foreground hover:shadow-sm'
                                             }`}
                                             onClick={() =>
                                               handleFinishedGoodsClick(
@@ -399,14 +440,24 @@ export function InventoryTreeView({
                                                 brandData.brand
                                               )
                                             }
+                                            style={{
+                                              borderLeft: '2px solid',
+                                              borderColor: isFinishedGoodsSelected ? 'rgb(16, 185, 129)' : 'rgba(16, 185, 129, 0.2)',
+                                            }}
                                           >
-                                            <PackageCheck className="h-3.5 w-3.5 flex-shrink-0 ml-1" />
-                                            <Hash className="h-3 w-3 flex-shrink-0" />
+                                            <div className="p-1 rounded bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
+                                              <PackageCheck className="h-3 w-3" />
+                                            </div>
+                                            <Hash className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
                                             <span className="font-medium flex-1 text-sm">{fg.batch_number}</span>
-                                            <span className="text-xs opacity-70">
-                                              {fg.packets} {fg.packets === 1 ? 'packet' : 'packets'}
-                                            </span>
-                                            <span className="text-xs opacity-70">{fg.weight.toFixed(2)} kg</span>
+                                            <div className="flex items-center gap-2">
+                                              <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 text-xs font-medium border border-emerald-500/20">
+                                                {fg.packets} {fg.packets === 1 ? 'Packet' : 'Packets'}
+                                              </span>
+                                              <span className="px-2 py-0.5 rounded-md bg-teal-500/10 text-teal-700 text-xs font-medium border border-teal-500/20">
+                                                {fg.weight.toFixed(2)} kg
+                                              </span>
+                                            </div>
                                           </div>
                                         );
                                       })}
