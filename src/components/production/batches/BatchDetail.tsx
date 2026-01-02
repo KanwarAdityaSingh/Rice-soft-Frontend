@@ -118,34 +118,51 @@ export function BatchDetail() {
         </button>
 
         <div className="hero-bg rounded-xl p-6">
-          <div className="flex items-center gap-4">
-            <div className="h-12 w-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-              <FlaskConical className="h-6 w-6" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold">{batch.batch_number}</h1>
-              <div className="flex items-center gap-3 mt-2">
-                <span className={`px-3 py-1 rounded-md text-xs font-medium ${getStatusColor(batch.status)}`}>
-                  {batch.status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                </span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="h-12 w-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                <FlaskConical className="h-6 w-6" />
               </div>
+              <div>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-2xl font-bold font-mono text-primary">{batch.batch_number}</h1>
+                  <span className={`px-3 py-1 rounded-md text-xs font-medium ${getStatusColor(batch.status)}`}>
+                    {batch.status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                  </span>
+                </div>
+                {batch.recipe && (
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Recipe: {batch.recipe.recipe_name}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-sm text-muted-foreground">Total Quantity</div>
+              <div className="text-2xl font-bold mt-1">{batch.quantity.toFixed(2)} kg</div>
             </div>
           </div>
         </div>
 
         {/* Batch Info */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="p-4 border border-border rounded-lg">
-            <div className="text-sm text-muted-foreground">Quantity</div>
-            <div className="text-lg font-semibold mt-1">{batch.quantity.toFixed(2)} kg</div>
-          </div>
-          {batch.recipe && (
-            <div className="p-4 border border-border rounded-lg">
-              <div className="text-sm text-muted-foreground">Recipe</div>
+        {batch.recipe && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-4 border border-border rounded-lg bg-card">
+              <div className="text-sm text-muted-foreground mb-1">Recipe Details</div>
               <div className="text-lg font-semibold mt-1">{batch.recipe.recipe_name}</div>
             </div>
-          )}
-        </div>
+            <div className="p-4 border border-border rounded-lg bg-card">
+              <div className="text-sm text-muted-foreground mb-1">Created</div>
+              <div className="text-sm font-medium mt-1">
+                {new Date(batch.created_at).toLocaleDateString('en-US', { 
+                  year: 'numeric', 
+                  month: 'long', 
+                  day: 'numeric' 
+                })}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Attached Products (Stage 2) */}
         {batch.products && batch.products.length > 0 && (
@@ -217,16 +234,32 @@ export function BatchDetail() {
         {finishedGoods.length > 0 && (
           <div className="border border-border rounded-lg overflow-hidden">
             <div className="p-4 bg-muted/50 border-b border-border">
-              <h2 className="font-semibold">Finished Goods Inventory</h2>
-              <p className="text-xs text-muted-foreground mt-1">
-                This batch produced {finishedGoods.length} packaging size{finishedGoods.length > 1 ? 's' : ''}
-              </p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="font-semibold">Finished Goods Inventory</h2>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    This batch produced {finishedGoods.length} packaging size{finishedGoods.length > 1 ? 's' : ''}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-muted-foreground">Total Packets</div>
+                  <div className="text-lg font-semibold font-mono">
+                    {finishedGoods.reduce((sum, fg) => {
+                      const packets = typeof fg.no_of_packets === 'string' 
+                        ? parseInt(fg.no_of_packets) 
+                        : fg.no_of_packets;
+                      return sum + packets;
+                    }, 0).toLocaleString()}
+                  </div>
+                </div>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border bg-muted/30">
                     <th className="text-left py-3 px-4 text-sm font-semibold">Packaging</th>
+                    <th className="text-left py-3 px-4 text-sm font-semibold">Packaging Number</th>
                     <th className="text-right py-3 px-4 text-sm font-semibold">Packets</th>
                     <th className="text-right py-3 px-4 text-sm font-semibold">Total Weight (kg)</th>
                   </tr>
@@ -251,6 +284,13 @@ export function BatchDetail() {
                             'N/A'
                           )}
                         </td>
+                        <td className="py-3 px-4 text-sm">
+                          {fg.packaging?.packaging_number ? (
+                            <span className="font-mono font-semibold text-primary">{fg.packaging.packaging_number}</span>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">N/A</span>
+                          )}
+                        </td>
                         <td className="py-3 px-4 text-sm text-right font-mono">{packets.toLocaleString()}</td>
                         <td className="py-3 px-4 text-sm text-right font-mono">{weight.toFixed(2)}</td>
                       </tr>
@@ -261,6 +301,7 @@ export function BatchDetail() {
                   <tfoot className="bg-muted/20">
                     <tr>
                       <td className="py-3 px-4 text-sm font-semibold">Total</td>
+                      <td className="py-3 px-4 text-sm text-muted-foreground">-</td>
                       <td className="py-3 px-4 text-sm text-right font-mono font-semibold">
                         {finishedGoods.reduce((sum, fg) => {
                           const packets = typeof fg.no_of_packets === 'string' 
