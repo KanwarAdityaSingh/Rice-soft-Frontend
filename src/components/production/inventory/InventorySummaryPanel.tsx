@@ -1,21 +1,180 @@
 import { useMemo } from 'react';
-import { Package, Weight, Boxes, TrendingUp, Building2, Layers } from 'lucide-react';
+import { Package, Weight, Boxes, TrendingUp, Building2, Layers, Store, Box, PackageCheck } from 'lucide-react';
 import type { HierarchicalInventory } from '../../../types/entities';
 import { calculateInventorySummary } from '../../../utils/inventoryTransform';
 import type { ExtendedInventoryFilters } from '../../../utils/inventoryTransform';
+import type { FlowNodeData } from '../../../types/inventoryFlow';
 
 interface InventorySummaryPanelProps {
   hierarchical: HierarchicalInventory[];
   filters?: ExtendedInventoryFilters;
+  selectedNode?: FlowNodeData | null;
 }
 
-export function InventorySummaryPanel({ hierarchical, filters }: InventorySummaryPanelProps) {
+export function InventorySummaryPanel({ hierarchical, filters, selectedNode }: InventorySummaryPanelProps) {
+  // Calculate summary based on selected node or entire hierarchical data
   const summary = useMemo(() => {
     if (!hierarchical || hierarchical.length === 0) {
       return null;
     }
+    
+    // If a node is selected, calculate summary for that specific node
+    if (selectedNode) {
+      const nodeData = selectedNode.hierarchicalData;
+      
+      switch (selectedNode.type) {
+        case 'brand': {
+          // Summary for a specific brand
+          const brandData = nodeData as HierarchicalInventory;
+          let totalPackets = 0;
+          let totalWeight = 0;
+          let totalBatches = 0;
+          const products = brandData.products || [];
+          
+          products.forEach(product => {
+            product.packaging?.forEach(pack => {
+              pack.finished_goods?.forEach(fg => {
+                totalPackets += fg.packets || 0;
+                totalWeight += fg.weight || 0;
+                totalBatches += 1;
+              });
+            });
+          });
+          
+          return {
+            total_packets: totalPackets,
+            total_weight: totalWeight,
+            total_batches: totalBatches,
+            total_products: products.length,
+            by_brand: [{
+              brand: selectedNode.brand || 'Unbranded',
+              packets: totalPackets,
+              weight: totalWeight,
+              batches: totalBatches,
+            }],
+            by_product: products.map(p => {
+              let packets = 0;
+              let weight = 0;
+              let batches = 0;
+              p.packaging?.forEach(pack => {
+                pack.finished_goods?.forEach(fg => {
+                  packets += fg.packets || 0;
+                  weight += fg.weight || 0;
+                  batches += 1;
+                });
+              });
+              return {
+                product_id: p.product_id,
+                product_name: p.product_name,
+                packets,
+                weight,
+                batches,
+              };
+            }),
+          };
+        }
+        
+        case 'product': {
+          // Summary for a specific product
+          const productData = nodeData;
+          let totalPackets = 0;
+          let totalWeight = 0;
+          let totalBatches = 0;
+          const packaging = productData?.packaging || [];
+          
+          packaging.forEach((pack: any) => {
+            pack.finished_goods?.forEach((fg: any) => {
+              totalPackets += fg.packets || 0;
+              totalWeight += fg.weight || 0;
+              totalBatches += 1;
+            });
+          });
+          
+          return {
+            total_packets: totalPackets,
+            total_weight: totalWeight,
+            total_batches: totalBatches,
+            total_products: 1,
+            by_brand: [{
+              brand: selectedNode.brand || 'Unbranded',
+              packets: totalPackets,
+              weight: totalWeight,
+              batches: totalBatches,
+            }],
+            by_product: [{
+              product_id: selectedNode.productId,
+              product_name: selectedNode.productName,
+              packets: totalPackets,
+              weight: totalWeight,
+              batches: totalBatches,
+            }],
+          };
+        }
+        
+        case 'packaging': {
+          // Summary for a specific packaging
+          const packData = nodeData;
+          const finishedGoods = packData?.finished_goods || [];
+          let totalPackets = 0;
+          let totalWeight = 0;
+          
+          finishedGoods.forEach((fg: any) => {
+            totalPackets += fg.packets || 0;
+            totalWeight += fg.weight || 0;
+          });
+          
+          return {
+            total_packets: totalPackets,
+            total_weight: totalWeight,
+            total_batches: finishedGoods.length,
+            total_products: 1,
+            by_brand: [{
+              brand: selectedNode.brand || 'Unbranded',
+              packets: totalPackets,
+              weight: totalWeight,
+              batches: finishedGoods.length,
+            }],
+            by_product: [{
+              product_id: selectedNode.productId,
+              product_name: selectedNode.productName,
+              packets: totalPackets,
+              weight: totalWeight,
+              batches: finishedGoods.length,
+            }],
+          };
+        }
+        
+        case 'finishedGoods': {
+          // Summary for a specific finished goods batch
+          const fgData = nodeData;
+          return {
+            total_packets: fgData?.packets || 0,
+            total_weight: fgData?.weight || 0,
+            total_batches: 1,
+            total_products: 1,
+            by_brand: [{
+              brand: selectedNode.brand || 'Unbranded',
+              packets: fgData?.packets || 0,
+              weight: fgData?.weight || 0,
+              batches: 1,
+            }],
+            by_product: [{
+              product_id: selectedNode.productId,
+              product_name: selectedNode.productName,
+              packets: fgData?.packets || 0,
+              weight: fgData?.weight || 0,
+              batches: 1,
+            }],
+          };
+        }
+        
+        default:
+          return calculateInventorySummary(hierarchical, filters?.date_range);
+      }
+    }
+    
     return calculateInventorySummary(hierarchical, filters?.date_range);
-  }, [hierarchical, filters?.date_range]);
+  }, [hierarchical, filters?.date_range, selectedNode]);
 
   if (!summary) {
     return (
@@ -66,8 +225,27 @@ export function InventorySummaryPanel({ hierarchical, filters }: InventorySummar
       {/* Key Metrics */}
       <div>
         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <Layers className="h-5 w-5 text-primary" />
-          Overall Summary
+          {selectedNode ? (
+            <>
+              {selectedNode.type === 'brand' && <Store className="h-5 w-5 text-violet-500" />}
+              {selectedNode.type === 'product' && <Package className="h-5 w-5 text-indigo-500" />}
+              {selectedNode.type === 'packaging' && <Box className="h-5 w-5 text-blue-500" />}
+              {selectedNode.type === 'finishedGoods' && <PackageCheck className="h-5 w-5 text-emerald-500" />}
+              {!['brand', 'product', 'packaging', 'finishedGoods'].includes(selectedNode.type) && <Layers className="h-5 w-5 text-primary" />}
+              <span>
+                {selectedNode.type === 'brand' && `Brand: ${selectedNode.brand || 'Unbranded'}`}
+                {selectedNode.type === 'product' && `Product: ${selectedNode.productName}`}
+                {selectedNode.type === 'packaging' && `Packaging: ${selectedNode.holdingCapacity}kg ${selectedNode.packetType}`}
+                {selectedNode.type === 'finishedGoods' && `Batch: ${selectedNode.batchNumber}`}
+                {!['brand', 'product', 'packaging', 'finishedGoods'].includes(selectedNode.type) && 'Summary'}
+              </span>
+            </>
+          ) : (
+            <>
+              <Layers className="h-5 w-5 text-primary" />
+              Overall Summary
+            </>
+          )}
         </h3>
         <div className="grid grid-cols-2 gap-4">
           {metricCards.map((metric, index) => {

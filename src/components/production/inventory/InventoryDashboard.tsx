@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Layers, Network, ListTree, BarChart3 } from 'lucide-react';
+import { Layers, BarChart3 } from 'lucide-react';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { useInventory } from '../../../hooks/useInventory';
-import { InventoryFlow } from './InventoryFlow';
+// import { InventoryFlow } from './InventoryFlow'; // Commented out - using TreeView instead
 import { InventoryTreeView } from './InventoryTreeView';
 import { InventoryTable } from './InventoryTable';
 import { InventorySummaryPanel } from './InventorySummaryPanel';
@@ -27,6 +27,7 @@ export function InventoryDashboard() {
   const [selectedNode, setSelectedNode] = useState<FlowNodeData | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  // React Flow related state - commented out since using TreeView
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
   const focusMatchesRef = useRef<(() => void) | null>(null);
   const resetToBrandsRef = useRef<(() => void) | null>(null);
@@ -34,6 +35,9 @@ export function InventoryDashboard() {
   const navigatePreviousRef = useRef<(() => void) | null>(null);
   const [matchingCount, setMatchingCount] = useState(0);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+  // Suppress unused variable warnings for commented out React Flow
+  void reactFlowInstance; void focusMatchesRef; void resetToBrandsRef; 
+  void navigateNextRef; void navigatePreviousRef; void setMatchingCount; void setCurrentMatchIndex;
 
   const handleNodeSelect = (nodeData: FlowNodeData | null) => {
     setSelectedNode(nodeData);
@@ -72,9 +76,11 @@ export function InventoryDashboard() {
     }
   };
 
+  // Commented out - used with React Flow
   const handleFlowInstanceReady = (instance: ReactFlowInstance | null) => {
     setReactFlowInstance(instance);
   };
+  void handleFlowInstanceReady; // Suppress unused warning
 
   const handleFocusMatches = useCallback(() => {
     if (focusMatchesRef.current) {
@@ -148,7 +154,7 @@ export function InventoryDashboard() {
       <div className="flex-1 flex gap-4 min-h-0">
         {/* Flow Visualization Panel - Left 50% */}
         <div className="w-1/2 relative bg-card rounded-xl border border-border shadow-sm">
-          {/* View Switcher */}
+          {/* View Switcher - commented out since using TreeView only
           <div className="absolute top-3 right-3 z-10">
             <div className="flex items-center gap-1 bg-muted/50 backdrop-blur-sm rounded-lg p-1 border border-border/50">
               <button
@@ -177,31 +183,11 @@ export function InventoryDashboard() {
               </button>
             </div>
           </div>
+          */}
 
           {loading ? (
             <div className="flex items-center justify-center h-full">
               <LoadingSpinner />
-            </div>
-          ) : (viewMode === 'diagram' || viewMode === 'table' || viewMode === 'summary') ? (
-            <div className="w-full h-full">
-              {viewMode === 'diagram' || viewMode === 'table' || viewMode === 'summary' ? (
-                <InventoryFlow
-                  onNodeSelect={handleNodeSelect}
-                  selectedNodeId={selectedNodeId}
-                  searchQuery={searchQuery}
-                  groupingStrategy={groupingStrategy}
-                  filters={filters}
-                  onFlowInstanceReady={handleFlowInstanceReady}
-                  onFocusMatchesRef={(fn) => { focusMatchesRef.current = fn; }}
-                  onResetToBrandsRef={(fn) => { resetToBrandsRef.current = fn; }}
-                  onNavigateNextRef={(fn) => { navigateNextRef.current = fn; }}
-                  onNavigatePreviousRef={(fn) => { navigatePreviousRef.current = fn; }}
-                  onMatchingInfoChange={(count, index) => {
-                    setMatchingCount(count);
-                    setCurrentMatchIndex(index);
-                  }}
-                />
-              ) : null}
             </div>
           ) : (
             <div className="w-full h-full">
@@ -214,6 +200,28 @@ export function InventoryDashboard() {
               />
             </div>
           )}
+          {/* React Flow commented out - using TreeView instead
+          {(viewMode === 'diagram' || viewMode === 'table' || viewMode === 'summary') ? (
+            <div className="w-full h-full">
+              <InventoryFlow
+                onNodeSelect={handleNodeSelect}
+                selectedNodeId={selectedNodeId}
+                searchQuery={searchQuery}
+                groupingStrategy={groupingStrategy}
+                filters={filters}
+                onFlowInstanceReady={handleFlowInstanceReady}
+                onFocusMatchesRef={(fn) => { focusMatchesRef.current = fn; }}
+                onResetToBrandsRef={(fn) => { resetToBrandsRef.current = fn; }}
+                onNavigateNextRef={(fn) => { navigateNextRef.current = fn; }}
+                onNavigatePreviousRef={(fn) => { navigatePreviousRef.current = fn; }}
+                onMatchingInfoChange={(count, index) => {
+                  setMatchingCount(count);
+                  setCurrentMatchIndex(index);
+                }}
+              />
+            </div>
+          ) : null}
+          */}
         </div>
 
         {/* Right Panel - 50% */}
@@ -259,7 +267,11 @@ export function InventoryDashboard() {
             {selectedNode && viewMode === 'table' ? (
               <InventoryTable selectedNode={selectedNode} />
             ) : (
-              <InventorySummaryPanel hierarchical={hierarchical || []} filters={filters} />
+              <InventorySummaryPanel 
+                hierarchical={hierarchical || []} 
+                filters={filters} 
+                selectedNode={selectedNode}
+              />
             )}
           </div>
         </div>
