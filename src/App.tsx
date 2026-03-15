@@ -31,6 +31,10 @@ import PackagingVendorsPage from './pages/production/PackagingVendors'
 import BatchesPage from './pages/production/Batches'
 import BatchDetailPage from './pages/production/BatchDetail'
 import InventoryPage from './pages/production/Inventory'
+import SalesSaudasPage from './pages/sales/SalesSaudas'
+import InvoiceDispatchesPage from './pages/sales/InvoiceDispatches'
+import InventoryLedgerPage from './pages/sales/InventoryLedger'
+import CreditNotesPage from './pages/sales/CreditNotes'
 
 export default function App() {
   // Global error handler
@@ -313,6 +317,46 @@ function AnimatedRoutes() {
             <ProtectedRoute>
               <AppLayout>
                 <InventoryPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/sales/sales-saudas"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <SalesSaudasPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/sales/invoice-dispatches"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <InvoiceDispatchesPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/sales/inventory-ledger"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <InventoryLedgerPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/sales/credit-notes"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <CreditNotesPage />
               </AppLayout>
             </ProtectedRoute>
           }

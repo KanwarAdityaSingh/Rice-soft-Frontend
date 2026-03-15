@@ -3,7 +3,7 @@ import { useToast } from '../components/shared/Toast';
 
 let toastInstance: ReturnType<typeof useToast> | null = null;
 
-export function setToastInstance(instance: ReturnType<typeof useToast>) {
+export function setToastInstance(instance: ReturnType<typeof useToast> | null) {
   toastInstance = instance;
 }
 

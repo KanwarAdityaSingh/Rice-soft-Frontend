@@ -1,0 +1,76 @@
+import { useState, useEffect, useCallback } from 'react';
+import { salesSaudasAPI } from '../services/salesSaudas.api';
+import type {
+  SalesSauda,
+  CreateSalesSaudaRequest,
+  UpdateSalesSaudaRequest,
+  SalesSaudaStatus,
+} from '../types/sales';
+
+interface UseSalesSaudasParams {
+  customer_id?: string;
+  status?: SalesSaudaStatus;
+}
+
+export function useSalesSaudas(params?: UseSalesSaudasParams) {
+  const [list, setList] = useState<SalesSauda[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchList = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await salesSaudasAPI.list(params);
+      setList(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch sales saudas');
+      setList([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [params?.customer_id, params?.status]);
+
+  useEffect(() => {
+    fetchList();
+  }, [fetchList]);
+
+  const getById = useCallback(async (id: string) => {
+    return salesSaudasAPI.getById(id);
+  }, []);
+
+  const create = useCallback(async (data: CreateSalesSaudaRequest) => {
+    const created = await salesSaudasAPI.create(data);
+    await fetchList();
+    return created;
+  }, [fetchList]);
+
+  const update = useCallback(async (id: string, data: UpdateSalesSaudaRequest) => {
+    const updated = await salesSaudasAPI.update(id, data);
+    await fetchList();
+    return updated;
+  }, [fetchList]);
+
+  const finalize = useCallback(async (id: string) => {
+    const updated = await salesSaudasAPI.finalize(id);
+    await fetchList();
+    return updated;
+  }, [fetchList]);
+
+  const remove = useCallback(async (id: string) => {
+    await salesSaudasAPI.delete(id);
+    setList((prev) => prev.filter((s) => s.id !== id));
+  }, []);
+
+  return {
+    salesSaudas: list,
+    loading,
+    error,
+    refetch: fetchList,
+    getById,
+    create,
+    update,
+    finalize,
+    deleteSauda: remove,
+  };
+}
