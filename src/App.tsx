@@ -8,6 +8,7 @@ import ManageUsers from './pages/admin/ManageUsers'
 import BrokersPage from './pages/directory/Brokers.tsx'
 import SalesmenPage from './pages/directory/Salesmen.tsx'
 import VendorsPage from './pages/directory/Vendors.tsx'
+import SalesPartiesPage from './pages/directory/SalesParties.tsx'
 import TransportersPage from './pages/directory/Transporters.tsx'
 import VehiclesPage from './pages/directory/Vehicles.tsx'
 import RiceCodesPage from './pages/directory/RiceCodes.tsx'
@@ -157,6 +158,16 @@ function AnimatedRoutes() {
             <ProtectedRoute entity="vendor" action="read">
               <AppLayout>
                 <VendorsPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/directory/sales-parties"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <SalesPartiesPage />
               </AppLayout>
             </ProtectedRoute>
           }

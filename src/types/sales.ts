@@ -22,7 +22,7 @@ export interface SalesSaudaLine {
 
 export interface SalesSauda {
   id: string;
-  customer_id: string;
+  sales_party_id: string;
   status: SalesSaudaStatus;
   order_number: string | null;
   sauda_date: string;
@@ -43,7 +43,7 @@ export interface SalesSaudaLineInput {
 }
 
 export interface CreateSalesSaudaRequest {
-  customer_id: string;
+  sales_party_id: string;
   status: 'draft';
   sauda_date: string;
   notes?: string | null;
@@ -52,7 +52,7 @@ export interface CreateSalesSaudaRequest {
 }
 
 export interface UpdateSalesSaudaRequest {
-  customer_id?: string;
+  sales_party_id?: string;
   status?: 'draft';
   sauda_date?: string;
   notes?: string | null;

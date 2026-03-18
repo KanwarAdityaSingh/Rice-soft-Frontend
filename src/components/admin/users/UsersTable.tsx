@@ -57,7 +57,7 @@ export function UsersTable({ onEditUser }: UsersTableProps) {
             options={[
               { label: 'Admin', value: 'admin' },
               { label: 'System User', value: 'custom' },
-              { label: 'Vendor', value: 'vendor' },
+              { label: 'Purchase Party', value: 'vendor' },
               { label: 'Salesperson', value: 'salesman' },
               { label: 'Broker', value: 'broker' },
             ]}

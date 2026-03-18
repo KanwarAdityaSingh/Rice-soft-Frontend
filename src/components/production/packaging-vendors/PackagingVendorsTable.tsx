@@ -72,7 +72,7 @@ export function PackagingVendorsTable() {
               <thead>
                 <tr className="border-b border-border bg-muted/40">
                   <th className="text-left py-4 px-5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Vendor Name
+                    Purchase Party
                   </th>
                   <th className="text-left py-4 px-5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     Contact Person

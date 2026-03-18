@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
-import { useSalesSaudas } from '../../../hooks/useSalesSaudas';
+import { salesSaudasAPI } from '../../../services/salesSaudas.api';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import type { SalesSauda } from '../../../types/sales';
 
@@ -20,21 +20,21 @@ export function SalesSaudaDetailModal({
   getCustomerName,
   getProductName,
 }: SalesSaudaDetailModalProps) {
-  const { getById } = useSalesSaudas();
   const [sauda, setSauda] = useState<SalesSauda | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (open && saudaId) {
       setLoading(true);
-      getById(saudaId)
+      salesSaudasAPI
+        .getById(saudaId)
         .then(setSauda)
         .catch(() => setSauda(null))
         .finally(() => setLoading(false));
     } else {
       setSauda(null);
     }
-  }, [open, saudaId, getById]);
+  }, [open, saudaId]);
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -57,8 +57,8 @@ export function SalesSaudaDetailModal({
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <span className="text-muted-foreground">Customer</span>
-                  <p className="font-medium">{getCustomerName(sauda.customer_id)}</p>
+                  <span className="text-muted-foreground">Sales Party</span>
+                  <p className="font-medium">{getCustomerName(sauda.sales_party_id)}</p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Status</span>
@@ -72,12 +72,6 @@ export function SalesSaudaDetailModal({
                   <span className="text-muted-foreground">Sauda date</span>
                   <p className="font-medium">{sauda.sauda_date}</p>
                 </div>
-                {sauda.notes && (
-                  <div className="col-span-2">
-                    <span className="text-muted-foreground">Notes</span>
-                    <p className="font-medium">{sauda.notes}</p>
-                  </div>
-                )}
               </div>
               {sauda.lines && sauda.lines.length > 0 && (
                 <div>

@@ -10,9 +10,9 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Configuration
+# Configuration (override with env: SSH_KEY, e.g. SSH_KEY=/path/to/your.pem ./deploy.sh)
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SSH_KEY="$HOME/aws_keys/santkripa.pem"
+SSH_KEY="${SSH_KEY:-$HOME/aws_keys/santkripa.pem}"
 SSH_USER="ubuntu"
 SSH_HOST="3.6.49.120"
 REMOTE_STAGING="/tmp/frontend-dist"
@@ -27,6 +27,7 @@ echo -e "${BLUE}=== Rice Ops Frontend Deployment ===${NC}\n"
 # Check if SSH key exists
 if [ ! -f "$SSH_KEY" ]; then
     echo -e "${YELLOW}Error: SSH key not found at $SSH_KEY${NC}"
+    echo -e "Set SSH_KEY to your key path, e.g: ${GREEN}SSH_KEY=/path/to/your.pem ./deploy.sh${NC}"
     exit 1
 fi
 

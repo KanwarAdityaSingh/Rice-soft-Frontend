@@ -1,5 +1,4 @@
 import { motion } from 'framer-motion';
-import { useEffect, useState } from 'react';
 
 interface PageTransitionProps {
   children: React.ReactNode;
@@ -30,18 +29,9 @@ const pageVariants = {
   },
 };
 
+// Single wrapper only: never switch from div to motion.div so children do not remount.
+// Switching the wrapper caused Sales Saudas (and other pages) to mount twice and double API calls.
 export function PageTransition({ children }: PageTransitionProps) {
-  const [isMounted, setIsMounted] = useState(false);
-
-  useEffect(() => {
-    setIsMounted(true);
-    return () => setIsMounted(false);
-  }, []);
-
-  if (!isMounted) {
-    return <div className="min-h-screen">{children}</div>;
-  }
-
   return (
     <motion.div
       variants={pageVariants}

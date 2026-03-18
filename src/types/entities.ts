@@ -103,6 +103,11 @@ export interface VendorCheckResponse {
   vendor: Vendor | null;
 }
 
+// Sales Party Types (Vendor shape without type; used for customers in sales)
+export type SalesParty = Omit<Vendor, 'type'>;
+export type CreateSalesPartyRequest = Omit<CreateVendorRequest, 'type'>;
+export type UpdateSalesPartyRequest = Omit<UpdateVendorRequest, 'type'>;
+
 // Transporter Types
 export interface TransporterAddress {
   street: string;
@@ -1198,6 +1203,8 @@ export interface Product {
   description: string | null;
   brand: string | null;
   rice_type: string | null;
+  /** Rates by holding capacity (kg). Returned by list/get product APIs. */
+  rates?: ProductRateInput[];
   created_at: string;
   updated_at: string;
 }
@@ -1214,6 +1221,25 @@ export interface UpdateProductRequest {
   description?: string;
   brand?: string;
   rice_type?: string | null;
+}
+
+/** Product rate per holding capacity (from product_rates table). */
+export interface ProductRate {
+  id: string;
+  product_id: string;
+  holding_capacity: number;
+  rate: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProductRateInput {
+  holding_capacity: number;
+  rate: number;
+}
+
+export interface SetProductRatesRequest {
+  rates: ProductRateInput[];
 }
 
 // Packaging Vendor Types

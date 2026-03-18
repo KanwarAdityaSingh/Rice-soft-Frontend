@@ -261,6 +261,14 @@ class ApiService {
     return response.data;
   }
 
+  async patch<T>(endpoint: string, data?: any): Promise<T> {
+    const response = await this.request<T>(endpoint, {
+      method: 'PATCH',
+      body: data ? JSON.stringify(data) : undefined,
+    });
+    return response.data;
+  }
+
   async delete<T>(endpoint: string): Promise<T> {
     const response = await this.request<T>(endpoint, {
       method: 'DELETE',

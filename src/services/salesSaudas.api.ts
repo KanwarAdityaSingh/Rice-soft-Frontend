@@ -9,9 +9,9 @@ import type {
 const BASE = '/sales-saudas';
 
 export const salesSaudasAPI = {
-  list: (params?: { customer_id?: string; status?: SalesSaudaStatus }) => {
+  list: (params?: { sales_party_id?: string; status?: SalesSaudaStatus }) => {
     const search = new URLSearchParams();
-    if (params?.customer_id) search.set('customer_id', params.customer_id);
+    if (params?.sales_party_id) search.set('sales_party_id', params.sales_party_id);
     if (params?.status) search.set('status', params.status);
     const q = search.toString();
     return apiService.get<SalesSauda[]>(q ? `${BASE}?${q}` : BASE);

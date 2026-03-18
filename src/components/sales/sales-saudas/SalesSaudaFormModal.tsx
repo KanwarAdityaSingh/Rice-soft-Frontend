@@ -1,9 +1,8 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState, useEffect, useRef } from 'react';
 import { X, Plus, Trash2, Loader2 } from 'lucide-react';
-import { useSalesSaudas } from '../../../hooks/useSalesSaudas';
-import { useVendors } from '../../../hooks/useVendors';
-import { useProducts } from '../../../hooks/useProducts';
+import { useSalesSaudasData } from './SalesSaudasDataContext';
+import { salesSaudasAPI } from '../../../services/salesSaudas.api';
 import { productsAPI } from '../../../services/products.api';
 import { inventoryAPI } from '../../../services/inventory.api';
 import { packagingAPI } from '../../../services/packaging.api';
@@ -46,11 +45,9 @@ export function SalesSaudaFormModal({
   saudaId,
   onSuccess,
 }: SalesSaudaFormModalProps) {
-  const { create, update, getById } = useSalesSaudas();
-  const { vendors } = useVendors();
-  const { products } = useProducts();
+  const { salesParties, products } = useSalesSaudasData();
   const isEdit = !!saudaId;
-  const customers = vendors.filter((v) => v.type === 'seller' || v.type === 'both');
+  const salesPartyOptions = salesParties;
 
   const [brands, setBrands] = useState<Array<{ value: string; label: string }>>([]);
   const [selectedBrand, setSelectedBrand] = useState<string>('');
@@ -58,10 +55,9 @@ export function SalesSaudaFormModal({
   const [packagingByProduct, setPackagingByProduct] = useState<Record<string, Packaging[]>>({});
   const requestedProductIds = useRef<Set<string>>(new Set());
   const [formData, setFormData] = useState<CreateSalesSaudaRequest>({
-    customer_id: '',
+    sales_party_id: '',
     status: 'draft',
     sauda_date: new Date().toISOString().split('T')[0],
-    notes: '',
     lines: [defaultLine()],
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -73,9 +69,11 @@ export function SalesSaudaFormModal({
     Record<string, number>
   >({});
   const [loadingFgi, setLoadingFgi] = useState(false);
+  /** Line index → true when rate was autofilled from suggested-rate API (rate input disabled). */
+  const [rateAutofilledForLine, setRateAutofilledForLine] = useState<Record<number, boolean>>({});
 
-  const selectedVendor = formData.customer_id
-    ? customers.find((v) => v.id === formData.customer_id)
+  const selectedSalesParty = formData.sales_party_id
+    ? salesPartyOptions.find((s) => s.id === formData.sales_party_id)
     : null;
 
   useEffect(() => {
@@ -83,13 +81,13 @@ export function SalesSaudaFormModal({
       loadSauda();
     } else if (open && !saudaId) {
       setFormData({
-        customer_id: '',
+        sales_party_id: '',
         status: 'draft',
         sauda_date: new Date().toISOString().split('T')[0],
-        notes: '',
         lines: [defaultLine()],
       });
       setErrors({});
+      setRateAutofilledForLine({});
     }
   }, [open, saudaId]);
 
@@ -181,12 +179,11 @@ export function SalesSaudaFormModal({
     if (!saudaId) return;
     setLoadingSauda(true);
     try {
-      const s: SalesSauda = await getById(saudaId);
+      const s = await salesSaudasAPI.getById(saudaId);
       setFormData({
-        customer_id: s.customer_id,
+        sales_party_id: s.sales_party_id,
         status: 'draft',
         sauda_date: s.sauda_date,
-        notes: s.notes ?? '',
         lines:
           s.lines?.map((l) => ({
             product_id: l.product_id,
@@ -279,7 +276,7 @@ export function SalesSaudaFormModal({
 
   const validate = (): boolean => {
     const e: Record<string, string> = {};
-    if (!formData.customer_id) e.customer_id = 'Select a customer';
+    if (!formData.sales_party_id) e.sales_party_id = 'Select a sales party';
     if (!formData.sauda_date) e.sauda_date = 'Date is required';
     const lines = formData.lines ?? [];
     if (lines.length === 0 || lines.every((l) => !l.product_id || l.quantity <= 0)) {
@@ -317,9 +314,9 @@ export function SalesSaudaFormModal({
         })),
       };
       if (isEdit && saudaId) {
-        await update(saudaId, payload);
+        await salesSaudasAPI.update(saudaId, payload);
       } else {
-        await create(payload);
+        await salesSaudasAPI.create(payload);
         toast.success(
           'Sales Sauda created',
           'Verify and finalize it before creating an invoice dispatch.'
@@ -376,21 +373,21 @@ export function SalesSaudaFormModal({
                   </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-foreground mb-1.5">Customer</label>
+                      <label className="block text-sm font-medium text-foreground mb-1.5">Sales Party</label>
                       <select
                         className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                        value={formData.customer_id}
-                        onChange={(e) => setFormData((p) => ({ ...p, customer_id: e.target.value }))}
+                        value={formData.sales_party_id}
+                        onChange={(e) => setFormData((p) => ({ ...p, sales_party_id: e.target.value }))}
                       >
-                        <option value="">Select customer</option>
-                        {customers.map((v) => (
-                          <option key={v.id} value={v.id}>
-                            {v.business_name}
+                        <option value="">Select sales party</option>
+                        {salesPartyOptions.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.business_name}
                           </option>
                         ))}
                       </select>
-                      {errors.customer_id && (
-                        <p className="mt-1 text-xs text-destructive">{errors.customer_id}</p>
+                      {errors.sales_party_id && (
+                        <p className="mt-1 text-xs text-destructive">{errors.sales_party_id}</p>
                       )}
                     </div>
                     <div>
@@ -408,10 +405,10 @@ export function SalesSaudaFormModal({
                   </div>
                 </section>
 
-                {selectedVendor && (
+                {selectedSalesParty && (
                   <section className="rounded-md border border-border/60 bg-muted/20 p-4 space-y-3">
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Customer details
+                      Sales party details
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="sm:col-span-2">
@@ -421,13 +418,13 @@ export function SalesSaudaFormModal({
                           disabled
                           className="w-full rounded-md border border-border/40 bg-muted/40 px-3 py-2 text-sm text-foreground cursor-not-allowed"
                           value={
-                            selectedVendor.address
+                            selectedSalesParty.address
                               ? [
-                                  selectedVendor.address.street,
-                                  selectedVendor.address.city,
-                                  selectedVendor.address.state,
-                                  selectedVendor.address.pincode,
-                                  selectedVendor.address.country,
+                                  selectedSalesParty.address.street,
+                                  selectedSalesParty.address.city,
+                                  selectedSalesParty.address.state,
+                                  selectedSalesParty.address.pincode,
+                                  selectedSalesParty.address.country,
                                 ]
                                   .filter(Boolean)
                                   .join(', ') || '–'
@@ -443,7 +440,7 @@ export function SalesSaudaFormModal({
                           type="text"
                           disabled
                           className="w-full rounded-md border border-border/40 bg-muted/40 px-3 py-2 text-sm text-foreground cursor-not-allowed"
-                          value={selectedVendor.business_details?.gst_number ?? '–'}
+                          value={selectedSalesParty.business_details?.gst_number ?? '–'}
                           readOnly
                           aria-readonly
                         />
@@ -454,7 +451,7 @@ export function SalesSaudaFormModal({
                           type="text"
                           disabled
                           className="w-full rounded-md border border-border/40 bg-muted/40 px-3 py-2 text-sm text-foreground cursor-not-allowed"
-                          value={selectedVendor.business_details?.pan_number ?? '–'}
+                          value={selectedSalesParty.business_details?.pan_number ?? '–'}
                           readOnly
                           aria-readonly
                         />
@@ -462,19 +459,6 @@ export function SalesSaudaFormModal({
                     </div>
                   </section>
                 )}
-
-                {/* Notes */}
-                <section className="space-y-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/60 pb-1.5">
-                    Notes
-                  </h3>
-                  <textarea
-                    className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm min-h-[72px] focus:outline-none focus:ring-2 focus:ring-primary/20 placeholder:text-muted-foreground"
-                    placeholder="Terms, delivery instructions, or remarks…"
-                    value={formData.notes ?? ''}
-                    onChange={(e) => setFormData((p) => ({ ...p, notes: e.target.value || undefined }))}
-                  />
-                </section>
 
                 {/* Line items – table-style */}
                 <section className="space-y-3">
@@ -523,7 +507,10 @@ export function SalesSaudaFormModal({
                             <select
                               className="w-full rounded-md border border-input bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                               value={line.product_id}
-                              onChange={(e) => updateLine(i, 'product_id', e.target.value)}
+                              onChange={(e) => {
+                                setRateAutofilledForLine((prev) => ({ ...prev, [i]: false }));
+                                updateLine(i, 'product_id', e.target.value);
+                              }}
                             >
                               <option value="">Select product</option>
                               {productsByBrand.map((p) => (
@@ -551,9 +538,20 @@ export function SalesSaudaFormModal({
                             <select
                               className="w-full rounded-md border border-input bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
                               value={line.packaging_id ?? ''}
-                              onChange={(e) =>
-                                updateLine(i, 'packaging_id', e.target.value || undefined)
-                              }
+                              onChange={(e) => {
+                                const newPackId = e.target.value || undefined;
+                                setRateAutofilledForLine((prev) => ({ ...prev, [i]: false }));
+                                updateLine(i, 'packaging_id', newPackId);
+                                if (line.product_id && newPackId) {
+                                  productsAPI
+                                    .getSuggestedRate(line.product_id, newPackId)
+                                    .then((res) => {
+                                      updateLine(i, 'rate', res.rate);
+                                      setRateAutofilledForLine((prev) => ({ ...prev, [i]: true }));
+                                    })
+                                    .catch(() => {});
+                                }
+                              }}
                               disabled={!line.product_id}
                             >
                               <option value="">No bag</option>
@@ -601,11 +599,13 @@ export function SalesSaudaFormModal({
                               type="number"
                               min={0}
                               step="any"
-                              className="w-full rounded-md border border-input bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                              className="w-full rounded-md border border-input bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
                               value={line.rate ?? ''}
                               onChange={(e) =>
                                 updateLine(i, 'rate', parseFloat(e.target.value) || 0)
                               }
+                              disabled={!!rateAutofilledForLine[i]}
+                              title={rateAutofilledForLine[i] ? 'Rate was filled from product rates; change product or bag to edit.' : undefined}
                             />
                           </div>
                           <div className="w-24">

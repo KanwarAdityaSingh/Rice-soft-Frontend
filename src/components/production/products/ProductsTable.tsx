@@ -97,6 +97,21 @@ export function ProductsTable() {
                     <p className="text-xs text-foreground line-clamp-3">{product.description}</p>
                   </div>
                 )}
+                {product.rates && product.rates.length > 0 && (
+                  <div className="pt-2 border-t border-border/60">
+                    <span className="text-muted-foreground block mb-1">Rates (₹/kg):</span>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                      {product.rates
+                        .slice()
+                        .sort((a, b) => a.holding_capacity - b.holding_capacity)
+                        .map((r) => (
+                          <span key={r.holding_capacity} className="font-medium tabular-nums">
+                            {r.holding_capacity} kg → ₹{Number(r.rate).toLocaleString()}
+                          </span>
+                        ))}
+                    </div>
+                  </div>
+                )}
                 {product.recipes && product.recipes.length > 0 && (
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Recipes:</span>

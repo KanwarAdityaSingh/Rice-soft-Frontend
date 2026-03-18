@@ -303,7 +303,7 @@ export function PackagingVendorFormModal({ open, onOpenChange, vendorId }: Packa
     const newErrors: Record<string, string> = {};
 
     if (!formData.name.trim()) {
-      newErrors.name = 'Vendor name is required';
+      newErrors.name = 'Purchase party is required';
     }
 
     // Validate contact persons
@@ -421,9 +421,9 @@ export function PackagingVendorFormModal({ open, onOpenChange, vendorId }: Packa
                     {errors.gst_number && <p className="mt-1 text-xs text-destructive">{errors.gst_number}</p>}
                   </div>
 
-                  {/* Vendor Name */}
+                  {/* Purchase Party */}
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block">Vendor Name *</label>
+                    <label className="text-sm font-medium mb-1.5 block">Purchase Party *</label>
                     <input
                       type="text"
                       value={formData.name}

@@ -7,6 +7,7 @@ import { usePackaging } from '../../../hooks/usePackaging';
 import { usePackagingVendors } from '../../../hooks/usePackagingVendors';
 import { useProducts } from '../../../hooks/useProducts';
 import type { CreatePackagingRequest, UpdatePackagingRequest, PacketType } from '../../../types/entities';
+import { HOLDING_CAPACITIES } from '../../../constants/packaging';
 
 interface PackagingFormModalProps {
   open: boolean;
@@ -68,8 +69,8 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
     if (formData.holding_capacity <= 0) {
       newErrors.holding_capacity = 'Holding capacity must be greater than 0';
     }
-    if (formData.holding_capacity !== 10 && formData.holding_capacity !== 25 && formData.holding_capacity !== 50) {
-      newErrors.holding_capacity = 'Holding capacity must be 10, 25, or 50 kg';
+    if (!HOLDING_CAPACITIES.includes(formData.holding_capacity)) {
+      newErrors.holding_capacity = `Holding capacity must be one of: ${HOLDING_CAPACITIES.join(', ')} kg`;
     }
     // Validate initial_packets if provided (only for create mode)
     if (!packagingId && formData.initial_packets !== undefined && formData.initial_packets !== null) {
@@ -173,9 +174,9 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
                     className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                   >
                     <option value="">Select capacity</option>
-                    <option value="10">10 kg</option>
-                    <option value="25">25 kg</option>
-                    <option value="50">50 kg</option>
+                    {HOLDING_CAPACITIES.map((kg) => (
+                      <option key={kg} value={kg}>{kg} kg</option>
+                    ))}
                   </select>
                   {errors.holding_capacity && (
                     <p className="mt-1 text-sm text-destructive">{errors.holding_capacity}</p>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { productsAPI } from '../services/products.api';
 import type { Product, CreateProductRequest, UpdateProductRequest } from '../types/entities';
 
@@ -6,6 +6,7 @@ export function useProducts() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const initialFetchDone = useRef(false);
 
   const fetchProducts = async () => {
     setLoading(true);
@@ -27,6 +28,8 @@ export function useProducts() {
   };
 
   useEffect(() => {
+    if (initialFetchDone.current) return;
+    initialFetchDone.current = true;
     fetchProducts();
   }, []);
 

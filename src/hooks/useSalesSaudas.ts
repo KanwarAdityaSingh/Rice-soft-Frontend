@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { salesSaudasAPI } from '../services/salesSaudas.api';
 import type {
   SalesSauda,
@@ -8,7 +8,7 @@ import type {
 } from '../types/sales';
 
 interface UseSalesSaudasParams {
-  customer_id?: string;
+  sales_party_id?: string;
   status?: SalesSaudaStatus;
 }
 
@@ -16,6 +16,7 @@ export function useSalesSaudas(params?: UseSalesSaudasParams) {
   const [list, setList] = useState<SalesSauda[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const lastFetchedParamsRef = useRef<string | null>(null);
 
   const fetchList = useCallback(async () => {
     setLoading(true);
@@ -29,11 +30,15 @@ export function useSalesSaudas(params?: UseSalesSaudasParams) {
     } finally {
       setLoading(false);
     }
-  }, [params?.customer_id, params?.status]);
+  }, [params?.sales_party_id, params?.status]);
+
+  const paramsKey = `${params?.sales_party_id ?? ''}:${params?.status ?? ''}`;
 
   useEffect(() => {
+    if (lastFetchedParamsRef.current === paramsKey) return;
+    lastFetchedParamsRef.current = paramsKey;
     fetchList();
-  }, [fetchList]);
+  }, [fetchList, paramsKey]);
 
   const getById = useCallback(async (id: string) => {
     return salesSaudasAPI.getById(id);

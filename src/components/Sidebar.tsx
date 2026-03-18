@@ -37,10 +37,11 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
   }, [collapsed, onCollapsedChange])
 
   const baseLinks = [
-    { to: '/crm/leads', label: 'Leads', icon: Users, key: 'leads' as const },
+    // { to: '/crm/leads', label: 'Leads', icon: Users, key: 'leads' as const },
     // { to: '/crm/analytics', label: 'Analytics', icon: BarChart3, key: null as any },
     // { to: '/crm/leaderboard', label: 'Leaderboard', icon: Trophy, key: null as any },
-    { to: '/directory/vendors', label: 'Vendors', icon: Store, key: 'vendor' as const },
+    { to: '/directory/vendors', label: 'Purchase Party', icon: Store, key: 'vendor' as const },
+    { to: '/directory/sales-parties', label: 'Sales Party', icon: ShoppingBag, key: null as any },
     { to: '/directory/transporters', label: 'Transporters', icon: Truck, key: null as any },
     { to: '/directory/vehicles', label: 'Vehicles', icon: Car, key: null as any },
     { to: '/directory/salesmen', label: 'Salesperson', icon: UserCheck, key: 'salesman' as const },

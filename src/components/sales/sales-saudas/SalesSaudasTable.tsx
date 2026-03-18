@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { SearchBar } from '../../admin/shared/SearchBar';
 import { FilterDropdown } from '../../admin/shared/FilterDropdown';
@@ -7,8 +7,7 @@ import { EmptyState } from '../../admin/shared/EmptyState';
 import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
 import { FileText, Eye, MoreVertical, Edit2, Trash2, CheckCircle } from 'lucide-react';
 import { useSalesSaudas } from '../../../hooks/useSalesSaudas';
-import { useVendors } from '../../../hooks/useVendors';
-import { useProducts } from '../../../hooks/useProducts';
+import { useSalesSaudasData } from './SalesSaudasDataContext';
 import { SalesSaudaFormModal } from './SalesSaudaFormModal';
 import { SalesSaudaDetailModal } from './SalesSaudaDetailModal';
 import { toast } from '../../../utils/toast';
@@ -26,11 +25,10 @@ const statusOptions: { value: string; label: string }[] = [
 
 export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
   const [statusFilter, setStatusFilter] = useState<SalesSaudaStatus | ''>('');
-  const { salesSaudas, loading, deleteSauda, finalize, refetch, getById } = useSalesSaudas({
+  const { salesSaudas, loading, deleteSauda, finalize, refetch } = useSalesSaudas({
     status: statusFilter || undefined,
   });
-  const { vendors } = useVendors();
-  const { products } = useProducts();
+  const { salesParties, products, salesPartiesLoading } = useSalesSaudasData();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -42,25 +40,23 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
     if (onRefreshRef) onRefreshRef.current = refetch;
   }, [refetch, onRefreshRef]);
 
-  const getCustomerName = (customerId: string) => {
-    const v = vendors.find((x) => x.id === customerId);
-    return v?.business_name ?? customerId;
+  const getSalesPartyName = (customerId: string) => {
+    const s = salesParties.find((x) => x.id === customerId);
+    return s?.business_name ?? customerId ?? '';
   };
 
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase();
     return salesSaudas.filter((s) => {
-      const customer = getCustomerName(s.customer_id);
+      const partyName = (getSalesPartyName(s.sales_party_id) ?? '').toLowerCase();
       const orderNum = (s.order_number ?? '').toLowerCase();
-      const notes = (s.notes ?? '').toLowerCase();
       return (
-        customer.toLowerCase().includes(q) ||
+        partyName.includes(q) ||
         orderNum.includes(q) ||
-        notes.includes(q) ||
         s.sauda_date.includes(q)
       );
     });
-  }, [salesSaudas, searchQuery, vendors]);
+  }, [salesSaudas, searchQuery, salesParties]);
 
   const handleDelete = async () => {
     if (!selectedSauda) return;
@@ -99,7 +95,7 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
         <SearchBar
           value={searchQuery}
           onChange={setSearchQuery}
-          placeholder="Search by customer, order number, notes..."
+          placeholder="Search by sales party, order number..."
         />
         <FilterDropdown
           label="Status"
@@ -121,18 +117,21 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="text-left p-3 font-medium">Customer</th>
+                  <th className="text-left p-3 font-medium">Sales Party</th>
                   <th className="text-left p-3 font-medium">Status</th>
                   <th className="text-left p-3 font-medium">Order #</th>
                   <th className="text-left p-3 font-medium">Date</th>
-                  <th className="text-left p-3 font-medium">Notes</th>
                   <th className="w-10 p-3" />
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((s) => (
+                {filtered.map((s) => {
+                  const partyName = getSalesPartyName(s.sales_party_id);
+                  const showLoading =
+                    salesPartiesLoading && (partyName === (s.sales_party_id ?? '') || partyName === '');
+                  return (
                   <tr key={s.id} className="border-b hover:bg-muted/30">
-                    <td className="p-3">{getCustomerName(s.customer_id)}</td>
+                    <td className="p-3">{showLoading ? 'Loading...' : partyName || s.sales_party_id || '–'}</td>
                     <td className="p-3">
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -148,9 +147,6 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
                     </td>
                     <td className="p-3">{s.order_number ?? '–'}</td>
                     <td className="p-3">{s.sauda_date}</td>
-                    <td className="p-3 max-w-[200px] truncate" title={s.notes ?? ''}>
-                      {s.notes ?? '–'}
-                    </td>
                     <td className="p-3">
                       <DropdownMenu.Root>
                         <DropdownMenu.Trigger asChild>
@@ -200,7 +196,8 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
                       </DropdownMenu.Root>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -217,7 +214,7 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
         saudaId={detailId}
         open={!!detailId}
         onOpenChange={(open) => !open && setDetailId(null)}
-        getCustomerName={getCustomerName}
+        getCustomerName={getSalesPartyName}
         getProductName={(id) => products.find((p) => p.id === id)?.name ?? id}
       />
 

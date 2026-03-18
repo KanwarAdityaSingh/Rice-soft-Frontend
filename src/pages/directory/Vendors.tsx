@@ -189,7 +189,7 @@ export default function VendorsPage() {
         <div className="absolute -right-6 -bottom-6 h-20 w-20 floating-orb" />
         <div className="relative">
           <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold">
-            <span className="text-gradient">Vendors Directory</span>
+            <span className="text-gradient">Purchase Party Directory</span>
           </h1>
           <p className="mt-1 sm:mt-2 text-sm sm:text-base text-muted-foreground">Find and manage suppliers seamlessly</p>
         </div>
@@ -224,7 +224,7 @@ export default function VendorsPage() {
           </div>
           {isAdmin() && (
             <button className="btn-primary rounded-xl inline-flex items-center justify-center gap-2 w-full sm:w-auto" onClick={() => setCreateOpen(true)}>
-              <Plus className="h-4 w-4" /> Add Vendor
+              <Plus className="h-4 w-4" /> Add Purchase Party
             </button>
           )}
         </div>
@@ -233,7 +233,7 @@ export default function VendorsPage() {
       {loading ? (
         <div className="flex justify-center py-20"><LoadingSpinner /></div>
       ) : filtered.length === 0 ? (
-        <EmptyState icon={Store} title="No vendors found" description="Create your first vendor or adjust filters." />
+        <EmptyState icon={Store} title="No purchase parties found" description="Create your first purchase party or adjust filters." />
       ) : (
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((v) => (
@@ -422,13 +422,13 @@ export default function VendorsPage() {
               
               if (friendlyMessage) {
                 setAlertType('error')
-                setAlertTitle('Cannot Delete Vendor')
+                setAlertTitle('Cannot Delete Purchase Party')
                 setAlertMessage(friendlyMessage)
                 setAlertOpen(true)
               } else {
                 // Generic error handling
                 setAlertType('error')
-                setAlertTitle('Failed to Delete Vendor')
+                setAlertTitle('Failed to Delete Purchase Party')
                 setAlertMessage(
                   error?.message || 
                   error?.data?.message || 
@@ -441,8 +441,8 @@ export default function VendorsPage() {
             }
           }
         }}
-        title="Delete Vendor"
-        description="Are you sure you want to delete this vendor? This action cannot be undone."
+        title="Delete Purchase Party"
+        description="Are you sure you want to delete this purchase party? This action cannot be undone."
         confirmText="Delete"
       />
 
