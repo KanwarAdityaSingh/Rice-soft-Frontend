@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { X, Filter, ChevronDown, ChevronUp } from 'lucide-react';
 import type { ExtendedInventoryFilters } from '../../../utils/inventoryTransform';
+import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
 import { getUniqueFilterValues } from '../../../utils/inventoryTransform';
 import type { HierarchicalInventory } from '../../../types/entities';
 
@@ -251,7 +252,7 @@ export function InventoryFilters({
                       onChange={() => toggleArrayFilter('packet_types', packetType)}
                       className="rounded border-border"
                     />
-                    <span className="text-sm">{packetType}</span>
+                    <span className="text-sm">{formatPacketTypeLabel(packetType)}</span>
                   </label>
                 ))}
               </div>

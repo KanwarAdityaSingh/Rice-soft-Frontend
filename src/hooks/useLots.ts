@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { lotsAPI } from '../services/lots.api';
 import type { Lot, CreateLotRequest, UpdateLotRequest } from '../types/entities';
 
-export function useLots(sauda_id?: string) {
+export function useLots(params?: { sauda_id?: string; godown_id?: string }) {
   const [lots, setLots] = useState<Lot[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -11,7 +11,7 @@ export function useLots(sauda_id?: string) {
     setLoading(true);
     setError(null);
     try {
-      const data = await lotsAPI.getAllLots(sauda_id);
+      const data = await lotsAPI.getAllLots(params?.sauda_id, params?.godown_id);
       setLots(data);
     } catch (err: any) {
       setError(err.message);
@@ -22,7 +22,7 @@ export function useLots(sauda_id?: string) {
 
   useEffect(() => {
     fetchLots();
-  }, [sauda_id]);
+  }, [params?.sauda_id, params?.godown_id]);
 
   const createLot = async (data: CreateLotRequest) => {
     try {

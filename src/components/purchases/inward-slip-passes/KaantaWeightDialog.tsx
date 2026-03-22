@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState, useEffect } from 'react';
-import { X, Scale, Package, Info, Check, Circle, Eye, Trash2, Image as ImageIcon, Upload } from 'lucide-react';
+import { X, Scale, Package, Check, Circle, Trash2, Image as ImageIcon, Upload } from 'lucide-react';
 import { kaantasAPI } from '../../../services/kaantas.api';
 import { saudasAPI } from '../../../services/saudas.api';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
@@ -9,8 +9,9 @@ import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { getRiceTypeLabel } from '../../../utils/riceType';
-import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay, calculateRemainingWeight, exceedsRemainingWeight } from '../../../utils/saudaCompletion';
+import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay, calculateRemainingWeight } from '../../../utils/saudaCompletion';
 import type { InwardSlipPass, Sauda, RiceCode, RiceType, BagType, CreateKaantaRequest, Kaanta } from '../../../types/entities';
+import { KAANTA_BAG_TYPE_OPTIONS, formatKaantaBagTypeLabel } from '../../../constants/bagAndPacketTypes';
 
 interface KaantaWeightDialogProps {
   open: boolean;
@@ -91,7 +92,7 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
           said_sent_weight: '',
           bag_weight: '',
           no_of_bags: '',
-          bag_type: 'jute' as BagType,
+          bag_type: 'pp' as BagType,
           isEnabled: true,
         })));
       } else {
@@ -131,7 +132,12 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
   };
 
   const isEntryFilled = (entry: KaantaEntry): boolean => {
-    return !!(entry.full_truck_weight && entry.empty_truck_weight && entry.bag_weight);
+    return !!(
+      entry.full_truck_weight &&
+      entry.empty_truck_weight &&
+      entry.said_sent_weight &&
+      entry.bag_weight
+    );
   };
 
   const getFilledEntries = (): KaantaEntry[] => {
@@ -195,6 +201,7 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
       
       const full = parseFloat(entry.full_truck_weight);
       const empty = parseFloat(entry.empty_truck_weight);
+      const saidSent = parseFloat(entry.said_sent_weight);
       const bagWt = parseFloat(entry.bag_weight);
       const bags = parseInt(entry.no_of_bags);
 
@@ -210,6 +217,11 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
 
       if (full > 0 && empty > 0 && empty >= full) {
         entryErrors.emptyTruckWeight = 'Must be less than full weight';
+        isValid = false;
+      }
+
+      if (!entry.said_sent_weight || isNaN(saidSent) || saidSent <= 0) {
+        entryErrors.saidSentWeight = 'Required and must be > 0';
         isValid = false;
       }
 
@@ -260,7 +272,7 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
           inward_slip_pass_id: isp.id,
           full_truck_weight: parseFloat(entry.full_truck_weight),
           empty_truck_weight: parseFloat(entry.empty_truck_weight),
-          said_sent_weight: entry.said_sent_weight ? parseFloat(entry.said_sent_weight) : null,
+          said_sent_weight: parseFloat(entry.said_sent_weight),
           bag_weight: parseFloat(entry.bag_weight),
           no_of_bags: parseInt(entry.no_of_bags),
           bag_type: entry.bag_type,
@@ -359,59 +371,68 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
       <Dialog.Root open={open} onOpenChange={onOpenChange}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" />
-          <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-[95vw] sm:w-[90vw] md:w-full max-w-3xl translate-x-[-50%] translate-y-[-50%]">
-            <div className="glass rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 shadow-2xl max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-primary/20 rounded-lg">
-                    <Scale className="h-6 w-6 text-primary" />
+          <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-[95vw] sm:w-[90vw] md:w-full max-w-2xl translate-x-[-50%] translate-y-[-50%]">
+            <div className="glass rounded-xl sm:rounded-2xl p-5 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+              <div className="flex items-start justify-between gap-4 mb-5">
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="p-2 bg-primary/15 rounded-lg shrink-0">
+                    <Scale className="h-5 w-5 text-primary" />
                   </div>
-                  <div>
-                    <Dialog.Title className="text-xl sm:text-2xl font-semibold">
-                      Kaantas
+                  <div className="min-w-0">
+                    <Dialog.Title className="text-lg font-semibold tracking-tight">
+                      Kaanta (weighbridge)
                     </Dialog.Title>
-                    <Dialog.Description className="text-sm text-muted-foreground mt-1">
-                      {isp?.slip_number} • {isp?.party_name}
+                    <Dialog.Description className="text-sm text-muted-foreground mt-0.5 truncate" title={`${isp?.slip_number} · ${isp?.party_name}`}>
+                      {isp?.slip_number} · {isp?.party_name}
                     </Dialog.Description>
                   </div>
                 </div>
                 <button
+                  type="button"
                   onClick={() => onOpenChange(false)}
-                  className="p-2 hover:bg-muted rounded-lg transition-colors"
+                  className="p-2 hover:bg-muted rounded-lg transition-colors shrink-0"
+                  aria-label="Close"
                 >
                   <X className="h-5 w-5" />
                 </button>
               </div>
 
-              {/* Completion Progress */}
-              <div className="mb-6 p-4 bg-muted/50 rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">Kaanta Completion</span>
-                  <span className="text-sm font-bold text-primary">{completionPercentage}%</span>
+              {/* Completion — single compact row */}
+              <div className="mb-5 rounded-lg border border-border/80 bg-muted/30 px-3 py-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2 gap-y-1.5 mb-2">
+                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Sauda progress
+                  </span>
+                  <span className="text-xs tabular-nums text-foreground">
+                    <span className="font-semibold text-foreground">{completedSaudas}</span>
+                    <span className="text-muted-foreground"> / {totalSaudas}</span>
+                    <span className="text-muted-foreground ml-1">({completionPercentage}%)</span>
+                  </span>
                 </div>
-                <div className="w-full bg-muted rounded-full h-2.5 mb-3">
-                  <div 
-                    className={`h-2.5 rounded-full transition-all ${
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={`h-full rounded-full transition-all ${
                       completionPercentage === 100 ? 'bg-emerald-500' : 'bg-primary'
                     }`}
                     style={{ width: `${completionPercentage}%` }}
                   />
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="mt-2 flex flex-wrap gap-1.5 max-h-16 overflow-y-auto pr-1">
                   {saudas.map((sauda) => {
                     const hasKaanta = existingKaantas.some(k => k.sauda_id === sauda.id);
                     return (
-                      <div 
-                        key={sauda.id} 
-                        className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs ${
-                          hasKaanta 
-                            ? 'bg-emerald-500/10 text-emerald-600' 
-                            : 'bg-amber-500/10 text-amber-600'
+                      <span
+                        key={sauda.id}
+                        className={`inline-flex max-w-[140px] items-center gap-1 truncate rounded-md px-1.5 py-0.5 text-[11px] ${
+                          hasKaanta
+                            ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
+                            : 'bg-amber-500/10 text-amber-800 dark:text-amber-400'
                         }`}
+                        title={getSaudaDisplayName(sauda)}
                       >
-                        {hasKaanta ? <Check className="h-3 w-3" /> : <Circle className="h-3 w-3" />}
-                        {getSaudaDisplayName(sauda).split(' - ')[0]}
-                      </div>
+                        {hasKaanta ? <Check className="h-3 w-3 shrink-0" /> : <Circle className="h-3 w-3 shrink-0" />}
+                        <span className="truncate">{getSaudaDisplayName(sauda).split(' - ')[0]}</span>
+                      </span>
                     );
                   })}
                 </div>
@@ -425,169 +446,154 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                 <>
                   {/* Already Created Kaantas */}
                   {existingKaantas.length > 0 && (
-                    <div className="mb-6">
-                      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                        <Check className="h-4 w-4 text-emerald-500" />
-                        Created Kaantas ({existingKaantas.length})
+                    <div className="mb-5">
+                      <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+                        Recorded ({existingKaantas.length})
                       </h3>
-                      <div className="space-y-3">
+                      <ul className="space-y-2">
                         {existingKaantas.map((kaanta) => {
                           const sauda = getSaudaById(kaanta.sauda_id);
                           return (
-                            <div 
-                              key={kaanta.id} 
-                              className="border border-emerald-500/30 bg-emerald-500/5 rounded-lg p-4"
+                            <li
+                              key={kaanta.id}
+                              className="rounded-lg border border-border/80 bg-card/50 overflow-hidden"
                             >
-                              <div className="flex items-center justify-between mb-3">
-                                <div className="flex items-center gap-2">
-                                  <Package className="h-4 w-4 text-emerald-600" />
-                                  <span className="font-medium text-emerald-700 dark:text-emerald-400">
-                                    {sauda ? getSaudaDisplayName(sauda) : 'Unknown Sauda'}
-                                  </span>
-                                  <span className="text-xs bg-emerald-500/20 text-emerald-600 px-2 py-0.5 rounded-full">
-                                    {kaanta.kaanta_id}
-                                  </span>
+                              <div className="flex items-start justify-between gap-2 px-3 py-2.5 border-b border-border/60 bg-muted/20">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                    <span className="text-sm font-medium leading-snug">
+                                      {sauda ? getSaudaDisplayName(sauda) : 'Unknown Sauda'}
+                                    </span>
+                                    <code className="text-[10px] px-1.5 py-0 rounded bg-muted text-muted-foreground">
+                                      {kaanta.kaanta_id}
+                                    </code>
+                                  </div>
                                 </div>
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteKaanta(kaanta.id)}
                                   disabled={deletingKaantaId === kaanta.id}
-                                  className="p-1.5 hover:bg-red-500/10 rounded text-red-500 transition-colors disabled:opacity-50"
-                                  title="Delete Kaanta"
+                                  className="p-1.5 hover:bg-destructive/10 rounded-md text-destructive transition-colors disabled:opacity-50 shrink-0"
+                                  title="Delete kaanta"
                                 >
                                   {deletingKaantaId === kaanta.id ? (
                                     <LoadingSpinner />
                                   ) : (
-                                    <Trash2 className="h-4 w-4" />
+                                    <Trash2 className="h-3.5 w-3.5" />
                                   )}
                                 </button>
                               </div>
-                              
-                              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 text-sm">
+
+                              <div className="px-3 py-2.5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-3 gap-y-2 text-xs tabular-nums">
                                 <div>
-                                  <div className="text-xs text-muted-foreground">Full Wt</div>
+                                  <div className="text-muted-foreground">Full</div>
                                   <div className="font-medium">{kaanta.full_truck_weight} kg</div>
                                 </div>
                                 <div>
-                                  <div className="text-xs text-muted-foreground">Empty Wt</div>
+                                  <div className="text-muted-foreground">Empty</div>
                                   <div className="font-medium">{kaanta.empty_truck_weight} kg</div>
                                 </div>
                                 <div>
-                                  <div className="text-xs text-muted-foreground">Kaanta Wt</div>
-                                  <div className="font-bold text-emerald-600">{kaanta.kaanta_weight} kg</div>
+                                  <div className="text-muted-foreground">Net</div>
+                                  <div className="font-semibold text-emerald-600 dark:text-emerald-400">{kaanta.kaanta_weight} kg</div>
                                 </div>
                                 <div>
-                                  <div className="text-xs text-muted-foreground">Weight as per bill</div>
-                                  <div className="font-medium">{kaanta.said_sent_weight ? `${kaanta.said_sent_weight} kg` : '-'}</div>
+                                  <div className="text-muted-foreground">Bill</div>
+                                  <div className="font-medium">{kaanta.said_sent_weight != null ? `${kaanta.said_sent_weight} kg` : '—'}</div>
                                 </div>
                                 <div>
-                                  <div className="text-xs text-muted-foreground">Bag Weight</div>
+                                  <div className="text-muted-foreground">Bag wt</div>
                                   <div className="font-medium">{kaanta.bag_weight} kg</div>
                                 </div>
-                                <div>
-                                  <div className="text-xs text-muted-foreground">Bags</div>
-                                  <div className="font-medium">{kaanta.no_of_bags} ({kaanta.bag_type})</div>
-                                </div>
-                              </div>
-                              
-                              {/* Image Upload Section */}
-                              <div className="mt-3 pt-3 border-t border-emerald-500/20">
-                                <div className="text-xs font-semibold text-muted-foreground mb-2">Kaanta Parchis</div>
-                                <div className="grid grid-cols-2 gap-2">
-                                  {/* Khaali Kaanta Parchi */}
-                                  <div className="space-y-1">
-                                    <label className="text-[10px] text-muted-foreground">Khaali (Empty)</label>
-                                    <div className="flex items-center gap-1">
-                                      {kaanta.khaali_kaanta_parchi_url ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleViewImage(kaanta, 'khaali')}
-                                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 rounded border border-emerald-500/20 transition-colors"
-                                        >
-                                          <ImageIcon className="h-3 w-3" />
-                                          View
-                                        </button>
-                                      ) : (
-                                        <label className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] bg-muted hover:bg-muted/80 text-muted-foreground rounded border border-border cursor-pointer transition-colors">
-                                          <Upload className="h-3 w-3" />
-                                          <input
-                                            type="file"
-                                            accept="image/*"
-                                            className="hidden"
-                                            onChange={(e) => {
-                                              const file = e.target.files?.[0];
-                                              if (file) {
-                                                handleImageUpload(kaanta.id, 'khaali', file);
-                                              }
-                                            }}
-                                            disabled={uploadingImage[`${kaanta.id}-khaali`]}
-                                          />
-                                          {uploadingImage[`${kaanta.id}-khaali`] ? 'Uploading...' : 'Upload'}
-                                        </label>
-                                      )}
-                                    </div>
-                                  </div>
-                                  
-                                  {/* Bhara Kaanta Parchi */}
-                                  <div className="space-y-1">
-                                    <label className="text-[10px] text-muted-foreground">Bhara (Filled)</label>
-                                    <div className="flex items-center gap-1">
-                                      {kaanta.bhara_kaanta_parchi_url ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleViewImage(kaanta, 'bhara')}
-                                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 rounded border border-emerald-500/20 transition-colors"
-                                        >
-                                          <ImageIcon className="h-3 w-3" />
-                                          View
-                                        </button>
-                                      ) : (
-                                        <label className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] bg-muted hover:bg-muted/80 text-muted-foreground rounded border border-border cursor-pointer transition-colors">
-                                          <Upload className="h-3 w-3" />
-                                          <input
-                                            type="file"
-                                            accept="image/*"
-                                            className="hidden"
-                                            onChange={(e) => {
-                                              const file = e.target.files?.[0];
-                                              if (file) {
-                                                handleImageUpload(kaanta.id, 'bhara', file);
-                                              }
-                                            }}
-                                            disabled={uploadingImage[`${kaanta.id}-bhara`]}
-                                          />
-                                          {uploadingImage[`${kaanta.id}-bhara`] ? 'Uploading...' : 'Upload'}
-                                        </label>
-                                      )}
-                                    </div>
+                                <div className="col-span-2 sm:col-span-1 lg:col-span-1">
+                                  <div className="text-muted-foreground">Bags</div>
+                                  <div className="font-medium">
+                                    {kaanta.no_of_bags}{' '}
+                                    <span className="text-muted-foreground font-normal">
+                                      ({formatKaantaBagTypeLabel(kaanta.bag_type)})
+                                    </span>
                                   </div>
                                 </div>
                               </div>
-                            </div>
+
+                              <div className="px-3 pb-2.5 pt-0 flex gap-2">
+                                <div className="flex-1 min-w-0">
+                                  {kaanta.khaali_kaanta_parchi_url ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleViewImage(kaanta, 'khaali')}
+                                      className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] rounded-md border border-border bg-background hover:bg-muted/80 transition-colors"
+                                    >
+                                      <ImageIcon className="h-3.5 w-3.5 shrink-0" />
+                                      Khaali parchi
+                                    </button>
+                                  ) : (
+                                    <label className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] rounded-md border border-dashed border-border cursor-pointer hover:bg-muted/50 transition-colors">
+                                      <Upload className="h-3.5 w-3.5 shrink-0" />
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                          const file = e.target.files?.[0];
+                                          if (file) handleImageUpload(kaanta.id, 'khaali', file);
+                                        }}
+                                        disabled={uploadingImage[`${kaanta.id}-khaali`]}
+                                      />
+                                      {uploadingImage[`${kaanta.id}-khaali`] ? 'Uploading…' : 'Khaali parchi'}
+                                    </label>
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  {kaanta.bhara_kaanta_parchi_url ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleViewImage(kaanta, 'bhara')}
+                                      className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] rounded-md border border-border bg-background hover:bg-muted/80 transition-colors"
+                                    >
+                                      <ImageIcon className="h-3.5 w-3.5 shrink-0" />
+                                      Bhara parchi
+                                    </button>
+                                  ) : (
+                                    <label className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] rounded-md border border-dashed border-border cursor-pointer hover:bg-muted/50 transition-colors">
+                                      <Upload className="h-3.5 w-3.5 shrink-0" />
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                          const file = e.target.files?.[0];
+                                          if (file) handleImageUpload(kaanta.id, 'bhara', file);
+                                        }}
+                                        disabled={uploadingImage[`${kaanta.id}-bhara`]}
+                                      />
+                                      {uploadingImage[`${kaanta.id}-bhara`] ? 'Uploading…' : 'Bhara parchi'}
+                                    </label>
+                                  )}
+                                </div>
+                              </div>
+                            </li>
                           );
                         })}
-                      </div>
+                      </ul>
                     </div>
                   )}
 
                   {/* Pending Kaantas Form */}
                   {kaantaEntries.length > 0 ? (
                     <>
-                      <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg flex gap-3">
-                        <Info className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
-                        <div className="text-sm text-blue-600 dark:text-blue-400">
-                          <p className="font-medium">Create New Kaantas</p>
-                          <p className="text-xs mt-1 text-muted-foreground">
-                            Each kaanta creates a lot automatically. Fill only the saudas you want. Bags are auto-calculated from Kaanta weight (Full - Empty) ÷ bag weight.
-                          </p>
+                      <form onSubmit={handleSubmit} className="space-y-3">
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                          <div>
+                            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                              Add kaanta ({kaantaEntries.length} pending)
+                            </h3>
+                            <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+                              Each entry creates a lot. Net weight = full − empty; bag count updates from net ÷ bag weight.
+                            </p>
+                          </div>
                         </div>
-                      </div>
-
-                      <form onSubmit={handleSubmit} className="space-y-4">
-                        <h3 className="text-sm font-semibold flex items-center gap-2">
-                          <Circle className="h-4 w-4 text-amber-500" />
-                          Pending Saudas ({kaantaEntries.length})
-                        </h3>
 
                         {kaantaEntries.map((entry, index) => {
                           const sauda = getSaudaById(entry.sauda_id);
@@ -596,242 +602,266 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                           const isFilled = isEntryFilled(entry);
                           const remaining = sauda ? calculateRemainingWeight(sauda.quantity, sauda.received_until_now) : null;
                           const completionStatus = sauda ? getCompletionStatus(sauda.completion_percentage) : null;
-                          
+
                           return (
-                            <div 
-                              key={entry.sauda_id} 
-                              className={`border rounded-lg p-4 transition-all ${
-                                !entry.isEnabled 
-                                  ? 'border-border/50 bg-muted/30 opacity-60' 
-                                  : isFilled 
-                                    ? 'border-emerald-500/50 bg-emerald-500/5' 
-                                    : 'border-border'
+                            <div
+                              key={entry.sauda_id}
+                              className={`rounded-lg border transition-colors ${
+                                !entry.isEnabled
+                                  ? 'border-border/60 bg-muted/20 opacity-70'
+                                  : isFilled
+                                    ? 'border-emerald-500/35 bg-emerald-500/[0.04]'
+                                    : 'border-border/80 bg-card/30'
                               }`}
                             >
-                              <div className="flex items-center justify-between mb-4">
-                                <div className="flex items-center gap-3">
+                              <div className="flex flex-wrap items-start justify-between gap-2 px-3 pt-3 pb-2">
+                                <div className="flex items-start gap-2 min-w-0 flex-1">
                                   <button
                                     type="button"
                                     onClick={() => toggleEntry(index)}
-                                    className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
-                                      entry.isEnabled 
-                                        ? 'bg-primary border-primary text-primary-foreground' 
+                                    className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                                      entry.isEnabled
+                                        ? 'bg-primary border-primary text-primary-foreground'
                                         : 'border-border bg-background'
                                     }`}
+                                    aria-pressed={entry.isEnabled}
                                   >
                                     {entry.isEnabled && <Check className="h-3 w-3" />}
                                   </button>
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <Package className="h-4 w-4 text-primary" />
-                                    <span className="font-medium">{sauda ? getSaudaDisplayName(sauda) : 'Unknown Sauda'}</span>
+                                  <div className="min-w-0">
+                                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                      <span className="text-sm font-medium">
+                                        {sauda ? getSaudaDisplayName(sauda) : 'Unknown Sauda'}
+                                      </span>
+                                      {isFilled && entry.isEnabled && (
+                                        <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                                          Ready
+                                        </span>
+                                      )}
+                                    </div>
                                     {sauda && (
-                                      <>
+                                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
                                         {sauda.quantity ? (
-                                          <span className="text-xs text-muted-foreground">
-                                            ({formatWeightDisplay(sauda.received_until_now, sauda.quantity)})
-                                          </span>
+                                          <span>{formatWeightDisplay(sauda.received_until_now, sauda.quantity)}</span>
                                         ) : (
-                                          <span className="text-xs text-muted-foreground">
-                                            (Received: {sauda.received_until_now.toFixed(2)} kg)
-                                          </span>
+                                          <span>Received {sauda.received_until_now.toFixed(2)} kg</span>
                                         )}
                                         {completionStatus && (
-                                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${completionStatus.bgColor} ${completionStatus.color} border ${completionStatus.borderColor}`}>
+                                          <span
+                                            className={`rounded px-1 py-0 ${completionStatus.bgColor} ${completionStatus.color}`}
+                                          >
                                             {formatCompletionPercentage(sauda.completion_percentage)}
                                           </span>
                                         )}
-                                      </>
+                                        {remaining !== null && entry.isEnabled && (
+                                          <span className="text-foreground/90">
+                                            Remaining <span className="tabular-nums font-medium">{remaining.toFixed(2)} kg</span>
+                                          </span>
+                                        )}
+                                      </div>
                                     )}
                                   </div>
                                 </div>
-                                {isFilled && entry.isEnabled && (
-                                  <span className="text-xs bg-emerald-500/20 text-emerald-600 px-2 py-0.5 rounded-full">
-                                    Ready
-                                  </span>
+                                {entry.isEnabled && (
+                                  <div className="text-right shrink-0">
+                                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Net</div>
+                                    <div className="text-sm font-semibold tabular-nums text-primary">{kaantaWeight.toFixed(2)} kg</div>
+                                  </div>
                                 )}
                               </div>
-                              {sauda && remaining !== null && entry.isEnabled && (
-                                <div className="mb-3 p-2 bg-blue-500/10 border border-blue-500/20 rounded text-xs">
-                                  <div className="flex justify-between items-center">
-                                    <span className="text-blue-600 dark:text-blue-400">Remaining Weight:</span>
-                                    <span className="font-bold text-blue-700 dark:text-blue-300">{remaining.toFixed(2)} kg</span>
+
+                              {entry.isEnabled && (
+                                <div className="px-3 pb-3 space-y-3">
+                                  <div>
+                                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
+                                      Weighbridge
+                                    </p>
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <div>
+                                        <label className="block text-[11px] text-muted-foreground mb-0.5">Full (kg) *</label>
+                                        <input
+                                          type="number"
+                                          step="0.01"
+                                          min="0"
+                                          value={entry.full_truck_weight}
+                                          onChange={(e) => {
+                                            const value = e.target.value;
+                                            if (value === '' || (!isNaN(parseFloat(value)) && parseFloat(value) >= 0)) {
+                                              updateEntry(index, 'full_truck_weight', value);
+                                            }
+                                          }}
+                                          onWheel={(e) => e.currentTarget.blur()}
+                                          className={`w-full px-2.5 py-1.5 text-sm border rounded-md bg-background ${
+                                            entryErrors.fullTruckWeight ? 'border-red-500' : 'border-border'
+                                          }`}
+                                          placeholder="5000"
+                                        />
+                                        {entryErrors.fullTruckWeight && (
+                                          <p className="text-[10px] text-red-500 mt-0.5">{entryErrors.fullTruckWeight}</p>
+                                        )}
+                                      </div>
+                                      <div>
+                                        <label className="block text-[11px] text-muted-foreground mb-0.5">Empty (kg) *</label>
+                                        <input
+                                          type="number"
+                                          step="0.01"
+                                          min="0"
+                                          value={entry.empty_truck_weight}
+                                          onChange={(e) => {
+                                            const value = e.target.value;
+                                            if (value === '' || (!isNaN(parseFloat(value)) && parseFloat(value) >= 0)) {
+                                              updateEntry(index, 'empty_truck_weight', value);
+                                            }
+                                          }}
+                                          onWheel={(e) => e.currentTarget.blur()}
+                                          className={`w-full px-2.5 py-1.5 text-sm border rounded-md bg-background ${
+                                            entryErrors.emptyTruckWeight ? 'border-red-500' : 'border-border'
+                                          }`}
+                                          placeholder="2000"
+                                        />
+                                        {entryErrors.emptyTruckWeight && (
+                                          <p className="text-[10px] text-red-500 mt-0.5">{entryErrors.emptyTruckWeight}</p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-[11px] text-muted-foreground mb-0.5">
+                                      Weight as per bill (kg) *
+                                    </label>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      value={entry.said_sent_weight}
+                                      onChange={(e) => {
+                                        const value = e.target.value;
+                                        if (value === '' || (!isNaN(parseFloat(value)) && parseFloat(value) >= 0)) {
+                                          updateEntry(index, 'said_sent_weight', value);
+                                        }
+                                      }}
+                                      onWheel={(e) => e.currentTarget.blur()}
+                                      className={`w-full max-w-xs px-2.5 py-1.5 text-sm border rounded-md bg-background ${
+                                        entryErrors.saidSentWeight ? 'border-red-500' : 'border-border'
+                                      }`}
+                                      placeholder="0.00"
+                                    />
+                                    {entryErrors.saidSentWeight && (
+                                      <p className="text-[10px] text-red-500 mt-0.5">{entryErrors.saidSentWeight}</p>
+                                    )}
+                                  </div>
+
+                                  <div>
+                                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
+                                      Bags
+                                    </p>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                      <div>
+                                        <label className="block text-[11px] text-muted-foreground mb-0.5">Bag weight *</label>
+                                        <CustomSelect
+                                          value={entry.bag_weight || null}
+                                          onChange={(value) => updateEntry(index, 'bag_weight', value || '')}
+                                          options={[
+                                            { value: '5', label: '5 kg' },
+                                            { value: '10', label: '10 kg' },
+                                            { value: '26', label: '26 kg' },
+                                            { value: '30', label: '30 kg' },
+                                            { value: '50', label: '50 kg' },
+                                            { value: '55', label: '55 kg' },
+                                          ]}
+                                          placeholder="Select"
+                                          allowClear={false}
+                                        />
+                                        {entryErrors.bagWeight && (
+                                          <p className="text-[10px] text-red-500 mt-0.5">{entryErrors.bagWeight}</p>
+                                        )}
+                                      </div>
+                                      <div>
+                                        <label className="block text-[11px] text-muted-foreground mb-0.5">
+                                          Count <span className="normal-case text-muted-foreground/80">(auto)</span>
+                                        </label>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          value={entry.no_of_bags}
+                                          onChange={(e) => {
+                                            const value = e.target.value;
+                                            if (value === '' || (!isNaN(parseInt(value)) && parseInt(value) >= 0)) {
+                                              updateEntry(index, 'no_of_bags', value);
+                                            }
+                                          }}
+                                          onWheel={(e) => e.currentTarget.blur()}
+                                          className={`w-full px-2.5 py-1.5 text-sm border rounded-md bg-background ${
+                                            entryErrors.noOfBags ? 'border-red-500' : 'border-border'
+                                          }`}
+                                          placeholder="—"
+                                        />
+                                        {entryErrors.noOfBags && (
+                                          <p className="text-[10px] text-red-500 mt-0.5">{entryErrors.noOfBags}</p>
+                                        )}
+                                      </div>
+                                      <div className="sm:col-span-1 col-span-1">
+                                        <label className="block text-[11px] text-muted-foreground mb-0.5">Bag type *</label>
+                                        <CustomSelect
+                                          value={entry.bag_type}
+                                          onChange={(value) => updateEntry(index, 'bag_type', value as BagType)}
+                                          options={KAANTA_BAG_TYPE_OPTIONS.map((o) => ({
+                                            value: o.value,
+                                            label: o.label,
+                                          }))}
+                                          placeholder="Type"
+                                          allowClear={false}
+                                        />
+                                      </div>
+                                    </div>
+                                    {(() => {
+                                      const meta = KAANTA_BAG_TYPE_OPTIONS.find((o) => o.value === entry.bag_type);
+                                      if (!meta) return null;
+                                      return (
+                                        <p className="mt-1.5 text-[10px] text-muted-foreground leading-snug">
+                                          {meta.description}
+                                          {meta.typicalCapacity ? ` ${meta.typicalCapacity}.` : ''}
+                                        </p>
+                                      );
+                                    })()}
                                   </div>
                                 </div>
                               )}
 
-                              {entry.isEnabled && (
-                                <>
-                                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                                    <div>
-                                      <label className="block text-xs font-medium mb-1">Full Wt (kg) *</label>
-                                      <input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        value={entry.full_truck_weight}
-                                        onChange={(e) => {
-                                          const value = e.target.value;
-                                          // Prevent negative values
-                                          if (value === '' || (!isNaN(parseFloat(value)) && parseFloat(value) >= 0)) {
-                                            updateEntry(index, 'full_truck_weight', value);
-                                          }
-                                        }}
-                                        onWheel={(e) => e.currentTarget.blur()}
-                                        className={`w-full px-3 py-2 text-sm border rounded-lg bg-background ${
-                                          entryErrors.fullTruckWeight ? 'border-red-500' : 'border-border'
-                                        }`}
-                                        placeholder="5000.00"
-                                      />
-                                      {entryErrors.fullTruckWeight && (
-                                        <p className="text-[10px] text-red-500 mt-0.5">{entryErrors.fullTruckWeight}</p>
-                                      )}
-                                    </div>
-
-                                    <div>
-                                      <label className="block text-xs font-medium mb-1">Empty Wt (kg) *</label>
-                                      <input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        value={entry.empty_truck_weight}
-                                        onChange={(e) => {
-                                          const value = e.target.value;
-                                          // Prevent negative values
-                                          if (value === '' || (!isNaN(parseFloat(value)) && parseFloat(value) >= 0)) {
-                                            updateEntry(index, 'empty_truck_weight', value);
-                                          }
-                                        }}
-                                        onWheel={(e) => e.currentTarget.blur()}
-                                        className={`w-full px-3 py-2 text-sm border rounded-lg bg-background ${
-                                          entryErrors.emptyTruckWeight ? 'border-red-500' : 'border-border'
-                                        }`}
-                                        placeholder="2000.00"
-                                      />
-                                      {entryErrors.emptyTruckWeight && (
-                                        <p className="text-[10px] text-red-500 mt-0.5">{entryErrors.emptyTruckWeight}</p>
-                                      )}
-                                    </div>
-
-                                    <div>
-                                      <label className="block text-xs font-medium mb-1">Weight as per bill (kg)</label>
-                                      <input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        value={entry.said_sent_weight}
-                                        onChange={(e) => {
-                                          const value = e.target.value;
-                                          // Prevent negative values
-                                          if (value === '' || (!isNaN(parseFloat(value)) && parseFloat(value) >= 0)) {
-                                            updateEntry(index, 'said_sent_weight', value);
-                                          }
-                                        }}
-                                        onWheel={(e) => e.currentTarget.blur()}
-                                        className="w-full px-3 py-2 text-sm border rounded-lg bg-background border-border"
-                                        placeholder="Optional"
-                                      />
-                                    </div>
-
-                                    <div>
-                                      <label className="block text-xs font-medium mb-1">Bag Wt (kg) *</label>
-                                      <CustomSelect
-                                        value={entry.bag_weight || null}
-                                        onChange={(value) => updateEntry(index, 'bag_weight', value || '')}
-                                        options={[
-                                          { value: '5', label: '5 kg' },
-                                          { value: '10', label: '10 kg' },
-                                          { value: '26', label: '26 kg' },
-                                          { value: '30', label: '30 kg' },
-                                          { value: '50', label: '50 kg' },
-                                          { value: '55', label: '55 kg' },
-                                        ]}
-                                        placeholder="Select bag weight"
-                                        allowClear={false}
-                                      />
-                                      {entryErrors.bagWeight && (
-                                        <p className="text-[10px] text-red-500 mt-0.5">{entryErrors.bagWeight}</p>
-                                      )}
-                                    </div>
-
-                                    <div>
-                                      <label className="block text-xs font-medium mb-1">
-                                        Bags <span className="text-muted-foreground">(auto)</span>
-                                      </label>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        value={entry.no_of_bags}
-                                        onChange={(e) => {
-                                          const value = e.target.value;
-                                          // Prevent negative values and allow empty
-                                          if (value === '' || (!isNaN(parseInt(value)) && parseInt(value) >= 0)) {
-                                            updateEntry(index, 'no_of_bags', value);
-                                          }
-                                        }}
-                                        onWheel={(e) => e.currentTarget.blur()}
-                                        className={`w-full px-3 py-2 text-sm border rounded-lg bg-background ${
-                                          entryErrors.noOfBags ? 'border-red-500' : 'border-border'
-                                        }`}
-                                        placeholder="Auto"
-                                      />
-                                      {entryErrors.noOfBags && (
-                                        <p className="text-[10px] text-red-500 mt-0.5">{entryErrors.noOfBags}</p>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  <div className="mt-3 flex items-center justify-between">
-                                    <div className="flex-1 max-w-[200px]">
-                                      <label className="block text-xs font-medium mb-1">Bag Type *</label>
-                                      <CustomSelect
-                                        value={entry.bag_type}
-                                        onChange={(value) => updateEntry(index, 'bag_type', value as BagType)}
-                                        options={[
-                                          { value: 'jute', label: 'Jute Bag' },
-                                          { value: 'pp', label: 'PP Bag' },
-                                        ]}
-                                        placeholder="Select bag type"
-                                        allowClear={false}
-                                      />
-                                    </div>
-                                    <div className="text-right">
-                                      <div className="text-xs text-muted-foreground">Kaanta Weight</div>
-                                      <div className="font-bold text-primary">{kaantaWeight.toFixed(2)} kg</div>
-                                    </div>
-                                  </div>
-                                </>
-                              )}
-
                               {!entry.isEnabled && (
-                                <p className="text-xs text-muted-foreground">
-                                  Click checkbox to enable this sauda
-                                </p>
+                                <p className="px-3 pb-3 text-[11px] text-muted-foreground">Enable to enter weights.</p>
                               )}
                             </div>
                           );
                         })}
 
-                        <div className="flex justify-between items-center pt-4">
-                          <span className="text-sm text-muted-foreground">
-                            {filledCount > 0 
-                              ? `${filledCount} kaanta${filledCount > 1 ? 's' : ''} ready to create`
-                              : 'Fill at least one sauda to continue'
-                            }
+                        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between sm:items-center pt-2 border-t border-border/60">
+                          <span className="text-xs text-muted-foreground">
+                            {filledCount > 0
+                              ? `${filledCount} to create`
+                              : 'Enable and fill at least one sauda'}
                           </span>
-                          <div className="flex gap-3">
+                          <div className="flex gap-2 justify-end">
                             <button
                               type="button"
                               onClick={() => onOpenChange(false)}
-                              className="px-4 py-2 border border-border rounded-lg hover:bg-muted transition-colors"
+                              className="px-3 py-2 text-sm border border-border rounded-md hover:bg-muted transition-colors"
                             >
                               Close
                             </button>
                             <button
                               type="submit"
                               disabled={loading || filledCount === 0}
-                              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+                              className="px-3 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
                             >
-                              {loading ? 'Creating...' : `Create ${filledCount || ''} Kaanta${filledCount !== 1 ? 's' : ''}`}
+                              {loading
+                                ? 'Creating…'
+                                : filledCount === 0
+                                  ? 'Create'
+                                  : filledCount === 1
+                                    ? 'Create 1 kaanta'
+                                    : `Create ${filledCount} kaantas`}
                             </button>
                           </div>
                         </div>

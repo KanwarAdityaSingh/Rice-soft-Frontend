@@ -8,11 +8,12 @@ import { useProducts } from '../../../hooks/useProducts';
 import { useRecipes } from '../../../hooks/useRecipes';
 import { usePackaging } from '../../../hooks/usePackaging';
 import { usePackagingVendors } from '../../../hooks/usePackagingVendors';
-import { packagingAPI } from '../../../services/packaging.api';
 import { useInventory } from '../../../hooks/useInventory';
 import { lotsAPI } from '../../../services/lots.api';
 import { inventoryAPI } from '../../../services/inventory.api';
+import { useGodowns } from '../../../hooks/useGodowns';
 import type { CreateBatchRequest, Batch, BatchProduct, BatchPackaging, Recipe, Lot, LotsInventory, Packaging, PackagingVendor } from '../../../types/entities';
+import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
 
 interface BatchFormModalProps {
   open: boolean;
@@ -22,14 +23,24 @@ interface BatchFormModalProps {
 
 type Stage = 1 | 2 | 3;
 
+/** API may return `holding_capacity` as a decimal string */
+function packagingHoldingCapacityKg(p: Packaging): number {
+  const v = p.holding_capacity;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const n = parseFloat(String(v));
+  return Number.isFinite(n) ? n : 0;
+}
+
 export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalProps) {
   const { createBatch, getBatchDetails, addProductToBatch, getBatchProducts, removeProductFromBatch, addPackagingToBatch, getBatchPackaging, removePackagingFromBatch, refetch } = useBatches();
   const { products } = useProducts();
   const { recipes } = useRecipes();
   const { packaging, fetchPackagingByProduct } = usePackaging();
   const { packagingVendors } = usePackagingVendors();
-  const { packets: packetsInventory, refetch: refetchInventory } = useInventory();
-  
+  const { packets: packetsInventory, fetchPackets } = useInventory();
+  const { godowns } = useGodowns(false);
+
+  const [godownId, setGodownId] = useState<string>('');
   // Stage 1: Recipe Attachment
   const [recipeId, setRecipeId] = useState<string>('');
   const [quantity, setQuantity] = useState<number>(0);
@@ -82,12 +93,24 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
     }
   }, [batchId, open]);
 
-  // Load lots and inventory when form opens
+  // Load lots and lots-inventory scoped to selected / batch godown
   useEffect(() => {
-    if (open) {
-      loadInitialData();
+    if (!open) return;
+    const g = currentBatch?.godown_id ?? godownId;
+    if (g) {
+      loadLotsData(g);
+    } else {
+      setLots([]);
+      setLotsInventory([]);
     }
-  }, [open]);
+  }, [open, currentBatch?.godown_id, godownId]);
+
+  // Empty packets are godown-scoped; backend validates against batch godown — keep list in sync
+  useEffect(() => {
+    if (!open) return;
+    const g = currentBatch?.godown_id ?? godownId;
+    if (g) void fetchPackets({ godown_id: g });
+  }, [open, currentBatch?.godown_id, godownId, fetchPackets]);
 
   // Load packaging for products when batch products change
   useEffect(() => {
@@ -96,22 +119,22 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
     }
   }, [batchProducts, currentBatch]);
 
-  const loadInitialData = async () => {
-        setLoadingData(true);
-        try {
+  const loadLotsData = async (godown: string) => {
+    setLoadingData(true);
+    try {
       const [lotsData, inventoryData] = await Promise.all([
-            lotsAPI.getAllLots(),
-            inventoryAPI.getLots(),
-          ]);
-          setLots(lotsData);
-          setLotsInventory(inventoryData);
-          refetchInventory();
+        lotsAPI.getAllLots(undefined, godown),
+        inventoryAPI.getLots({ godown_id: godown }),
+      ]);
+      setLots(lotsData);
+      setLotsInventory(inventoryData);
+      void fetchPackets({ godown_id: godown });
     } catch (error) {
-          console.error('Failed to fetch data:', error);
-        } finally {
-          setLoadingData(false);
-        }
-      };
+      console.error('Failed to fetch data:', error);
+    } finally {
+      setLoadingData(false);
+    }
+  };
 
   const loadBatchData = async () => {
     if (!batchId) return;
@@ -138,6 +161,7 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
         }
       }
       
+      setGodownId(batchDetails.godown_id ?? '');
       setRecipeId(batchDetails.recipe_id);
       setQuantity(batchDetails.quantity);
       const recipe = recipes.find(r => r.id === batchDetails.recipe_id);
@@ -165,6 +189,7 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
 
   const resetForm = () => {
     setCurrentBatch(null);
+    setGodownId('');
     setRecipeId('');
     setQuantity(0);
     setBatchNumber('');
@@ -182,6 +207,9 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
   const handleStage1Submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const newErrors: Record<string, string> = {};
+    if (!godownId) {
+      newErrors.godownId = 'Godown is required';
+    }
     if (!recipeId) {
       newErrors.recipeId = 'Recipe is required';
     }
@@ -193,10 +221,11 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
 
     setLoading(true);
     try {
-      const newBatch = await createBatch({ 
-        recipe_id: recipeId, 
+      const newBatch = await createBatch({
+        godown_id: godownId,
+        recipe_id: recipeId,
         quantity,
-        batch_number: batchNumber || undefined
+        batch_number: batchNumber || undefined,
       });
       setCurrentBatch(newBatch);
       setCurrentStage(2);
@@ -331,7 +360,10 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
         setAlertOpen(true);
       }
       await refetch();
-      refetchInventory();
+      {
+        const g = currentBatch.godown_id ?? godownId;
+        if (g) void fetchPackets({ godown_id: g });
+      }
     } catch (error: any) {
       setAlertType('error');
       setAlertTitle('Error');
@@ -378,7 +410,10 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
       const updatedPackaging = await getBatchPackaging(currentBatch.id);
       setBatchPackaging(updatedPackaging);
       await refetch();
-      refetchInventory();
+      {
+        const g = currentBatch.godown_id ?? godownId;
+        if (g) void fetchPackets({ godown_id: g });
+      }
     } catch (error: any) {
       setAlertType('error');
       setAlertTitle('Error');
@@ -389,12 +424,20 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
     }
   };
 
-  const getAvailablePackets = (packagingId: string): number => {
-    const inventory = packetsInventory.find(p => p.packaging?.id === packagingId);
+  /**
+   * Count empty packets available for the batch godown only (matches server validation).
+   * Prefer GET /packaging `packets_inventory` when present; else use godown-filtered packets inventory.
+   */
+  const getAvailablePackets = (packagingId: string, packaging?: Packaging): number => {
+    const g = currentBatch?.godown_id ?? godownId;
+    if (g && packaging?.packets_inventory && packaging.packets_inventory.length > 0) {
+      const row = packaging.packets_inventory.find((pi) => pi.godown_id === g);
+      return row ? Number(row.available_quantity) || 0 : 0;
+    }
+    const inventory = packetsInventory.find((p) => p.packaging?.id === packagingId);
     if (!inventory) return 0;
-    return typeof inventory.available_quantity === 'string' 
-      ? parseInt(inventory.available_quantity) 
-      : inventory.available_quantity;
+    const qty = inventory.available_quantity;
+    return typeof qty === 'string' ? parseInt(qty, 10) : qty;
   };
 
   const getPacketsNeeded = (quantity: number, holdingCapacity: number): number => {
@@ -412,8 +455,8 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
     availableWeight: number;
     message: string;
   } => {
-    const availablePackets = getAvailablePackets(packaging.id);
-    const availableWeight = availablePackets * packaging.holding_capacity;
+    const availablePackets = getAvailablePackets(packaging.id, packaging);
+    const availableWeight = availablePackets * packagingHoldingCapacityKg(packaging);
     
     let status: 'available' | 'low_stock' | 'out_of_stock';
     let message: string;
@@ -450,8 +493,8 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
       return { valid: false, error: 'Quantity cannot exceed 10,000 kg' };
     }
 
-    const availablePackets = getAvailablePackets(packagingId);
-    const packetsNeeded = getPacketsNeeded(quantity, packaging.holding_capacity);
+    const availablePackets = getAvailablePackets(packagingId, packaging);
+    const packetsNeeded = getPacketsNeeded(quantity, packagingHoldingCapacityKg(packaging));
 
     if (packetsNeeded > availablePackets) {
       return {
@@ -469,7 +512,7 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
     
     return productPackaging.filter(pkg => {
       // Filter by capacity
-      if (packagingFilters.capacities.length > 0 && !packagingFilters.capacities.includes(pkg.holding_capacity)) {
+      if (packagingFilters.capacities.length > 0 && !packagingFilters.capacities.includes(packagingHoldingCapacityKg(pkg))) {
         return false;
       }
 
@@ -487,7 +530,7 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
 
       // Filter by availability
       if (packagingFilters.showOnlyAvailable) {
-        const availablePackets = getAvailablePackets(pkg.id);
+        const availablePackets = getAvailablePackets(pkg.id, pkg);
         if (availablePackets === 0) return false;
       }
 
@@ -515,7 +558,7 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
   const getUniqueCapacities = (): number[] => {
     const capacities = new Set<number>();
     Object.values(packagingForProducts).forEach(packagingList => {
-      packagingList.forEach(pkg => capacities.add(pkg.holding_capacity));
+      packagingList.forEach(pkg => capacities.add(packagingHoldingCapacityKg(pkg)));
     });
     return Array.from(capacities).sort((a, b) => a - b);
   };
@@ -600,6 +643,27 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
 
                     {!currentBatch ? (
                       <form onSubmit={handleStage1Submit} className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-2">Godown *</label>
+                          <select
+                            value={godownId}
+                            onChange={(e) => {
+                              setGodownId(e.target.value);
+                              if (errors.godownId) setErrors({ ...errors, godownId: '' });
+                            }}
+                            className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                          >
+                            <option value="">Select godown</option>
+                            {godowns
+                              .filter((g) => g.is_active)
+                              .map((g) => (
+                                <option key={g.id} value={g.id}>
+                                  {g.name}
+                                </option>
+                              ))}
+                          </select>
+                          {errors.godownId && <p className="mt-1 text-sm text-destructive">{errors.godownId}</p>}
+                        </div>
                 <div>
                   <label className="block text-sm font-medium mb-2">Recipe *</label>
                   <select
@@ -684,7 +748,7 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
 
                         <button
                           type="submit"
-                          disabled={loading || !recipeId || quantity <= 0}
+                          disabled={loading || !godownId || !recipeId || quantity <= 0}
                           className="btn-primary px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           {loading ? <LoadingSpinner /> : 'Create Batch'}
@@ -1021,7 +1085,7 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
                             const selectedPkg = packagingQuantities[bp.product_id];
                             const selectedPackaging = filteredPackaging.find(p => p.id === selectedPkg?.packagingId);
                             const packetsNeeded = selectedPackaging && selectedPkg?.quantity 
-                              ? getPacketsNeeded(selectedPkg.quantity, selectedPackaging.holding_capacity)
+                              ? getPacketsNeeded(selectedPkg.quantity, packagingHoldingCapacityKg(selectedPackaging))
                               : 0;
                             
                             return (
@@ -1064,7 +1128,7 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
                                           const packagingNumber = pkg.packaging_number || '';
                                           return (
                                             <option key={pkg.id} value={pkg.id} disabled={availability.status === 'out_of_stock'}>
-                                              {packagingNumber && `${packagingNumber} - `}{pkg.holding_capacity}kg {pkg.packet_type}
+                                              {packagingNumber && `${packagingNumber} - `}{pkg.holding_capacity}kg {formatPacketTypeLabel(pkg.packet_type)}
                                               {vendor && ` - ${vendor.name}`}
                                               {` (${availability.message})`}
                                             </option>
@@ -1117,7 +1181,7 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
                                             </div>
                                             <div className="flex justify-between">
                                               <span className="text-muted-foreground">Available:</span>
-                                              <span className="font-medium">{getAvailablePackets(selectedPackaging.id)} packets</span>
+                                              <span className="font-medium">{getAvailablePackets(selectedPackaging.id, selectedPackaging)} packets</span>
                                             </div>
                                             {selectedPackaging.packaging_vendor_id && (
                                               <div className="flex justify-between">
@@ -1136,7 +1200,7 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
                                         <div className="flex items-start justify-between">
                                           <div>
                                             <div className="flex items-center gap-2 font-medium text-sm">
-                                              {selectedPackaging.holding_capacity}kg {selectedPackaging.packet_type}
+                                              {selectedPackaging.holding_capacity}kg {formatPacketTypeLabel(selectedPackaging.packet_type)}
                                               {selectedPackaging.packaging_number && (
                                                 <span className="text-xs font-mono font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
                                                   {selectedPackaging.packaging_number}
@@ -1172,14 +1236,14 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
                                         <h5 className="text-xs font-semibold text-muted-foreground uppercase">Attached Packaging:</h5>
                                         {attachedPackaging.map((bpkg) => {
                                           const pkg = filteredPackaging.find(p => p.id === bpkg.packaging_id) || packagingForProducts[bp.product_id]?.find(p => p.id === bpkg.packaging_id);
-                                          const packetsNeeded = pkg ? getPacketsNeeded(bpkg.quantity, pkg.holding_capacity) : 0;
+                                          const packetsNeeded = pkg ? getPacketsNeeded(bpkg.quantity, packagingHoldingCapacityKg(pkg)) : 0;
                                           const vendor = pkg ? getVendorForPackaging(pkg) : null;
                                           return (
                                             <div key={bpkg.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 text-sm">
                                               <div>
                                                 <div className="flex items-center gap-2">
                                                   <span className="font-medium">
-                                                    {pkg?.holding_capacity}kg {pkg?.packet_type}
+                                                    {pkg ? `${pkg.holding_capacity}kg ${formatPacketTypeLabel(pkg.packet_type)}` : '—'}
                                                   </span>
                                                   {pkg?.packaging_number && (
                                                     <span className="text-xs font-mono font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded">

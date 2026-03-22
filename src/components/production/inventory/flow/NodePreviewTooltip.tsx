@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import type { FlowNodeData } from '../../../../types/inventoryFlow';
+import { formatPacketTypeLabel } from '../../../../constants/bagAndPacketTypes';
 import { Store, Package, Box, PackageCheck } from 'lucide-react';
 
 interface NodePreviewTooltipProps {
@@ -57,7 +58,7 @@ export const NodePreviewTooltip = memo(({ data, x, y }: NodePreviewTooltipProps)
             <div className="flex items-center gap-2">
               <Box className="h-4 w-4 text-blue-500" />
               <span className="font-semibold">
-                {data.holdingCapacity} {data.packetType}
+                {data.holdingCapacity} {formatPacketTypeLabel(data.packetType)}
               </span>
             </div>
             {data.vendor && (

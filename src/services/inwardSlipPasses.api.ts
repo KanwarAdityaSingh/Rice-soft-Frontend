@@ -3,12 +3,12 @@ import type { InwardSlipPass, CreateInwardSlipPassRequest, UpdateInwardSlipPassR
 
 export const inwardSlipPassesAPI = {
   // Get all inward slip passes
-  getAllInwardSlipPasses: (sauda_id?: string) => {
-    let url = '/inward-slip-passes';
-    if (sauda_id) {
-      url += `?sauda_id=${sauda_id}`;
-    }
-    return apiService.get<InwardSlipPass[]>(url);
+  getAllInwardSlipPasses: (sauda_id?: string, godown_id?: string) => {
+    const params = new URLSearchParams();
+    if (sauda_id) params.set('sauda_id', sauda_id);
+    if (godown_id) params.set('godown_id', godown_id);
+    const q = params.toString();
+    return apiService.get<InwardSlipPass[]>(q ? `/inward-slip-passes?${q}` : '/inward-slip-passes');
   },
 
   // Get inward slip pass by ID

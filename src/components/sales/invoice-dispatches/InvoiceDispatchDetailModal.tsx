@@ -8,7 +8,9 @@ import { usePackaging } from '../../../hooks/usePackaging';
 import { inventoryAPI } from '../../../services/inventory.api';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { toast } from '../../../utils/toast';
+import { useGodowns } from '../../../hooks/useGodowns';
 import type { InvoiceDispatch, EInvoice, EWayBill } from '../../../types/sales';
+import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
 
 interface InvoiceDispatchDetailModalProps {
   dispatchId: string | null;
@@ -29,6 +31,7 @@ export function InvoiceDispatchDetailModal({
   const { transporters } = useTransporters();
   const { getVehicleNumber } = useVehicleMap();
   const { packaging } = usePackaging();
+  const { godowns } = useGodowns(true);
 
   const [dispatch, setDispatch] = useState<InvoiceDispatch | null>(null);
   const [loading, setLoading] = useState(false);
@@ -71,7 +74,7 @@ export function InvoiceDispatchDetailModal({
     }
     setLoadingFgi(true);
     inventoryAPI
-      .getFinishedGoods()
+      .getFinishedGoods(dispatch.godown_id ? { godown_id: dispatch.godown_id } : undefined)
       .then((rows) => {
         const byProduct: Record<string, number> = {};
         const list = Array.isArray(rows) ? rows : [];
@@ -85,7 +88,7 @@ export function InvoiceDispatchDetailModal({
       })
       .catch(() => setFgiByProduct({}))
       .finally(() => setLoadingFgi(false));
-  }, [open, dispatch?.id, dispatch?.status, dispatch?.lines?.length]);
+  }, [open, dispatch?.id, dispatch?.godown_id, dispatch?.status, dispatch?.lines?.length]);
 
   const runAction = async (
     key: string,
@@ -126,7 +129,7 @@ export function InvoiceDispatchDetailModal({
   const getPackagingLabel = (packagingId: string | null) => {
     if (!packagingId) return '–';
     const p = packaging.find((x) => x.id === packagingId);
-    return p ? `${p.holding_capacity} kg (${p.packet_type})` : packagingId;
+    return p ? `${p.holding_capacity} kg (${formatPacketTypeLabel(p.packet_type)})` : packagingId;
   };
 
   return (
@@ -160,6 +163,14 @@ export function InvoiceDispatchDetailModal({
                 <div>
                   <span className="text-muted-foreground">Dispatch date</span>
                   <p className="font-medium">{dispatch.dispatch_date}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Dispatch from godown</span>
+                  <p className="font-medium">
+                    {dispatch.godown_id
+                      ? godowns.find((g) => g.id === dispatch.godown_id)?.name ?? dispatch.godown_id
+                      : '–'}
+                  </p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Party</span>

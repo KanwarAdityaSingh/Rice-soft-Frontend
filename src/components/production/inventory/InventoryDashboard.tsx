@@ -8,6 +8,7 @@ import { InventoryTable } from './InventoryTable';
 import { InventorySummaryPanel } from './InventorySummaryPanel';
 import { FlowControls } from './flow/FlowControls';
 import { InventoryFilters } from './InventoryFilters';
+import { GodownFilterSelect } from '../../shared/GodownFilterSelect';
 import type { FlowNodeData } from '../../../types/inventoryFlow';
 import type { ReactFlowInstance } from '../../../types/reactflow';
 import type { GroupingStrategy } from '../../../types/inventoryFlow';
@@ -15,15 +16,17 @@ import type { ExtendedInventoryFilters } from '../../../utils/inventoryTransform
 
 export function InventoryDashboard() {
   const { loading, hierarchical, fetchHierarchicalInventory } = useInventory();
+  const [godownFilter, setGodownFilter] = useState<string | undefined>();
   const [viewMode, setViewMode] = useState<'diagram' | 'tree' | 'table' | 'summary'>('diagram');
   const [groupingStrategy, setGroupingStrategy] = useState<GroupingStrategy>('default');
   const [filters, setFilters] = useState<ExtendedInventoryFilters>({});
   const [filtersOpen, setFiltersOpen] = useState(false);
   
-  // Ensure hierarchical data is fetched on mount
   useEffect(() => {
-    fetchHierarchicalInventory();
-  }, [fetchHierarchicalInventory]);
+    fetchHierarchicalInventory(
+      godownFilter ? { godown_id: godownFilter } : undefined
+    );
+  }, [fetchHierarchicalInventory, godownFilter]);
   const [selectedNode, setSelectedNode] = useState<FlowNodeData | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -107,7 +110,7 @@ export function InventoryDashboard() {
   return (
     <div className="h-[calc(100vh-200px)] flex flex-col space-y-4">
       {/* Header with Controls */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
             <Layers className="h-5 w-5" />
@@ -119,6 +122,7 @@ export function InventoryDashboard() {
             </p>
           </div>
         </div>
+        <GodownFilterSelect value={godownFilter} onChange={setGodownFilter} label="Godown" />
         <FlowControls
           reactFlowInstance={reactFlowInstance}
           onSearchChange={setSearchQuery}

@@ -4,6 +4,7 @@ import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { EmptyState } from '../../admin/shared/EmptyState';
 import { useInventory } from '../../../hooks/useInventory';
 import type { HierarchicalInventory } from '../../../types/entities';
+import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
 
 export function HierarchicalInventoryView() {
   const { hierarchical, fetchHierarchicalInventory, loading } = useInventory();
@@ -281,7 +282,7 @@ export function HierarchicalInventoryView() {
                                         <div className="text-left">
                                           <div className="flex items-center gap-2">
                                             <div className="font-medium text-sm">
-                                              {pkg.holding_capacity}kg {pkg.packet_type}
+                                              {pkg.holding_capacity}kg {formatPacketTypeLabel(pkg.packet_type)}
                                             </div>
                                             {pkg.packaging_number && (
                                               <span className="text-xs font-mono font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded">

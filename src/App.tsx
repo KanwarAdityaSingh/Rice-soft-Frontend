@@ -12,6 +12,7 @@ import SalesPartiesPage from './pages/directory/SalesParties.tsx'
 import TransportersPage from './pages/directory/Transporters.tsx'
 import VehiclesPage from './pages/directory/Vehicles.tsx'
 import RiceCodesPage from './pages/directory/RiceCodes.tsx'
+import GodownsPage from './pages/directory/Godowns'
 import LeadsPage from './pages/crm/Leads'
 import LeadDetailPage from './pages/crm/LeadDetail'
 import AnalyticsPage from './pages/crm/Analytics'
@@ -27,6 +28,7 @@ import PurchaseDetailPage from './pages/purchases/PurchaseDetail'
 import PaymentAdvicesPage from './pages/purchases/PaymentAdvices'
 import RecipesPage from './pages/production/Recipes'
 import ProductsPage from './pages/production/Products'
+import ProductRateHistoryPage from './pages/production/ProductRateHistory'
 import PackagingPage from './pages/production/Packaging'
 import PackagingVendorsPage from './pages/production/PackagingVendors'
 import BatchesPage from './pages/production/Batches'
@@ -203,6 +205,16 @@ function AnimatedRoutes() {
           }
         />
         <Route
+          path="/directory/godowns"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <GodownsPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/purchases/saudas"
           element={
             <ProtectedRoute>
@@ -278,6 +290,16 @@ function AnimatedRoutes() {
             <ProtectedRoute>
               <AppLayout>
                 <ProductsPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/production/product-rate-history"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <ProductRateHistoryPage />
               </AppLayout>
             </ProtectedRoute>
           }

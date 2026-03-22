@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Users, Store, UserCheck, UserCircle, ChevronRight, Settings, LogOut, X, Sprout, ShoppingCart, Package, FileText, CreditCard, Truck, Car, BookOpen, FlaskConical, Box, TrendingUp, ShoppingBag, Receipt, FileDigit, ScrollText, StickyNote } from 'lucide-react'
+import { Users, Store, UserCheck, UserCircle, ChevronRight, Settings, LogOut, X, Sprout, ShoppingCart, Package, FileText, CreditCard, Truck, Car, BookOpen, FlaskConical, Box, TrendingUp, ShoppingBag, Receipt, FileDigit, ScrollText, StickyNote, Warehouse, History } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { canRead, isCustomUser, getPermissions } from '../utils/permissions'
 import { Tooltip } from '@mui/material'
@@ -47,6 +47,7 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
     { to: '/directory/salesmen', label: 'Salesperson', icon: UserCheck, key: 'salesman' as const },
     { to: '/directory/brokers', label: 'Brokers', icon: UserCircle, key: 'broker' as const },
     { to: '/directory/rice-codes', label: 'Rice Codes', icon: Sprout, key: 'riceCode' as const },
+    { to: '/directory/godowns', label: 'Godowns', icon: Warehouse, key: null as any },
     { to: '/purchases/saudas', label: 'Saudas', icon: Package, key: null as any },
     { to: '/purchases/inward-slip-passes', label: 'Inward Slip Passes', icon: FileText, key: null as any },
     { to: '/purchases/lots', label: 'Lots', icon: Package, key: null as any },
@@ -54,6 +55,7 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
     { to: '/purchases/payment-advices', label: 'Payment Advices', icon: CreditCard, key: null as any },
     { to: '/production/recipes', label: 'Recipes', icon: BookOpen, key: null as any },
     { to: '/production/products', label: 'Products', icon: Package, key: null as any },
+    { to: '/production/product-rate-history', label: 'Product Rate History', icon: History, key: null as any },
     { to: '/production/packaging', label: 'Packaging', icon: Box, key: null as any },
     { to: '/production/packaging-vendors', label: 'Packaging Vendors', icon: ShoppingBag, key: null as any },
     { to: '/production/batches', label: 'Batches', icon: FlaskConical, key: null as any },

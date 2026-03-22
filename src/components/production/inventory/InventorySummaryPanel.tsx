@@ -4,6 +4,7 @@ import type { HierarchicalInventory } from '../../../types/entities';
 import { calculateInventorySummary } from '../../../utils/inventoryTransform';
 import type { ExtendedInventoryFilters } from '../../../utils/inventoryTransform';
 import type { FlowNodeData } from '../../../types/inventoryFlow';
+import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
 
 interface InventorySummaryPanelProps {
   hierarchical: HierarchicalInventory[];
@@ -235,7 +236,8 @@ export function InventorySummaryPanel({ hierarchical, filters, selectedNode }: I
               <span>
                 {selectedNode.type === 'brand' && `Brand: ${selectedNode.brand || 'Unbranded'}`}
                 {selectedNode.type === 'product' && `Product: ${selectedNode.productName}`}
-                {selectedNode.type === 'packaging' && `Packaging: ${selectedNode.holdingCapacity}kg ${selectedNode.packetType}`}
+                {selectedNode.type === 'packaging' &&
+                  `Packaging: ${selectedNode.holdingCapacity}kg ${formatPacketTypeLabel(selectedNode.packetType)}`}
                 {selectedNode.type === 'finishedGoods' && `Batch: ${selectedNode.batchNumber}`}
                 {!['brand', 'product', 'packaging', 'finishedGoods'].includes(selectedNode.type) && 'Summary'}
               </span>

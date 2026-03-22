@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
-import { UserCircle, Plus, Mail, Phone, MapPin } from 'lucide-react'
+import { UserCircle, Plus, Mail, Phone, MapPin, AlertTriangle, IndianRupee } from 'lucide-react'
 import { SearchBar } from '../../components/admin/shared/SearchBar'
 import { FilterDropdown } from '../../components/admin/shared/FilterDropdown'
 import { LoadingSpinner } from '../../components/admin/shared/LoadingSpinner'
@@ -9,6 +9,7 @@ import { ConfirmDialog } from '../../components/admin/shared/ConfirmDialog'
 import { AlertDialog } from '../../components/shared/AlertDialog'
 import { useBrokers } from '../../hooks/useBrokers'
 import { BrokerFormModal } from '../../components/admin/brokers/BrokerFormModal'
+import { BrokerBrokerageCommissionSummaryModal } from '../../components/admin/brokers/BrokerBrokerageCommissionSummaryModal'
 import { saudasAPI } from '../../services/saudas.api'
 import { vendorsAPI } from '../../services/vendors.api'
 import { riceCodesAPI } from '../../services/riceCodes.api'
@@ -18,11 +19,12 @@ import type { Sauda } from '../../types/entities'
 export default function BrokersPage() {
   const { brokers, loading, deleteBroker, refetch } = useBrokers()
   const [searchQuery, setSearchQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string | undefined>()
   const [typeFilter, setTypeFilter] = useState<string | undefined>()
+  const [bankVerifyFilter, setBankVerifyFilter] = useState<string | undefined>()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
+  const [brokerageSummaryBroker, setBrokerageSummaryBroker] = useState<{ id: string; name: string | null } | null>(null)
   const [saudas, setSaudas] = useState<Sauda[]>([])
   const [alertOpen, setAlertOpen] = useState(false)
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('error')
@@ -168,12 +170,15 @@ export default function BrokersPage() {
         (primaryContact?.emails?.[0]?.toLowerCase().includes(q) || false) ||
         (primaryContact?.phones?.[0]?.includes(searchQuery) || false)
 
-      const matchesStatus = statusFilter ? (statusFilter === 'active' ? b.is_active : !b.is_active) : true
       const matchesType = typeFilter ? b.type === typeFilter : true
 
-      return matchesSearch && matchesStatus && matchesType
+      const verified = Boolean(b.bank_details_verified_at)
+      const matchesBankFilter =
+        bankVerifyFilter === 'verified' ? verified : bankVerifyFilter === 'unverified' ? !verified : true
+
+      return matchesSearch && matchesType && matchesBankFilter
     })
-  }, [brokers, searchQuery, statusFilter, typeFilter])
+  }, [brokers, searchQuery, typeFilter, bankVerifyFilter])
 
   return (
     <div className="container mx-auto py-6 sm:py-10 space-y-6 sm:space-y-8 px-4 sm:px-6">
@@ -194,16 +199,7 @@ export default function BrokersPage() {
           <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search by name, contact, email, or phone..." />
         </div>
         <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
-          <div className="flex gap-2 flex-1">
-            <FilterDropdown
-              label="Status"
-              options={[
-                { label: 'Active', value: 'active' },
-                { label: 'Inactive', value: 'inactive' },
-              ]}
-              value={statusFilter}
-              onChange={setStatusFilter}
-            />
+          <div className="flex gap-2 flex-1 flex-wrap">
             <FilterDropdown
               label="Type"
               options={[
@@ -213,6 +209,15 @@ export default function BrokersPage() {
               ]}
               value={typeFilter}
               onChange={setTypeFilter}
+            />
+            <FilterDropdown
+              label="Bank"
+              options={[
+                { label: 'Verified', value: 'verified' },
+                { label: 'Not verified', value: 'unverified' },
+              ]}
+              value={bankVerifyFilter}
+              onChange={setBankVerifyFilter}
             />
           </div>
           <button className="btn-primary rounded-xl inline-flex items-center justify-center gap-2 w-full sm:w-auto" onClick={() => setCreateOpen(true)}>
@@ -230,21 +235,47 @@ export default function BrokersPage() {
           {filtered.map((b) => (
             <article
               key={b.id}
-              className="group rounded-2xl p-4 bg-gradient-to-br from-background to-muted/40 border border-border/60 hover:border-primary/40 transition-all duration-300 shadow-sm hover:shadow-md"
+              className="group min-w-0 rounded-2xl p-4 bg-gradient-to-br from-background to-muted/40 border border-border/60 hover:border-primary/40 transition-all duration-300 shadow-sm hover:shadow-md overflow-hidden"
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shadow-inner">
+              <div className="flex items-start justify-between gap-3 min-w-0">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="h-10 w-10 shrink-0 rounded-xl bg-primary/10 text-primary flex items-center justify-center shadow-inner">
                     <UserCircle className="h-5 w-5" />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{String(b.type).trim()}</div>
-                    <h3 className="text-sm font-semibold leading-tight">{b.business_name?.trim() || 'N/A'}</h3>
-                    <div className="text-xs text-muted-foreground inline-flex items-center gap-1"><MapPin className="h-3 w-3" /> {b.address.city.trim()}</div>
+                    <h3 className="text-sm font-semibold leading-tight break-words">{b.business_name?.trim() || 'N/A'}</h3>
+                    <div className="text-xs text-muted-foreground inline-flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" /> {b.address.city.trim()}</div>
                   </div>
                 </div>
-                <span className={`whitespace-nowrap px-2 py-1 rounded-md text-[10px] ${b.is_active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground'}`}>{b.is_active ? 'Active' : 'Inactive'}</span>
+                <div className="flex flex-wrap gap-1 justify-end shrink-0">
+                  {b.bank_details_verified_at && (
+                    <span
+                      className="whitespace-nowrap px-2 py-1 rounded-md text-[10px] bg-sky-500/15 text-sky-700 dark:text-sky-400 border border-sky-500/25"
+                      title={`Bank verified${b.bank_details_verified_at ? ` · ${new Date(b.bank_details_verified_at).toLocaleString()}` : ''}`}
+                    >
+                      Bank verified
+                    </span>
+                  )}
+                  {!b.bank_details_verified_at && b.bank_verification_error?.trim() && (
+                    <span
+                      className="whitespace-nowrap px-2 py-1 rounded-md text-[10px] bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30"
+                      title={b.bank_verification_error.trim()}
+                    >
+                      Bank check failed
+                    </span>
+                  )}
+                </div>
               </div>
+              {!b.bank_details_verified_at && b.bank_verification_error?.trim() && (
+                <div
+                  className="mt-3 rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100 flex gap-2 min-w-0"
+                  role="status"
+                >
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" aria-hidden />
+                  <p className="min-w-0 break-words leading-snug">{b.bank_verification_error.trim()}</p>
+                </div>
+              )}
               <div className="mt-3 grid gap-1.5 text-xs">
                 {b.contact_persons?.[0] && (
                   <>
@@ -301,7 +332,16 @@ export default function BrokersPage() {
                   )}
                 </div>
               </div>
-              <div className="mt-3 flex items-center justify-between">
+              <div className="mt-3 flex flex-col gap-2">
+                <button
+                  type="button"
+                  className="btn-secondary w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium"
+                  onClick={() => setBrokerageSummaryBroker({ id: b.id, name: b.business_name ?? null })}
+                >
+                  <IndianRupee className="h-3.5 w-3.5" aria-hidden />
+                  Brokerage summary
+                </button>
+                <div className="flex items-center justify-between gap-2">
                 {isBrokerInUse(b.id) && (
                   <span className="text-xs text-amber-600 dark:text-amber-400">
                     Used in {getSaudaCountForBroker(b.id)} sauda(s)
@@ -309,7 +349,6 @@ export default function BrokersPage() {
                 )}
                 <div className="ml-auto">
                   <ActionButtons
-                    isActive={b.is_active}
                     onDelete={async () => {
                       if (isBrokerInUse(b.id)) {
                         const saudaNames = await getSaudaNamesForBroker(b.id);
@@ -327,6 +366,7 @@ export default function BrokersPage() {
                       setDeleteDialogOpen(true);
                     }}
                   />
+                </div>
                 </div>
               </div>
             </article>
@@ -379,6 +419,16 @@ export default function BrokersPage() {
         type={alertType}
         title={alertTitle}
         message={alertMessage}
+      />
+
+      <BrokerBrokerageCommissionSummaryModal
+        key={brokerageSummaryBroker?.id ?? 'brokerage-summary-closed'}
+        open={brokerageSummaryBroker !== null}
+        onOpenChange={(open) => {
+          if (!open) setBrokerageSummaryBroker(null)
+        }}
+        brokerId={brokerageSummaryBroker?.id ?? null}
+        brokerName={brokerageSummaryBroker?.name}
       />
 
       <BrokerFormModal 

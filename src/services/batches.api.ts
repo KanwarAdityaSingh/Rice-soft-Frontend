@@ -3,8 +3,9 @@ import type { Batch, BatchWithDetails, CreateBatchRequest, UpdateBatchRequest, B
 
 export const batchesAPI = {
   // Get all batches
-  getAllBatches: () => {
-    return apiService.get<Batch[]>('/batches');
+  getAllBatches: (godown_id?: string) => {
+    const q = godown_id ? `?godown_id=${encodeURIComponent(godown_id)}` : '';
+    return apiService.get<Batch[]>(`/batches${q}`);
   },
 
   // Get batch by ID with details

@@ -11,10 +11,14 @@ import { useBatches } from '../../../hooks/useBatches';
 import { useProducts } from '../../../hooks/useProducts';
 import { isAdmin } from '../../../utils/permissions';
 import { BatchFormModal } from './BatchFormModal';
+import { GodownFilterSelect } from '../../shared/GodownFilterSelect';
+import { useGodowns } from '../../../hooks/useGodowns';
 
 export function BatchesTable() {
   const navigate = useNavigate();
-  const { batches, loading, refetch } = useBatches();
+  const [godownFilter, setGodownFilter] = useState<string | undefined>();
+  const { godowns } = useGodowns(true);
+  const { batches, loading, refetch } = useBatches(godownFilter);
   const { products } = useProducts();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
@@ -24,6 +28,9 @@ export function BatchesTable() {
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('error');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+
+  const godownName = (id: string | undefined) =>
+    id ? godowns.find((g) => g.id === id)?.name ?? '—' : '—';
 
   const filtered = useMemo(() => {
     return batches.filter((b) => {
@@ -58,7 +65,8 @@ export function BatchesTable() {
             placeholder="Search batches..."
           />
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap items-end">
+          <GodownFilterSelect value={godownFilter} onChange={setGodownFilter} label="Godown" />
           <FilterDropdown
             label="Status"
             options={[
@@ -117,6 +125,7 @@ export function BatchesTable() {
                 </div>
 
                 <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                  <div>Godown: {godownName(batch.godown_id)}</div>
                   <div>Quantity: {batch.quantity.toFixed(2)} kg</div>
                 </div>
 

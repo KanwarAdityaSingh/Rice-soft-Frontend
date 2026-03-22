@@ -8,6 +8,8 @@ import { FileText, Eye } from 'lucide-react';
 import { useInvoiceDispatches } from '../../../hooks/useInvoiceDispatches';
 import { InvoiceDispatchDetailModal } from './InvoiceDispatchDetailModal';
 import { useProducts } from '../../../hooks/useProducts';
+import { GodownFilterSelect } from '../../shared/GodownFilterSelect';
+import { useGodowns } from '../../../hooks/useGodowns';
 import type { InvoiceDispatchStatus } from '../../../types/sales';
 
 interface InvoiceDispatchesTableProps {
@@ -21,10 +23,16 @@ const statusOptions: { value: string; label: string }[] = [
 
 export function InvoiceDispatchesTable({ onRefreshRef }: InvoiceDispatchesTableProps = {}) {
   const [statusFilter, setStatusFilter] = useState<InvoiceDispatchStatus | ''>('');
+  const [godownFilter, setGodownFilter] = useState<string | undefined>();
+  const { godowns } = useGodowns(true);
   const { invoiceDispatches, loading, refetch } = useInvoiceDispatches({
     status: statusFilter || undefined,
+    godown_id: godownFilter,
   });
   const { products } = useProducts();
+
+  const godownName = (id: string | undefined) =>
+    id ? godowns.find((g) => g.id === id)?.name ?? '—' : '—';
 
   const [searchQuery, setSearchQuery] = useState('');
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -68,6 +76,7 @@ export function InvoiceDispatchesTable({ onRefreshRef }: InvoiceDispatchesTableP
           options={statusOptions}
           onChange={(v) => setStatusFilter((v ?? '') as InvoiceDispatchStatus | '')}
         />
+        <GodownFilterSelect value={godownFilter} onChange={setGodownFilter} label="Godown" />
       </div>
 
       <div className="rounded-xl border bg-card overflow-hidden">
@@ -83,6 +92,7 @@ export function InvoiceDispatchesTable({ onRefreshRef }: InvoiceDispatchesTableP
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className="text-left p-3 font-medium">Invoice #</th>
+                  <th className="text-left p-3 font-medium">Godown</th>
                   <th className="text-left p-3 font-medium">Party</th>
                   <th className="text-left p-3 font-medium">Status</th>
                   <th className="text-left p-3 font-medium">Date</th>
@@ -93,6 +103,7 @@ export function InvoiceDispatchesTable({ onRefreshRef }: InvoiceDispatchesTableP
                 {filtered.map((d) => (
                   <tr key={d.id} className="border-b hover:bg-muted/30">
                     <td className="p-3">{d.internal_invoice_number}</td>
+                    <td className="p-3 text-muted-foreground">{godownName(d.godown_id)}</td>
                     <td className="p-3">{d.party_name}</td>
                     <td className="p-3">
                       <span

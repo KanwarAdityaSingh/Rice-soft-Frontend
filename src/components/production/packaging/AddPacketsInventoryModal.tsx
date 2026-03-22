@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { usePackaging } from '../../../hooks/usePackaging';
+import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
 
 interface AddPacketsInventoryModalProps {
   open: boolean;
@@ -88,7 +89,7 @@ export function AddPacketsInventoryModal({ open, onOpenChange, packagingId }: Ad
 
               <div className="mb-4 p-3 bg-muted/50 rounded-lg">
                 <div className="text-sm text-muted-foreground">Packaging Type</div>
-                <div className="text-base font-semibold">{pkg.packet_type}</div>
+                <div className="text-base font-semibold">{formatPacketTypeLabel(pkg.packet_type)}</div>
                 <div className="text-sm text-muted-foreground mt-1">
                   Capacity: {pkg.holding_capacity} kg per packet
                 </div>

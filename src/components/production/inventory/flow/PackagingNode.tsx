@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { Handle, Position } from 'reactflow';
 import { Box, Building2, ChevronDown, ChevronRight } from 'lucide-react';
 import type { PackagingNodeData } from '../../../../types/inventoryFlow';
+import { formatPacketTypeLabel } from '../../../../constants/bagAndPacketTypes';
 
 interface PackagingNodeProps {
   data: PackagingNodeData;
@@ -37,7 +38,7 @@ export const PackagingNode = memo(({ data, selected }: PackagingNodeProps) => {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1 mb-1">
             <span className="text-sm font-semibold text-foreground">
-              {data.holdingCapacity} {data.packetType}
+              {data.holdingCapacity} {formatPacketTypeLabel(data.packetType)}
             </span>
             {data.hierarchicalData.packaging_number && (
               <span className="text-xs font-mono font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded">

@@ -12,14 +12,14 @@ import { useTransporters } from '../../../hooks/useTransporters';
 import { vehiclesAPI } from '../../../services/vehicles.api';
 import { inwardSlipPassesAPI } from '../../../services/inwardSlipPasses.api';
 import { VehicleFormModal } from './VehicleFormModal';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import type { Vehicle, InwardSlipPass } from '../../../types/entities';
 
 export function VehiclesTable() {
   const { vehicles, loading, refetch } = useVehicles(undefined, undefined);
   const { transporters } = useTransporters();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [verificationFilter, setVerificationFilter] = useState<string | undefined>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
@@ -32,6 +32,20 @@ export function VehiclesTable() {
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('error');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+
+  // Open create modal when opened via e.g. /directory/vehicles?create=1 (new tab from ISP form)
+  useEffect(() => {
+    if (searchParams.get('create') !== '1') return;
+    setCreateOpen(true);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('create');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [searchParams, setSearchParams]);
 
   // Fetch inward slip passes to check vehicle usage
   useEffect(() => {
@@ -187,17 +201,13 @@ export function VehiclesTable() {
         v.vehicle_class?.toLowerCase().includes(q)
       );
 
-      const matchesStatus = statusFilter
-        ? (statusFilter === 'active' ? v.is_active : !v.is_active)
-        : true;
-
       const matchesVerification = verificationFilter
         ? (verificationFilter === 'verified' ? v.is_verified : !v.is_verified)
         : true;
 
-      return matchesSearch && matchesStatus && matchesVerification;
+      return matchesSearch && matchesVerification;
     });
-  }, [vehicles, searchQuery, statusFilter, verificationFilter]);
+  }, [vehicles, searchQuery, verificationFilter]);
 
   const handleDelete = async () => {
     if (!selectedVehicle) return;
@@ -245,16 +255,6 @@ export function VehiclesTable() {
           />
         </div>
         <div className="flex gap-2 flex-wrap">
-          <FilterDropdown
-            label="Status"
-            options={[
-              { label: 'All', value: undefined },
-              { label: 'Active', value: 'active' },
-              { label: 'Inactive', value: 'inactive' },
-            ]}
-            value={statusFilter}
-            onChange={setStatusFilter}
-          />
           <FilterDropdown
             label="Verified"
             options={[
@@ -315,16 +315,13 @@ export function VehiclesTable() {
                 return (
                   <tr 
                     key={vehicle.id} 
-                    className={`border-b border-border/60 hover:bg-muted/30 transition-colors ${!vehicle.is_active ? 'opacity-60' : ''}`}
+                    className="border-b border-border/60 hover:bg-muted/30 transition-colors"
                   >
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium">{vehicle.vehicle_number}</span>
                         {vehicle.is_verified && (
                           <Shield className="h-3.5 w-3.5 text-emerald-500" title="Verified via Surepass" />
-                        )}
-                        {!vehicle.is_active && (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] bg-red-500/10 text-red-600">Inactive</span>
                         )}
                       </div>
                     </td>
@@ -401,7 +398,6 @@ export function VehiclesTable() {
                           </span>
                         )}
                         <ActionButtons
-                          isActive={vehicle.is_active}
                           onEdit={() => {
                             setSelectedVehicleId(vehicle.id);
                             setEditModalOpen(true);

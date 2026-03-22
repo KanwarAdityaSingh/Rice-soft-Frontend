@@ -9,10 +9,6 @@ import { HOLDING_CAPACITIES } from '../../../constants/packaging';
 import type { CreateProductRequest, UpdateProductRequest, ProductRateInput } from '../../../types/entities';
 
 const RICE_TYPES = [
-  { value: 'basmati', label: 'Basmati' },
-  { value: 'non_basmati', label: 'Non Basmati' },
-  { value: 'parboiled', label: 'Parboiled' },
-  { value: 'raw', label: 'Raw' },
   { value: 'raw_basmati', label: 'Raw Basmati' },
   { value: 'steam_basmati', label: 'Steam Basmati' },
   { value: 'white_sella', label: 'White Sella' },
@@ -194,32 +190,6 @@ export function ProductFormModal({ open, onOpenChange, productId }: ProductFormM
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2">Product Name *</label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => {
-                      setFormData({ ...formData, name: e.target.value });
-                      if (errors.name) setErrors({ ...errors, name: '' });
-                    }}
-                    className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
-                    placeholder="e.g., Premium Mixed Rice"
-                  />
-                  {errors.name && <p className="mt-1 text-sm text-destructive">{errors.name}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2">Description</label>
-                  <textarea
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
-                    rows={3}
-                    placeholder="Product description..."
-                  />
-                </div>
-
-                <div>
                   <label className="block text-sm font-medium mb-2">Brand</label>
                   <select
                     value={formData.brand || ''}
@@ -234,6 +204,21 @@ export function ProductFormModal({ open, onOpenChange, productId }: ProductFormM
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Product Name *</label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => {
+                      setFormData({ ...formData, name: e.target.value });
+                      if (errors.name) setErrors({ ...errors, name: '' });
+                    }}
+                    className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="e.g., Premium Mixed Rice"
+                  />
+                  {errors.name && <p className="mt-1 text-sm text-destructive">{errors.name}</p>}
                 </div>
 
                 <div>

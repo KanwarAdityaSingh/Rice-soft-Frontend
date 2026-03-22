@@ -10,6 +10,7 @@ import { getRiceTypeLabel } from '../../../utils/riceType';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
+import { useGodowns } from '../../../hooks/useGodowns';
 import type { CreateLotRequest, UpdateLotRequest, Lot, RiceCode, RiceType, Sauda } from '../../../types/entities';
 
 interface LotFormModalProps {
@@ -22,6 +23,7 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
   const { createLot, updateLot } = useLots();
   const { saudas } = useSaudas();
   const { vendors } = useVendors();
+  const { godowns } = useGodowns(false);
   const isEditMode = !!lotId;
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
@@ -85,6 +87,7 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
   };
 
   const [formData, setFormData] = useState<CreateLotRequest>({
+    godown_id: '',
     sauda_id: '',
     lot_number: '',
     rice_code_id: null,
@@ -117,6 +120,7 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
     try {
       const lot = await lotsAPI.getLotById(lotId);
       setFormData({
+        godown_id: lot.godown_id ?? '',
         sauda_id: lot.sauda_id,
         lot_number: lot.lot_number,
         rice_code_id: lot.rice_code_id || null,
@@ -140,6 +144,7 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
 
   const resetForm = () => {
     setFormData({
+      godown_id: '',
       sauda_id: '',
       lot_number: '',
       rice_code_id: null,
@@ -156,6 +161,9 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
+    if (!isEditMode && (!formData.godown_id || !formData.godown_id.trim())) {
+      newErrors.godown_id = 'Godown is required';
+    }
     if (!formData.sauda_id) {
       newErrors.sauda_id = 'Sauda is required';
     }
@@ -186,7 +194,9 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
     setLoading(true);
     try {
       if (isEditMode && lotId) {
-        await updateLot(lotId, formData as UpdateLotRequest);
+        const { godown_id: _g, ...updatePayload } = formData;
+        void _g;
+        await updateLot(lotId, updatePayload as UpdateLotRequest);
         setAlertType('success');
         setAlertTitle('Success');
         setAlertMessage('Lot updated successfully');
@@ -238,6 +248,30 @@ export function LotFormModal({ open, onOpenChange, lotId }: LotFormModalProps) {
                 </div>
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-4">
+                  {!isEditMode && (
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        Godown <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={formData.godown_id}
+                        onChange={(e) => setFormData({ ...formData, godown_id: e.target.value })}
+                        className={`w-full px-3 py-2 border rounded-lg bg-background ${
+                          errors.godown_id ? 'border-red-500' : 'border-border'
+                        }`}
+                      >
+                        <option value="">Select godown</option>
+                        {godowns
+                          .filter((g) => g.is_active)
+                          .map((g) => (
+                            <option key={g.id} value={g.id}>
+                              {g.name}
+                            </option>
+                          ))}
+                      </select>
+                      {errors.godown_id && <p className="text-xs text-red-600 mt-1">{errors.godown_id}</p>}
+                    </div>
+                  )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium mb-1">

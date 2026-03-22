@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { Handle, Position } from 'reactflow';
 import { Package2, Box } from 'lucide-react';
 import type { PacketTypeNodeData } from '../../../../types/inventoryFlow';
+import { formatPacketTypeLabel } from '../../../../constants/bagAndPacketTypes';
 
 interface PacketTypeNodeProps {
   data: PacketTypeNodeData;
@@ -48,7 +49,7 @@ export const PacketTypeNode = memo(({ data, selected }: PacketTypeNodeProps) => 
         </div>
         <div className="flex-1 min-w-0">
           <h4 className="text-base font-semibold text-foreground mb-1 truncate">
-            {data.packetType}
+            {formatPacketTypeLabel(data.packetType)}
           </h4>
           <div className="text-xs text-muted-foreground">Packet Type</div>
         </div>

@@ -14,6 +14,7 @@ export function VendorsTable() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [typeFilter, setTypeFilter] = useState<string | undefined>();
+  const [bankVerifyFilter, setBankVerifyFilter] = useState<string | undefined>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedVendor, setSelectedVendor] = useState<{ id: string; business_name?: string } | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -37,8 +38,11 @@ export function VendorsTable() {
     
     const matchesStatus = statusFilter ? (statusFilter === 'active' ? vendor.is_active : !vendor.is_active) : true;
     const matchesType = typeFilter ? vendor.type === typeFilter : true;
+    const verified = Boolean(vendor.bank_details_verified_at);
+    const matchesBank =
+      bankVerifyFilter === 'verified' ? verified : bankVerifyFilter === 'unverified' ? !verified : true;
 
-    return matchesSearch && matchesStatus && matchesType;
+    return matchesSearch && matchesStatus && matchesType && matchesBank;
   });
 
   return (
@@ -66,6 +70,15 @@ export function VendorsTable() {
           value={typeFilter}
           onChange={setTypeFilter}
         />
+        <FilterDropdown
+          label="Bank"
+          options={[
+            { label: 'Verified', value: 'verified' },
+            { label: 'Not verified', value: 'unverified' },
+          ]}
+          value={bankVerifyFilter}
+          onChange={setBankVerifyFilter}
+        />
       </div>
 
       {loading ? (
@@ -87,6 +100,7 @@ export function VendorsTable() {
                   <th className="text-left py-3 px-4 text-sm font-semibold">Email</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold">Phone</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold">Type</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold">Bank</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold">City</th>
                   <th className="text-right py-3 px-4 text-sm font-semibold">Actions</th>
                 </tr>
@@ -99,6 +113,22 @@ export function VendorsTable() {
                     <td className="py-3 px-4 text-sm">{vendor.contact_persons?.[0]?.emails?.[0] || 'N/A'}</td>
                     <td className="py-3 px-4 text-sm">{vendor.contact_persons?.[0]?.phones?.[0] || 'N/A'}</td>
                     <td className="py-3 px-4 text-sm">{getTypeLabel(vendor.type)}</td>
+                    <td className="py-3 px-4 text-sm max-w-[14rem]">
+                      {vendor.bank_details_verified_at ? (
+                        <span className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-sky-500/15 text-sky-700 dark:text-sky-400 border border-sky-500/25">
+                          Verified
+                        </span>
+                      ) : vendor.bank_verification_error?.trim() ? (
+                        <span
+                          className="inline-flex items-start gap-1 rounded-md px-2 py-0.5 text-xs font-medium bg-amber-500/10 text-amber-900 dark:text-amber-200 border border-amber-500/25"
+                          title={vendor.bank_verification_error.trim()}
+                        >
+                          <span className="line-clamp-2">{vendor.bank_verification_error.trim()}</span>
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
+                    </td>
                     <td className="py-3 px-4 text-sm">{vendor.address.city}</td>
                     <td className="py-3 px-4 text-right">
                       <ActionButtons

@@ -27,9 +27,11 @@ export const packagingVendorsAPI = {
     return apiService.delete<{ success: boolean; message: string }>(`/packaging-vendors/${id}`);
   },
 
-  // Lookup GST
+  /** Same response shape as vendors/godowns. Legacy `GET .../gst/lookup` still exists on the API. */
   lookupGST: (gstNumber: string) => {
-    return apiService.get<GSTLookupResponseData>(`/packaging-vendors/gst/lookup?gst_number=${gstNumber}`);
+    return apiService.get<GSTLookupResponseData>(
+      `/packaging-vendors/lookupGST?gst_number=${encodeURIComponent(gstNumber)}`,
+    );
   },
 };
 

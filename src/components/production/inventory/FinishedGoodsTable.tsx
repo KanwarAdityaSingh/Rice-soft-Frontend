@@ -6,6 +6,7 @@ import { useInventory } from '../../../hooks/useInventory';
 import { useProducts } from '../../../hooks/useProducts';
 import { InventoryAuditModal } from './InventoryAuditModal';
 import { inventoryAuditAPI, type FinishedGoodsInventoryAuditResponse } from '../../../services/inventoryAudit.api';
+import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
 
 interface FinishedGoodsTableProps {
   onViewAudit?: (fgId: string) => void;
@@ -217,7 +218,7 @@ export function FinishedGoodsTable({ onViewAudit }: FinishedGoodsTableProps) {
                             {fg.packaging ? (
                               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-sm rounded-lg bg-sky-500/10 text-sky-700">
                                 <Box className="h-3.5 w-3.5" />
-                                {fg.packaging.packet_type} ({fg.packaging.holding_capacity}kg)
+                                {formatPacketTypeLabel(fg.packaging.packet_type)} ({fg.packaging.holding_capacity}kg)
                               </span>
                             ) : (
                               <span className="text-muted-foreground">N/A</span>

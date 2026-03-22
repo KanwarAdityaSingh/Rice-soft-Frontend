@@ -7,6 +7,7 @@ import { usePackaging } from '../../../hooks/usePackaging';
 import { useProducts } from '../../../hooks/useProducts';
 import { InventoryAuditModal } from './InventoryAuditModal';
 import { inventoryAuditAPI, type PacketsInventoryAuditResponse } from '../../../services/inventoryAudit.api';
+import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
 
 interface PacketsTableProps {
   onViewAudit?: (packagingId: string) => void;
@@ -80,7 +81,10 @@ export function PacketsTable({ onViewAudit }: PacketsTableProps) {
   }, [packets, packaging, products]);
 
   const openPacketAudit = async (packagingId: string, packetType: string, capacity: number) => {
-    setSelectedPacket({ id: packagingId, name: `${capacity}kg ${packetType}` });
+    setSelectedPacket({
+      id: packagingId,
+      name: `${capacity}kg ${formatPacketTypeLabel(packetType)}`,
+    });
     setAuditModalOpen(true);
     setAuditLoading(true);
 
@@ -101,7 +105,16 @@ export function PacketsTable({ onViewAudit }: PacketsTableProps) {
 
   const getPacketTypeStyle = (type: string): { bg: string; text: string } => {
     const lowerType = type.toLowerCase();
-    if (lowerType.includes('pp')) {
+    if (lowerType.includes('bopp')) {
+      return { bg: 'bg-fuchsia-500/10', text: 'text-fuchsia-700' };
+    }
+    if (lowerType.includes('non-woven') || lowerType.includes('non woven')) {
+      return { bg: 'bg-teal-500/10', text: 'text-teal-700' };
+    }
+    if (lowerType.includes('vacuum') || lowerType.includes('pouch')) {
+      return { bg: 'bg-emerald-500/10', text: 'text-emerald-700' };
+    }
+    if (lowerType.includes('woven') || lowerType.includes('pp')) {
       return { bg: 'bg-sky-500/10', text: 'text-sky-600' };
     }
     if (lowerType.includes('jute')) {
@@ -224,7 +237,7 @@ export function PacketsTable({ onViewAudit }: PacketsTableProps) {
                       <td className="py-4 px-5">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-sm font-medium rounded-lg ${typeStyle.bg} ${typeStyle.text}`}>
                           <Box className="h-3.5 w-3.5" />
-                          {pkt.packet_type}
+                          {formatPacketTypeLabel(pkt.packet_type)}
                         </span>
                       </td>
                       {/* Source */}

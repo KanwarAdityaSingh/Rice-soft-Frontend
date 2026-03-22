@@ -7,7 +7,7 @@ import { EmptyState } from '../../admin/shared/EmptyState';
 import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
-import { Package, Eye, MoreVertical, Edit2, Trash2, UtensilsCrossed, Wheat, Mail, MessageCircle } from 'lucide-react';
+import { Package, Eye, MoreVertical, Edit2, Trash2, UtensilsCrossed, Wheat, Mail, MessageCircle, Copy, Check, Ban } from 'lucide-react';
 import { useSaudas } from '../../../hooks/useSaudas';
 import { useVendors } from '../../../hooks/useVendors';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
@@ -16,21 +16,52 @@ import { inwardSlipPassesAPI } from '../../../services/inwardSlipPasses.api';
 import { kaantasAPI } from '../../../services/kaantas.api';
 import { getRiceTypeLabel } from '../../../utils/riceType';
 import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
+import { getSaudaSerialNumber, formatSaudaIdShort } from '../../../utils/saudaSerial';
+import { saudaToUpdatePayload } from '../../../utils/saudaPayload';
 import { SaudaFormModal } from './SaudaFormModal';
 import { SaudaPreviewDialog } from './SaudaPreviewDialog';
 import { SaudaEmailModal } from './SaudaEmailModal';
 import { SaudaWhatsAppModal } from './SaudaWhatsAppModal';
-import type { Sauda, RiceCode, RiceType, PaymentAdvice, InwardSlipPass, Kaanta } from '../../../types/entities';
+import type {
+  Sauda,
+  RiceCode,
+  RiceType,
+  PaymentAdvice,
+  InwardSlipPass,
+  Kaanta,
+  SaudaFilters,
+} from '../../../types/entities';
 
 interface SaudasTableProps {
   onRefreshRef?: React.MutableRefObject<(() => void) | null>;
 }
 
+/** Workflow `s.status` (draft / active / completed / cancelled) — shown in cancelled-only list */
+function SaudaWorkflowStatusBadge({ status }: { status: Sauda['status'] }) {
+  const variant: Record<Sauda['status'], string> = {
+    draft: 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-600',
+    active: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-900 dark:text-emerald-200 border-emerald-200 dark:border-emerald-800',
+    completed: 'bg-sky-100 dark:bg-sky-900/30 text-sky-900 dark:text-sky-200 border-sky-200 dark:border-sky-800',
+    cancelled: 'bg-red-100 dark:bg-red-900/30 text-red-900 dark:text-red-200 border-red-200 dark:border-red-800',
+  };
+  return (
+    <span className={`inline-block text-[10px] px-2 py-0.5 rounded-full font-medium capitalize whitespace-nowrap border ${variant[status]}`}>
+      {status}
+    </span>
+  );
+}
+
+
 export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
   const [typeFilter, setTypeFilter] = useState<string | undefined>();
-  const { saudas, loading, deleteSauda, refetch } = useSaudas({
-    sauda_type: typeFilter as any,
-  });
+  const [showCancelledOnly, setShowCancelledOnly] = useState(false);
+  /** Default: unfiltered `GET /saudas`. `?status=cancelled` only after clicking “Show cancelled saudas”. */
+  const listFilters = useMemo<SaudaFilters | undefined>(() => {
+    if (showCancelledOnly) return { status: 'cancelled' };
+    return undefined;
+  }, [showCancelledOnly]);
+
+  const { saudas, loading, deleteSauda, refetch, updateSaudaStatus } = useSaudas(listFilters);
   const { vendors } = useVendors();
 
   // Expose refetch function to parent via ref
@@ -42,11 +73,14 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedSauda, setSelectedSauda] = useState<Sauda | null>(null);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [saudaToCancel, setSaudaToCancel] = useState<Sauda | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedSaudaId, setSelectedSaudaId] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewSauda, setPreviewSauda] = useState<Sauda | null>(null);
+  const [previewSerial, setPreviewSerial] = useState<number | null>(null);
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
   
@@ -67,6 +101,7 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('warning');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+  const [copiedSaudaId, setCopiedSaudaId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchRiceCodes = async () => {
@@ -193,8 +228,19 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
     setDocumentViewerOpen(true);
   };
 
+  const copySaudaIdToClipboard = async (fullId: string) => {
+    try {
+      await navigator.clipboard.writeText(fullId);
+      setCopiedSaudaId(fullId);
+      setTimeout(() => setCopiedSaudaId(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy sauda id:', err);
+    }
+  };
+
   const filtered = useMemo(() => {
     return saudas.filter((s) => {
+      if (typeFilter && s.sauda_type !== typeFilter) return false;
       const q = searchQuery.toLowerCase();
       const displayName = getSaudaDisplayName(s).toLowerCase();
       const purchaserName = getPurchaserName(s.purchaser_id).toLowerCase();
@@ -209,7 +255,7 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
 
       return matchesSearch;
     });
-  }, [saudas, searchQuery, riceCodes, riceTypes, vendors]);
+  }, [saudas, typeFilter, searchQuery, riceCodes, riceTypes, vendors]);
 
   return (
     <div>
@@ -217,7 +263,7 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
         <div className="flex-1 min-w-0">
           <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search by purchaser, rice code, type or ID..." />
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-end justify-end sm:justify-start">
           <FilterDropdown
             label="Type"
             options={[
@@ -227,13 +273,33 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
             value={typeFilter}
             onChange={setTypeFilter}
           />
+          <button
+            type="button"
+            aria-pressed={showCancelledOnly}
+            onClick={() => setShowCancelledOnly((v) => !v)}
+            className={`rounded-xl px-3 py-2 text-sm font-medium border transition-colors whitespace-nowrap ${
+              showCancelledOnly
+                ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                : 'bg-background border-border hover:bg-muted/60 text-foreground'
+            }`}
+          >
+            {showCancelledOnly ? 'Showing cancelled only' : 'Show cancelled saudas'}
+          </button>
         </div>
       </div>
 
       {loading ? (
         <div className="flex justify-center py-20"><LoadingSpinner /></div>
       ) : filtered.length === 0 ? (
-        <EmptyState icon={Package} title="No saudas found" description="Create your first sauda or adjust filters." />
+        <EmptyState
+          icon={Package}
+          title="No saudas found"
+          description={
+            showCancelledOnly
+              ? 'No cancelled saudas match your search or type filter.'
+              : 'Create your first sauda or adjust filters.'
+          }
+        />
       ) : (
         <>
           {/* Desktop Table View */}
@@ -241,12 +307,19 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">
+                  <th className="text-left py-3 px-4 text-sm font-semibold">S. No.</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold">ID</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold">Type</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold">Sauda Details</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold">Date</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold">Rate</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold">Quantity/Received</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold">Status</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold">
+                    Status
+                    {showCancelledOnly && (
+                      <span className="block text-[10px] font-normal text-muted-foreground mt-0.5">Workflow</span>
+                    )}
+                  </th>
                   <th className="text-left py-3 px-4 text-sm font-semibold">Broker Comm</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold">Cash Discount</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold">Usage</th>
@@ -255,6 +328,7 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
               </thead>
               <tbody>
                 {filtered.map((s) => {
+                  const serial = getSaudaSerialNumber(s.id, saudas);
                   const counts = getSaudaUsageCounts(s.id);
                   const usageParts: string[] = [];
                   if (counts.paymentAdvices > 0) {
@@ -269,6 +343,32 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                   
                   return (
                     <tr key={s.id} className="border-b border-border/60 hover:bg-muted/30 transition-colors">
+                      <td className="py-3 px-4 text-sm tabular-nums text-muted-foreground">
+                        {serial ?? '—'}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-[9px] leading-none font-mono text-muted-foreground tabular-nums" title={s.id}>
+                            {formatSaudaIdShort(s.id)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void copySaudaIdToClipboard(s.id);
+                            }}
+                            className="p-1 shrink-0 rounded hover:bg-muted/50 transition-colors"
+                            title="Copy full sauda ID"
+                            aria-label="Copy sauda ID"
+                          >
+                            {copiedSaudaId === s.id ? (
+                              <Check className="h-3.5 w-3.5 text-green-600" />
+                            ) : (
+                              <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+                            )}
+                          </button>
+                        </div>
+                      </td>
                       <td className="py-3 px-4 text-sm">
                         <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{s.sauda_type}</span>
                       </td>
@@ -299,6 +399,7 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                       </td>
                       <td className="py-3 px-4 text-sm min-w-[120px]">
                         <div className="flex flex-col gap-1.5">
+                          {showCancelledOnly && <SaudaWorkflowStatusBadge status={s.status} />}
                           {s.completion_percentage !== null && (
                             <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${getCompletionStatus(s.completion_percentage).bgColor} ${getCompletionStatus(s.completion_percentage).color} border ${getCompletionStatus(s.completion_percentage).borderColor}`}>
                               {getCompletionStatus(s.completion_percentage).label}
@@ -353,6 +454,7 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                           <button
                             onClick={() => {
                               setPreviewSauda(s);
+                              setPreviewSerial(serial ?? null);
                               setPreviewOpen(true);
                             }}
                             className="p-1.5 text-primary hover:bg-primary/10 rounded-md transition-colors"
@@ -433,6 +535,17 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                                 >
                                   <Edit2 className="h-4 w-4" /> Edit
                                 </DropdownMenu.Item>
+                                {s.status !== 'cancelled' && (
+                                  <DropdownMenu.Item
+                                    className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950/30"
+                                    onSelect={() => {
+                                      setSaudaToCancel(s);
+                                      setCancelDialogOpen(true);
+                                    }}
+                                  >
+                                    <Ban className="h-4 w-4" /> Cancel Sauda
+                                  </DropdownMenu.Item>
+                                )}
                                 <DropdownMenu.Item
                                   className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
                                   onSelect={async () => {
@@ -476,7 +589,9 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
 
           {/* Mobile Card View */}
           <div className="lg:hidden grid gap-4 grid-cols-1 sm:grid-cols-2">
-          {filtered.map((s) => (
+          {filtered.map((s) => {
+            const serial = getSaudaSerialNumber(s.id, saudas);
+            return (
             <article
               key={s.id}
               className="group rounded-2xl p-4 bg-gradient-to-br from-background to-muted/40 border border-border/60 hover:border-primary/40 transition-all duration-300 shadow-sm hover:shadow-md"
@@ -491,13 +606,36 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                     <h3 className="text-sm font-semibold leading-tight">
                       {getSaudaDisplayName(s)}
                     </h3>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      S. No. <span className="font-semibold text-foreground tabular-nums">{serial ?? '—'}</span>
+                    </div>
+                    <div className="text-[9px] leading-tight font-mono text-muted-foreground mt-0.5 flex items-center gap-1.5 flex-wrap" title={s.id}>
+                      <span className="tabular-nums">ID: {formatSaudaIdShort(s.id)}</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void copySaudaIdToClipboard(s.id);
+                        }}
+                        className="p-0.5 rounded hover:bg-muted/50 transition-colors inline-flex"
+                        title="Copy full sauda ID"
+                        aria-label="Copy sauda ID"
+                      >
+                        {copiedSaudaId === s.id ? (
+                          <Check className="h-3 w-3 text-green-600" />
+                        ) : (
+                          <Copy className="h-3 w-3 text-muted-foreground" />
+                        )}
+                      </button>
+                    </div>
                     <div className="text-xs text-muted-foreground">Rate: ₹{(s.rate ?? 0).toFixed(2)}</div>
                     <div className="text-xs text-muted-foreground">
                       Date: {s.sauda_date 
                         ? new Date(s.sauda_date + 'T00:00:00').toLocaleDateString('en-IN')
                         : new Date(s.created_at).toLocaleDateString('en-IN')}
                     </div>
-                    <div className="mt-1 flex items-center gap-2">
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                    {showCancelledOnly && <SaudaWorkflowStatusBadge status={s.status} />}
                     {s.completion_percentage !== null && (
                         <span className={`text-[10px] px-2 py-0.5 rounded-full ${getCompletionStatus(s.completion_percentage).bgColor} ${getCompletionStatus(s.completion_percentage).color} border ${getCompletionStatus(s.completion_percentage).borderColor}`}>
                           {getCompletionStatus(s.completion_percentage).label}
@@ -580,6 +718,7 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                 <button
                   onClick={() => {
                     setPreviewSauda(s);
+                    setPreviewSerial(serial ?? null);
                     setPreviewOpen(true);
                   }}
                   className="p-1.5 text-primary hover:bg-primary/10 rounded-md transition-colors"
@@ -663,6 +802,17 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                       >
                         <Edit2 className="h-4 w-4" /> Edit
                       </DropdownMenu.Item>
+                      {s.status !== 'cancelled' && (
+                        <DropdownMenu.Item
+                          className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950/30"
+                          onSelect={() => {
+                            setSaudaToCancel(s);
+                            setCancelDialogOpen(true);
+                          }}
+                        >
+                          <Ban className="h-4 w-4" /> Cancel Sauda
+                        </DropdownMenu.Item>
+                      )}
                       <DropdownMenu.Item
                         className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
                         onSelect={async () => {
@@ -698,7 +848,8 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                 </div>
               </div>
             </article>
-          ))}
+          );
+          })}
         </div>
 
           <div className="mt-6 flex items-center justify-between text-sm text-muted-foreground">
@@ -706,6 +857,36 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
           </div>
         </>
       )}
+
+      <ConfirmDialog
+        open={cancelDialogOpen}
+        onOpenChange={(open) => {
+          setCancelDialogOpen(open);
+          if (!open) setSaudaToCancel(null);
+        }}
+        onConfirm={async () => {
+          if (!saudaToCancel) return;
+          try {
+            await updateSaudaStatus(
+              saudaToCancel.id,
+              saudaToUpdatePayload(saudaToCancel, { status: 'cancelled' })
+            );
+          } catch (err: any) {
+            setAlertType('error');
+            setAlertTitle('Could not cancel sauda');
+            setAlertMessage(err?.message || 'Please try again.');
+            setAlertOpen(true);
+          }
+        }}
+        title="Cancel Sauda"
+        description={
+          saudaToCancel
+            ? `Mark “${getSaudaDisplayName(saudaToCancel)}” as cancelled? You can still view it in the list.`
+            : ''
+        }
+        confirmText="Yes, cancel sauda"
+        variant="warning"
+      />
 
       <ConfirmDialog
         open={deleteDialogOpen}
@@ -765,8 +946,14 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
 
       <SaudaPreviewDialog
         open={previewOpen}
-        onOpenChange={setPreviewOpen}
+        onOpenChange={(open) => {
+          setPreviewOpen(open);
+          if (!open) {
+            setPreviewSerial(null);
+          }
+        }}
         sauda={previewSauda}
+        serialNumber={previewSerial ?? undefined}
       />
 
       <DocumentViewerModal

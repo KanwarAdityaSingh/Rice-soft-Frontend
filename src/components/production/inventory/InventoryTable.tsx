@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Store, Package, Box, PackageCheck, Building2, Hash, Layers, Weight, Sprout, Package2 } from 'lucide-react';
 import type { FlowNodeData } from '../../../types/inventoryFlow';
 import { useInventory } from '../../../hooks/useInventory';
+import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
 
 interface InventoryTableProps {
   selectedNode: FlowNodeData | null;
@@ -198,7 +199,7 @@ export function InventoryTable({ selectedNode }: InventoryTableProps) {
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-sm">{pack.packet_type}</td>
+                        <td className="px-4 py-3 text-sm">{formatPacketTypeLabel(pack.packet_type)}</td>
                         <td className="px-4 py-3 text-sm">
                           {pack.vendor ? (
                             <div className="flex items-center gap-1">
@@ -234,7 +235,7 @@ export function InventoryTable({ selectedNode }: InventoryTableProps) {
                 </div>
                 <div>
                   <h3 className="text-lg font-semibold">
-                    {selectedNode.holdingCapacity} {selectedNode.packetType}
+                    {selectedNode.holdingCapacity} {formatPacketTypeLabel(selectedNode.packetType)}
                   </h3>
                   <p className="text-sm text-muted-foreground">Finished Goods Batches</p>
                 </div>
@@ -510,7 +511,7 @@ export function InventoryTable({ selectedNode }: InventoryTableProps) {
                   <Package2 className="h-5 w-5 text-blue-500" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold">{selectedNode.packetType}</h3>
+                  <h3 className="text-lg font-semibold">{formatPacketTypeLabel(selectedNode.packetType)}</h3>
                   <p className="text-sm text-muted-foreground">Packet Type</p>
                 </div>
               </div>

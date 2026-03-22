@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { batchesAPI } from '../services/batches.api';
 import type { Batch, BatchWithDetails, CreateBatchRequest, UpdateBatchRequest, BatchProduct, BatchPackaging } from '../types/entities';
 
-export function useBatches() {
+export function useBatches(godown_id?: string) {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -11,7 +11,7 @@ export function useBatches() {
     setLoading(true);
     setError(null);
     try {
-      const data = await batchesAPI.getAllBatches();
+      const data = await batchesAPI.getAllBatches(godown_id);
       // Sort by created_at descending (latest first)
       const sorted = [...data].sort((a, b) => {
         const dateA = new Date(a.created_at).getTime();
@@ -28,7 +28,7 @@ export function useBatches() {
 
   useEffect(() => {
     fetchBatches();
-  }, []);
+  }, [godown_id]);
 
   const createBatch = async (data: CreateBatchRequest) => {
     try {

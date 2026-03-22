@@ -82,6 +82,11 @@ export interface Vendor {
   last_enquiry_date?: string | null;
   lead_id?: string | null;
   user_id?: string | null;
+  /** Set when bank account was verified (e.g. Surepass) */
+  bank_details_verified_at?: string | null;
+  bank_details_verified_by?: string | null;
+  /** Persisted when bank verification failed (lenient create/update); cleared on successful verification or bank update */
+  bank_verification_error?: string | null;
 }
 
 export interface CreateVendorRequest {
@@ -90,6 +95,8 @@ export interface CreateVendorRequest {
   address: VendorAddress;
   business_details: VendorBusinessDetails;
   bank_details?: VendorBankDetails;
+  /** When true, backend runs bank verification on create (Surepass); failures still return 201 with a lenient message. */
+  verify_bank?: boolean;
   type: 'purchaser' | 'seller' | 'both';
   is_active?: boolean;
   google_location_link?: string | null;
@@ -213,6 +220,41 @@ export interface CreateTransporterRequest {
 
 export interface UpdateTransporterRequest extends Partial<CreateTransporterRequest> {}
 
+// Godown (warehouse) master
+export interface GodownAddress {
+  street: string;
+  city: string;
+  state: string;
+  pincode: string;
+  country: string;
+}
+
+export interface Godown {
+  id: string;
+  name: string;
+  /** Present on detail and typical list responses; optional for defensive typing */
+  contact_persons?: ContactPerson[];
+  gst_number?: string | null;
+  address?: GodownAddress | null;
+  /** Optional Google Maps URL (share link or https://www.google.com/maps?q=...) */
+  google_maps_link?: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateGodownRequest {
+  name: string;
+  /** Required on create (min 1), same shape as vendors */
+  contact_persons: ContactPerson[];
+  gst_number?: string | null;
+  address?: GodownAddress | null;
+  google_maps_link?: string | null;
+  is_active?: boolean;
+}
+
+export interface UpdateGodownRequest extends Partial<CreateGodownRequest> {}
+
 // Salesman Types
 export interface Salesman {
   id: string;
@@ -275,6 +317,11 @@ export interface Broker {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  /** Set when bank account was verified (e.g. Surepass) */
+  bank_details_verified_at?: string | null;
+  bank_details_verified_by?: string | null;
+  /** Persisted when bank verification failed (lenient create); cleared on successful verification or bank update */
+  bank_verification_error?: string | null;
 }
 
 export interface CreateBrokerRequest {
@@ -286,9 +333,36 @@ export interface CreateBrokerRequest {
   broker_details?: BrokerDetails;
   type: 'purchase' | 'sale' | 'both';
   is_active?: boolean;
+  /** When true, backend runs bank verification on create (Surepass); failures still return 201 with a lenient message. */
+  verify_bank?: boolean;
 }
 
 export interface UpdateBrokerRequest extends Partial<CreateBrokerRequest> {}
+
+/** Query for GET /brokers/:id/brokerage-commission-summary */
+export interface BrokerBrokerageCommissionSummaryQuery {
+  godown_id?: string;
+  from_date?: string;
+  to_date?: string;
+}
+
+/** One purchase-sauda line from PurchaseSummaryDAO.getSaudaSummary rules */
+export interface BrokerCommissionSummaryLine {
+  sauda_id: string;
+  sauda_display_id: string;
+  sauda_date: string | null;
+  status: Sauda['status'];
+  broker_commission: number | null;
+  broker_commission_type: BrokerCommissionType | null;
+  amount_after_discount: number;
+  broker_commission_amount: number;
+}
+
+export interface BrokerCommissionSummary {
+  broker_id: string;
+  lines: BrokerCommissionSummaryLine[];
+  total_broker_commission: number;
+}
 
 // GST/PAN Lookup Types
 export interface GSTLookupResponse {
@@ -758,6 +832,8 @@ export interface OtherBill {
 
 export interface InwardSlipPass {
   id: string;
+  /** Present for all ISPs after godown migration */
+  godown_id?: string;
   sauda_ids: string[];
   slip_number: string;
   date: string;
@@ -785,11 +861,17 @@ export interface InwardSlipPass {
 // Kaanta Types - Weighbridge measurement entity
 // Each Kaanta represents a weighbridge measurement for a specific sauda within an ISP
 // Creating a Kaanta automatically creates a Lot
-export type BagType = 'jute' | 'pp';
+/**
+ * Weighbridge / kaanta bag category (bulk purchase intake).
+ * Must match API + DB: `jute` | `pp` | `bopp_laminated` | `non_woven` | `vacuum_pouch`
+ * (`pp` = PP woven bulk bags).
+ */
+export type BagType = 'jute' | 'pp' | 'bopp_laminated' | 'non_woven' | 'vacuum_pouch';
 
 export interface Kaanta {
   id: string;
   kaanta_id: string;
+  godown_id?: string;
   sauda_id: string;
   inward_slip_pass_id: string;
   full_truck_weight: number;
@@ -812,7 +894,7 @@ export interface CreateKaantaRequest {
   inward_slip_pass_id: string;
   full_truck_weight: number;
   empty_truck_weight: number;
-  said_sent_weight?: number | null; // Optional: Weight mentioned in bill/said document
+  said_sent_weight: number; // Weight mentioned in bill/said document (kg) — required on create
   bag_weight: number;
   no_of_bags: number;
   bag_type: BagType;
@@ -828,6 +910,7 @@ export interface UpdateKaantaRequest {
 }
 
 export interface CreateInwardSlipPassRequest {
+  godown_id: string;
   sauda_ids: string[];
   slip_number?: string; // Optional - auto-generated by backend
   date: string;
@@ -842,6 +925,7 @@ export interface CreateInwardSlipPassRequest {
 }
 
 export interface UpdateInwardSlipPassRequest {
+  godown_id?: string;
   sauda_ids?: string[];
   slip_number?: string;
   date?: string;
@@ -858,6 +942,7 @@ export interface UpdateInwardSlipPassRequest {
 // Lot Types
 export interface Lot {
   id: string;
+  godown_id?: string;
   sauda_id: string;
   lot_number: string;
   rice_code_id?: string | null;
@@ -874,6 +959,7 @@ export interface Lot {
 }
 
 export interface CreateLotRequest {
+  godown_id: string;
   sauda_id: string;
   lot_number: string;
   rice_code_id?: string | null;
@@ -1242,6 +1328,31 @@ export interface SetProductRatesRequest {
   rates: ProductRateInput[];
 }
 
+/** Single point from GET /products/:id/rates/history (audit trail of rate changes). */
+export interface ProductRateHistoryPoint {
+  id: string;
+  holding_capacity: number;
+  rate: number;
+  created_at: string;
+  created_by_full_name?: string | null;
+}
+
+export interface ProductRateHistoryResponse {
+  product: Product;
+  points: ProductRateHistoryPoint[];
+}
+
+/** Query params for product rate history (optional filters). */
+export interface ProductRateHistoryQueryParams {
+  holding_capacity?: number;
+  /** ISO date (YYYY-MM-DD) */
+  from?: string;
+  /** ISO date (YYYY-MM-DD) */
+  to?: string;
+  limit?: number;
+  offset?: number;
+}
+
 // Packaging Vendor Types
 export interface PackagingVendor {
   id: string;
@@ -1270,18 +1381,38 @@ export interface UpdatePackagingVendorRequest {
 }
 
 // Packaging Types
-export type PacketType = 'PP Bag' | 'Jute Bag' | 'HDPE Bag';
+/** Empty-packet / packaging catalog — same five codes as `BagType` (kaanta) and backend validators */
+export type PacketType = BagType;
+
+/** Per-godown empty-packet rows returned with GET /packaging */
+export interface PackagingPacketsInventoryRow {
+  godown_id: string;
+  godown_code?: string | null;
+  godown_name?: string | null;
+  available_quantity: number;
+}
 
 export interface Packaging {
   id: string;
   packaging_number: string | null; // Sequential number: PACK-001, PACK-002, etc.
   product_id: string; // NEW: Packaging is now product-specific
-  holding_capacity: number;
+  /** API may return decimal strings (e.g. "25.00") */
+  holding_capacity: number | string;
   packet_type: PacketType;
   packaging_vendor_id: string | null;
-  ordered_weight: number | null;
+  ordered_weight: number | string | null;
+  /** Master costing inputs (per empty bag weight, rate, GST %) */
+  empty_bag_weight_kg?: number | string | null;
+  empty_bag_rate_per_kg?: number | string | null;
+  empty_bag_gst_percent?: number | string | null;
+  /** Snapshot at first stock-in when initial_packets > 0 (server-computed) */
+  empty_bags_total_weight_kg?: number | string | null;
+  empty_bags_taxable_amount?: number | string | null;
+  empty_bags_gst_amount?: number | string | null;
+  empty_bags_total_amount?: number | string | null;
   created_at: string;
   updated_at: string;
+  packets_inventory?: PackagingPacketsInventoryRow[];
 }
 
 export interface CreatePackagingRequest {
@@ -1291,6 +1422,12 @@ export interface CreatePackagingRequest {
   packaging_vendor_id?: string | null;
   ordered_weight?: number | null;
   initial_packets?: number | null; // Optional - Initial number of empty packets to set
+  /** Required when initial_packets > 0 (packets inventory is godown-scoped) */
+  godown_id?: string | null;
+  /** Required when initial_packets > 0 — empty bag weight in kg per bag */
+  empty_bag_weight_kg?: number | null;
+  empty_bag_rate_per_kg?: number | null;
+  empty_bag_gst_percent?: number | null;
 }
 
 export interface UpdatePackagingRequest {
@@ -1298,6 +1435,9 @@ export interface UpdatePackagingRequest {
   packet_type?: PacketType;
   packaging_vendor_id?: string | null;
   ordered_weight?: number | null;
+  empty_bag_weight_kg?: number | null;
+  empty_bag_rate_per_kg?: number | null;
+  empty_bag_gst_percent?: number | null;
 }
 
 export interface AddPacketsInventoryRequest {
@@ -1310,6 +1450,7 @@ export type BatchStatus = 'planned' | 'in_progress' | 'recipe_attached' | 'ready
 
 export interface Batch {
   id: string;
+  godown_id?: string;
   batch_number: string;
   product_id: string | null;
   recipe_id: string;
@@ -1385,6 +1526,7 @@ export interface PackagingQuantity {
 }
 
 export interface CreateBatchRequest {
+  godown_id: string;
   recipe_id: string;
   quantity: number;
   status?: BatchStatus;
@@ -1439,7 +1581,7 @@ export interface LotsInventory {
 }
 
 export interface BagsInventory {
-  bag_type: 'jute' | 'pp';
+  bag_type: BagType;
   bag_capacity: number;
   filled_bags: number;
   empty_bags: number;
@@ -1467,9 +1609,10 @@ export interface InventorySummary {
 }
 
 export interface InventoryFilters {
+  godown_id?: string;
   product_id?: string;
   batch_id?: string;
-  bag_type?: 'jute' | 'pp';
+  bag_type?: BagType;
   // Extended filters
   brands?: string[];
   product_ids?: string[];
@@ -1481,7 +1624,7 @@ export interface InventoryFilters {
   batch_ids?: string[];
   min_quantity?: number;
   max_quantity?: number;
-  bag_types?: ('jute' | 'pp')[];
+  bag_types?: BagType[];
   bag_capacities?: number[];
   search_text?: string;
   date_range?: {

@@ -4,6 +4,7 @@ import type { InventoryLedgerEntry, InventoryLedgerSourceType } from '../types/s
 const BASE = '/inventory-ledger';
 
 export interface InventoryLedgerParams {
+  godown_id?: string;
   product_id?: string;
   source_type?: InventoryLedgerSourceType;
   from_date?: string;
@@ -15,6 +16,7 @@ export interface InventoryLedgerParams {
 export const inventoryLedgerAPI = {
   list: (params?: InventoryLedgerParams) => {
     const search = new URLSearchParams();
+    if (params?.godown_id) search.set('godown_id', params.godown_id);
     if (params?.product_id) search.set('product_id', params.product_id);
     if (params?.source_type) search.set('source_type', params.source_type);
     if (params?.from_date) search.set('from_date', params.from_date);

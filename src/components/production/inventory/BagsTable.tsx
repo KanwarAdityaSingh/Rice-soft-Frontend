@@ -5,9 +5,11 @@ import { EmptyState } from '../../admin/shared/EmptyState';
 import { useInventory } from '../../../hooks/useInventory';
 import { InventoryAuditModal } from './InventoryAuditModal';
 import { inventoryAuditAPI, type BagsInventoryAuditResponse } from '../../../services/inventoryAudit.api';
+import type { BagType } from '../../../types/entities';
+import { formatKaantaBagTypeLabel } from '../../../constants/bagAndPacketTypes';
 
 interface BagsTableProps {
-  onViewAudit?: (bagType: 'jute' | 'pp', capacity: number) => void;
+  onViewAudit?: (bagType: BagType, capacity: number) => void;
 }
 
 export function BagsTable({ onViewAudit }: BagsTableProps) {
@@ -19,7 +21,7 @@ export function BagsTable({ onViewAudit }: BagsTableProps) {
   const [auditLoading, setAuditLoading] = useState(false);
   const [selectedBag, setSelectedBag] = useState<{ type: string; capacity: number } | null>(null);
 
-  const openBagAudit = async (bagType: 'jute' | 'pp', bagCapacity: number) => {
+  const openBagAudit = async (bagType: BagType, bagCapacity: number) => {
     setSelectedBag({ type: bagType, capacity: bagCapacity });
     setAuditModalOpen(true);
     setAuditLoading(true);
@@ -40,10 +42,23 @@ export function BagsTable({ onViewAudit }: BagsTableProps) {
   };
 
   const getBagTypeStyle = (type: string): { bg: string; text: string; border: string } => {
-    if (type.toLowerCase() === 'jute') {
+    const t = type.toLowerCase();
+    if (t === 'jute') {
       return { bg: 'bg-amber-500/10', text: 'text-amber-700', border: 'border-amber-500/30' };
     }
-    return { bg: 'bg-sky-500/10', text: 'text-sky-700', border: 'border-sky-500/30' };
+    if (t.includes('bopp')) {
+      return { bg: 'bg-fuchsia-500/10', text: 'text-fuchsia-800', border: 'border-fuchsia-500/30' };
+    }
+    if (t.includes('non_woven') || t.includes('non-woven')) {
+      return { bg: 'bg-teal-500/10', text: 'text-teal-800', border: 'border-teal-500/30' };
+    }
+    if (t.includes('vacuum') || t.includes('pouch')) {
+      return { bg: 'bg-emerald-500/10', text: 'text-emerald-800', border: 'border-emerald-500/30' };
+    }
+    if (t.includes('pp') || t.includes('woven')) {
+      return { bg: 'bg-sky-500/10', text: 'text-sky-700', border: 'border-sky-500/30' };
+    }
+    return { bg: 'bg-slate-500/10', text: 'text-slate-700', border: 'border-slate-500/30' };
   };
 
   if (loading) {
@@ -115,8 +130,8 @@ export function BagsTable({ onViewAudit }: BagsTableProps) {
                         <ShoppingBag className={`h-4 w-4 ${typeStyle.text}`} />
                       </div>
                       <div>
-                        <span className={`inline-flex items-center px-2.5 py-1 text-sm font-semibold rounded-lg ${typeStyle.bg} ${typeStyle.text} border ${typeStyle.border} uppercase`}>
-                          {bag.bag_type}
+                        <span className={`inline-flex items-center px-2.5 py-1 text-sm font-semibold rounded-lg ${typeStyle.bg} ${typeStyle.text} border ${typeStyle.border}`}>
+                          {formatKaantaBagTypeLabel(bag.bag_type)}
                         </span>
                       </div>
                     </div>
@@ -157,7 +172,7 @@ export function BagsTable({ onViewAudit }: BagsTableProps) {
                   </td>
                   <td className="py-4 px-5 text-center">
                     <button
-                      onClick={() => openBagAudit(bag.bag_type as 'jute' | 'pp', bag.bag_capacity)}
+                      onClick={() => openBagAudit(bag.bag_type, bag.bag_capacity)}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-600 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-lg transition-colors"
                       title="View Audit Log"
                     >

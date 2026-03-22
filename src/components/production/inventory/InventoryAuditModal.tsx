@@ -19,6 +19,7 @@ import {
   TrendingUp,
   TrendingDown,
 } from 'lucide-react';
+import { formatKaantaBagTypeLabel, formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
 import type {
   LotInventoryAuditResponse,
   PacketsInventoryAuditResponse,
@@ -215,7 +216,11 @@ export function InventoryAuditModal({
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <div>
             <span className="text-muted-foreground">Type:</span>
-            <span className="ml-2 font-medium">{entry.packaging?.packet_type || 'N/A'}</span>
+            <span className="ml-2 font-medium">
+              {entry.packaging?.packet_type != null
+                ? formatPacketTypeLabel(entry.packaging.packet_type)
+                : 'N/A'}
+            </span>
           </div>
           <div>
             <span className="text-muted-foreground">Capacity:</span>
@@ -238,7 +243,7 @@ export function InventoryAuditModal({
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <div>
             <span className="text-muted-foreground">Bag Type:</span>
-            <span className="ml-2 font-medium uppercase">{entry.bag_type}</span>
+            <span className="ml-2 font-medium">{formatKaantaBagTypeLabel(entry.bag_type)}</span>
           </div>
           <div>
             <span className="text-muted-foreground">Capacity:</span>
@@ -268,7 +273,7 @@ export function InventoryAuditModal({
           <div>
             <span className="text-muted-foreground">Packaging:</span>
             <span className="ml-2 font-medium">
-              {entry.packaging ? `${entry.packaging.packet_type} (${entry.packaging.holding_capacity}kg)` : 'N/A'}
+              {entry.packaging ? `${formatPacketTypeLabel(entry.packaging.packet_type)} (${entry.packaging.holding_capacity}kg)` : 'N/A'}
             </span>
           </div>
           <div>
@@ -414,6 +419,7 @@ export function InventoryAuditModal({
                       type="date"
                       value={dateFrom}
                       onChange={(e) => setDateFrom(e.target.value)}
+                      max={dateTo || undefined}
                       className="px-3 py-2 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
                   </div>
@@ -424,6 +430,7 @@ export function InventoryAuditModal({
                       type="date"
                       value={dateTo}
                       onChange={(e) => setDateTo(e.target.value)}
+                      min={dateFrom || undefined}
                       className="px-3 py-2 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30"
                     />
                   </div>

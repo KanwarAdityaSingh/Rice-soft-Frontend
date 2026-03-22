@@ -2,7 +2,6 @@ import { useMemo, useState, useEffect } from 'react';
 import { Store, Plus, Mail, Phone, MapPin, CreditCard, FileText, Calendar, UserCircle, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { SearchBar } from '../../components/admin/shared/SearchBar';
-import { FilterDropdown } from '../../components/admin/shared/FilterDropdown';
 import { LoadingSpinner } from '../../components/admin/shared/LoadingSpinner';
 import { EmptyState } from '../../components/admin/shared/EmptyState';
 import { ActionButtons } from '../../components/admin/shared/ActionButtons';
@@ -19,7 +18,6 @@ export default function SalesPartiesPage() {
   const { salesParties, loading, deleteSalesParty, refetch } = useSalesParties();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -40,10 +38,9 @@ export default function SalesPartiesPage() {
         (primaryContact?.name || '').toLowerCase().includes(q) ||
         (primaryContact?.emails?.[0] || '').toLowerCase().includes(q) ||
         (primaryContact?.phones?.[0] || '').includes(searchQuery);
-      const matchesStatus = statusFilter ? (statusFilter === 'active' ? s.is_active : !s.is_active) : true;
-      return matchesSearch && matchesStatus;
+      return matchesSearch;
     });
-  }, [salesParties, searchQuery, statusFilter]);
+  }, [salesParties, searchQuery]);
 
   useEffect(() => {
     const fetchLeadDetails = async () => {
@@ -102,35 +99,22 @@ export default function SalesPartiesPage() {
         </div>
       </header>
 
-      <div className="space-y-3">
-        <div className="w-full">
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+        <div className="w-full min-w-0 flex-1">
           <SearchBar
             value={searchQuery}
             onChange={setSearchQuery}
             placeholder="Search by business, contact, email, or phone..."
           />
         </div>
-        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
-          <div className="flex gap-2 flex-1">
-            <FilterDropdown
-              label="Status"
-              options={[
-                { label: 'Active', value: 'active' },
-                { label: 'Inactive', value: 'inactive' },
-              ]}
-              value={statusFilter}
-              onChange={setStatusFilter}
-            />
-          </div>
-          {isAdmin() && (
-            <button
-              className="btn-primary rounded-xl inline-flex items-center justify-center gap-2 w-full sm:w-auto"
-              onClick={() => setCreateOpen(true)}
-            >
-              <Plus className="h-4 w-4" /> Add Sales Party
-            </button>
-          )}
-        </div>
+        {isAdmin() && (
+          <button
+            className="btn-primary rounded-xl inline-flex items-center justify-center gap-2 w-full sm:w-auto shrink-0"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Plus className="h-4 w-4" /> Add Sales Party
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -141,7 +125,7 @@ export default function SalesPartiesPage() {
         <EmptyState
           icon={Store}
           title="No sales parties found"
-          description="Create your first sales party or adjust filters."
+          description="Create your first sales party or try a different search."
         />
       ) : (
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">

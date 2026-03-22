@@ -231,6 +231,19 @@ export function LeadInfoCards({ lead }: LeadInfoCardsProps) {
                 <span className="text-muted-foreground">Commission Rate:</span> {broker.broker_details.commission_rate}%
               </div>
             )}
+            {broker.bank_details_verified_at && (
+              <div className="text-emerald-600 dark:text-emerald-400 text-xs">
+                Bank details verified
+                {broker.bank_details_verified_at && (
+                  <span className="text-muted-foreground"> · {new Date(broker.bank_details_verified_at).toLocaleString()}</span>
+                )}
+              </div>
+            )}
+            {!broker.bank_details_verified_at && broker.bank_verification_error?.trim() && (
+              <div className="text-amber-700 dark:text-amber-300 text-xs">
+                Bank verification: {broker.bank_verification_error.trim()}
+              </div>
+            )}
           </div>
         </div>
       )}

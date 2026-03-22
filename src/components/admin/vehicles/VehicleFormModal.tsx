@@ -1,11 +1,12 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState, useEffect, useRef } from 'react';
-import { X, Car, Shield, Loader2, Check, RefreshCw, Plus, ChevronDown, Search } from 'lucide-react';
+import { X, Car, Shield, Loader2, Check, RefreshCw, Plus, ChevronDown, Search, ExternalLink } from 'lucide-react';
 import { vehiclesAPI } from '../../../services/vehicles.api';
 import { useTransporters } from '../../../hooks/useTransporters';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import type { CreateVehicleRequest, Vehicle, VehicleVerificationResponse } from '../../../types/entities';
+import { getDirectoryTransportersPagePath } from '../../../utils/appRoutes';
 
 interface VehicleFormModalProps {
   open: boolean;
@@ -444,6 +445,16 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                         </div>
                       )}
                     </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        window.open(getDirectoryTransportersPagePath({ create: true }), '_blank', 'noopener,noreferrer')
+                      }
+                      className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                      Add Transporter
+                    </button>
                     {formData.transporter_ids && formData.transporter_ids.length > 0 && (
                       <div className="flex flex-wrap gap-2 mt-2">
                         {formData.transporter_ids.map((id) => {
@@ -467,18 +478,6 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                         })}
                       </div>
                     )}
-                  </div>
-
-                  {/* Active Toggle */}
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="is_active"
-                      checked={formData.is_active}
-                      onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                      className="h-4 w-4 rounded border-border"
-                    />
-                    <label htmlFor="is_active" className="text-sm">Active</label>
                   </div>
 
                   {/* Actions */}

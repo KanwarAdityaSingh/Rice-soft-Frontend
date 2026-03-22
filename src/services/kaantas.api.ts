@@ -3,11 +3,12 @@ import type { Kaanta, CreateKaantaRequest, UpdateKaantaRequest } from '../types/
 
 export const kaantasAPI = {
   // Get all kaantas with optional filters
-  getAllKaantas: (sauda_id?: string, inward_slip_pass_id?: string) => {
+  getAllKaantas: (sauda_id?: string, inward_slip_pass_id?: string, godown_id?: string) => {
     let url = '/kaantas';
     const params = new URLSearchParams();
     if (sauda_id) params.append('sauda_id', sauda_id);
     if (inward_slip_pass_id) params.append('inward_slip_pass_id', inward_slip_pass_id);
+    if (godown_id) params.append('godown_id', godown_id);
     if (params.toString()) url += `?${params.toString()}`;
     return apiService.get<Kaanta[]>(url);
   },

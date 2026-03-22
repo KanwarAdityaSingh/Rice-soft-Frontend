@@ -127,10 +127,6 @@ export function BrokerPreviewDialog({ open, onOpenChange, formData, onConfirm }:
               <InfoSection title="Basic Information" icon={Building2}>
                 <InfoRow label="Business Name" value={formData.business_name} />
                 <InfoRow label="Type" value={getTypeLabel(formData.type)} />
-                <InfoRow 
-                  label="Status" 
-                  value={formData.is_active !== false ? 'Active' : 'Inactive'} 
-                />
               </InfoSection>
 
               {/* Contact Persons */}

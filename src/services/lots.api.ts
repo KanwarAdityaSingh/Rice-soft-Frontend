@@ -3,12 +3,12 @@ import type { Lot, CreateLotRequest, UpdateLotRequest } from '../types/entities'
 
 export const lotsAPI = {
   // Get all lots
-  getAllLots: (sauda_id?: string) => {
-    let url = '/lots';
-    if (sauda_id) {
-      url += `?sauda_id=${sauda_id}`;
-    }
-    return apiService.get<Lot[]>(url);
+  getAllLots: (sauda_id?: string, godown_id?: string) => {
+    const params = new URLSearchParams();
+    if (sauda_id) params.set('sauda_id', sauda_id);
+    if (godown_id) params.set('godown_id', godown_id);
+    const q = params.toString();
+    return apiService.get<Lot[]>(q ? `/lots?${q}` : '/lots');
   },
 
   // Get lot by ID

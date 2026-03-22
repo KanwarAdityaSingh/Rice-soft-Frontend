@@ -17,6 +17,7 @@ import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { getRiceTypeLabel } from '../../../utils/riceType';
 import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
 import { AlertDialog } from '../../shared/AlertDialog';
+import { DateInputWithSteppers } from '../../shared/DateInputWithSteppers';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { NotificationModal } from '../../shared/NotificationModal';
 import type { 
@@ -815,23 +816,23 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                         <label className="block text-sm font-medium mb-1">
                           Date of Payment <span className="text-red-500">*</span>
                         </label>
-                        <input
-                          type="date"
+                        <DateInputWithSteppers
+                          className="w-full"
+                          inputClassName="py-2"
+                          invalid={Boolean(errors.date_of_payment)}
                           value={formData.date_of_payment}
-                          onChange={(e) => setFormData({ ...formData, date_of_payment: e.target.value })}
-                          className={`w-full px-3 py-2 border rounded-lg bg-background ${
-                            errors.date_of_payment ? 'border-red-500' : 'border-border'
-                          }`}
+                          onChange={(v) => setFormData({ ...formData, date_of_payment: v })}
                         />
                       </div>
 
                       <div>
                         <label className="block text-sm font-medium mb-1">Due Date</label>
-                        <input
-                          type="date"
+                        <DateInputWithSteppers
+                          className="w-full"
+                          inputClassName="py-2"
                           value={dueDate}
-                          onChange={(e) => setDueDate(e.target.value)}
-                          className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+                          onChange={setDueDate}
+                          min={formData.date_of_payment || undefined}
                         />
                       </div>
 

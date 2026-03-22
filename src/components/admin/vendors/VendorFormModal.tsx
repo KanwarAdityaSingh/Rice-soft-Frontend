@@ -4,7 +4,7 @@ import { X, Search, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { useVendors } from '../../../hooks/useVendors';
-import { vendorsAPI } from '../../../services/vendors.api';
+import { vendorsAPI, VENDOR_CREATE_LENIENT_BANK_MESSAGE } from '../../../services/vendors.api';
 import { leadsAPI } from '../../../services/leads.api';
 import { pincodeAPI } from '../../../services/pincode.api';
 import { bankAPI } from '../../../services/bank.api';
@@ -20,6 +20,15 @@ interface VendorFormModalProps {
   vendorId?: string | null;
   defaultType?: 'purchaser' | 'seller' | 'both';
   lockType?: boolean;
+}
+
+/** Backend `verify_bank` requires complete bank fields for its verify schema — align with account + IFSC + holder. */
+function shouldVerifyBankOnCreate(bd: VendorBankDetails | undefined): boolean {
+  if (!bd) return false;
+  const accountNumber = bd.account_number?.trim();
+  const ifsc = bd.ifsc_code?.trim().toUpperCase();
+  const holder = bd.account_holder_name?.trim();
+  return Boolean(accountNumber && holder && ifsc && ifsc.length === 11);
 }
 
 // Helper function to convert ALL CAPS text to Title Case
@@ -124,7 +133,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       // Store original values to check if they should be disabled
       setOriginalGstNumber(gstNumber);
       setOriginalPanNumber(panNumber);
-      
+      setGstAutoFilledFields(new Set());
+
       setFormData({
         business_name: vendor.business_name || '',
         contact_persons: vendor.contact_persons && vendor.contact_persons.length > 0 
@@ -222,6 +232,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
     setOriginalGstNumber('');
     setOriginalPanNumber('');
     setBankAccountVerified(false);
+    setBankDetailsLockedFromIfsc(false);
     setGstAutoFilledFields(new Set());
   };
 
@@ -322,8 +333,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       // The API service returns response.data, which is { gst_data: {...}, mapped_data: {...} }
       const mapped = response.mapped_data;
       
-      // Track which fields are being auto-filled
-      const autoFilledFields = new Set<string>();
+      // Track which fields are being auto-filled (merge so prior PAN/GST locks are preserved)
+      const autoFilledFields = new Set(gstAutoFilledFields);
       
       // Populate business name if available (convert to title case)
       let businessName = formData.business_name;
@@ -376,7 +387,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
         autoFilledFields.add('business_type');
       }
       
-      // Auto-fill account holder name with business name (editable)
+      // Auto-fill account holder name with business name (locked after GST lookup)
+      autoFilledFields.add('account_holder_name');
       const bankDetailsUpdate = {
         ...formData.bank_details,
         account_holder_name: businessName,
@@ -424,8 +436,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       const mapped = response.mapped_data;
       const panData = response.pan_data;
       
-      // Track which fields are being auto-filled
-      const autoFilledFields = new Set<string>();
+      // Track which fields are being auto-filled (merge so GST-locked fields e.g. account_holder_name stay)
+      const autoFilledFields = new Set(gstAutoFilledFields);
       
       // Populate business name if available (convert to title case)
       let businessName = formData.business_name;
@@ -467,7 +479,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
         businessDetailsUpdate.business_type = mapped.business_details.business_type;
       }
       
-      // Auto-fill account holder name with business name (editable)
+      // Auto-fill account holder name with business name (editable unless already locked by GST lookup)
       const bankDetailsUpdate = {
         ...formData.bank_details,
         account_holder_name: businessName,
@@ -482,7 +494,6 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
         bank_details: bankDetailsUpdate,
       });
       
-      // Set the auto-filled fields
       setGstAutoFilledFields(autoFilledFields);
       
       // Clear any previous errors
@@ -541,6 +552,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
   const [ifscLoading, setIfscLoading] = useState(false);
   const [verifyingBankAccount, setVerifyingBankAccount] = useState(false);
   const [bankAccountVerified, setBankAccountVerified] = useState(false);
+  /** Bank name & branch filled by IFSC lookup — not editable until IFSC is changed. */
+  const [bankDetailsLockedFromIfsc, setBankDetailsLockedFromIfsc] = useState(false);
 
   const handleIFSCLookup = async (ifscCode: string) => {
     // Only lookup if IFSC is exactly 11 characters (basic validation, let API handle detailed validation)
@@ -567,10 +580,12 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
             ifsc_code: response.bank_details.ifsc_code || ifscCode,
           }
         });
+        setBankDetailsLockedFromIfsc(true);
         setErrors({ ...errors, ifsc_code: '' });
       }
     } catch (error: any) {
       console.error('IFSC lookup error:', error);
+      setBankDetailsLockedFromIfsc(false);
       setErrors({ ...errors, ifsc_code: error?.message || 'IFSC code not found' });
     } finally {
       setIfscLoading(false);
@@ -617,6 +632,11 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
         
         if (normalizedCurrent !== normalizedVerified) {
           setBankAccountVerified(false);
+          setGstAutoFilledFields((prev) => {
+            const next = new Set(prev);
+            next.delete('account_holder_name');
+            return next;
+          });
           setAlertType('error');
           setAlertTitle('Account Holder Name Mismatch');
           setAlertMessage(`The account holder name does not match. Expected: "${verifiedAccountHolderName}", but found: "${currentAccountHolderName}". Please verify the details.`);
@@ -760,11 +780,29 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
         setAlertTitle('Vendor Updated Successfully');
         setAlertMessage('The vendor has been updated successfully.');
       } else {
-        await createVendor(data as CreateVendorRequest);
+        const base = data as CreateVendorRequest;
+        const createPayload: CreateVendorRequest = {
+          ...base,
+          ...(shouldVerifyBankOnCreate(base.bank_details) ? { verify_bank: true } : {}),
+        };
+        const { message, verification_error, verification_message } = await createVendor(createPayload);
         resetForm();
-        setAlertType('success');
-        setAlertTitle('Vendor Created Successfully');
-        setAlertMessage('The vendor has been created successfully.');
+        const isLenientBank =
+          message.trim() === VENDOR_CREATE_LENIENT_BANK_MESSAGE.trim() ||
+          /bank could not be verified/i.test(message);
+        if (isLenientBank) {
+          setAlertType('warning');
+          setAlertTitle('Vendor Created');
+          const main = message || VENDOR_CREATE_LENIENT_BANK_MESSAGE;
+          const detail = verification_error?.trim();
+          setAlertMessage(detail ? `${main}\n\n${detail}` : main);
+        } else {
+          setAlertType('success');
+          setAlertTitle('Vendor Created Successfully');
+          const baseMsg = message?.trim() || 'The vendor has been created successfully.';
+          const bankLine = verification_message?.trim() || '';
+          setAlertMessage(bankLine ? `${baseMsg}\n\n${bankLine}` : baseMsg);
+        }
       }
       setPreviewOpen(false);
       setAlertOpen(true);
@@ -948,7 +986,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                       value={formData.business_name}
                       onChange={(e) => setFormData({ ...formData, business_name: e.target.value })}
                       className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
-                      readOnly={gstAutoFilledFields.has('business_name')}
+                      readOnly={isEditMode || gstAutoFilledFields.has('business_name')}
                     />
                     {errors.business_name && <p className="mt-1 text-xs text-red-600">{errors.business_name}</p>}
                   </div>
@@ -1080,20 +1118,21 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                     ))}
                   </div>
 
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">Type *</label>
-                    <CustomSelect
-                      value={formData.type}
-                      onChange={(value) => setFormData({ ...formData, type: value as any })}
-                      options={[
-                        { value: 'purchaser', label: 'Debtor' },
-                        { value: 'seller', label: 'Creditor' },
-                        { value: 'both', label: 'Both' }
-                      ]}
-                      placeholder="Select Type"
-                      disabled={lockType}
-                    />
-                  </div>
+                  {!lockType && !isEditMode && (
+                    <div>
+                      <label className="text-sm font-medium mb-1.5 block">Type *</label>
+                      <CustomSelect
+                        value={formData.type}
+                        onChange={(value) => setFormData({ ...formData, type: value as any })}
+                        options={[
+                          { value: 'purchaser', label: 'Debtor' },
+                          { value: 'seller', label: 'Creditor' },
+                          { value: 'both', label: 'Both' },
+                        ]}
+                        placeholder="Select Type"
+                      />
+                    </div>
+                  )}
 
                   <button type="button" onClick={() => setStep(2)} className="btn-primary w-full">
                     Next: Address
@@ -1247,7 +1286,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                           account_holder_name: e.target.value 
                         } 
                       })}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                      readOnly={gstAutoFilledFields.has('account_holder_name')}
+                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
                     />
                   </div>
 
@@ -1279,6 +1319,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                         value={formData.bank_details?.ifsc_code || ''}
                         onChange={(e) => {
                           const value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 11);
+                          setBankDetailsLockedFromIfsc(false);
                           setFormData({ 
                             ...formData, 
                             bank_details: { 
@@ -1340,8 +1381,11 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                     {errors.ifsc_code && <p className="mt-1 text-xs text-red-600">{errors.ifsc_code}</p>}
                   </div>
 
-                  {/* Verify Bank Account Button */}
-                  {formData.bank_details?.account_number && formData.bank_details?.ifsc_code && formData.bank_details.ifsc_code.length === 11 && (
+                  {/* Verify Bank Account — edit only (not shown on create) */}
+                  {isEditMode &&
+                    formData.bank_details?.account_number &&
+                    formData.bank_details?.ifsc_code &&
+                    formData.bank_details.ifsc_code.length === 11 && (
                     <div className="flex items-center gap-2">
                       <button 
                         type="button" 
@@ -1398,8 +1442,12 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                           bank_name: e.target.value 
                         } 
                       })}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                      readOnly={bankDetailsLockedFromIfsc}
+                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed read-only:bg-muted/40"
                     />
+                    {bankDetailsLockedFromIfsc && (
+                      <p className="mt-1 text-xs text-muted-foreground">Set from IFSC lookup. Change IFSC to edit.</p>
+                    )}
                   </div>
 
                   <div>
@@ -1414,7 +1462,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                           branch: e.target.value 
                         } 
                       })}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                      readOnly={bankDetailsLockedFromIfsc}
+                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed read-only:bg-muted/40"
                     />
                   </div>
 

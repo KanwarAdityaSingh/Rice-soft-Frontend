@@ -7,6 +7,7 @@ import { useVendors } from '../../../hooks/useVendors';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { getRiceTypeLabel } from '../../../utils/riceType';
 import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
+import { formatSaudaIdShort } from '../../../utils/saudaSerial';
 import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
 import type { Sauda, RiceCode, RiceType } from '../../../types/entities';
 
@@ -20,9 +21,11 @@ interface SaudaPreviewDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sauda: Sauda | null;
+  /** 1-based row number in the current filtered Saudas list */
+  serialNumber?: number;
 }
 
-export function SaudaPreviewDialog({ open, onOpenChange, sauda }: SaudaPreviewDialogProps) {
+export function SaudaPreviewDialog({ open, onOpenChange, sauda, serialNumber }: SaudaPreviewDialogProps) {
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
   const [defaultRecipient, setDefaultRecipient] = useState<DefaultRecipient | null>(null);
@@ -106,7 +109,7 @@ export function SaudaPreviewDialog({ open, onOpenChange, sauda }: SaudaPreviewDi
         <!DOCTYPE html>
         <html>
           <head>
-            <title>Sauda Details - ${sauda?.id}</title>
+            <title>Sauda Details - ${serialNumber != null ? `S. No. ${serialNumber}` : sauda?.id ?? ''}</title>
             <meta charset="UTF-8">
             <style>
               * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -269,6 +272,18 @@ export function SaudaPreviewDialog({ open, onOpenChange, sauda }: SaudaPreviewDi
               {/* Basic Info */}
               <div className="mb-4">
                 <div className="font-bold border-b border-border pb-1 mb-2">Basic Information</div>
+                {serialNumber != null && (
+                  <div className="mb-2 text-left">
+                    <span className="text-muted-foreground">S. No.: </span>
+                    <span className="font-semibold tabular-nums">{serialNumber}</span>
+                  </div>
+                )}
+                <div className="mb-2 text-left">
+                  <span className="text-muted-foreground">ID: </span>
+                  <span className="font-mono text-[9px] tabular-nums tracking-tight" title={sauda.id}>
+                    {formatSaudaIdShort(sauda.id)}
+                  </span>
+                </div>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Sauda Type:</span>

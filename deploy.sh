@@ -10,9 +10,20 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Configuration (override with env: SSH_KEY, e.g. SSH_KEY=/path/to/your.pem ./deploy.sh)
+# Configuration — key resolution matches backend deploy (AWS_KEY_PATH + common paths)
+# Override: SSH_KEY=/path/to/key.pem ./deploy.sh   or   AWS_KEY_PATH=... ./deploy.sh
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SSH_KEY="${SSH_KEY:-$HOME/aws_keys/santkripa.pem}"
+_SSH_FROM_ENV="${SSH_KEY:-}"
+SSH_KEY=""
+if [ -n "${_SSH_FROM_ENV}" ] && [ -f "${_SSH_FROM_ENV}" ]; then
+  SSH_KEY="${_SSH_FROM_ENV}"
+elif [ -n "${AWS_KEY_PATH:-}" ] && [ -f "${AWS_KEY_PATH}" ]; then
+  SSH_KEY="${AWS_KEY_PATH}"
+elif [ -f "$HOME/aws_keys/santkripa.pem" ]; then
+  SSH_KEY="$HOME/aws_keys/santkripa.pem"
+elif [ -f "$HOME/.ssh/santkripa.pem" ]; then
+  SSH_KEY="$HOME/.ssh/santkripa.pem"
+fi
 SSH_USER="ubuntu"
 SSH_HOST="3.6.49.120"
 REMOTE_STAGING="/tmp/frontend-dist"
@@ -26,10 +37,13 @@ echo -e "${BLUE}=== Rice Ops Frontend Deployment ===${NC}\n"
 
 # Check if SSH key exists
 if [ ! -f "$SSH_KEY" ]; then
-    echo -e "${YELLOW}Error: SSH key not found at $SSH_KEY${NC}"
-    echo -e "Set SSH_KEY to your key path, e.g: ${GREEN}SSH_KEY=/path/to/your.pem ./deploy.sh${NC}"
+    echo -e "${YELLOW}Error: SSH key not found.${NC}"
+    echo -e "Set ${GREEN}SSH_KEY${NC} or ${GREEN}AWS_KEY_PATH${NC} to your PEM, or place the key at:"
+    echo -e "  ${GREEN}~/aws_keys/santkripa.pem${NC}  or  ${GREEN}~/.ssh/santkripa.pem${NC}"
     exit 1
 fi
+
+echo -e "${BLUE}Using SSH key: ${SSH_KEY}${NC}\n"
 
 # Step 1: Build
 echo -e "${BLUE}[1/4] Building production bundle...${NC}"

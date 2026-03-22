@@ -7,12 +7,19 @@ import { usePackagingVendors } from '../../../hooks/usePackagingVendors';
 import { pincodeAPI } from '../../../services/pincode.api';
 import { packagingVendorsAPI } from '../../../services/packagingVendors.api';
 import { validateEmail, validateGST } from '../../../utils/validation';
-import type { CreatePackagingVendorRequest, UpdatePackagingVendorRequest, ContactPerson } from '../../../types/entities';
+import type {
+  CreatePackagingVendorRequest,
+  UpdatePackagingVendorRequest,
+  ContactPerson,
+  PackagingVendor,
+} from '../../../types/entities';
 
 interface PackagingVendorFormModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   vendorId?: string | null;
+  /** Called after a new vendor is created successfully (e.g. to select it in a parent form). */
+  onVendorCreated?: (vendor: PackagingVendor) => void;
 }
 
 // Helper function to convert ALL CAPS text to Title Case
@@ -27,7 +34,7 @@ const toTitleCase = (text: string): string => {
     .join(' ');
 };
 
-export function PackagingVendorFormModal({ open, onOpenChange, vendorId }: PackagingVendorFormModalProps) {
+export function PackagingVendorFormModal({ open, onOpenChange, vendorId, onVendorCreated }: PackagingVendorFormModalProps) {
   const { createPackagingVendor, updatePackagingVendor, packagingVendors } = usePackagingVendors();
   const isEditMode = !!vendorId;
   const [formData, setFormData] = useState<CreatePackagingVendorRequest>({
@@ -201,62 +208,66 @@ export function PackagingVendorFormModal({ open, onOpenChange, vendorId }: Packa
   };
 
   const handleGSTLookup = async () => {
-    if (!formData.gst_number) {
-      setErrors({ ...errors, gst_number: 'Please enter a GST number' });
+    const gstRaw = formData.gst_number?.trim() ?? '';
+    if (!gstRaw) {
+      setErrors((prev) => ({ ...prev, gst_number: 'Please enter a GST number' }));
       return;
     }
-    
-    if (!validateGST(formData.gst_number)) {
-      setErrors({ ...errors, gst_number: 'Invalid GST format' });
+
+    if (!validateGST(gstRaw)) {
+      setErrors((prev) => ({ ...prev, gst_number: 'Invalid GST format' }));
       return;
     }
 
     setLookupLoading(true);
-    setErrors({ ...errors, gst_number: '' });
-    
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next.gst_number;
+      return next;
+    });
+
     try {
-      const response = await packagingVendorsAPI.lookupGST(formData.gst_number);
-      
-      // The API service returns response with gst_data and mapped_data
+      const response = await packagingVendorsAPI.lookupGST(gstRaw);
       const mapped = response.mapped_data;
-      
-      // Populate vendor name if available (convert to title case)
+
       let vendorName = formData.name;
       if (mapped?.business_name) {
         vendorName = toTitleCase(mapped.business_name);
       }
-      
-      // Populate address fields (only fill non-empty values, convert to title case)
-      const addressUpdate: any = { ...formData.address };
+
+      const addressUpdate: Record<string, string> = { ...formData.address };
       if (mapped?.address) {
-        if (mapped.address.street) {
-          addressUpdate.street = toTitleCase(mapped.address.street);
-        }
-        if (mapped.address.city) {
-          addressUpdate.city = toTitleCase(mapped.address.city);
-        }
-        if (mapped.address.state) {
-          addressUpdate.state = toTitleCase(mapped.address.state);
-        }
-        if (mapped.address.pincode) {
-          addressUpdate.pincode = mapped.address.pincode;
-        }
-        if (mapped.address.country) {
-          addressUpdate.country = toTitleCase(mapped.address.country);
-        }
+        if (mapped.address.street) addressUpdate.street = toTitleCase(mapped.address.street);
+        if (mapped.address.city) addressUpdate.city = toTitleCase(mapped.address.city);
+        if (mapped.address.state) addressUpdate.state = toTitleCase(mapped.address.state);
+        if (mapped.address.pincode) addressUpdate.pincode = String(mapped.address.pincode);
+        if (mapped.address.country) addressUpdate.country = toTitleCase(mapped.address.country);
       }
-      
-      setFormData({
-        ...formData,
+
+      let gstNumber: string | null = gstRaw;
+      if (mapped?.business_details?.gst_number) {
+        const g = String(mapped.business_details.gst_number).trim().toUpperCase();
+        gstNumber = g || gstRaw;
+      }
+
+      setFormData((prev) => ({
+        ...prev,
         name: vendorName,
-        address: addressUpdate,
+        address: { ...prev.address, ...addressUpdate },
+        gst_number: gstNumber,
+      }));
+
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next.gst_number;
+        return next;
       });
-      
-      // Clear any previous errors
-      setErrors({ ...errors, gst_number: '' });
     } catch (error: any) {
       console.error('GST lookup error:', error);
-      setErrors({ ...errors, gst_number: error?.message || 'Failed to lookup GST details' });
+      setErrors((prev) => ({
+        ...prev,
+        gst_number: error?.message || 'Failed to lookup GST details',
+      }));
     } finally {
       setLookupLoading(false);
     }
@@ -348,7 +359,8 @@ export function PackagingVendorFormModal({ open, onOpenChange, vendorId }: Packa
         setAlertTitle('Packaging Vendor Updated');
         setAlertMessage('Packaging vendor has been updated successfully.');
       } else {
-        await createPackagingVendor(formData);
+        const created = await createPackagingVendor(formData);
+        onVendorCreated?.(created);
         setAlertType('success');
         setAlertTitle('Packaging Vendor Created');
         setAlertMessage('Packaging vendor has been created successfully.');
@@ -372,8 +384,8 @@ export function PackagingVendorFormModal({ open, onOpenChange, vendorId }: Packa
     <>
       <Dialog.Root open={open} onOpenChange={onOpenChange}>
         <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
-          <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-full max-w-3xl translate-x-[-50%] translate-y-[-50%]">
+          <Dialog.Overlay className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-[50%] top-[50%] z-[101] w-full max-w-3xl translate-x-[-50%] translate-y-[-50%]">
             <div className="glass rounded-2xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
                 <Dialog.Title className="text-xl font-semibold">

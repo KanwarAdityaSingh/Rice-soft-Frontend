@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
-import { Store, Plus, Mail, Phone, MapPin, CreditCard, FileText, Calendar, UserCircle, ExternalLink } from 'lucide-react'
+import { Store, Plus, Mail, Phone, MapPin, CreditCard, FileText, Calendar, UserCircle, ExternalLink, AlertTriangle } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { SearchBar } from '../../components/admin/shared/SearchBar'
 import { FilterDropdown } from '../../components/admin/shared/FilterDropdown'
@@ -18,21 +18,11 @@ import { getRiceTypeLabel } from '../../utils/riceType'
 import { isAdmin } from '../../utils/permissions'
 import type { Lead } from '../../types/entities'
 
-const getTypeLabel = (type: string) => {
-  switch (type) {
-    case 'purchaser': return 'Debtor';
-    case 'seller': return 'Creditor';
-    case 'both': return 'Both';
-    default: return type;
-  }
-};
-
 export default function VendorsPage() {
   const { vendors, loading, deleteVendor, refetch } = useVendors()
   const navigate = useNavigate()
   const [searchQuery, setSearchQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string | undefined>()
-  const [typeFilter, setTypeFilter] = useState<string | undefined>()
+  const [bankVerifyFilter, setBankVerifyFilter] = useState<string | undefined>()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
@@ -54,12 +44,13 @@ export default function VendorsPage() {
         (primaryContact?.emails?.[0] || '').toLowerCase().includes(q) ||
         (primaryContact?.phones?.[0] || '').includes(searchQuery)
 
-      const matchesStatus = statusFilter ? (statusFilter === 'active' ? v.is_active : !v.is_active) : true
-      const matchesType = typeFilter ? v.type === typeFilter : true
+      const verified = Boolean(v.bank_details_verified_at)
+      const matchesBankFilter =
+        bankVerifyFilter === 'verified' ? verified : bankVerifyFilter === 'unverified' ? !verified : true
 
-      return matchesSearch && matchesStatus && matchesType
+      return matchesSearch && matchesBankFilter
     })
-  }, [vendors, searchQuery, statusFilter, typeFilter])
+  }, [vendors, searchQuery, bankVerifyFilter])
 
   // Fetch lead details for vendors with lead_id
   useEffect(() => {
@@ -195,82 +186,101 @@ export default function VendorsPage() {
         </div>
       </header>
 
-      {/* Responsive Filters and Action Button */}
-      <div className="space-y-3">
-        <div className="w-full">
-          <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search by business, contact, email, or phone..." />
-        </div>
-        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
-          <div className="flex gap-2 flex-1">
-            <FilterDropdown
-              label="Status"
-              options={[
-                { label: 'Active', value: 'active' },
-                { label: 'Inactive', value: 'inactive' },
-              ]}
-              value={statusFilter}
-              onChange={setStatusFilter}
-            />
-            <FilterDropdown
-              label="Type"
-              options={[
-                { label: 'Debtor', value: 'purchaser' },
-                { label: 'Creditor', value: 'seller' },
-                { label: 'Both', value: 'both' },
-              ]}
-              value={typeFilter}
-              onChange={setTypeFilter}
-            />
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+        <div className="w-full min-w-0 flex-1 flex flex-col sm:flex-row gap-3 sm:items-center">
+          <div className="min-w-0 flex-1">
+            <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search by business, contact, email, or phone..." />
           </div>
-          {isAdmin() && (
-            <button className="btn-primary rounded-xl inline-flex items-center justify-center gap-2 w-full sm:w-auto" onClick={() => setCreateOpen(true)}>
-              <Plus className="h-4 w-4" /> Add Purchase Party
-            </button>
-          )}
+          <FilterDropdown
+            label="Bank"
+            options={[
+              { label: 'Verified', value: 'verified' },
+              { label: 'Not verified', value: 'unverified' },
+            ]}
+            value={bankVerifyFilter}
+            onChange={setBankVerifyFilter}
+          />
         </div>
+        {isAdmin() && (
+          <button
+            className="btn-primary rounded-xl inline-flex items-center justify-center gap-2 w-full sm:w-auto shrink-0"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Plus className="h-4 w-4" /> Add Purchase Party
+          </button>
+        )}
       </div>
 
       {loading ? (
         <div className="flex justify-center py-20"><LoadingSpinner /></div>
       ) : filtered.length === 0 ? (
-        <EmptyState icon={Store} title="No purchase parties found" description="Create your first purchase party or adjust filters." />
+        <EmptyState icon={Store} title="No purchase parties found" description="Create your first purchase party or try a different search." />
       ) : (
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((v) => (
             <article
               key={v.id}
-              className="group rounded-2xl p-4 bg-gradient-to-br from-background to-muted/40 border border-border/60 hover:border-primary/40 transition-all duration-300 shadow-sm hover:shadow-md"
+              className="group min-w-0 rounded-2xl p-4 bg-gradient-to-br from-background to-muted/40 border border-border/60 hover:border-primary/40 transition-all duration-300 shadow-sm hover:shadow-md overflow-hidden"
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shadow-inner">
+              <div className="flex items-start justify-between gap-3 min-w-0">
+                <div className="flex items-start gap-3 min-w-0 flex-1">
+                  <div className="h-10 w-10 shrink-0 rounded-xl bg-primary/10 text-primary flex items-center justify-center shadow-inner">
                     <Store className="h-5 w-5" />
                   </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{getTypeLabel(v.type)}</div>
-                    <h3 className="text-sm font-semibold leading-tight">{v.business_name.trim()}</h3>
-                    <div className="text-xs text-muted-foreground inline-flex items-center gap-1"><MapPin className="h-3 w-3" /> {v.address.city.trim()}</div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-sm font-semibold leading-tight break-words">{v.business_name.trim()}</h3>
+                    <div className="text-xs text-muted-foreground flex items-start gap-1 mt-0.5">
+                      <MapPin className="h-3 w-3 shrink-0 mt-0.5" />
+                      <span className="break-words">{v.address.city.trim()}</span>
+                    </div>
                   </div>
                 </div>
-                <span className={`whitespace-nowrap px-2 py-1 rounded-md text-[10px] ${v.is_active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground'}`}>{v.is_active ? 'Active' : 'Inactive'}</span>
+                <div className="flex flex-wrap gap-1 justify-end shrink-0">
+                  {v.bank_details_verified_at && (
+                    <span
+                      className="whitespace-nowrap px-2 py-1 rounded-md text-[10px] bg-sky-500/15 text-sky-700 dark:text-sky-400 border border-sky-500/25"
+                      title={`Bank verified${v.bank_details_verified_at ? ` · ${new Date(v.bank_details_verified_at).toLocaleString()}` : ''}`}
+                    >
+                      Bank verified
+                    </span>
+                  )}
+                  {!v.bank_details_verified_at && v.bank_verification_error?.trim() && (
+                    <span
+                      className="whitespace-nowrap px-2 py-1 rounded-md text-[10px] bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30"
+                      title={v.bank_verification_error.trim()}
+                    >
+                      Bank check failed
+                    </span>
+                  )}
+                  <span className={`whitespace-nowrap px-2 py-1 rounded-md text-[10px] ${v.is_active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground'}`}>{v.is_active ? 'Active' : 'Inactive'}</span>
+                </div>
               </div>
-              <div className="mt-3 grid gap-1.5 text-xs">
+              {!v.bank_details_verified_at && v.bank_verification_error?.trim() && (
+                <div
+                  className="mt-3 rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100 flex gap-2 min-w-0"
+                  role="status"
+                >
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" aria-hidden />
+                  <p className="min-w-0 break-words leading-snug">{v.bank_verification_error.trim()}</p>
+                </div>
+              )}
+              <div className="mt-3 grid gap-1.5 text-xs min-w-0">
                 {v.contact_persons?.[0] && (
                   <>
-                    <div className="inline-flex items-center gap-2 text-foreground/90">
-                      <span className="text-muted-foreground w-16">Contact</span>
-                      <span className="font-medium">{v.contact_persons[0].name?.trim() || 'N/A'}</span>
+                    <div className="flex items-start gap-2 text-foreground/90 min-w-0">
+                      <span className="text-muted-foreground w-16 shrink-0">Contact</span>
+                      <span className="font-medium min-w-0 break-words">{v.contact_persons[0].name?.trim() || 'N/A'}</span>
                     </div>
                     {v.contact_persons[0].emails?.[0] && (
-                      <div className="inline-flex items-center gap-2">
-                        <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="truncate">{v.contact_persons[0].emails[0].trim()}</span>
+                      <div className="flex items-start gap-2 min-w-0">
+                        <Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                        <span className="min-w-0 break-words">{v.contact_persons[0].emails[0].trim()}</span>
                       </div>
                     )}
                     {v.contact_persons[0].phones?.[0] && (
-                      <div className="inline-flex items-center gap-2">
-                        <Phone className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span>{v.contact_persons[0].phones[0].trim()}</span>
+                      <div className="flex items-start gap-2 min-w-0">
+                        <Phone className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                        <span className="min-w-0 break-words">{v.contact_persons[0].phones[0].trim()}</span>
                       </div>
                     )}
                   </>
@@ -278,37 +288,37 @@ export default function VendorsPage() {
                 
                 {/* Address Details */}
                 {v.address?.street && (
-                  <div className="inline-flex items-center gap-2">
-                    <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="truncate">{v.address.street.trim()}</span>
+                  <div className="flex items-start gap-2 min-w-0">
+                    <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                    <span className="min-w-0 break-words">{v.address.street.trim()}</span>
                   </div>
                 )}
                 {(v.address?.city || v.address?.state || v.address?.pincode) && (
-                  <div className="inline-flex items-center gap-2">
-                    <MapPin className="h-3.5 w-3.5 text-muted-foreground opacity-0" />
-                    <span className="truncate">
+                  <div className="flex items-start gap-2 min-w-0">
+                    <MapPin className="h-3.5 w-3.5 text-muted-foreground opacity-0 shrink-0 mt-0.5" />
+                    <span className="min-w-0 break-words">
                       {[v.address.city, v.address.state, v.address.pincode].filter(Boolean).join(', ')}
                     </span>
                   </div>
                 )}
                 {v.address?.country && v.address.country !== 'India' && (
-                  <div className="inline-flex items-center gap-2">
-                    <MapPin className="h-3.5 w-3.5 text-muted-foreground opacity-0" />
-                    <span>{v.address.country}</span>
+                  <div className="flex items-start gap-2 min-w-0">
+                    <MapPin className="h-3.5 w-3.5 text-muted-foreground opacity-0 shrink-0 mt-0.5" />
+                    <span className="min-w-0 break-words">{v.address.country}</span>
                   </div>
                 )}
                 
                 {/* Business Details */}
                 {v.business_details?.gst_number && (
-                  <div className="inline-flex items-center gap-2">
-                    <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="truncate">GST: {v.business_details.gst_number}</span>
+                  <div className="flex items-start gap-2 min-w-0">
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                    <span className="min-w-0 break-words">GST: {v.business_details.gst_number}</span>
                   </div>
                 )}
                 {v.business_details?.pan_number && (
-                  <div className="inline-flex items-center gap-2">
-                    <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="truncate">PAN: {v.business_details.pan_number}</span>
+                  <div className="flex items-start gap-2 min-w-0">
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                    <span className="min-w-0 break-words">PAN: {v.business_details.pan_number}</span>
                   </div>
                 )}
                 
@@ -316,21 +326,21 @@ export default function VendorsPage() {
                 {v.bank_details && (
                   <>
                     {v.bank_details.account_holder_name && (
-                      <div className="inline-flex items-center gap-2">
-                        <CreditCard className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="truncate">A/C: {v.bank_details.account_holder_name}</span>
+                      <div className="flex items-start gap-2 min-w-0">
+                        <CreditCard className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                        <span className="min-w-0 break-words">A/C: {v.bank_details.account_holder_name}</span>
                       </div>
                     )}
                     {v.bank_details.bank_name && (
-                      <div className="inline-flex items-center gap-2">
-                        <CreditCard className="h-3.5 w-3.5 text-muted-foreground opacity-0" />
-                        <span className="truncate">{v.bank_details.bank_name}</span>
+                      <div className="flex items-start gap-2 min-w-0">
+                        <CreditCard className="h-3.5 w-3.5 text-muted-foreground opacity-0 shrink-0 mt-0.5" />
+                        <span className="min-w-0 break-words">{v.bank_details.bank_name}</span>
                       </div>
                     )}
                     {v.bank_details.ifsc_code && (
-                      <div className="inline-flex items-center gap-2">
-                        <CreditCard className="h-3.5 w-3.5 text-muted-foreground opacity-0" />
-                        <span className="truncate">IFSC: {v.bank_details.ifsc_code}</span>
+                      <div className="flex items-start gap-2 min-w-0">
+                        <CreditCard className="h-3.5 w-3.5 text-muted-foreground opacity-0 shrink-0 mt-0.5" />
+                        <span className="min-w-0 break-words">IFSC: {v.bank_details.ifsc_code}</span>
                       </div>
                     )}
                   </>
@@ -363,23 +373,23 @@ export default function VendorsPage() {
                       View Lead <ExternalLink className="h-3 w-3" />
                     </button>
                   </div>
-                  <div className="grid gap-1.5 text-xs">
+                  <div className="grid gap-1.5 text-xs min-w-0">
                     {leadDetails[v.lead_id].company_name && (
-                      <div className="inline-flex items-center gap-2">
-                        <span className="text-muted-foreground w-16">Company</span>
-                        <span className="font-medium">{leadDetails[v.lead_id].company_name}</span>
+                      <div className="flex items-start gap-2 min-w-0">
+                        <span className="text-muted-foreground w-16 shrink-0">Company</span>
+                        <span className="font-medium min-w-0 break-words">{leadDetails[v.lead_id].company_name}</span>
                       </div>
                     )}
                     {leadDetails[v.lead_id].business_details?.gst_number && (
-                      <div className="inline-flex items-center gap-2">
-                        <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="truncate">GST: {leadDetails[v.lead_id].business_details.gst_number}</span>
+                      <div className="flex items-start gap-2 min-w-0">
+                        <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                        <span className="min-w-0 break-words">GST: {leadDetails[v.lead_id].business_details.gst_number}</span>
                       </div>
                     )}
                     {leadDetails[v.lead_id].business_details?.pan_number && (
-                      <div className="inline-flex items-center gap-2">
-                        <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="truncate">PAN: {leadDetails[v.lead_id].business_details.pan_number}</span>
+                      <div className="flex items-start gap-2 min-w-0">
+                        <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                        <span className="min-w-0 break-words">PAN: {leadDetails[v.lead_id].business_details.pan_number}</span>
                       </div>
                     )}
                   </div>

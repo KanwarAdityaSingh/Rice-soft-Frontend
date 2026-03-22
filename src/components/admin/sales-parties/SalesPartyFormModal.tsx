@@ -7,7 +7,6 @@ import { salesPartiesAPI } from '../../../services/salesParties.api';
 import { vendorsAPI } from '../../../services/vendors.api';
 import { leadsAPI } from '../../../services/leads.api';
 import { pincodeAPI } from '../../../services/pincode.api';
-import { bankAPI } from '../../../services/bank.api';
 import { validateEmail, validateGST, validatePAN, validateGoogleLocationLink } from '../../../utils/validation';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { SalesPartyPreviewDialog } from './SalesPartyPreviewDialog';
@@ -215,7 +214,6 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
     setErrors({});
     setOriginalGstNumber('');
     setOriginalPanNumber('');
-    setBankAccountVerified(false);
     setGstAutoFilledFields(new Set());
   };
 
@@ -370,18 +368,11 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
         autoFilledFields.add('business_type');
       }
       
-      // Auto-fill account holder name with business name (editable)
-      const bankDetailsUpdate = {
-        ...formData.bank_details,
-        account_holder_name: businessName,
-      };
-      
       setFormData({
         ...formData,
         business_name: businessName,
         address: addressUpdate,
         business_details: businessDetailsUpdate,
-        bank_details: bankDetailsUpdate,
       });
       
       // Set the auto-filled fields
@@ -461,19 +452,12 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
         businessDetailsUpdate.business_type = mapped.business_details.business_type;
       }
       
-      // Auto-fill account holder name with business name (editable)
-      const bankDetailsUpdate = {
-        ...formData.bank_details,
-        account_holder_name: businessName,
-      };
-      
       setFormData({
         ...formData,
         business_name: businessName,
         contact_persons: updatedContactPersons,
         address: addressUpdate,
         business_details: businessDetailsUpdate,
-        bank_details: bankDetailsUpdate,
       });
       
       // Set the auto-filled fields
@@ -529,126 +513,6 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
       // Don't show error if pincode is invalid - user might still be typing
     } finally {
       setPincodeLoading(false);
-    }
-  };
-
-  const [ifscLoading, setIfscLoading] = useState(false);
-  const [verifyingBankAccount, setVerifyingBankAccount] = useState(false);
-  const [bankAccountVerified, setBankAccountVerified] = useState(false);
-
-  const handleIFSCLookup = async (ifscCode: string) => {
-    // Only lookup if IFSC is exactly 11 characters (basic validation, let API handle detailed validation)
-    if (!ifscCode || ifscCode.length !== 11) {
-      setErrors({ ...errors, ifsc_code: 'IFSC code must be exactly 11 characters' });
-      return;
-    }
-
-    setIfscLoading(true);
-    setErrors({ ...errors, ifsc_code: '' });
-    
-    try {
-      console.log('Calling IFSC lookup API for:', ifscCode);
-      const response = await bankAPI.lookupIFSC(ifscCode);
-      console.log('IFSC lookup response:', response);
-      
-      if (response.bank_details) {
-        setFormData({
-          ...formData,
-          bank_details: {
-            ...formData.bank_details,
-            bank_name: toTitleCase(response.bank_details.bank_name) || formData.bank_details?.bank_name || '',
-            branch: toTitleCase(response.bank_details.branch) || formData.bank_details?.branch || '',
-            ifsc_code: response.bank_details.ifsc_code || ifscCode,
-          }
-        });
-        setErrors({ ...errors, ifsc_code: '' });
-      }
-    } catch (error: any) {
-      console.error('IFSC lookup error:', error);
-      setErrors({ ...errors, ifsc_code: error?.message || 'IFSC code not found' });
-    } finally {
-      setIfscLoading(false);
-    }
-  };
-
-  const handleVerifyBankAccount = async () => {
-    const accountNumber = formData.bank_details?.account_number;
-    const ifscCode = formData.bank_details?.ifsc_code;
-
-    if (!accountNumber || !ifscCode) {
-      setAlertType('warning');
-      setAlertTitle('Missing Information');
-      setAlertMessage('Please enter both account number and IFSC code before verifying.');
-      setAlertOpen(true);
-      return;
-    }
-
-    setVerifyingBankAccount(true);
-    setBankAccountVerified(false);
-    
-    try {
-      const response = await vendorsAPI.verifyBankAccount(accountNumber, ifscCode);
-      console.log('Verify bank account response:', response);
-      
-      // Check if account exists
-      if (!response.account_exists) {
-        setBankAccountVerified(false);
-        setAlertType('error');
-        setAlertTitle('Account Not Found');
-        setAlertMessage('The bank account could not be verified. Please check the account number and IFSC code.');
-        setAlertOpen(true);
-        return;
-      }
-
-      const verifiedAccountHolderName = response.account_holder_name;
-      const currentAccountHolderName = formData.bank_details?.account_holder_name?.trim();
-
-      // If account holder name is already filled, check if it matches
-      if (currentAccountHolderName && verifiedAccountHolderName) {
-        const normalizedCurrent = currentAccountHolderName.toUpperCase().replace(/\s+/g, ' ');
-        const normalizedVerified = verifiedAccountHolderName.toUpperCase().replace(/\s+/g, ' ');
-        
-        if (normalizedCurrent !== normalizedVerified) {
-          setBankAccountVerified(false);
-          setAlertType('error');
-          setAlertTitle('Account Holder Name Mismatch');
-          setAlertMessage(`The account holder name does not match. Expected: "${verifiedAccountHolderName}", but found: "${currentAccountHolderName}". Please verify the details.`);
-          setAlertOpen(true);
-          return;
-        }
-      }
-
-      // Update form data with verified details
-      const updatedBankDetails = {
-        ...formData.bank_details,
-        account_number: accountNumber,
-        ifsc_code: ifscCode,
-      };
-
-      // Fill in account holder name if empty
-      if (verifiedAccountHolderName && !currentAccountHolderName) {
-        updatedBankDetails.account_holder_name = toTitleCase(verifiedAccountHolderName);
-      }
-
-      setFormData({
-        ...formData,
-        bank_details: updatedBankDetails,
-      });
-
-      setBankAccountVerified(true);
-      setAlertType('success');
-      setAlertTitle('Bank Account Verified');
-      setAlertMessage(response.message || 'Bank account details have been verified successfully.');
-      setAlertOpen(true);
-    } catch (error: any) {
-      console.error('Bank account verification error:', error);
-      setBankAccountVerified(false);
-      setAlertType('error');
-      setAlertTitle('Verification Failed');
-      setAlertMessage(error?.message || 'Failed to verify bank account. Please check the details and try again.');
-      setAlertOpen(true);
-    } finally {
-      setVerifyingBankAccount(false);
     }
   };
 
@@ -842,24 +706,15 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
               >
                 2. Address
               </button>
-              <button
-                type="button"
-                onClick={() => setStep(3)}
-                className={`flex-1 rounded-lg p-2 text-center text-sm font-medium transition-colors ${
-                  step >= 3 ? 'bg-primary/20 text-primary' : 'bg-muted hover:bg-muted/80'
-                }`}
-              >
-                3. Bank Details
-              </button>
               {isEditMode && leadData && (
                 <button
                   type="button"
-                  onClick={() => setStep(4)}
+                  onClick={() => setStep(3)}
                   className={`flex-1 rounded-lg p-2 text-center text-sm font-medium transition-colors ${
-                    step >= 4 ? 'bg-primary/20 text-primary' : 'bg-muted hover:bg-muted/80'
+                    step >= 3 ? 'bg-primary/20 text-primary' : 'bg-muted hover:bg-muted/80'
                   }`}
                 >
-                  4. Lead Details
+                  3. Lead Details
                 </button>
               )}
             </div>
@@ -1200,213 +1055,13 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
                     <button type="button" onClick={() => setStep(1)} className="btn-secondary flex-1">
                       Back
                     </button>
-                    <button type="button" onClick={() => setStep(3)} className="btn-primary flex-1">
-                      Next: Bank Details
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {step === 3 && (
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">Account Holder Name</label>
-                    <input
-                      type="text"
-                      value={formData.bank_details?.account_holder_name || ''}
-                      onChange={(e) => setFormData({ 
-                        ...formData, 
-                        bank_details: { 
-                          ...formData.bank_details, 
-                          account_holder_name: e.target.value 
-                        } 
-                      })}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">Account Number</label>
-                    <input
-                      type="text"
-                      value={formData.bank_details?.account_number || ''}
-                      onChange={(e) => {
-                        setFormData({ 
-                          ...formData, 
-                          bank_details: { 
-                            ...formData.bank_details, 
-                            account_number: e.target.value 
-                          } 
-                        });
-                        // Reset verification status when account number changes
-                        setBankAccountVerified(false);
-                      }}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">IFSC Code</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={formData.bank_details?.ifsc_code || ''}
-                        onChange={(e) => {
-                          const value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 11);
-                          setFormData({ 
-                            ...formData, 
-                            bank_details: { 
-                              ...formData.bank_details, 
-                              ifsc_code: value 
-                            } 
-                          });
-                          // Reset verification status when IFSC changes
-                          setBankAccountVerified(false);
-                          // Auto-lookup when 11 characters are entered
-                          if (value.length === 11) {
-                            handleIFSCLookup(value);
-                          }
-                        }}
-                        className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                        placeholder="HDFC0001234"
-                        maxLength={11}
-                      />
-                      <button 
-                        type="button" 
-                        onClick={async (e) => {
-                          console.log('IFSC search button clicked');
-                          e.preventDefault();
-                          e.stopPropagation();
-                          
-                          if (ifscLoading) {
-                            console.log('Already loading, ignoring click');
-                            return;
-                          }
-                          
-                          const ifscCode = formData.bank_details?.ifsc_code?.trim() || '';
-                          console.log('IFSC code from form:', ifscCode, 'Length:', ifscCode.length);
-                          
-                          if (!ifscCode) {
-                            console.log('No IFSC code provided');
-                            setErrors({ ...errors, ifsc_code: 'Please enter an IFSC code' });
-                            return;
-                          }
-                          
-                          if (ifscCode.length !== 11) {
-                            console.log('IFSC code length is not 11:', ifscCode.length);
-                            setErrors({ ...errors, ifsc_code: 'IFSC code must be exactly 11 characters' });
-                            return;
-                          }
-                          
-                          console.log('Calling handleIFSCLookup with:', ifscCode);
-                          try {
-                            await handleIFSCLookup(ifscCode);
-                          } catch (error) {
-                            console.error('Error in onClick handler:', error);
-                          }
-                        }} 
-                        disabled={ifscLoading}
-                        className="btn-secondary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {ifscLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
-                      </button>
-                    </div>
-                    {errors.ifsc_code && <p className="mt-1 text-xs text-red-600">{errors.ifsc_code}</p>}
-                  </div>
-
-                  {/* Verify Bank Account Button */}
-                  {formData.bank_details?.account_number && formData.bank_details?.ifsc_code && formData.bank_details.ifsc_code.length === 11 && (
-                    <div className="flex items-center gap-2">
-                      <button 
-                        type="button" 
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleVerifyBankAccount();
-                        }}
-                        disabled={verifyingBankAccount}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                          bankAccountVerified 
-                            ? 'bg-green-500/20 text-green-700 dark:text-green-400 border border-green-500/30' 
-                            : 'bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20'
-                        }`}
-                      >
-                        {verifyingBankAccount ? (
-                          <>
-                            <LoadingSpinner size="sm" />
-                            <span>Verifying...</span>
-                          </>
-                        ) : bankAccountVerified ? (
-                          <>
-                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                            <span>Verified</span>
-                          </>
-                        ) : (
-                          <>
-                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <span>Verify Bank Account</span>
-                          </>
-                        )}
-                      </button>
-                      {bankAccountVerified && (
-                        <span className="text-xs text-green-600 dark:text-green-400">
-                          Account details verified successfully
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">Bank Name (auto-filled)</label>
-                    <input
-                      type="text"
-                      value={formData.bank_details?.bank_name || ''}
-                      onChange={(e) => setFormData({ 
-                        ...formData, 
-                        bank_details: { 
-                          ...formData.bank_details, 
-                          bank_name: e.target.value 
-                        } 
-                      })}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">Branch (auto-filled)</label>
-                    <input
-                      type="text"
-                      value={formData.bank_details?.branch || ''}
-                      onChange={(e) => setFormData({ 
-                        ...formData, 
-                        bank_details: { 
-                          ...formData.bank_details, 
-                          branch: e.target.value 
-                        } 
-                      })}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                    />
-                  </div>
-
-                  <div className="flex gap-3 pt-4">
-                    <button type="button" onClick={() => setStep(2)} className="btn-secondary flex-1">
-                      Back
-                    </button>
                     {isEditMode && leadData ? (
-                      <button 
-                        type="button" 
-                        onClick={() => setStep(4)}
-                        className="btn-primary flex-1"
-                      >
+                      <button type="button" onClick={() => setStep(3)} className="btn-primary flex-1">
                         Next: Lead Details
                       </button>
                     ) : (
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         onClick={handleSubmit}
                         disabled={loading}
                         className="btn-primary flex-1"
@@ -1418,7 +1073,7 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
                 </div>
               )}
 
-              {step === 4 && isEditMode && leadData && (
+              {step === 3 && isEditMode && leadData && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-semibold">Lead Details</h3>
@@ -1506,7 +1161,7 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
                   </div>
 
                   <div className="flex gap-3 pt-4">
-                    <button type="button" onClick={() => setStep(3)} className="btn-secondary flex-1">
+                    <button type="button" onClick={() => setStep(2)} className="btn-secondary flex-1">
                       Back
                     </button>
                     <button 

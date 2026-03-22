@@ -2,13 +2,13 @@ import { apiService } from './api';
 import type { Packaging, CreatePackagingRequest, UpdatePackagingRequest, AddPacketsInventoryRequest, PacketsInventory } from '../types/entities';
 
 export const packagingAPI = {
-  // Get all packaging types (optionally filtered by product_id)
-  getAllPackaging: (productId?: string) => {
-    let url = '/packaging';
-    if (productId) {
-      url += `?product_id=${productId}`;
-    }
-    return apiService.get<Packaging[]>(url);
+  // Get all packaging types (optionally filtered by product_id and/or godown_id)
+  getAllPackaging: (filters?: { product_id?: string; godown_id?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.product_id) params.set('product_id', filters.product_id);
+    if (filters?.godown_id) params.set('godown_id', filters.godown_id);
+    const q = params.toString();
+    return apiService.get<Packaging[]>(q ? `/packaging?${q}` : '/packaging');
   },
 
   // Get packaging by ID

@@ -8,11 +8,11 @@ export function usePurchaseSummary() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchSaudaSummary = useCallback(async (saudaId: string, igst_percentage?: number) => {
+  const fetchSaudaSummary = useCallback(async (saudaId: string, igst_percentage?: number, godown_id?: string) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await purchaseSummaryAPI.getSaudaSummary(saudaId, igst_percentage);
+      const data = await purchaseSummaryAPI.getSaudaSummary(saudaId, igst_percentage, godown_id);
       setSaudaSummary(data);
       return data;
     } catch (err: any) {
@@ -62,12 +62,12 @@ export function usePurchaseSummaryList() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchSaudaSummaries = useCallback(async (saudaIds: string[], igst_percentage?: number) => {
+  const fetchSaudaSummaries = useCallback(async (saudaIds: string[], igst_percentage?: number, godown_id?: string) => {
     setLoading(true);
     setError(null);
     try {
       const summaries = await Promise.all(
-        saudaIds.map(id => purchaseSummaryAPI.getSaudaSummary(id, igst_percentage))
+        saudaIds.map(id => purchaseSummaryAPI.getSaudaSummary(id, igst_percentage, godown_id))
       );
       setSaudaSummaries(summaries);
       return summaries;

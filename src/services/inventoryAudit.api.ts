@@ -1,4 +1,5 @@
 import { apiService } from './api';
+import type { BagType } from '../types/entities';
 
 // ============================================================================
 // AUDIT RESPONSE TYPES
@@ -62,7 +63,7 @@ export interface PacketsInventoryAuditResponse {
 export interface BagsInventoryAuditResponse {
   id: string;
   bags_inventory_id: string | null;
-  bag_type: 'jute' | 'pp';
+  bag_type: BagType;
   bag_capacity: number;
   operation_type: 'addition' | 'reduction' | 'adjustment';
   field_changed: 'filled_bags' | 'empty_bags';
@@ -192,7 +193,7 @@ export const inventoryAuditAPI = {
     );
   },
 
-  getBagsAuditByTypeAndCapacity: (bagType: 'jute' | 'pp', bagCapacity: number, limit: number = 100) => {
+  getBagsAuditByTypeAndCapacity: (bagType: BagType, bagCapacity: number, limit: number = 100) => {
     return apiService.get<BagsInventoryAuditResponse[]>(
       `/inventory/audit/bags/type/${bagType}/capacity/${bagCapacity}?limit=${limit}`
     );

@@ -11,7 +11,9 @@ export function usePackaging() {
     setLoading(true);
     setError(null);
     try {
-      const data = await packagingAPI.getAllPackaging(productId);
+      const data = await packagingAPI.getAllPackaging(
+        productId !== undefined ? { product_id: productId } : undefined
+      );
       setPackaging(data);
     } catch (err: any) {
       setError(err.message);
@@ -25,7 +27,7 @@ export function usePackaging() {
     setLoading(true);
     setError(null);
     try {
-      const data = await packagingAPI.getAllPackaging(productId);
+      const data = await packagingAPI.getAllPackaging({ product_id: productId });
       return data;
     } catch (err: any) {
       setError(err.message);

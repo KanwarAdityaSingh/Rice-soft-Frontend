@@ -28,10 +28,9 @@ export function useVendors() {
 
   const createVendor = async (data: CreateVendorRequest) => {
     try {
-      const newVendor = await vendorsAPI.createVendor(data);
-      // Refetch all vendors to ensure we have the latest data from the server
+      const result = await vendorsAPI.createVendor(data);
       await fetchVendors();
-      return newVendor;
+      return result;
     } catch (err: any) {
       // showError(err.message || 'Failed to create vendor');
       throw err;

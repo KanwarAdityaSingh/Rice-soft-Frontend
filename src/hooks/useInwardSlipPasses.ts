@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { inwardSlipPassesAPI } from '../services/inwardSlipPasses.api';
 import type { InwardSlipPass, CreateInwardSlipPassRequest, UpdateInwardSlipPassRequest } from '../types/entities';
 
-export function useInwardSlipPasses(sauda_id?: string) {
+export function useInwardSlipPasses(params?: { sauda_id?: string; godown_id?: string }) {
   const [inwardSlipPasses, setInwardSlipPasses] = useState<InwardSlipPass[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -11,7 +11,7 @@ export function useInwardSlipPasses(sauda_id?: string) {
     setLoading(true);
     setError(null);
     try {
-      const data = await inwardSlipPassesAPI.getAllInwardSlipPasses(sauda_id);
+      const data = await inwardSlipPassesAPI.getAllInwardSlipPasses(params?.sauda_id, params?.godown_id);
       setInwardSlipPasses(data);
     } catch (err: any) {
       setError(err.message);
@@ -22,7 +22,7 @@ export function useInwardSlipPasses(sauda_id?: string) {
 
   useEffect(() => {
     fetchInwardSlipPasses();
-  }, [sauda_id]);
+  }, [params?.sauda_id, params?.godown_id]);
 
   const createInwardSlipPass = async (data: CreateInwardSlipPassRequest) => {
     try {

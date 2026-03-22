@@ -28,10 +28,9 @@ export function useBrokers() {
 
   const createBroker = async (data: CreateBrokerRequest) => {
     try {
-      const newBroker = await brokersAPI.createBroker(data);
-      // Refetch all brokers to ensure we have the latest data from the server
+      const result = await brokersAPI.createBroker(data);
       await fetchBrokers();
-      return newBroker;
+      return result;
     } catch (err: any) {
       // showError(err.message || 'Failed to create broker');
       throw err;

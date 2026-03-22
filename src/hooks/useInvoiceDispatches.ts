@@ -12,6 +12,7 @@ import type {
 interface UseInvoiceDispatchesParams {
   sales_sauda_id?: string;
   status?: InvoiceDispatchStatus;
+  godown_id?: string;
 }
 
 export function useInvoiceDispatches(params?: UseInvoiceDispatchesParams) {
@@ -23,7 +24,11 @@ export function useInvoiceDispatches(params?: UseInvoiceDispatchesParams) {
     setLoading(true);
     setError(null);
     try {
-      const data = await invoiceDispatchesAPI.list(params);
+      const data = await invoiceDispatchesAPI.list({
+        sales_sauda_id: params?.sales_sauda_id,
+        status: params?.status,
+        godown_id: params?.godown_id,
+      });
       setList(Array.isArray(data) ? data : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch invoice dispatches');
@@ -31,7 +36,7 @@ export function useInvoiceDispatches(params?: UseInvoiceDispatchesParams) {
     } finally {
       setLoading(false);
     }
-  }, [params?.sales_sauda_id, params?.status]);
+  }, [params?.sales_sauda_id, params?.status, params?.godown_id]);
 
   useEffect(() => {
     fetchList();

@@ -22,18 +22,18 @@ export function useInventory() {
     }
   }, []);
 
-  const fetchPackets = useCallback(async () => {
+  const fetchPackets = useCallback(async (filters?: InventoryFilters) => {
     try {
-      const data = await inventoryAPI.getPackets();
+      const data = await inventoryAPI.getPackets(filters);
       setPackets(data);
     } catch (err: any) {
       setError(err.message);
     }
   }, []);
 
-  const fetchLots = useCallback(async () => {
+  const fetchLots = useCallback(async (filters?: InventoryFilters) => {
     try {
-      const data = await inventoryAPI.getLots();
+      const data = await inventoryAPI.getLots(filters);
       setLots(data);
     } catch (err: any) {
       setError(err.message);
@@ -49,18 +49,18 @@ export function useInventory() {
     }
   }, []);
 
-  const fetchSummary = useCallback(async () => {
+  const fetchSummary = useCallback(async (filters?: InventoryFilters) => {
     try {
-      const data = await inventoryAPI.getSummary();
+      const data = await inventoryAPI.getSummary(filters);
       setSummary(data);
     } catch (err: any) {
       setError(err.message);
     }
   }, []);
 
-  const fetchHierarchicalInventory = useCallback(async () => {
+  const fetchHierarchicalInventory = useCallback(async (filters?: InventoryFilters) => {
     try {
-      const data = await inventoryAPI.getHierarchicalInventory();
+      const data = await inventoryAPI.getHierarchicalInventory(filters);
       setHierarchical(data);
     } catch (err: any) {
       setError(err.message);
@@ -73,10 +73,10 @@ export function useInventory() {
     try {
       await Promise.all([
         fetchFinishedGoods(filters),
-        fetchPackets(),
-        fetchLots(),
+        fetchPackets(filters),
+        fetchLots(filters),
         fetchBags(filters),
-        fetchSummary(),
+        fetchSummary(filters),
       ]);
     } catch (err: any) {
       setError(err.message);

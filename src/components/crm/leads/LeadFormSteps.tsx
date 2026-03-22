@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { ArrowRight, ArrowLeft, Search, Plus, X } from 'lucide-react';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { CustomSelect } from '../../shared/CustomSelect';
+import { DateInputWithSteppers } from '../../shared/DateInputWithSteppers';
 import { salesmenAPI } from '../../../services/salesmen.api';
 import { vendorsAPI } from '../../../services/vendors.api';
 import { useBrokers } from '../../../hooks/useBrokers';
@@ -1492,11 +1493,16 @@ export function LeadFormSteps({
 
             <div>
               <label className="text-sm font-medium mb-1.5 block">Expected Close Date</label>
-              <input
-                type="date"
+              <DateInputWithSteppers
+                className="w-full"
+                inputClassName="py-2 text-sm"
                 value={formData.expected_close_date ? new Date(formData.expected_close_date).toISOString().split('T')[0] : ''}
-                onChange={(e) => setFormData({ ...formData, expected_close_date: e.target.value ? new Date(e.target.value).toISOString() : undefined })}
-                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                onChange={(v) =>
+                  setFormData({
+                    ...formData,
+                    expected_close_date: v ? new Date(v + 'T12:00:00').toISOString() : undefined,
+                  })
+                }
               />
             </div>
           </div>

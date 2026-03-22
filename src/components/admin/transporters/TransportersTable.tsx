@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
 import { SearchBar } from '../shared/SearchBar';
-import { FilterDropdown } from '../shared/FilterDropdown';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { EmptyState } from '../shared/EmptyState';
 import { ActionButtons } from '../shared/ActionButtons';
@@ -12,15 +11,14 @@ import { useVehicles } from '../../../hooks/useVehicles';
 import { TransporterFormModal } from './TransporterFormModal';
 import { inwardSlipPassesAPI } from '../../../services/inwardSlipPasses.api';
 import { vehiclesAPI } from '../../../services/vehicles.api';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import type { Transporter, InwardSlipPass } from '../../../types/entities';
 
 export function TransportersTable() {
-  const [includeInactive, setIncludeInactive] = useState(false);
-  const { transporters, loading, deleteTransporter, refetch } = useTransporters(includeInactive);
+  const { transporters, loading, deleteTransporter, refetch } = useTransporters(false);
   const { vehicles } = useVehicles();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedTransporter, setSelectedTransporter] = useState<Transporter | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -31,6 +29,20 @@ export function TransportersTable() {
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('error');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+
+  // Open create modal when opened via e.g. /directory/transporters?create=1 (new tab from vehicle form)
+  useEffect(() => {
+    if (searchParams.get('create') !== '1') return;
+    setCreateModalOpen(true);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('create');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [searchParams, setSearchParams]);
 
   // Fetch inward slip passes to check transporter usage
   useEffect(() => {
@@ -193,13 +205,9 @@ export function TransportersTable() {
           cp.emails?.some(email => email && email.toLowerCase().includes(searchQuery.toLowerCase()))
         ));
       
-      const matchesStatus = statusFilter 
-        ? (statusFilter === 'active' ? transporter.is_active : !transporter.is_active)
-        : true;
-
-      return matchesSearch && matchesStatus;
+      return matchesSearch;
     });
-  }, [transporters, searchQuery, statusFilter]);
+  }, [transporters, searchQuery]);
 
   return (
     <div>
@@ -212,16 +220,6 @@ export function TransportersTable() {
           />
         </div>
         <div className="flex gap-2">
-          <FilterDropdown
-            label="Status"
-            options={[
-              { label: 'All', value: undefined },
-              { label: 'Active', value: 'active' },
-              { label: 'Inactive', value: 'inactive' },
-            ]}
-            value={statusFilter}
-            onChange={setStatusFilter}
-          />
           <button
             onClick={() => setCreateModalOpen(true)}
             className="btn-primary rounded-xl inline-flex items-center justify-center gap-2 px-4 py-2"
@@ -296,7 +294,6 @@ export function TransportersTable() {
                             </span>
                           )}
                           <ActionButtons
-                            isActive={transporter.is_active}
                             onEdit={() => {
                               setSelectedTransporterId(transporter.id);
                               setEditModalOpen(true);

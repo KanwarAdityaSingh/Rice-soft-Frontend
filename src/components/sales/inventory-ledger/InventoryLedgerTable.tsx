@@ -7,7 +7,11 @@ import { useInventoryLedger } from '../../../hooks/useInventoryLedger';
 import { useProducts } from '../../../hooks/useProducts';
 import { usePackaging } from '../../../hooks/usePackaging';
 import { useBatches } from '../../../hooks/useBatches';
+import { GodownFilterSelect } from '../../shared/GodownFilterSelect';
+import { useGodowns } from '../../../hooks/useGodowns';
 import type { InventoryLedgerSourceType } from '../../../types/sales';
+import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
+import { DateInputWithSteppers } from '../../shared/DateInputWithSteppers';
 
 const sourceTypeLabels: Record<InventoryLedgerSourceType, string> = {
   purchase_inward: 'Purchase Inward',
@@ -17,12 +21,14 @@ const sourceTypeLabels: Record<InventoryLedgerSourceType, string> = {
 };
 
 export function InventoryLedgerTable() {
+  const [godownFilter, setGodownFilter] = useState<string | undefined>();
   const [productFilter, setProductFilter] = useState('');
   const [sourceTypeFilter, setSourceTypeFilter] = useState<InventoryLedgerSourceType | ''>('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
 
   const { entries, loading, refetch } = useInventoryLedger({
+    godown_id: godownFilter,
     product_id: productFilter || undefined,
     source_type: sourceTypeFilter || undefined,
     from_date: fromDate || undefined,
@@ -33,7 +39,11 @@ export function InventoryLedgerTable() {
   const { products } = useProducts();
   const { packaging } = usePackaging();
   const { batches } = useBatches();
+  const { godowns } = useGodowns(true);
   const [searchQuery, setSearchQuery] = useState('');
+
+  const godownLabel = (id: string | undefined) =>
+    id ? godowns.find((g) => g.id === id)?.name ?? id.slice(0, 8) : '—';
 
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase();
@@ -49,7 +59,7 @@ export function InventoryLedgerTable() {
   const getPackagingLabel = (id: string | null) => {
     if (!id) return '–';
     const p = packaging.find((x) => x.id === id);
-    return p ? `${p.holding_capacity} kg (${p.packet_type})` : id;
+    return p ? `${p.holding_capacity} kg (${formatPacketTypeLabel(p.packet_type)})` : id;
   };
 
   const getBatchNumber = (id: string | null) => {
@@ -61,6 +71,7 @@ export function InventoryLedgerTable() {
     <div className="space-y-4">
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-end gap-4">
+          <GodownFilterSelect value={godownFilter} onChange={setGodownFilter} label="Godown" />
           <div className="min-w-[200px]">
             <label className="block text-xs font-medium text-muted-foreground mb-1">Product</label>
             <select
@@ -93,20 +104,22 @@ export function InventoryLedgerTable() {
           </div>
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">From date</label>
-            <input
-              type="date"
-              className="rounded-lg border bg-background px-3 py-2 text-sm"
+            <DateInputWithSteppers
+              className="min-w-[9rem]"
+              inputClassName="py-2 text-sm"
               value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
+              onChange={setFromDate}
+              max={toDate || undefined}
             />
           </div>
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">To date</label>
-            <input
-              type="date"
-              className="rounded-lg border bg-background px-3 py-2 text-sm"
+            <DateInputWithSteppers
+              className="min-w-[9rem]"
+              inputClassName="py-2 text-sm"
               value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
+              onChange={setToDate}
+              min={fromDate || undefined}
             />
           </div>
         </div>
@@ -133,6 +146,7 @@ export function InventoryLedgerTable() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
+                  <th className="text-left p-3 font-medium">Godown</th>
                   <th className="text-left p-3 font-medium">Product</th>
                   <th className="text-left p-3 font-medium">Bag</th>
                   <th className="text-left p-3 font-medium">Batch</th>
@@ -146,6 +160,7 @@ export function InventoryLedgerTable() {
               <tbody>
                 {filtered.map((e) => (
                   <tr key={e.id} className="border-b hover:bg-muted/30">
+                    <td className="p-3 text-muted-foreground">{godownLabel(e.godown_id)}</td>
                     <td className="p-3">{getProductName(e.product_id)}</td>
                     <td className="p-3">{getPackagingLabel(e.packaging_id)}</td>
                     <td className="p-3">{getBatchNumber(e.batch_id)}</td>

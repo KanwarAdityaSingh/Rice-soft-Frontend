@@ -20,6 +20,7 @@ export function useInventoryLedger(params?: InventoryLedgerParams) {
       setLoading(false);
     }
   }, [
+    params?.godown_id,
     params?.product_id,
     params?.source_type,
     params?.from_date,

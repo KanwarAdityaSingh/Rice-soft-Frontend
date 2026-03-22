@@ -7,7 +7,14 @@ import { validateGST, validatePAN, validateAadhaar } from '../../../utils/valida
 import { CustomSelect } from '../../shared/CustomSelect';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
-import type { CreateTransporterRequest, UpdateTransporterRequest } from '../../../types/entities';
+import type { ContactPerson, CreateTransporterRequest, UpdateTransporterRequest } from '../../../types/entities';
+
+function isContactPersonRowEmpty(cp: ContactPerson): boolean {
+  const name = (cp.name || '').trim();
+  const hasPhone = (cp.phones || []).some((p) => p?.trim());
+  const hasEmail = (cp.emails || []).some((e) => e?.trim());
+  return !name && !hasPhone && !hasEmail;
+}
 
 interface TransporterFormModalProps {
   open: boolean;
@@ -304,34 +311,25 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
       if (formData.pan_number && !validatePAN(formData.pan_number)) {
         newErrors.pan_number = 'Invalid PAN format';
       }
-    } else {
-      // Aadhaar is mandatory for unregistered transporters
-      if (!formData.aadhar_number) {
-        newErrors.aadhar_number = 'Aadhaar number is required for unregistered transporters';
-      } else if (!validateAadhaar(formData.aadhar_number)) {
-        newErrors.aadhar_number = 'Invalid Aadhaar format (12 digits, cannot start with 0 or 1)';
-      }
+    } else if (formData.aadhar_number?.trim() && !validateAadhaar(formData.aadhar_number)) {
+      newErrors.aadhar_number = 'Invalid Aadhaar format (12 digits, cannot start with 0 or 1)';
     }
     
-    // Validate contact_persons: must have at least one with name and at least one phone
-    if (!formData.contact_persons || formData.contact_persons.length === 0) {
-      newErrors.contact_persons = 'At least one contact person is required';
-    } else {
-      formData.contact_persons.forEach((cp, idx) => {
-        if (!cp.name || cp.name.trim().length < 2) {
-          newErrors[`contact_person_${idx}_name`] = 'Name required (min 2 chars)';
+    // Contact persons optional; validate only rows that have any data (name, phone, or email)
+    (formData.contact_persons || []).forEach((cp, idx) => {
+      if (isContactPersonRowEmpty(cp)) return;
+      if (!cp.name || cp.name.trim().length < 2) {
+        newErrors[`contact_person_${idx}_name`] = 'Name required (min 2 chars)';
+      }
+      if (!cp.phones || cp.phones.length === 0 || !cp.phones.some((p) => p?.trim())) {
+        newErrors[`contact_person_${idx}_phone`] = 'At least one phone required';
+      }
+      cp.emails?.forEach((email, emailIdx) => {
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          newErrors[`contact_person_${idx}_email_${emailIdx}`] = 'Valid email required';
         }
-        if (!cp.phones || cp.phones.length === 0 || !cp.phones[0]) {
-          newErrors[`contact_person_${idx}_phone`] = 'At least one phone required';
-        }
-        // Validate emails if provided
-        cp.emails?.forEach((email, emailIdx) => {
-          if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-            newErrors[`contact_person_${idx}_email_${emailIdx}`] = 'Valid email required';
-          }
-        });
       });
-    }
+    });
     
     if (!formData.address.street.trim()) {
       newErrors['address.street'] = 'Street is required';
@@ -360,7 +358,11 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
     setLoading(true);
     try {
       // Remove vehicle_ids from payload - relationship is managed from vehicle side
-      const { vehicle_ids, ...submitData } = formData;
+      const { vehicle_ids, ...rest } = formData;
+      const submitData = {
+        ...rest,
+        contact_persons: (formData.contact_persons || []).filter((cp) => !isContactPersonRowEmpty(cp)),
+      };
 
       if (isEditMode && transporterId) {
         await updateTransporter(transporterId, submitData as UpdateTransporterRequest);
@@ -441,7 +443,7 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                         <p className="text-sm text-primary/90">
                           <span className="font-medium">Note:</span> {formData.transport_type === 'registered' 
                             ? 'For registered transporters, GST number is mandatory.' 
-                            : 'For unregistered transporters, Aadhaar number is mandatory.'}
+                            : 'For unregistered transporters, Aadhaar is optional.'}
                         </p>
                       </div>
 
@@ -517,9 +519,7 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                         <>
                           {/* Aadhaar Number for unregistered (full width) */}
                           <div>
-                            <label className="block text-sm font-medium mb-1">
-                              Aadhaar Number <span className="text-red-500">*</span>
-                            </label>
+                            <label className="block text-sm font-medium mb-1">Aadhaar Number</label>
                             <input
                               type="text"
                               value={formData.aadhar_number || ''}
@@ -561,8 +561,11 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                         {/* Contact Persons Section */}
                         <div>
                           <label className="block text-sm font-medium mb-2">
-                            Contact Persons <span className="text-red-500">*</span>
+                            Contact Persons <span className="text-muted-foreground font-normal">(optional)</span>
                           </label>
+                          <p className="text-xs text-muted-foreground mb-2">
+                            If you add a contact, name and at least one phone are required for that person.
+                          </p>
                           <div className="space-y-3">
                             {(formData.contact_persons || []).map((contact, index) => (
                               <div key={index} className="space-y-2 p-3 border border-border rounded-lg bg-background/60">
@@ -598,7 +601,7 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
 
                                 {/* Phone Numbers */}
                                 <div className="space-y-1">
-                                  <label className="text-xs font-medium text-muted-foreground">Phone Numbers *</label>
+                                  <label className="text-xs font-medium text-muted-foreground">Phone Numbers</label>
                                   {(contact.phones || ['']).map((phone, phoneIndex) => (
                                     <div key={phoneIndex} className="flex gap-2">
                                       <input
@@ -728,7 +731,7 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                           onClick={() => setStep(2)}
                           className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
                         >
-                          Next: Address & Vehicles
+                          Next: Address
                         </button>
                       </div>
                     </>

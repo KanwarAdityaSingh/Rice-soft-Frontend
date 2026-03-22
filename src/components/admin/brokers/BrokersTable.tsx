@@ -11,7 +11,6 @@ import { useBrokers } from '../../../hooks/useBrokers';
 export function BrokersTable() {
   const { brokers, loading, deleteBroker } = useBrokers();
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [typeFilter, setTypeFilter] = useState<string | undefined>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedBroker, setSelectedBroker] = useState<{ id: string; business_name?: string | undefined  } | null>(null);
@@ -26,10 +25,9 @@ export function BrokersTable() {
       (primaryContact?.emails?.[0]?.toLowerCase().includes(q) || false) ||
       (primaryContact?.phones?.[0]?.includes(q) || false);
     
-    const matchesStatus = statusFilter ? (statusFilter === 'active' ? broker.is_active : !broker.is_active) : true;
     const matchesType = typeFilter ? broker.type === typeFilter : true;
 
-    return matchesSearch && matchesStatus && matchesType;
+    return matchesSearch && matchesType;
   });
 
   return (
@@ -40,15 +38,6 @@ export function BrokersTable() {
           <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search by business name, contact, or email..." />
         </div>
         <div className="flex gap-2">
-          <FilterDropdown
-            label="Status"
-            options={[
-              { label: 'Active', value: 'active' },
-              { label: 'Inactive', value: 'inactive' },
-            ]}
-            value={statusFilter}
-            onChange={setStatusFilter}
-          />
           <FilterDropdown
             label="Type"
             options={[
@@ -97,7 +86,6 @@ export function BrokersTable() {
                     <td className="py-3 px-4 text-sm">{broker.address.city}</td>
                     <td className="py-3 px-4 text-right">
                       <ActionButtons
-                        isActive={broker.is_active}
                         onEdit={() => console.log('Edit', broker.id)}
                         onDelete={() => {
                           setSelectedBroker({ id: broker.id, business_name: broker.business_name || '' });
@@ -127,13 +115,6 @@ export function BrokersTable() {
                       {broker.contact_persons?.[0]?.name || 'N/A'}
                     </p>
                   </div>
-                  <span className={`px-2 py-1 rounded-md text-xs whitespace-nowrap ${
-                    broker.is_active 
-                      ? 'bg-emerald-500/10 text-emerald-600' 
-                      : 'bg-muted text-muted-foreground'
-                  }`}>
-                    {broker.is_active ? 'Active' : 'Inactive'}
-                  </span>
                 </div>
 
                 {/* Details Grid */}
@@ -159,7 +140,6 @@ export function BrokersTable() {
                 {/* Actions */}
                 <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/60">
                   <ActionButtons
-                    isActive={broker.is_active}
                     onEdit={() => console.log('Edit', broker.id)}
                     onDelete={() => {
                       setSelectedBroker(broker as { id: string; business_name?: string | undefined });

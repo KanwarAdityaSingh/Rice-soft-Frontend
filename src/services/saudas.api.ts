@@ -1,5 +1,10 @@
 import { apiService } from './api';
-import type { Sauda, CreateSaudaRequest, UpdateSaudaRequest, SaudaFilters } from '../types/entities';
+import type {
+  Sauda,
+  CreateSaudaRequest,
+  UpdateSaudaRequest,
+  SaudaFilters,
+} from '../types/entities';
 
 export const saudasAPI = {
   // Get all saudas
@@ -24,14 +29,13 @@ export const saudasAPI = {
     return apiService.post<Sauda>('/saudas', data);
   },
 
-  // Update sauda
   updateSauda: (id: string, data: UpdateSaudaRequest) => {
     return apiService.put<Sauda>(`/saudas/${id}`, data);
   },
 
-  // Update sauda status
-  updateSaudaStatus: (id: string, status: 'draft' | 'active' | 'completed' | 'cancelled') => {
-    return apiService.post<Sauda>(`/saudas/${id}/status`, { status });
+  /** PATCH /saudas/:id/status — full update payload (include `status`, e.g. `cancelled`) */
+  patchSaudaStatus: (id: string, data: UpdateSaudaRequest) => {
+    return apiService.patch<Sauda>(`/saudas/${id}/status`, data);
   },
 
   // Delete sauda

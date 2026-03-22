@@ -1,4 +1,4 @@
-import type { HierarchicalInventory } from '../types/entities';
+import type { BagType, HierarchicalInventory } from '../types/entities';
 
 /**
  * Generic multi-level grouping utility
@@ -402,20 +402,16 @@ export interface ExtendedInventoryFilters {
   max_quantity?: number;
   
   // Bags filters
-  bag_types?: ('jute' | 'pp')[];
-  
+  bag_types?: BagType[];
+
   // Date range filter
   date_range?: {
     from?: string; // ISO date string
     to?: string; // ISO date string
   };
-  
-  // Search
+
   search_text?: string;
   bag_capacities?: number[];
-  
-  // Search
-  search_text?: string;
 }
 
 /**

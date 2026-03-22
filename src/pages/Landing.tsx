@@ -82,7 +82,7 @@ export default function LandingPage() {
               <div className="grid gap-3 sm:gap-4">
                 {/* Mini Cards - responsive grid */}
                 <div className="grid grid-cols-3 gap-2 sm:gap-3">
-                  <MiniCard icon={<Users className="h-3 sm:h-4 w-3 sm:w-4" />} title="Leads" value={formatNumber(leadsCount)} accent="primary" />
+                  {/* <MiniCard icon={<Users className="h-3 sm:h-4 w-3 sm:w-4" />} title="Leads" value={formatNumber(leadsCount)} accent="primary" /> */}
                   <MiniCard icon={<UserCheck className="h-3 sm:h-4 w-3 sm:w-4" />} title="Salesperson" value={formatNumber(salespeopleCount)} accent="accent" />
                   <MiniCard icon={<TrendingUp className="h-3 sm:h-4 w-3 sm:w-4" />} title="Conversions" value={formatNumber(conversionsCount)} accent="primary" />
                 </div>
@@ -102,7 +102,7 @@ export default function LandingPage() {
                 </div>
                 
                 {/* Action Cards */}
-                <div className="grid grid-cols-2 gap-2 sm:gap-3">
+                {/* <div className="grid grid-cols-2 gap-2 sm:gap-3">
                   <Link to="/crm/leads" className="card-glow p-3 sm:p-4 highlight-box">
                     <div className="mb-0.5 sm:mb-1 text-xs sm:text-sm font-medium">Leads</div>
                     <p className="text-[10px] sm:text-xs text-muted-foreground">Manage prospects end‑to‑end</p>
@@ -111,7 +111,7 @@ export default function LandingPage() {
                     <div className="mb-0.5 sm:mb-1 text-xs sm:text-sm font-medium">Leaderboard</div>
                     <p className="text-[10px] sm:text-xs text-muted-foreground">Celebrate top performers</p>
                   </Link>
-                </div>
+                </div> */}
               </div>
             </div>
           </div>

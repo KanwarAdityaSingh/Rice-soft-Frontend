@@ -9,11 +9,21 @@ import { validateEmail, validatePAN, validateAadhaar, validatePhone, validateGST
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { BrokerPreviewDialog } from './BrokerPreviewDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
-import type { CreateBrokerRequest } from '../../../types/entities';
+import type { CreateBrokerRequest, BrokerBankDetails } from '../../../types/entities';
+import { BROKER_CREATE_LENIENT_BANK_MESSAGE } from '../../../services/brokers.api';
 
 interface BrokerFormModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+}
+
+/** Backend `verify_bank` requires complete bank fields for its verify schema — align with account + IFSC + holder. */
+function shouldVerifyBankOnCreate(bd: BrokerBankDetails | undefined | null): boolean {
+  if (!bd) return false;
+  const accountNumber = bd.account_number?.trim();
+  const ifsc = bd.ifsc_code?.trim().toUpperCase();
+  const holder = bd.account_holder_name?.trim();
+  return Boolean(accountNumber && holder && ifsc && ifsc.length === 11);
 }
 
 // Helper function to convert ALL CAPS text to Title Case
@@ -79,6 +89,8 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
   const [gstAutoFilledFields, setGstAutoFilledFields] = useState<Set<string>>(new Set());
   const [verifyingBankAccount, setVerifyingBankAccount] = useState(false);
   const [bankAccountVerified, setBankAccountVerified] = useState(false);
+  /** Name field read-only when filled from PAN / Aadhaar lookup (per contact row index). */
+  const [contactPersonNameFromGovApi, setContactPersonNameFromGovApi] = useState<boolean[]>([false]);
 
   const handleIFSCLookup = async (ifscCode: string) => {
     // Only lookup if IFSC is exactly 11 characters (basic validation, let API handle detailed validation)
@@ -155,6 +167,11 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         
         if (normalizedCurrent !== normalizedVerified) {
           setBankAccountVerified(false);
+          setGstAutoFilledFields((prev) => {
+            const next = new Set(prev);
+            next.delete('account_holder_name');
+            return next;
+          });
           setAlertType('error');
           setAlertTitle('Account Holder Name Mismatch');
           setAlertMessage(`The account holder name does not match. Expected: "${verifiedAccountHolderName}", but found: "${currentAccountHolderName}". Please verify the details.`);
@@ -323,8 +340,8 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       const mapped = response.mapped_data;
       const panData = response.pan_data;
       
-      // Track which fields are being auto-filled
-      const autoFilledFields = new Set<string>();
+      // Track which fields are being auto-filled (merge so GST-locked fields e.g. account_holder_name stay)
+      const autoFilledFields = new Set(gstAutoFilledFields);
       
       // Populate business name if available (convert to title case)
       let businessName = formData.business_name;
@@ -335,6 +352,11 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       
       // If PAN data is for a person, add to contact_persons if not already present
       let contactPersons = [...(formData.contact_persons || [])];
+      let nextLocks = [...contactPersonNameFromGovApi];
+      while (nextLocks.length < contactPersons.length) nextLocks.push(false);
+      if (nextLocks.length > contactPersons.length) {
+        nextLocks = nextLocks.slice(0, contactPersons.length);
+      }
       if (panData?.category === 'person' && panData?.name) {
         const panName = toTitleCase(panData.name);
         const existingContact = contactPersons.find(cp => cp.name && cp.name.trim() === panName.trim());
@@ -346,12 +368,14 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
           if (emptyContactIndex >= 0) {
             // Replace the empty contact person
             contactPersons[emptyContactIndex] = { name: panName, phones: [''], emails: [''] };
+            nextLocks[emptyContactIndex] = true;
           } else {
             // No empty contact person, add a new one
             contactPersons = [
               ...contactPersons,
               { name: panName, phones: [''], emails: [''] }
             ];
+            nextLocks.push(true);
           }
         }
       }
@@ -384,7 +408,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         autoFilledFields.add('business_type');
       }
       
-      // Auto-fill account holder name with business name (editable)
+      // Auto-fill account holder name with business name (editable unless already locked by GST lookup)
       const bankDetailsUpdate = {
         ...formData.bank_details,
         account_holder_name: businessName,
@@ -398,8 +422,8 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         business_details: businessDetailsUpdate,
         bank_details: bankDetailsUpdate,
       });
+      setContactPersonNameFromGovApi(nextLocks);
       
-      // Set the auto-filled fields
       setGstAutoFilledFields(autoFilledFields);
       
       // Clear any previous errors
@@ -431,8 +455,8 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       
       const mapped = response.mapped_data;
       
-      // Track which fields are being auto-filled
-      const autoFilledFields = new Set<string>();
+      // Track which fields are being auto-filled (merge so prior PAN/GST locks are preserved)
+      const autoFilledFields = new Set(gstAutoFilledFields);
       
       // Populate business name if available (convert to title case)
       let businessName = formData.business_name;
@@ -486,7 +510,8 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         autoFilledFields.add('business_type');
       }
       
-      // Auto-fill account holder name with business name (editable)
+      // Auto-fill account holder name with business name (locked after GST lookup)
+      autoFilledFields.add('account_holder_name');
       const bankDetailsUpdate = {
         ...formData.bank_details,
         account_holder_name: businessName,
@@ -542,14 +567,35 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         
         // If Aadhaar data has a name, add to contact_persons if not already present
         let contactPersons = [...(formData.contact_persons || [])];
+        let nextLocks = [...contactPersonNameFromGovApi];
+        while (nextLocks.length < contactPersons.length) nextLocks.push(false);
+        if (nextLocks.length > contactPersons.length) {
+          nextLocks = nextLocks.slice(0, contactPersons.length);
+        }
         const aadhaarName = toTitleCase(aadhaarData?.name || mapped?.contact_person);
-        if (aadhaarName) {
-          const existingContact = contactPersons.find(cp => cp.name === aadhaarName);
+        if (aadhaarName?.trim()) {
+          const trimmed = aadhaarName.trim();
+          const existingContact = contactPersons.find(
+            (cp) => cp.name && cp.name.trim() === trimmed
+          );
           if (!existingContact) {
-            contactPersons = [
-              ...contactPersons,
-              { name: aadhaarName, phones: [''], emails: [''] }
-            ];
+            const emptyContactIndex = contactPersons.findIndex(
+              (cp) => !cp.name || cp.name.trim() === ''
+            );
+            if (emptyContactIndex >= 0) {
+              contactPersons[emptyContactIndex] = {
+                name: aadhaarName,
+                phones: [''],
+                emails: [''],
+              };
+              nextLocks[emptyContactIndex] = true;
+            } else {
+              contactPersons = [
+                ...contactPersons,
+                { name: aadhaarName, phones: [''], emails: [''] },
+              ];
+              nextLocks.push(true);
+            }
           }
         }
         
@@ -569,6 +615,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
           contact_persons: contactPersons,
           address: addressUpdate,
         });
+        setContactPersonNameFromGovApi(nextLocks);
       }
       
       // Clear any previous errors
@@ -672,7 +719,12 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
           .filter(cp => cp.phones.length > 0); // Remove contact persons with no valid phones
       }
       
-      await createBroker(cleanedFormData);
+      const createPayload: CreateBrokerRequest = {
+        ...cleanedFormData,
+        ...(shouldVerifyBankOnCreate(cleanedFormData.bank_details) ? { verify_bank: true } : {}),
+      };
+
+      const { message, verification_error, verification_message } = await createBroker(createPayload);
       setPreviewOpen(false);
       setFormData({
         business_name: '',
@@ -693,12 +745,25 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       setStep(1);
       setBankAccountVerified(false);
       setGstAutoFilledFields(new Set());
-      // Show success alert
-      setAlertType('success');
-      setAlertTitle('Broker Created Successfully');
-      setAlertMessage('The broker has been created successfully.');
+      setContactPersonNameFromGovApi([false]);
+
+      const isLenientBank =
+        message.trim() === BROKER_CREATE_LENIENT_BANK_MESSAGE.trim() ||
+        /bank could not be verified/i.test(message);
+      if (isLenientBank) {
+        setAlertType('warning');
+        setAlertTitle('Broker Created');
+        const main = message || BROKER_CREATE_LENIENT_BANK_MESSAGE;
+        const detail = verification_error?.trim();
+        setAlertMessage(detail ? `${main}\n\n${detail}` : main);
+      } else {
+        setAlertType('success');
+        setAlertTitle('Broker Created Successfully');
+        const baseMsg = message?.trim() || 'The broker has been created successfully.';
+        const bankLine = verification_message?.trim() || '';
+        setAlertMessage(bankLine ? `${baseMsg}\n\n${bankLine}` : baseMsg);
+      }
       setAlertOpen(true);
-      // Close the form modal after success
       onOpenChange(false);
     } catch (error: any) {
       // Show error alert with API response
@@ -913,18 +978,22 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                               type="text"
                               placeholder="Name"
                               value={contact.name}
+                              readOnly={contactPersonNameFromGovApi[index] === true}
                               onChange={(e) => {
                                 const updated = [...(formData.contact_persons || [])];
                                 updated[index] = { ...updated[index], name: e.target.value };
                                 setFormData({ ...formData, contact_persons: updated });
                               }}
-                              className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                              className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
                             />
                             {(formData.contact_persons || []).length > 1 && (
                               <button
                                 type="button"
                                 onClick={() => {
                                   const updated = (formData.contact_persons || []).filter((_, i) => i !== index);
+                                  setContactPersonNameFromGovApi((prev) =>
+                                    prev.filter((_, i) => i !== index)
+                                  );
                                   setFormData({ ...formData, contact_persons: updated });
                                 }}
                                 className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
@@ -1079,6 +1148,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                       <button
                         type="button"
                         onClick={() => {
+                          setContactPersonNameFromGovApi((prev) => [...prev, false]);
                           setFormData({
                             ...formData,
                             contact_persons: [...(formData.contact_persons || []), { name: '', phones: [''], emails: [''] }]
@@ -1218,7 +1288,8 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                           account_holder_name: e.target.value 
                         } 
                       })}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                      readOnly={gstAutoFilledFields.has('account_holder_name')}
+                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
                     />
                   </div>
 

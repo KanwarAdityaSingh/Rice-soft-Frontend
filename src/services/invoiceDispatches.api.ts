@@ -11,10 +11,15 @@ import type {
 const BASE = '/invoice-dispatches';
 
 export const invoiceDispatchesAPI = {
-  list: (params?: { sales_sauda_id?: string; status?: InvoiceDispatchStatus }) => {
+  list: (params?: {
+    sales_sauda_id?: string;
+    status?: InvoiceDispatchStatus;
+    godown_id?: string;
+  }) => {
     const search = new URLSearchParams();
     if (params?.sales_sauda_id) search.set('sales_sauda_id', params.sales_sauda_id);
     if (params?.status) search.set('status', params.status);
+    if (params?.godown_id) search.set('godown_id', params.godown_id);
     const q = search.toString();
     return apiService.get<InvoiceDispatch[]>(q ? `${BASE}?${q}` : BASE);
   },

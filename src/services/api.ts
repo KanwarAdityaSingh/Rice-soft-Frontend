@@ -5,6 +5,10 @@ export interface ApiResponse<T = any> {
   success: boolean;
   data: T;
   message: string;
+  /** Present on some vendor-create responses when bank verification fails leniently */
+  verification_error?: string;
+  /** Present on vendor-create when verify_bank succeeded (Surepass + markBankDetailsVerified) */
+  verification_message?: string;
   timestamp?: string;
   isSessionValid?: boolean;
 }
@@ -251,6 +255,14 @@ class ApiService {
       body: data ? JSON.stringify(data) : undefined,
     });
     return response.data;
+  }
+
+  /** POST returning full `{ success, data, message }` envelope (e.g. create flows with contextual messages). */
+  async postEnvelope<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
+    return this.request<T>(endpoint, {
+      method: 'POST',
+      body: data ? JSON.stringify(data) : undefined,
+    });
   }
 
   async put<T>(endpoint: string, data?: any): Promise<T> {

@@ -9,13 +9,16 @@ import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { inventoryAPI } from '../../../services/inventory.api';
 import { useProducts } from '../../../hooks/useProducts';
 import { usePackaging } from '../../../hooks/usePackaging';
+import { useGodowns } from '../../../hooks/useGodowns';
 import type { BatchWithDetails, BatchLotUsage, BatchRiceCodeUsage, FinishedGoodsInventory } from '../../../types/entities';
+import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
 
 export function BatchDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { products } = useProducts();
   const { packaging } = usePackaging();
+  const { godowns } = useGodowns(true);
   const [batch, setBatch] = useState<BatchWithDetails | null>(null);
   const [lotUsage, setLotUsage] = useState<BatchLotUsage[]>([]);
   const [riceCodeUsage, setRiceCodeUsage] = useState<BatchRiceCodeUsage[]>([]);
@@ -130,6 +133,12 @@ export function BatchDetail() {
                     {batch.status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
                   </span>
                 </div>
+                {batch.godown_id && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Godown:{' '}
+                    {godowns.find((g) => g.id === batch.godown_id)?.name ?? batch.godown_id}
+                  </p>
+                )}
                 {batch.recipe && (
                   <p className="text-sm text-muted-foreground mt-2">
                     Recipe: {batch.recipe.recipe_name}
@@ -210,7 +219,7 @@ export function BatchDetail() {
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium">{product?.name || 'Unknown Product'}</span>
                           <span className="text-xs text-muted-foreground">
-                            - {pkg?.holding_capacity}kg {pkg?.packet_type}
+                            {pkg ? ` - ${pkg.holding_capacity}kg ${formatPacketTypeLabel(pkg.packet_type)}` : ''}
                           </span>
                           {pkg?.packaging_number && (
                             <span className="text-xs font-mono font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
@@ -278,7 +287,7 @@ export function BatchDetail() {
                         <td className="py-3 px-4 text-sm">
                           {fg.packaging ? (
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-sm rounded-lg bg-sky-500/10 text-sky-700">
-                              {fg.packaging.packet_type} ({fg.packaging.holding_capacity}kg)
+                              {formatPacketTypeLabel(fg.packaging.packet_type)} ({fg.packaging.holding_capacity}kg)
                             </span>
                           ) : (
                             'N/A'

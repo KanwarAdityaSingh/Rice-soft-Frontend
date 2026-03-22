@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import React, { useState, useEffect, useRef } from 'react';
-import { X, FileText, Check, Loader2, Plus, Search, ChevronDown, RefreshCw, Minus, Download, Truck, Shield } from 'lucide-react';
+import { X, FileText, Check, Loader2, Plus, Search, ChevronDown, RefreshCw, Download, Truck, Shield } from 'lucide-react';
 import { useInwardSlipPasses } from '../../../hooks/useInwardSlipPasses';
 import { inwardSlipPassesAPI } from '../../../services/inwardSlipPasses.api';
 import { useSaudas } from '../../../hooks/useSaudas';
@@ -13,9 +13,13 @@ import { vendorsAPI } from '../../../services/vendors.api';
 import { kaantasAPI } from '../../../services/kaantas.api';
 import { getRiceTypeLabel } from '../../../utils/riceType';
 import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
+import { getSaudaSerialNumber } from '../../../utils/saudaSerial';
+import { getDirectoryTransportersPagePath, getDirectoryVehiclesPagePath } from '../../../utils/appRoutes';
+import { useGodowns } from '../../../hooks/useGodowns';
 import { AlertDialog } from '../../shared/AlertDialog';
+import { DateInputWithSteppers } from '../../shared/DateInputWithSteppers';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
-import type { CreateInwardSlipPassRequest, UpdateInwardSlipPassRequest, RiceCode, RiceType, Sauda, Vehicle, VehicleVerificationResponse, OtherBill } from '../../../types/entities';
+import type { CreateInwardSlipPassRequest, UpdateInwardSlipPassRequest, RiceCode, RiceType, Sauda, Vehicle, OtherBill } from '../../../types/entities';
 
 // Default recipient type
 interface DefaultRecipient {
@@ -47,6 +51,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   const { vendors } = useVendors();
   const { transporters, refetch: refetchTransporters, loading: loadingTransporters } = useTransporters();
   const { vehicles, refetch: refetchVehicles } = useVehicles(undefined, true);
+  const { godowns } = useGodowns(false);
   const isEditMode = !!ispId;
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
@@ -56,8 +61,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   // Vehicle-related state
   const [vehicleNumberInput, setVehicleNumberInput] = useState('');
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
-  const [verifyingVehicle, setVerifyingVehicle] = useState(false);
-  const [verificationResult, setVerificationResult] = useState<VehicleVerificationResponse | null>(null);
+  const [creatingVehicle, setCreatingVehicle] = useState(false);
   const [vehicleDropdownOpen, setVehicleDropdownOpen] = useState(false);
   const [vehicleSearchQuery, setVehicleSearchQuery] = useState('');
   const vehicleDropdownRef = useRef<HTMLDivElement>(null);
@@ -120,7 +124,19 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     
     return parts.join(' - ') || 'Sauda';
   };
+
+  /** Same S. No. as the Saudas directory table (order from GET /saudas, no type filter). */
+  const getSaudaSerial = (sauda: Sauda): number | null => getSaudaSerialNumber(sauda.id, saudas);
+
+  const formatSaudaDate = (sauda: Sauda): string => {
+    if (!sauda.sauda_date) return '';
+    const d = new Date(sauda.sauda_date);
+    if (Number.isNaN(d.getTime())) return sauda.sauda_date;
+    return d.toLocaleDateString('en-IN');
+  };
+
   const [formData, setFormData] = useState<CreateInwardSlipPassRequest>({
+    godown_id: '',
     sauda_ids: [],
     date: new Date().toISOString().split('T')[0],
     vehicle_id: '',
@@ -150,6 +166,8 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   const [newBillFile, setNewBillFile] = useState<File | null>(null);
   const [billNumber, setBillNumber] = useState<string>('');
   const [billDate, setBillDate] = useState<string>('');
+  /** True when ISP already has a purchase bill PDF from the server (edit mode). */
+  const [hasExistingPurchaseBill, setHasExistingPurchaseBill] = useState(false);
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
@@ -186,6 +204,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     try {
       const isp = await inwardSlipPassesAPI.getInwardSlipPassById(ispId);
       setFormData({
+        godown_id: isp.godown_id || '',
         sauda_ids: isp.sauda_ids || [],
         date: isp.date,
         vehicle_id: isp.vehicle_id,
@@ -194,11 +213,12 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
         party_gst_number: isp.party_gst_number || null,
         party_pan_number: isp.party_pan_number || null,
         transporter_id: isp.transporter_id || null,
-        transportation_cost: isp.transportation_cost || null,
+        transportation_cost: isp.transportation_cost ?? null,
         notes: isp.notes || null,
       });
       setDisplaySlipNumber(isp.slip_number); // Store for display only
       setOtherBills(isp.other_bills || []); // Load other_bills array
+      setHasExistingPurchaseBill(Boolean(isp.bill_pdf_url));
       // Load bill number and date
       setBillNumber(isp.bill_number || '');
       setBillDate(isp.bill_date || '');
@@ -225,6 +245,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
 
   const resetForm = () => {
     setFormData({
+      godown_id: '',
       sauda_ids: [],
       date: new Date().toISOString().split('T')[0],
       vehicle_id: '',
@@ -250,10 +271,10 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     setNewBillFile(null);
     setBillNumber('');
     setBillDate('');
+    setHasExistingPurchaseBill(false);
     // Reset vehicle state
     setVehicleNumberInput('');
     setSelectedVehicle(null);
-    setVerificationResult(null);
     setVehicleDropdownOpen(false);
   };
 
@@ -282,6 +303,10 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
       }
     }
     
+    if (!formData.godown_id || !formData.godown_id.trim()) {
+      newErrors.godown_id = 'Receiving godown is required';
+    }
+
     // vehicle_id is required (API contract: UUID, must exist in vehicles table)
     if (!formData.vehicle_id || formData.vehicle_id.trim() === '') {
       newErrors.vehicle_id = 'Vehicle is required';
@@ -320,6 +345,31 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     // notes is optional, max 1000 chars (API contract)
     if (formData.notes && formData.notes.length > 1000) {
       newErrors.notes = 'Notes cannot exceed 1000 characters';
+    }
+
+    if (!billNumber.trim()) {
+      newErrors.bill_number = 'Bill number is required';
+    }
+    if (!billDate.trim()) {
+      newErrors.bill_date = 'Bill date is required';
+    } else {
+      const billDateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!billDateRegex.test(billDate)) {
+        newErrors.bill_date = 'Bill date must be in ISO format (YYYY-MM-DD)';
+      } else {
+        const d = new Date(billDate);
+        if (Number.isNaN(d.getTime())) {
+          newErrors.bill_date = 'Invalid bill date';
+        }
+      }
+    }
+
+    const purchaseBillOk =
+      hasExistingPurchaseBill ||
+      Boolean(uploadSuccess.purchase_bill) ||
+      Boolean(pendingFiles.purchase_bill);
+    if (!purchaseBillOk) {
+      newErrors.purchase_bill = 'Purchase bill file is required';
     }
 
     setErrors(newErrors);
@@ -386,6 +436,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     try {
       // Clean and prepare data according to API contract
       const cleanedData: CreateInwardSlipPassRequest | UpdateInwardSlipPassRequest = {
+        godown_id: formData.godown_id.trim(),
         sauda_ids: formData.sauda_ids && formData.sauda_ids.length > 0 ? formData.sauda_ids : [],
         date: formData.date, // Already in ISO format (YYYY-MM-DD)
         vehicle_id: formData.vehicle_id.trim(),
@@ -571,13 +622,14 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
 
   const handleFileSelect = (field: keyof FileUploadState, file: File | null) => {
     if (!file) return;
-    
+
     if (isEditMode && ispId) {
-      // In edit mode, upload immediately
       handleFileUpload(field, file);
     } else {
-      // In create mode, store for later
       setPendingFiles(prev => ({ ...prev, [field]: file }));
+    }
+    if (field === 'purchase_bill') {
+      setErrors((prev) => ({ ...prev, purchase_bill: '' }));
     }
   };
 
@@ -666,7 +718,14 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
       filtered = filtered.filter(sauda => {
         const displayName = getSaudaDisplayName(sauda).toLowerCase();
         const rate = sauda.rate.toString();
-        return displayName.includes(query) || rate.includes(query);
+        const dateLabel = formatSaudaDate(sauda).toLowerCase();
+        const rawDate = (sauda.sauda_date || '').toLowerCase();
+        return (
+          displayName.includes(query) ||
+          rate.includes(query) ||
+          dateLabel.includes(query) ||
+          rawDate.includes(query)
+        );
       });
     }
     
@@ -715,20 +774,18 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     setFormData(prev => ({ ...prev, vehicle_id: vehicle.id }));
     setVehicleNumberInput(vehicle.vehicle_number);
     setVehicleDropdownOpen(false);
-    setVerificationResult(null);
     // Link transporter if vehicle has one
     if (vehicle.transporter_ids?.length && !formData.transporter_id) {
       setFormData(prev => ({ ...prev, transporter_id: vehicle.transporter_ids[0] }));
     }
   };
 
-  // Verify vehicle number via Surepass
-  const handleVerifyVehicle = async () => {
+  // Create vehicle from manual entry (number only; use directory for full RC details)
+  const handleCreateVehicle = async () => {
     if (!vehicleNumberInput.trim()) return;
-    
-    setVerifyingVehicle(true);
+
+    setCreatingVehicle(true);
     try {
-      // First check if vehicle already exists
       try {
         const existingVehicle = await vehiclesAPI.getVehicleByNumber(vehicleNumberInput.trim().toUpperCase());
         if (existingVehicle) {
@@ -737,45 +794,20 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
           setAlertTitle('Vehicle Found');
           setAlertMessage('This vehicle already exists in the system.');
           setAlertOpen(true);
-          setVerifyingVehicle(false);
           return;
         }
-      } catch (e) {
-        // Vehicle doesn't exist, continue with verification
+      } catch {
+        // Not found — create below
       }
 
-      // Verify via Surepass
-      const result = await vehiclesAPI.verifyVehicle(vehicleNumberInput.trim());
-      setVerificationResult(result);
-      setAlertType('success');
-      setAlertTitle('Vehicle Verified');
-      setAlertMessage(`Owner: ${result.owner_name || 'N/A'}, Model: ${result.maker_model || 'N/A'}`);
-      setAlertOpen(true);
-    } catch (error: any) {
-      setAlertType('error');
-      setAlertTitle('Verification Failed');
-      setAlertMessage(error.message || 'Could not verify vehicle. You can still add it manually.');
-      setAlertOpen(true);
-    } finally {
-      setVerifyingVehicle(false);
-    }
-  };
-
-  // Create vehicle from verification result or manual entry
-  const handleCreateVehicle = async () => {
-    if (!vehicleNumberInput.trim()) return;
-    
-    setVerifyingVehicle(true);
-    try {
       const vehicleData = {
         vehicle_number: vehicleNumberInput.trim().toUpperCase(),
-        ...(verificationResult || {}),
         transporter_ids: formData.transporter_id ? [formData.transporter_id] : [],
-        is_verified: !!verificationResult,
-        verified_at: verificationResult ? new Date().toISOString() : null,
+        is_verified: false,
+        verified_at: null,
         is_active: true,
       };
-      
+
       const newVehicle = await vehiclesAPI.createVehicle(vehicleData);
       selectVehicle(newVehicle);
       await refetchVehicles();
@@ -789,7 +821,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
       setAlertMessage(error.message || 'Failed to create vehicle.');
       setAlertOpen(true);
     } finally {
-      setVerifyingVehicle(false);
+      setCreatingVehicle(false);
     }
   };
 
@@ -929,41 +961,6 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     }
   };
 
-  const adjustDate = (days: number) => {
-    // const today = new Date();
-    // today.setHours(0, 0, 0, 0);
-    
-    const currentDate = new Date(formData.date);
-    const newDate = new Date(currentDate);
-    newDate.setDate(newDate.getDate() + days);
-    
-    // Calculate difference from today
-    // const diffTime = newDate.getTime() - today.getTime();
-    // const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-    
-    // Check if new date is within allowed range (-1 to +1 from today)
-    // if (diffDays < -1) {
-    //   setAlertType('warning');
-    //   setAlertTitle('Date Restriction');
-    //   setAlertMessage('You cannot select a date more than 1 day before today.');
-    //   setAlertOpen(true);
-    //   return;
-    // }
-    
-    // if (diffDays > 1) {
-    //   setAlertType('warning');
-    //   setAlertTitle('Date Restriction');
-    //   setAlertMessage('You cannot select a date more than 1 day after today.');
-    //   setAlertOpen(true);
-    //   return;
-    // }
-    
-    setFormData({ ...formData, date: newDate.toISOString().split('T')[0] });
-  };
-
-  const incrementDate = () => adjustDate(1);
-  const decrementDate = () => adjustDate(-1);
-
   return (
     <>
       <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -990,6 +987,27 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <form onSubmit={handleSubmit} className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Receiving at godown *</label>
+                    <select
+                      className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background ${errors.godown_id ? 'border-red-500' : 'border-border'}`}
+                      value={formData.godown_id}
+                      onChange={(e) => {
+                        setFormData({ ...formData, godown_id: e.target.value });
+                        if (errors.godown_id) setErrors({ ...errors, godown_id: '' });
+                      }}
+                    >
+                      <option value="">Select godown</option>
+                      {godowns
+                        .filter((g) => g.is_active)
+                        .map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.name}
+                          </option>
+                        ))}
+                    </select>
+                    {errors.godown_id && <p className="text-xs text-red-600 mt-1">{errors.godown_id}</p>}
+                  </div>
                   {/* Sauda Selection */}
                   <div>
                     <label className="block text-xs font-medium mb-1">
@@ -997,14 +1015,22 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                     </label>
                     {getSelectedSaudas().length > 0 && (
                       <div className="flex flex-wrap gap-1 mb-1">
-                        {getSelectedSaudas().map((sauda) => (
+                        {getSelectedSaudas().map((sauda) => {
+                          const saudaDateStr = formatSaudaDate(sauda);
+                          const sn = getSaudaSerial(sauda);
+                          return (
                           <div key={sauda.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 text-primary rounded-full text-xs">
-                            <span>{getSaudaDisplayName(sauda)} - ₹{sauda.rate}</span>
+                            <span>
+                              {sn != null ? `S. No. ${sn} · ` : ''}
+                              {getSaudaDisplayName(sauda)} - ₹{sauda.rate}
+                              {saudaDateStr ? ` · ${saudaDateStr}` : ''}
+                            </span>
                             <button type="button" onClick={() => removeSauda(sauda.id)} className="hover:bg-primary/20 rounded-full p-0.5">
                               <X className="h-2.5 w-2.5" />
                             </button>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                     <div ref={saudaDropdownRef} className="relative">
@@ -1052,12 +1078,14 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                                   )}
                                   {getFilteredSaudas().map((sauda) => {
                                     const isSelected = (formData.sauda_ids || []).includes(sauda.id);
+                                    const sn = getSaudaSerial(sauda);
                                     return (
                                       <button key={sauda.id} type="button" onClick={() => { toggleSaudaSelection(sauda.id); setSaudaSearchQuery(''); }}
                                         className={`w-full text-left px-2 py-1 rounded text-xs transition-colors ${isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted'}`}>
                                         <div className="flex items-center justify-between">
-                                          <div className="flex items-center gap-2 flex-1">
-                                            <span>{getSaudaDisplayName(sauda)} - ₹{sauda.rate}</span>
+                                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                                            <span className="shrink-0 tabular-nums text-muted-foreground">{sn != null ? `S. No. ${sn}` : '—'}</span>
+                                            <span className="min-w-0 truncate">{getSaudaDisplayName(sauda)} - ₹{sauda.rate}</span>
                                             {sauda.completion_percentage !== null && (
                                               <span className={`text-[9px] px-1 py-0.5 rounded-full ${getCompletionStatus(sauda.completion_percentage).bgColor} ${getCompletionStatus(sauda.completion_percentage).color} border ${getCompletionStatus(sauda.completion_percentage).borderColor}`}>
                                                 {formatCompletionPercentage(sauda.completion_percentage)}
@@ -1066,9 +1094,14 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                                           </div>
                                           {isSelected && <Check className="h-3 w-3" />}
                                         </div>
-                                        {sauda.quantity && (
-                                          <div className="text-[10px] text-muted-foreground mt-0.5">
-                                            {formatWeightDisplay(sauda.received_until_now, sauda.quantity)}
+                                        {(sauda.sauda_date || sauda.quantity) && (
+                                          <div className="text-[10px] text-muted-foreground mt-0.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+                                            {sauda.sauda_date && (
+                                              <span>Sauda date: {formatSaudaDate(sauda) || sauda.sauda_date}</span>
+                                            )}
+                                            {sauda.quantity && (
+                                              <span>{formatWeightDisplay(sauda.received_until_now, sauda.quantity)}</span>
+                                            )}
                                           </div>
                                         )}
                                       </button>
@@ -1167,16 +1200,13 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                     )}
                     <div className={isEditMode && displaySlipNumber ? '' : 'col-span-2'}>
                       <label className="block text-xs font-medium mb-0.5">Date <span className="text-red-500">*</span></label>
-                      <div className="flex gap-1">
-                        <button type="button" onClick={decrementDate} className="flex-shrink-0 p-1.5 border border-border rounded-md bg-background hover:bg-muted" title="Prev">
-                          <Minus className="h-3.5 w-3.5" />
-                        </button>
-                        <input type="date" value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                          className={`flex-1 min-w-0 px-2 py-1.5 text-sm border rounded-md bg-background ${errors.date ? 'border-red-500' : 'border-border'}`} />
-                        <button type="button" onClick={incrementDate} className="flex-shrink-0 p-1.5 border border-border rounded-md bg-background hover:bg-muted" title="Next">
-                          <Plus className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+                      <DateInputWithSteppers
+                        className="w-full"
+                        inputClassName="py-1.5 text-sm"
+                        invalid={Boolean(errors.date)}
+                        value={formData.date}
+                        onChange={(v) => setFormData({ ...formData, date: v })}
+                      />
                       {errors.date && <p className="mt-0.5 text-xs text-red-500">{errors.date}</p>}
                     </div>
                   </div>
@@ -1186,18 +1216,25 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                     <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Transport & Vehicle</h3>
                     <div>
                       <label className="block text-xs font-medium mb-0.5">Transporter</label>
-                      <div className="flex gap-1">
+                      <div className="flex gap-1 flex-wrap items-stretch">
                         <select value={formData.transporter_id || ''} onChange={(e) => {
-                            if (e.target.value === '__add_new__') { window.open('/directory/transporters', '_blank'); return; }
                             setFormData({ ...formData, transporter_id: e.target.value || null });
                           }}
                           className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md bg-background">
                           <option value="">Select</option>
                           {transporters.filter(t => t.is_active).map((t) => (<option key={t.id} value={t.id}>{t.business_name}</option>))}
-                          <option value="__add_new__">+ Add New</option>
                         </select>
-                        <button type="button" onClick={() => refetchTransporters()} disabled={loadingTransporters} className="flex-shrink-0 p-1.5 border border-border rounded-md bg-background hover:bg-muted disabled:opacity-50">
+                        <button type="button" onClick={() => refetchTransporters()} disabled={loadingTransporters} className="flex-shrink-0 p-1.5 border border-border rounded-md bg-background hover:bg-muted disabled:opacity-50" title="Refresh list">
                           <RefreshCw className={`h-3.5 w-3.5 ${loadingTransporters ? 'animate-spin' : ''}`} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            window.open(getDirectoryTransportersPagePath({ create: true }), '_blank', 'noopener,noreferrer')
+                          }
+                          className="flex-shrink-0 px-2 py-1.5 text-xs border border-border rounded-md bg-background hover:bg-muted whitespace-nowrap"
+                        >
+                          Add transporter
                         </button>
                       </div>
                     </div>
@@ -1223,24 +1260,23 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                         </div>
                       ) : (
                         <div ref={vehicleDropdownRef} className="space-y-1">
-                          <div className="flex gap-1">
+                          <div className="flex gap-1 flex-wrap items-stretch">
                             <input 
                               type="text" 
                               value={vehicleNumberInput} 
                               onChange={(e) => setVehicleNumberInput(e.target.value.toUpperCase())}
                               onFocus={() => setVehicleDropdownOpen(true)}
                               placeholder="Enter or select vehicle number"
-                              className={`flex-1 px-2 py-1.5 text-sm border rounded-md bg-background uppercase ${errors.vehicle_id ? 'border-red-500' : 'border-border'}`}
+                              className={`flex-1 min-w-[140px] px-2 py-1.5 text-sm border rounded-md bg-background uppercase ${errors.vehicle_id ? 'border-red-500' : 'border-border'}`}
                             />
-                            <button 
-                              type="button" 
-                              onClick={handleVerifyVehicle} 
-                              disabled={verifyingVehicle || !vehicleNumberInput.trim()} 
-                              className="flex-shrink-0 px-2 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1"
-                              title="Verify via Surepass"
+                            <button
+                              type="button"
+                              onClick={() =>
+                                window.open(getDirectoryVehiclesPagePath({ create: true }), '_blank', 'noopener,noreferrer')
+                              }
+                              className="flex-shrink-0 px-2 py-1.5 text-xs border border-border rounded-md bg-background hover:bg-muted whitespace-nowrap"
                             >
-                              {verifyingVehicle ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Shield className="h-3.5 w-3.5" />}
-                              Verify
+                              Add vehicle
                             </button>
                           </div>
                           
@@ -1283,21 +1319,16 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                             </div>
                           )}
 
-                          {/* Verification Result / Create Button */}
+                          {/* Create from typed number if not in list */}
                           {vehicleNumberInput.trim() && !selectedVehicle && (
                             <div className="flex items-center gap-2">
-                              {verificationResult ? (
-                                <div className="flex-1 text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded">
-                                  <span className="text-emerald-600 font-medium">Verified:</span> {verificationResult.owner_name || 'N/A'} | {verificationResult.maker_model || 'N/A'}
-                                </div>
-                              ) : null}
                               <button 
                                 type="button" 
                                 onClick={handleCreateVehicle} 
-                                disabled={verifyingVehicle} 
+                                disabled={creatingVehicle} 
                                 className="flex-shrink-0 px-2 py-1 text-xs border border-primary text-primary rounded-md hover:bg-primary/10 disabled:opacity-50 flex items-center gap-1"
                               >
-                                {verifyingVehicle ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                                {creatingVehicle ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
                                 Add Vehicle
                               </button>
                             </div>
@@ -1313,13 +1344,17 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                         type="number" 
                         step="0.01" 
                         min="0"
-                        value={formData.transportation_cost || ''} 
+                        value={formData.transportation_cost == null ? '' : formData.transportation_cost}
                         onChange={(e) => {
-                          const value = parseFloat(e.target.value);
-                          if (isNaN(value) || value === 0) {
+                          const raw = e.target.value;
+                          if (raw === '') {
                             setFormData({ ...formData, transportation_cost: null });
                             setErrors({ ...errors, transportation_cost: '' });
-                          } else if (value < 0) {
+                            return;
+                          }
+                          const value = parseFloat(raw);
+                          if (Number.isNaN(value)) return;
+                          if (value < 0) {
                             setErrors({ ...errors, transportation_cost: 'Negative values not allowed' });
                             setFormData({ ...formData, transportation_cost: null });
                           } else {
@@ -1338,61 +1373,78 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                     </div>
                   </div>
 
-                  {/* Notes */}
-                  <div className="space-y-1">
-                    <label className="block text-xs font-medium">Notes</label>
-                    <textarea 
-                      value={formData.notes || ''} 
-                      onChange={(e) => setFormData({ ...formData, notes: e.target.value || null })}
-                      className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background resize-none ${errors.notes ? 'border-red-500' : 'border-border'}`} 
-                      placeholder="Additional notes (max 1000 chars)"
-                      rows={3}
-                      maxLength={1000}
-                    />
-                    {errors.notes && <p className="mt-0.5 text-xs text-red-500">{errors.notes}</p>}
-                  </div>
-
                   {/* Bills Upload Section */}
                   <div className="pt-2 border-t border-border">
-                    <div className="flex items-center justify-between mb-1">
-                    </div>
                     <div className="grid grid-cols-2 gap-2">
-                      {/* Purchase Bill with Number and Date */}
-                      <div className="relative col-span-2">
-                        <label className="block text-[10px] font-medium mb-0.5">Purchase Bill</label>
-                        <div className="space-y-1.5">
-                          <div className="relative">
-                            <input 
-                              type="file" 
-                              accept="image/*,.pdf" 
-                              onChange={(e) => { handleFileSelect('purchase_bill', e.target.files?.[0] || null); }} 
-                              disabled={uploading.purchase_bill}
-                              className="w-full px-1.5 py-1 text-[10px] border border-border rounded-md bg-background file:mr-1 file:py-0.5 file:px-1.5 file:rounded file:border-0 file:text-[10px] file:bg-primary/10 file:text-primary disabled:opacity-50" 
+                      <div className="col-span-2 space-y-1.5">
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <div>
+                            <label className="block text-[10px] font-medium mb-0.5">
+                              Purchase Bill Number <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={billNumber}
+                              onChange={(e) => {
+                                setBillNumber(e.target.value);
+                                setErrors((prev) => ({ ...prev, bill_number: '' }));
+                              }}
+                              placeholder="e.g., BILL-2024-001"
+                              className={`w-full px-1.5 py-1 text-[10px] border rounded-md bg-background ${
+                                errors.bill_number ? 'border-red-500' : 'border-border'
+                              }`}
                             />
-                            {uploading.purchase_bill && <div className="absolute right-1.5 top-1/2 -translate-y-1/2"><Loader2 className="h-3 w-3 animate-spin text-primary" /></div>}
-                            {uploadSuccess.purchase_bill && !uploading.purchase_bill && <div className="absolute right-1.5 top-1/2 -translate-y-1/2"><Check className="h-3 w-3 text-emerald-500" /></div>}
+                            {errors.bill_number && (
+                              <p className="mt-0.5 text-[9px] text-red-500">{errors.bill_number}</p>
+                            )}
                           </div>
-                          <div className="grid grid-cols-2 gap-1.5">
-                            <div>
-                              <label className="block text-[9px] text-muted-foreground mb-0.5">Bill Number (Optional)</label>
-                              <input
-                                type="text"
-                                value={billNumber}
-                                onChange={(e) => setBillNumber(e.target.value)}
-                                placeholder="e.g., BILL-2024-001"
-                                className="w-full px-1.5 py-1 text-[10px] border border-border rounded-md bg-background"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[9px] text-muted-foreground mb-0.5">Bill Date (Optional)</label>
-                              <input
-                                type="date"
-                                value={billDate}
-                                onChange={(e) => setBillDate(e.target.value)}
-                                className="w-full px-1.5 py-1 text-[10px] border border-border rounded-md bg-background"
-                              />
-                            </div>
+                          <div>
+                            <label className="block text-[10px] font-medium mb-0.5">
+                              Purchase Bill Date <span className="text-red-500">*</span>
+                            </label>
+                            <DateInputWithSteppers
+                              className="w-full"
+                              inputClassName="py-1 text-[10px]"
+                              invalid={Boolean(errors.bill_date)}
+                              value={billDate}
+                              onChange={(v) => {
+                                setBillDate(v);
+                                setErrors((prev) => ({ ...prev, bill_date: '' }));
+                              }}
+                            />
+                            {errors.bill_date && (
+                              <p className="mt-0.5 text-[9px] text-red-500">{errors.bill_date}</p>
+                            )}
                           </div>
+                        </div>
+                        <div className="relative">
+                          <label className="block text-[10px] font-medium mb-0.5">
+                            Purchase Bill <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="file"
+                            accept="image/*,.pdf"
+                            onChange={(e) => {
+                              handleFileSelect('purchase_bill', e.target.files?.[0] || null);
+                            }}
+                            disabled={uploading.purchase_bill}
+                            className={`w-full px-1.5 py-1 text-[10px] border rounded-md bg-background file:mr-1 file:py-0.5 file:px-1.5 file:rounded file:border-0 file:text-[10px] file:bg-primary/10 file:text-primary disabled:opacity-50 ${
+                              errors.purchase_bill ? 'border-red-500' : 'border-border'
+                            }`}
+                          />
+                          {uploading.purchase_bill && (
+                            <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
+                              <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                            </div>
+                          )}
+                          {uploadSuccess.purchase_bill && !uploading.purchase_bill && (
+                            <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
+                              <Check className="h-3 w-3 text-emerald-500" />
+                            </div>
+                          )}
+                          {errors.purchase_bill && (
+                            <p className="mt-0.5 text-[9px] text-red-500">{errors.purchase_bill}</p>
+                          )}
                         </div>
                       </div>
                       {/* Bilti and Eway Bill */}
@@ -1516,6 +1568,20 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                     </div>
                   </div>
 
+                  {/* Notes */}
+                  <div className="space-y-1 pt-2 border-t border-border">
+                    <label className="block text-xs font-medium">Notes</label>
+                    <textarea 
+                      value={formData.notes || ''} 
+                      onChange={(e) => setFormData({ ...formData, notes: e.target.value || null })}
+                      className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background resize-none ${errors.notes ? 'border-red-500' : 'border-border'}`} 
+                      placeholder="Additional notes (max 1000 chars)"
+                      rows={3}
+                      maxLength={1000}
+                    />
+                    {errors.notes && <p className="mt-0.5 text-xs text-red-500">{errors.notes}</p>}
+                  </div>
+
                   {/* Actions */}
                   <div className="flex justify-end gap-2 pt-3 border-t border-border">
                     <button type="button" onClick={() => onOpenChange(false)} className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-muted transition-colors">Cancel</button>
@@ -1597,11 +1663,11 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                       </div>
 
                       {/* Charges */}
-                      {formData.transportation_cost && (
+                      {formData.transportation_cost != null && (
                         <div className="border-t-2 border-dashed border-border pt-3 mt-3">
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Transportation Cost:</span>
-                            <span className="font-bold">₹ {formData.transportation_cost?.toLocaleString('en-IN') || '-'}</span>
+                            <span className="font-bold">₹ {formData.transportation_cost.toLocaleString('en-IN')}</span>
                           </div>
                         </div>
                       )}
@@ -1621,9 +1687,11 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                         <div className="border-t-2 border-dashed border-border pt-3 mt-3">
                           <div className="font-bold mb-2">Linked Saudas ({getSelectedSaudas().length})</div>
                           <div className="space-y-1 bg-muted/30 p-2 rounded">
-                            {getSelectedSaudas().map((sauda, idx) => (
+                            {getSelectedSaudas().map((sauda) => {
+                              const sn = getSaudaSerial(sauda);
+                              return (
                               <div key={sauda.id} className="flex justify-between items-center py-1 border-b border-dotted border-border last:border-0">
-                                <span className="text-muted-foreground">{idx + 1}.</span>
+                                <span className="text-muted-foreground whitespace-nowrap tabular-nums">{sn != null ? `S. No. ${sn}` : '—'}</span>
                                 <div className="flex-1 ml-2">
                                   <div className="flex items-center gap-2">
                                     <span>{getSaudaDisplayName(sauda)}</span>
@@ -1641,7 +1709,8 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                                 </div>
                                 <span className="font-semibold">₹{sauda.rate}/kg</span>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       )}

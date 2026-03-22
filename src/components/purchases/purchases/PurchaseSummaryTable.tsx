@@ -9,11 +9,13 @@ import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { vendorsAPI } from '../../../services/vendors.api';
 import { getRiceTypeLabel } from '../../../utils/riceType';
 import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
+import { GodownFilterSelect } from '../../shared/GodownFilterSelect';
 import type { SaudaPurchaseSummary, RiceCode, RiceType, Vendor, Sauda } from '../../../types/entities';
 
 export function PurchaseSummaryTable() {
   const { saudas, loading: saudasLoading } = useSaudas();
-  
+
+  const [godownFilter, setGodownFilter] = useState<string | undefined>();
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -66,8 +68,8 @@ export function PurchaseSummaryTable() {
       setLoadingSummaries(true);
       try {
         const summaries = await Promise.all(
-          filteredSaudas.map(s => 
-            purchaseSummaryAPI.getSaudaSummary(s.id, 0).catch(() => null)
+          filteredSaudas.map(s =>
+            purchaseSummaryAPI.getSaudaSummary(s.id, 0, godownFilter).catch(() => null)
           )
         );
         setSaudaSummaries(summaries.filter((s): s is SaudaPurchaseSummary => s !== null));
@@ -78,7 +80,7 @@ export function PurchaseSummaryTable() {
       }
     };
     fetchSummaries();
-  }, [filteredSaudas]);
+  }, [filteredSaudas, godownFilter]);
 
   const getRiceCodeName = (riceCodeId: string | null | undefined): string => {
     if (!riceCodeId) return 'N/A';
@@ -149,13 +151,20 @@ export function PurchaseSummaryTable() {
           />
         </div>
 
+        <GodownFilterSelect
+          value={godownFilter}
+          onChange={setGodownFilter}
+          label="Scope lots & ISPs (optional)"
+        />
+
         {/* Date Filters */}
-        <div className="flex gap-2 items-center">
+        <div className="flex gap-2 items-center flex-wrap">
           <Calendar className="h-4 w-4 text-muted-foreground" />
           <input
             type="date"
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)}
+            max={endDate || undefined}
             className="px-3 py-2 border border-border rounded-lg bg-background text-sm"
             placeholder="Start Date"
           />
@@ -164,6 +173,7 @@ export function PurchaseSummaryTable() {
             type="date"
             value={endDate}
             onChange={(e) => setEndDate(e.target.value)}
+            min={startDate || undefined}
             className="px-3 py-2 border border-border rounded-lg bg-background text-sm"
             placeholder="End Date"
           />

@@ -12,11 +12,18 @@ import { InwardSlipPassFormModal } from './InwardSlipPassFormModal';
 import { InwardSlipPassPreviewDialog } from './InwardSlipPassPreviewDialog';
 import { KaantaWeightDialog } from './KaantaWeightDialog';
 import { LinkedLotsDialog } from './LinkedLotsDialog';
+import { GodownFilterSelect } from '../../shared/GodownFilterSelect';
+import { useGodowns } from '../../../hooks/useGodowns';
 import type { InwardSlipPass } from '../../../types/entities';
 
 export function InwardSlipPassesTable() {
   const [saudaFilter, setSaudaFilter] = useState<string | undefined>();
-  const { inwardSlipPasses, loading, deleteInwardSlipPass, refetch } = useInwardSlipPasses(saudaFilter);
+  const [godownFilter, setGodownFilter] = useState<string | undefined>();
+  const { godowns } = useGodowns(true);
+  const { inwardSlipPasses, loading, deleteInwardSlipPass, refetch } = useInwardSlipPasses({
+    sauda_id: saudaFilter,
+    godown_id: godownFilter,
+  });
   const { getVehicleNumber } = useVehicleMap();
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -69,6 +76,9 @@ export function InwardSlipPassesTable() {
     setDocumentViewerOpen(true);
   };
 
+  const godownName = (id: string | undefined) =>
+    id ? godowns.find((g) => g.id === id)?.name ?? '—' : '—';
+
   const filtered = useMemo(() => {
     return inwardSlipPasses.filter((isp) => {
       const q = searchQuery.toLowerCase();
@@ -84,10 +94,11 @@ export function InwardSlipPassesTable() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+      <div className="flex flex-col sm:flex-row gap-3 mb-6 flex-wrap items-end">
         <div className="flex-1 min-w-0">
           <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search by slip number, vehicle, or party..." />
         </div>
+        <GodownFilterSelect value={godownFilter} onChange={setGodownFilter} label="Filter by godown" />
         <div className="flex gap-2">
           <button
             onClick={() => setCreateOpen(true)}
@@ -123,6 +134,10 @@ export function InwardSlipPassesTable() {
               </div>
               <div className="mt-3 grid gap-1.5 text-xs">
                 <div className="inline-flex items-center gap-2">
+                  <span className="text-muted-foreground w-20">Godown:</span>
+                  <span className="font-medium">{godownName(isp.godown_id)}</span>
+                </div>
+                <div className="inline-flex items-center gap-2">
                   <span className="text-muted-foreground w-20">Vehicle:</span>
                   <span className="font-medium">{getVehicleNumber(isp.vehicle_id)}</span>
                 </div>
@@ -136,10 +151,6 @@ export function InwardSlipPassesTable() {
                     <span className="font-medium">₹{isp.transportation_cost.toFixed(2)}</span>
                   </div>
                 )}
-                <div className="inline-flex items-center gap-2">
-                  <span className="text-muted-foreground w-20">Saudas:</span>
-                  <span className="font-medium">{isp.sauda_ids?.length || 0}</span>
-                </div>
                 {isp.bill_number && (
                   <div className="inline-flex items-center gap-2">
                     <span className="text-muted-foreground w-20">Bill #:</span>

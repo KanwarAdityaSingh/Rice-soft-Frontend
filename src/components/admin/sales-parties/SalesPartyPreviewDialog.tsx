@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, CheckCircle2, Building2, MapPin, FileText, Briefcase, UserCheck } from 'lucide-react';
+import { X, CheckCircle2, Building2, MapPin, Briefcase, UserCheck } from 'lucide-react';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import type { CreateSalesPartyRequest } from '../../../types/entities';
 
@@ -145,30 +145,6 @@ export function SalesPartyPreviewDialog({ open, onOpenChange, formData, onConfir
                 </InfoSection>
               )}
 
-              {formData.bank_details && Object.keys(formData.bank_details).length > 0 && (
-                <InfoSection title="Bank Details" icon={FileText}>
-                  <InfoRow
-                    label="Bank Name"
-                    value={formData.bank_details?.bank_name || undefined}
-                  />
-                  <InfoRow
-                    label="Account Number"
-                    value={formData.bank_details?.account_number || undefined}
-                  />
-                  <InfoRow
-                    label="IFSC Code"
-                    value={formData.bank_details?.ifsc_code || undefined}
-                  />
-                  <InfoRow
-                    label="Account Holder Name"
-                    value={formData.bank_details?.account_holder_name || undefined}
-                  />
-                  <InfoRow
-                    label="Branch"
-                    value={formData.bank_details?.branch || undefined}
-                  />
-                </InfoSection>
-              )}
             </div>
 
             <div className="flex gap-3 mt-8 pt-6 border-t border-border">

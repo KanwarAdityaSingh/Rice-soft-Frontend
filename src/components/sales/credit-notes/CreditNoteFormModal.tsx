@@ -5,6 +5,7 @@ import { useCreditNotes } from '../../../hooks/useCreditNotes';
 import { useInvoiceDispatches } from '../../../hooks/useInvoiceDispatches';
 import { useProducts } from '../../../hooks/useProducts';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
+import { DateInputWithSteppers } from '../../shared/DateInputWithSteppers';
 import type { CreateCreditNoteRequest, CreditNoteLineInput } from '../../../types/sales';
 
 interface CreditNoteFormModalProps {
@@ -195,11 +196,11 @@ export function CreditNoteFormModal({
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Credit Note Date</label>
-              <input
-                type="date"
-                className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
+              <DateInputWithSteppers
+                className="w-full"
+                inputClassName="py-2 text-sm"
                 value={creditNoteDate}
-                onChange={(e) => setCreditNoteDate(e.target.value)}
+                onChange={setCreditNoteDate}
               />
               {errors.credit_note_date && (
                 <p className="mt-1 text-xs text-red-600">{errors.credit_note_date}</p>

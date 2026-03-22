@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react';
 import { saudasAPI } from '../services/saudas.api';
-import type { Sauda, CreateSaudaRequest, UpdateSaudaRequest, SaudaFilters } from '../types/entities';
+import type {
+  Sauda,
+  CreateSaudaRequest,
+  UpdateSaudaRequest,
+  SaudaFilters,
+} from '../types/entities';
 
 export function useSaudas(filters?: SaudaFilters) {
   const [saudas, setSaudas] = useState<Sauda[]>([]);
@@ -22,7 +27,7 @@ export function useSaudas(filters?: SaudaFilters) {
 
   useEffect(() => {
     fetchSaudas();
-  }, [filters?.status, filters?.sauda_type, filters?.purchaser_id]);
+  }, [filters?.status, filters?.include_inactive, filters?.sauda_type, filters?.purchaser_id]);
 
   const createSauda = async (data: CreateSaudaRequest) => {
     try {
@@ -44,11 +49,11 @@ export function useSaudas(filters?: SaudaFilters) {
     }
   };
 
-  const updateSaudaStatus = async (id: string, status: 'draft' | 'active' | 'completed' | 'cancelled') => {
+  const updateSaudaStatus = async (id: string, payload: UpdateSaudaRequest) => {
     try {
-      const updatedSauda = await saudasAPI.updateSaudaStatus(id, status);
+      const updated = await saudasAPI.patchSaudaStatus(id, payload);
       await fetchSaudas();
-      return updatedSauda;
+      return updated;
     } catch (err: any) {
       throw err;
     }

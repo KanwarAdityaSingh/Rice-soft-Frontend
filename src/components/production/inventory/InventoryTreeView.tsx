@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { ChevronDown, ChevronRight, Store, Package, Box, PackageCheck, Hash, Building2 } from 'lucide-react';
 import type { HierarchicalInventory } from '../../../types/entities';
+import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
 import type { FlowNodeData } from '../../../types/inventoryFlow';
 
 interface InventoryTreeViewProps {
@@ -396,7 +397,7 @@ export function InventoryTreeView({
                                     </div>
                                     <div className="flex items-center gap-2 flex-1">
                                       <span className="font-medium text-sm">
-                                        {pack.holding_capacity}kg {pack.packet_type}
+                                        {pack.holding_capacity}kg {formatPacketTypeLabel(pack.packet_type)}
                                       </span>
                                       {pack.packaging_number && (
                                         <span className="text-xs font-mono font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded">

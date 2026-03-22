@@ -11,10 +11,17 @@ export interface SalesSaudaLine {
   sales_sauda_id: string;
   product_id: string;
   packaging_id: string | null;
+  packet_count: number | null;
   quantity: number;
   quantity_unit: string;
   rate: number;
+  discount_value: number;
+  discount_type: 'per_kg' | 'percentage';
+  gst_percent: number;
   amount: number;
+  discount_amount: number;
+  gst_amount: number;
+  final_amount: number;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -26,8 +33,10 @@ export interface SalesSauda {
   status: SalesSaudaStatus;
   order_number: string | null;
   sauda_date: string;
+  payment_terms: number | null;
   notes: string | null;
-  total_amount: number | null; // header total; sent by frontend, stored on sauda
+  amount: number | null;
+  total_amount?: number | null; // backward compatibility
   created_at: string;
   updated_at: string;
   lines?: SalesSaudaLine[];
@@ -36,9 +45,13 @@ export interface SalesSauda {
 export interface SalesSaudaLineInput {
   product_id: string;
   packaging_id?: string | null;
-  quantity: number;
+  packet_count?: number;
+  quantity?: number;
   quantity_unit?: string;
   rate: number;
+  discount_value?: number;
+  discount_type?: 'per_kg' | 'percentage';
+  gst_percent?: number;
   sort_order?: number;
 }
 
@@ -46,8 +59,8 @@ export interface CreateSalesSaudaRequest {
   sales_party_id: string;
   status: 'draft';
   sauda_date: string;
+  payment_terms?: number | null;
   notes?: string | null;
-  total_amount?: number | null; // sum of line amounts; stored on sauda header
   lines?: SalesSaudaLineInput[];
 }
 
@@ -55,8 +68,8 @@ export interface UpdateSalesSaudaRequest {
   sales_party_id?: string;
   status?: 'draft';
   sauda_date?: string;
+  payment_terms?: number | null;
   notes?: string | null;
-  total_amount?: number | null;
   lines?: SalesSaudaLineInput[];
 }
 
@@ -79,6 +92,7 @@ export interface InvoiceDispatchLine {
 
 export interface InvoiceDispatch {
   id: string;
+  godown_id?: string;
   sales_sauda_id: string;
   internal_invoice_number: string;
   dispatch_date: string;
@@ -97,6 +111,7 @@ export interface InvoiceDispatch {
 }
 
 export interface CreateInvoiceDispatchRequest {
+  godown_id: string;
   sales_sauda_id: string;
   internal_invoice_number: string;
   dispatch_date?: string;
@@ -151,6 +166,7 @@ export type InventoryLedgerSourceType =
 
 export interface InventoryLedgerEntry {
   id: string;
+  godown_id?: string;
   product_id: string;
   quantity_change: number;
   source_type: InventoryLedgerSourceType;

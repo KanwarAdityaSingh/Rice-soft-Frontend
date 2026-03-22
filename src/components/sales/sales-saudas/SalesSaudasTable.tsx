@@ -121,6 +121,7 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
                   <th className="text-left p-3 font-medium">Status</th>
                   <th className="text-left p-3 font-medium">Order #</th>
                   <th className="text-left p-3 font-medium">Date</th>
+                  <th className="text-left p-3 font-medium">Payment Terms</th>
                   <th className="w-10 p-3" />
                 </tr>
               </thead>
@@ -147,6 +148,11 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
                     </td>
                     <td className="p-3">{s.order_number ?? '–'}</td>
                     <td className="p-3">{s.sauda_date}</td>
+                    <td className="p-3">
+                      {s.payment_terms === null || s.payment_terms === undefined
+                        ? '–'
+                        : `${s.payment_terms} days`}
+                    </td>
                     <td className="p-3">
                       <DropdownMenu.Root>
                         <DropdownMenu.Trigger asChild>

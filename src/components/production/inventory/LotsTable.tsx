@@ -8,6 +8,13 @@ import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { InventoryAuditModal } from './InventoryAuditModal';
 import { inventoryAuditAPI, type LotInventoryAuditResponse } from '../../../services/inventoryAudit.api';
 
+function formatLotDate(iso: string | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-IN');
+}
+
 interface LotsTableProps {
   onViewAudit?: (lotId: string) => void;
 }
@@ -101,6 +108,12 @@ export function LotsTable({ onViewAudit }: LotsTableProps) {
         <table className="w-full">
           <thead>
             <tr className="border-b border-border bg-muted/40">
+              <th className="text-left py-4 px-5 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-14">
+                S. No.
+              </th>
+              <th className="text-left py-4 px-5 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+                Date
+              </th>
               <th className="text-left py-4 px-5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 Lot Details
               </th>
@@ -116,17 +129,24 @@ export function LotsTable({ onViewAudit }: LotsTableProps) {
             </tr>
           </thead>
           <tbody className="divide-y divide-border/60">
-            {lotsInventory.map((li) => {
+            {lotsInventory.map((li, index) => {
               const quantity = typeof li.available_quantity === 'string' 
                 ? parseFloat(li.available_quantity) 
                 : li.available_quantity;
               const availableQty = isNaN(quantity) ? 0 : quantity;
+              const lotRow = lots.find((l) => l.id === li.lot_id);
 
               return (
                 <tr 
                   key={li.lot_id} 
                   className="group hover:bg-muted/30 transition-colors"
                 >
+                  <td className="py-4 px-5 text-sm tabular-nums text-muted-foreground">
+                    {index + 1}
+                  </td>
+                  <td className="py-4 px-5 text-sm whitespace-nowrap text-muted-foreground">
+                    {formatLotDate(lotRow?.created_at)}
+                  </td>
                   <td className="py-4 px-5">
                     <div className="flex items-center gap-3">
                       <div className="p-2 rounded-lg bg-amber-500/10">

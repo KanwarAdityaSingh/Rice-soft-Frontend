@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { X, Store, Package, Box, PackageCheck, Building2, Hash, TrendingUp, Weight, Layers } from 'lucide-react';
 import type { FlowNodeData } from '../../types/inventoryFlow';
+import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
 
 interface InventoryDetailPanelProps {
   selectedNode: FlowNodeData | null;
@@ -197,7 +198,7 @@ export const InventoryDetailPanel = memo(({ selectedNode, onClose }: InventoryDe
                   <div>
                     <div className="flex items-center gap-2">
                       <h4 className="font-semibold">
-                        {pack.holding_capacity} {pack.packet_type}
+                        {pack.holding_capacity} {formatPacketTypeLabel(pack.packet_type)}
                       </h4>
                       {pack.packaging_number && (
                         <span className="text-xs font-mono font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-md">
@@ -246,7 +247,7 @@ export const InventoryDetailPanel = memo(({ selectedNode, onClose }: InventoryDe
           </div>
           <div>
             <h2 className="text-2xl font-bold">
-              {data.holdingCapacity} {data.packetType}
+              {data.holdingCapacity} {formatPacketTypeLabel(data.packetType)}
             </h2>
             <p className="text-sm text-muted-foreground">Packaging Details</p>
           </div>

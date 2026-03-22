@@ -10,6 +10,7 @@ import { vendorsAPI } from '../../../services/vendors.api';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
+import { DateInputWithSteppers } from '../../shared/DateInputWithSteppers';
 import { NotificationModal } from '../../shared/NotificationModal';
 import type { CreateSaudaRequest, UpdateSaudaRequest, RiceCode, RiceType, CashDiscountType, BrokerCommissionType } from '../../../types/entities';
 
@@ -701,11 +702,11 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                     </div>
                     <div className="mt-2">
                       <label className="block text-xs font-medium mb-0.5">Sauda Date</label>
-                      <input
-                        type="date"
+                      <DateInputWithSteppers
+                        className="w-full"
+                        inputClassName="py-1.5 text-sm"
                         value={formData.sauda_date || ''}
-                        onChange={(e) => setFormData({ ...formData, sauda_date: e.target.value || null })}
-                        className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background"
+                        onChange={(v) => setFormData({ ...formData, sauda_date: v || null })}
                       />
                     </div>
                   </div>
