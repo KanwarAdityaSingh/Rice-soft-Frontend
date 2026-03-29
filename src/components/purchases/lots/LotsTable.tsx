@@ -191,7 +191,6 @@ export function LotsTable() {
                 <th className="text-right py-3 px-4 text-sm font-semibold">Bags</th>
                 <th className="text-right py-3 px-4 text-sm font-semibold">Received Weight</th>
                 <th className="text-right py-3 px-4 text-sm font-semibold">Rate</th>
-                <th className="text-right py-3 px-4 text-sm font-semibold">Amount</th>
                 <th className="text-right py-3 px-4 text-sm font-semibold">Actions</th>
               </tr>
             </thead>
@@ -250,7 +249,6 @@ export function LotsTable() {
                   <td className="py-3 px-4 text-right text-sm">{lot.no_of_bags}</td>
                   <td className="py-3 px-4 text-right text-sm">{lot.received_weight.toFixed(2)} kg</td>
                   <td className="py-3 px-4 text-right text-sm">₹{(lot.rate ?? 0).toFixed(2)}</td>
-                  <td className="py-3 px-4 text-right text-sm font-medium">₹{(lot.amount ?? 0).toFixed(2)}</td>
                   <td className="py-3 px-4">
                     <div className="flex items-center justify-end gap-2">
                       <button

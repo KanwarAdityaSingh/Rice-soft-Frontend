@@ -12,7 +12,16 @@ import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { DateInputWithSteppers } from '../../shared/DateInputWithSteppers';
 import { NotificationModal } from '../../shared/NotificationModal';
-import type { CreateSaudaRequest, UpdateSaudaRequest, RiceCode, RiceType, CashDiscountType, BrokerCommissionType } from '../../../types/entities';
+import type {
+  CreateSaudaRequest,
+  UpdateSaudaRequest,
+  RiceCode,
+  RiceType,
+  RiceLength,
+  CashDiscountType,
+  BrokerCommissionType,
+} from '../../../types/entities';
+import { RICE_LENGTH_VALUES } from '../../../constants/rice-lengths';
 
 // Default recipient type
 interface DefaultRecipient {
@@ -40,8 +49,10 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
   const isEditMode = !!saudaId;
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
+  const [riceLengths, setRiceLengths] = useState<RiceType[]>([]);
   const [loadingRiceCodes, setLoadingRiceCodes] = useState(false);
   const [loadingRiceTypes, setLoadingRiceTypes] = useState(false);
+  const [loadingRiceLengths, setLoadingRiceLengths] = useState(false);
   const [unit, setUnit] = useState<'kg' | 'quintal' | 'ton'>('kg');
   const [brokerCommissionUnit, setBrokerCommissionUnit] = useState<'kg' | 'quintal' | 'ton'>('kg');
   const [defaultRecipient, setDefaultRecipient] = useState<DefaultRecipient | null>(null);
@@ -50,6 +61,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
     sauda_type: 'exgodown',
     rice_code_id: null,
     rice_type: null,
+    rice_length: null,
     rate: 0,
     purchaser_id: '',
     broker_id: null,
@@ -133,6 +145,23 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
     }
   }, [open]);
 
+  useEffect(() => {
+    const fetchRiceLengths = async () => {
+      setLoadingRiceLengths(true);
+      try {
+        const data = await riceCodesAPI.getRiceLengths();
+        setRiceLengths(data);
+      } catch (error) {
+        console.error('Failed to fetch rice lengths:', error);
+      } finally {
+        setLoadingRiceLengths(false);
+      }
+    };
+    if (open) {
+      fetchRiceLengths();
+    }
+  }, [open]);
+
   const loadSaudaData = async () => {
     if (!saudaId) return;
     setLoadingSauda(true);
@@ -142,6 +171,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
         sauda_type: sauda.sauda_type,
         rice_code_id: sauda.rice_code_id || null,
         rice_type: sauda.rice_type || null,
+        rice_length: sauda.rice_length ?? null,
         rate: sauda.rate,
         purchaser_id: sauda.purchaser_id,
         broker_id: sauda.broker_id || null,
@@ -179,6 +209,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
       sauda_type: 'exgodown',
       rice_code_id: null,
       rice_type: null,
+      rice_length: null,
       rate: 0,
       purchaser_id: '',
       broker_id: null,
@@ -259,7 +290,10 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
     if (formData.rice_type && !allowedRiceTypes.includes(formData.rice_type)) {
       newErrors.rice_type = 'Invalid rice type';
     }
-    
+    if (formData.rice_length != null && !RICE_LENGTH_VALUES.includes(formData.rice_length)) {
+      newErrors.rice_length = 'Invalid rice length';
+    }
+
     // Validate estimated_delivery_time is integer if provided (API contract: integer, minimum 0)
     if (formData.estimated_delivery_time != null) {
       if (!Number.isInteger(formData.estimated_delivery_time) || formData.estimated_delivery_time < 0) {
@@ -376,6 +410,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
       const cleanedData: CreateSaudaRequest | UpdateSaudaRequest = {
         sauda_type: formData.sauda_type,
         rice_type: formData.rice_type || null,
+        rice_length: formData.rice_length ?? null,
         rice_code_id: formData.rice_code_id || null,
         rate: parseFloat(((formData.rate || 0) / f).toFixed(2)), // API contract: precision 2 decimal places
         purchaser_id: formData.purchaser_id,
@@ -449,6 +484,12 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
     if (!riceType) return '-';
     const type = riceTypes.find(rt => rt.value === riceType);
     return type ? type.label : riceType;
+  };
+
+  const getRiceLengthName = (riceLength: RiceLength | string | null) => {
+    if (!riceLength) return '-';
+    const row = riceLengths.find((r) => r.value === riceLength);
+    return row ? row.label : riceLength;
   };
 
   const getVendorName = (vendorId: string) => {
@@ -637,7 +678,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                     <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b border-border pb-1">
                       Basic Info
                     </h3>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2">
                       <div>
                         <label className="block text-xs font-medium mb-0.5">
                           Sauda Type <span className="text-red-500">*</span>
@@ -697,6 +738,38 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                               allowClear={false}
                             />
                           </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium mb-0.5">Rice Length</label>
+                        {loadingRiceLengths ? (
+                          <div className="w-full rounded-md border border-border bg-background/60 px-2 py-1.5 text-sm flex items-center gap-2">
+                            <LoadingSpinner size="sm" />
+                            <span className="text-muted-foreground text-xs">Loading...</span>
+                          </div>
+                        ) : (
+                          <div className={errors.rice_length ? 'border border-red-500 rounded-md' : ''}>
+                            <CustomSelect
+                              value={formData.rice_length ?? null}
+                              onChange={(value) =>
+                                setFormData({
+                                  ...formData,
+                                  rice_length: (value as RiceLength | null) || null,
+                                })
+                              }
+                              options={riceLengths.map((r) => ({
+                                value: r.value,
+                                label: r.label,
+                              }))}
+                              placeholder="Optional"
+                              allowClear={true}
+                              clearLabel="None"
+                            />
+                          </div>
+                        )}
+                        {errors.rice_length && (
+                          <p className="text-xs text-red-500 mt-0.5">{errors.rice_length}</p>
                         )}
                       </div>
                     </div>
@@ -1236,6 +1309,10 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Rice Type:</span>
                             <span className="font-semibold">{getRiceTypeName(formData.rice_type ?? null)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Rice Length:</span>
+                            <span className="font-semibold">{getRiceLengthName(formData.rice_length ?? null)}</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Date:</span>

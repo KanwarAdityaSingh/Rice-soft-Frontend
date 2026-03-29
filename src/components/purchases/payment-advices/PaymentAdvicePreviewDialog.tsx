@@ -8,7 +8,7 @@ import { useSaudas } from '../../../hooks/useSaudas';
 import { useInwardSlipPasses } from '../../../hooks/useInwardSlipPasses';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
-import { getRiceTypeLabel } from '../../../utils/riceType';
+import { getRiceTypeLabel, getRiceLengthLabel } from '../../../utils/riceType';
 import { formatWeightDisplay } from '../../../utils/saudaCompletion';
 import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
 import type { PaymentAdvice, RiceCode, RiceType, Sauda, InwardSlipPass, Vehicle, ISPPurchaseSummary, SaudaPurchaseSummary } from '../../../types/entities';
@@ -30,6 +30,7 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
   const [defaultRecipient, setDefaultRecipient] = useState<DefaultRecipient | null>(null);
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
+  const [riceLengths, setRiceLengths] = useState<RiceType[]>([]);
   const [summary, setSummary] = useState<SaudaPurchaseSummary | ISPPurchaseSummary | null>(null);
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const { saudas } = useSaudas();
@@ -44,14 +45,16 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [recipient, codes, types] = await Promise.all([
+        const [recipient, codes, types, lengths] = await Promise.all([
           vendorsAPI.getDefaultRecipient(),
           riceCodesAPI.getAllRiceCodes(),
-          riceCodesAPI.getRiceTypes()
+          riceCodesAPI.getRiceTypes(),
+          riceCodesAPI.getRiceLengths()
         ]);
         setDefaultRecipient(recipient);
         setRiceCodes(codes);
         setRiceTypes(types);
+        setRiceLengths(lengths);
 
         // Fetch summary
         if (paymentAdvice?.sauda_id) {
@@ -332,7 +335,9 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                   <div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Sauda:</span>
-                      <span className="font-semibold">{getRiceCodeName(sauda.rice_code_id)} {getRiceTypeLabel(sauda.rice_type, riceTypes)} @ ₹{sauda.rate}/kg</span>
+                      <span className="font-semibold">
+                        {[getRiceCodeName(sauda.rice_code_id), getRiceTypeLabel(sauda.rice_type, riceTypes), getRiceLengthLabel(sauda.rice_length, riceLengths)].filter(Boolean).join(' ')} @ ₹{sauda.rate}/kg
+                      </span>
                     </div>
                   </div>
                 )}
@@ -348,7 +353,7 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                           <div key={saudaItem.sauda_id} className="text-xs">
                             <div className="flex justify-between">
                               <span className="text-muted-foreground">
-                                {getRiceCodeName(saudaItem.sauda_details.rice_code_id)} {getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes)}
+                                {[getRiceCodeName(saudaItem.sauda_details.rice_code_id), getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes), getRiceLengthLabel(saudaItem.sauda_details.rice_length, riceLengths)].filter(Boolean).join(' ')}
                               </span>
                             </div>
                             {saudaItem.sauda_details.quantity && (
@@ -381,7 +386,8 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                         <div key={saudaItem.sauda_id} className="border border-border/50 rounded p-2 bg-muted/20">
                           <div className="flex items-center justify-between mb-1">
                             <div className="font-semibold text-xs">
-                            {idx + 1}. {getRiceCodeName(saudaItem.sauda_details.rice_code_id)} {getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes) || 'N/A'}
+                            {idx + 1}.{' '}
+                            {[getRiceCodeName(saudaItem.sauda_details.rice_code_id), getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes), getRiceLengthLabel(saudaItem.sauda_details.rice_length, riceLengths)].filter(Boolean).join(' ') || 'N/A'}
                             </div>
                             {isDanaRequired ? (
                               <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700">

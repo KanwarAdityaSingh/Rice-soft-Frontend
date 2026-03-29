@@ -5,7 +5,7 @@ import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { EmptyState } from '../../admin/shared/EmptyState';
 import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
 import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
-import { FileText, Scale, Package, Eye, Image as ImageIcon, MoreVertical, Edit2, Trash2, Receipt, Truck, FileCheck, ClipboardList, Route } from 'lucide-react';
+import { FileText, Scale, Package, Eye, MoreVertical, Edit2, Trash2, Receipt, FileCheck, ClipboardList, Route } from 'lucide-react';
 import { useInwardSlipPasses } from '../../../hooks/useInwardSlipPasses';
 import { useVehicleMap } from '../../../hooks/useVehicles';
 import { InwardSlipPassFormModal } from './InwardSlipPassFormModal';
@@ -16,12 +16,163 @@ import { GodownFilterSelect } from '../../shared/GodownFilterSelect';
 import { useGodowns } from '../../../hooks/useGodowns';
 import type { InwardSlipPass } from '../../../types/entities';
 
+type ISPRowActionsProps = {
+  isp: InwardSlipPass;
+  onViewDocuments: (docs: DocumentInfo[]) => void;
+  onLinkedLots: () => void;
+  onKaanta: () => void;
+  onPreview: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+};
+
+function ISPRowActions({
+  isp,
+  onViewDocuments,
+  onLinkedLots,
+  onKaanta,
+  onPreview,
+  onEdit,
+  onDelete,
+}: ISPRowActionsProps) {
+  return (
+    <div className="flex items-center justify-end gap-0.5 flex-nowrap">
+      <button
+        type="button"
+        onClick={onLinkedLots}
+        className="p-1.5 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-md transition-colors shrink-0"
+        title="View Linked Lots"
+      >
+        <Package className="h-4 w-4" />
+      </button>
+      <button
+        type="button"
+        onClick={onKaanta}
+        className="p-1.5 text-emerald-600 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 rounded-md transition-colors shrink-0"
+        title="Create Kaanta"
+      >
+        <Scale className="h-4 w-4" />
+      </button>
+      <button
+        type="button"
+        onClick={onPreview}
+        className="p-1.5 text-primary hover:bg-primary/10 rounded-md transition-colors shrink-0"
+        title="View Preview"
+      >
+        <Eye className="h-4 w-4" />
+      </button>
+
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger asChild>
+          <button type="button" className="rounded-lg p-2 hover:bg-muted transition-colors shrink-0">
+            <MoreVertical className="h-4 w-4" />
+          </button>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content className="glass min-w-[11rem] rounded-xl p-1 shadow-lg z-50" sideOffset={8} align="end">
+            <DropdownMenu.Label className="px-3 py-1.5 text-xs text-muted-foreground font-medium">View Documents</DropdownMenu.Label>
+            {isp.other_bills && isp.other_bills.length > 0 ? (
+              <>
+                {isp.other_bills.map((bill, index) => {
+                  const isPdf = bill.url.toLowerCase().includes('.pdf');
+                  return (
+                    <DropdownMenu.Item
+                      key={index}
+                      className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground text-blue-600"
+                      onSelect={() => onViewDocuments([{ url: bill.url, label: bill.name, type: isPdf ? 'pdf' : 'image' }])}
+                    >
+                      <Receipt className="h-4 w-4" /> {bill.name}
+                    </DropdownMenu.Item>
+                  );
+                })}
+                {(isp.bill_pdf_url || isp.bilti_image_url || isp.bilti_pdf_url || isp.eway_bill_url) && (
+                  <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                )}
+              </>
+            ) : null}
+            <DropdownMenu.Item
+              className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+                isp.bill_pdf_url
+                  ? 'hover:bg-accent hover:text-accent-foreground text-blue-600'
+                  : 'text-muted-foreground/50 cursor-not-allowed'
+              }`}
+              disabled={!isp.bill_pdf_url}
+              onSelect={() =>
+                isp.bill_pdf_url &&
+                onViewDocuments([
+                  {
+                    url: isp.bill_pdf_url,
+                    label: 'Purchase Bill',
+                    type: isp.bill_pdf_url.toLowerCase().includes('.pdf') ? 'pdf' : 'image',
+                  },
+                ])
+              }
+            >
+              <FileCheck className="h-4 w-4" /> Purchase Bill
+              {!isp.bill_pdf_url && <span className="ml-auto text-[10px]">N/A</span>}
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+                isp.bilti_image_url
+                  ? 'hover:bg-accent hover:text-accent-foreground text-blue-600'
+                  : 'text-muted-foreground/50 cursor-not-allowed'
+              }`}
+              disabled={!isp.bilti_image_url}
+              onSelect={() =>
+                isp.bilti_image_url && onViewDocuments([{ url: isp.bilti_image_url, label: 'Bilti/LR Image', type: 'image' }])
+              }
+            >
+              <ClipboardList className="h-4 w-4" /> Bilti Image
+              {!isp.bilti_image_url && <span className="ml-auto text-[10px]">N/A</span>}
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+                isp.bilti_pdf_url
+                  ? 'hover:bg-accent hover:text-accent-foreground text-blue-600'
+                  : 'text-muted-foreground/50 cursor-not-allowed'
+              }`}
+              disabled={!isp.bilti_pdf_url}
+              onSelect={() => isp.bilti_pdf_url && onViewDocuments([{ url: isp.bilti_pdf_url, label: 'Bilti/LR PDF', type: 'pdf' }])}
+            >
+              <FileText className="h-4 w-4" /> Bilti PDF
+              {!isp.bilti_pdf_url && <span className="ml-auto text-[10px]">N/A</span>}
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+                isp.eway_bill_url
+                  ? 'hover:bg-accent hover:text-accent-foreground text-blue-600'
+                  : 'text-muted-foreground/50 cursor-not-allowed'
+              }`}
+              disabled={!isp.eway_bill_url}
+              onSelect={() => isp.eway_bill_url && onViewDocuments([{ url: isp.eway_bill_url, label: 'E-way Bill', type: 'pdf' }])}
+            >
+              <Route className="h-4 w-4" /> E-way Bill
+              {!isp.eway_bill_url && <span className="ml-auto text-[10px]">N/A</span>}
+            </DropdownMenu.Item>
+            <DropdownMenu.Separator className="my-1 h-px bg-border" />
+            <DropdownMenu.Item
+              className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+              onSelect={onEdit}
+            >
+              <Edit2 className="h-4 w-4" /> Edit
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+              onSelect={onDelete}
+            >
+              <Trash2 className="h-4 w-4" /> Delete
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+    </div>
+  );
+}
+
 export function InwardSlipPassesTable() {
-  const [saudaFilter, setSaudaFilter] = useState<string | undefined>();
   const [godownFilter, setGodownFilter] = useState<string | undefined>();
   const { godowns } = useGodowns(true);
   const { inwardSlipPasses, loading, deleteInwardSlipPass, refetch } = useInwardSlipPasses({
-    sauda_id: saudaFilter,
     godown_id: godownFilter,
   });
   const { getVehicleNumber } = useVehicleMap();
@@ -37,47 +188,16 @@ export function InwardSlipPassesTable() {
   const [kaantaWeightISP, setKaantaWeightISP] = useState<InwardSlipPass | null>(null);
   const [linkedLotsOpen, setLinkedLotsOpen] = useState(false);
   const [linkedLotsISP, setLinkedLotsISP] = useState<InwardSlipPass | null>(null);
-  
-  // Document viewer state
+
   const [documentViewerOpen, setDocumentViewerOpen] = useState(false);
   const [viewerDocuments, setViewerDocuments] = useState<DocumentInfo[]>([]);
-
-  // Get all documents for an ISP
-  const getISPDocuments = (isp: InwardSlipPass): DocumentInfo[] => {
-    const docs: DocumentInfo[] = [];
-    
-    // Add other_bills
-    if (isp.other_bills && isp.other_bills.length > 0) {
-      isp.other_bills.forEach(bill => {
-        const isPdf = bill.url.toLowerCase().includes('.pdf');
-        docs.push({ url: bill.url, label: bill.name, type: isPdf ? 'pdf' : 'image' });
-      });
-    }
-    
-    if (isp.bill_pdf_url) {
-      const isPdf = isp.bill_pdf_url.toLowerCase().includes('.pdf');
-      docs.push({ url: isp.bill_pdf_url, label: 'Purchase Bill', type: isPdf ? 'pdf' : 'image' });
-    }
-    if (isp.bilti_image_url) {
-      docs.push({ url: isp.bilti_image_url, label: 'Bilti/LR Image', type: 'image' });
-    }
-    if (isp.bilti_pdf_url) {
-      docs.push({ url: isp.bilti_pdf_url, label: 'Bilti/LR PDF', type: 'pdf' });
-    }
-    if (isp.eway_bill_url) {
-      docs.push({ url: isp.eway_bill_url, label: 'E-way Bill', type: 'pdf' });
-    }
-    
-    return docs;
-  };
 
   const handleViewDocuments = (docs: DocumentInfo[]) => {
     setViewerDocuments(docs);
     setDocumentViewerOpen(true);
   };
 
-  const godownName = (id: string | undefined) =>
-    id ? godowns.find((g) => g.id === id)?.name ?? '—' : '—';
+  const godownName = (id: string | undefined) => (id ? godowns.find((g) => g.id === id)?.name ?? '—' : '—');
 
   const filtered = useMemo(() => {
     return inwardSlipPasses.filter((isp) => {
@@ -101,6 +221,7 @@ export function InwardSlipPassesTable() {
         <GodownFilterSelect value={godownFilter} onChange={setGodownFilter} label="Filter by godown" />
         <div className="flex gap-2">
           <button
+            type="button"
             onClick={() => setCreateOpen(true)}
             className="btn-primary rounded-xl inline-flex items-center justify-center gap-2 px-4 py-2"
           >
@@ -110,204 +231,72 @@ export function InwardSlipPassesTable() {
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-20"><LoadingSpinner /></div>
+        <div className="flex justify-center py-20">
+          <LoadingSpinner />
+        </div>
       ) : filtered.length === 0 ? (
         <EmptyState icon={FileText} title="No inward slip passes found" description="Create your first ISP or adjust filters." />
       ) : (
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((isp) => (
-            <article
-              key={isp.id}
-              className="group rounded-2xl p-4 bg-gradient-to-br from-background to-muted/40 border border-border/60 hover:border-primary/40 transition-all duration-300 shadow-sm hover:shadow-md"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shadow-inner">
-                    <FileText className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">ISP</div>
-                    <h3 className="text-sm font-semibold leading-tight">{isp.slip_number}</h3>
-                    <div className="text-xs text-muted-foreground">{isp.party_name}</div>
-                  </div>
-                </div>
-              </div>
-              <div className="mt-3 grid gap-1.5 text-xs">
-                <div className="inline-flex items-center gap-2">
-                  <span className="text-muted-foreground w-20">Godown:</span>
-                  <span className="font-medium">{godownName(isp.godown_id)}</span>
-                </div>
-                <div className="inline-flex items-center gap-2">
-                  <span className="text-muted-foreground w-20">Vehicle:</span>
-                  <span className="font-medium">{getVehicleNumber(isp.vehicle_id)}</span>
-                </div>
-                <div className="inline-flex items-center gap-2">
-                  <span className="text-muted-foreground w-20">Date:</span>
-                  <span className="font-medium">{new Date(isp.date).toLocaleDateString()}</span>
-                </div>
-                {isp.transportation_cost != null && (
-                  <div className="inline-flex items-center gap-2">
-                    <span className="text-muted-foreground w-20">Transport:</span>
-                    <span className="font-medium">₹{isp.transportation_cost.toFixed(2)}</span>
-                  </div>
-                )}
-                {isp.bill_number && (
-                  <div className="inline-flex items-center gap-2">
-                    <span className="text-muted-foreground w-20">Bill #:</span>
-                    <span className="font-medium">{isp.bill_number}</span>
-                  </div>
-                )}
-                {isp.bill_date && (
-                  <div className="inline-flex items-center gap-2">
-                    <span className="text-muted-foreground w-20">Bill Date:</span>
-                    <span className="font-medium">{new Date(isp.bill_date).toLocaleDateString('en-IN')}</span>
-                  </div>
-                )}
-              </div>
-              <div className="mt-3 flex items-center justify-end gap-1">
-                <button
-                  onClick={() => {
-                    setLinkedLotsISP(isp);
-                    setLinkedLotsOpen(true);
-                  }}
-                  className="p-1.5 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                  title="View Linked Lots"
-                >
-                  <Package className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => {
-                    setKaantaWeightISP(isp);
-                    setKaantaWeightOpen(true);
-                  }}
-                  className="p-1.5 text-emerald-600 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 rounded-md transition-colors"
-                  title="Create Kaanta"
-                >
-                  <Scale className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => {
-                    setPreviewISP(isp);
-                    setPreviewOpen(true);
-                  }}
-                  className="p-1.5 text-primary hover:bg-primary/10 rounded-md transition-colors"
-                  title="View Preview"
-                >
-                  <Eye className="h-4 w-4" />
-                </button>
-                
-                {/* Custom dropdown with view options */}
-                <DropdownMenu.Root>
-                  <DropdownMenu.Trigger asChild>
-                    <button className="rounded-lg p-2 hover:bg-muted transition-colors">
-                      <MoreVertical className="h-4 w-4" />
-                    </button>
-                  </DropdownMenu.Trigger>
-                  <DropdownMenu.Portal>
-                    <DropdownMenu.Content
-                      className="glass min-w-[11rem] rounded-xl p-1 shadow-lg z-50"
-                      sideOffset={8}
-                      align="end"
-                    >
-                      {/* View Documents Section - Always visible */}
-                      <DropdownMenu.Label className="px-3 py-1.5 text-xs text-muted-foreground font-medium">
-                        View Documents
-                      </DropdownMenu.Label>
-                      {/* Other Bills */}
-                      {isp.other_bills && isp.other_bills.length > 0 ? (
-                        <>
-                          {isp.other_bills.map((bill, index) => {
-                            const isPdf = bill.url.toLowerCase().includes('.pdf');
-                            return (
-                              <DropdownMenu.Item
-                                key={index}
-                                className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground text-blue-600"
-                                onSelect={() => handleViewDocuments([{ url: bill.url, label: bill.name, type: isPdf ? 'pdf' : 'image' }])}
-                              >
-                                <Receipt className="h-4 w-4" /> {bill.name}
-                              </DropdownMenu.Item>
-                            );
-                          })}
-                          {(isp.bill_pdf_url || isp.bilti_image_url || isp.bilti_pdf_url || isp.eway_bill_url) && (
-                            <DropdownMenu.Separator className="my-1 h-px bg-border" />
-                          )}
-                        </>
-                      ) : null}
-                      <DropdownMenu.Item
-                        className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
-                          isp.bill_pdf_url 
-                            ? 'hover:bg-accent hover:text-accent-foreground text-blue-600' 
-                            : 'text-muted-foreground/50 cursor-not-allowed'
-                        }`}
-                        disabled={!isp.bill_pdf_url}
-                        onSelect={() => isp.bill_pdf_url && handleViewDocuments([{ url: isp.bill_pdf_url, label: 'Purchase Bill', type: isp.bill_pdf_url.toLowerCase().includes('.pdf') ? 'pdf' : 'image' }])}
-                      >
-                        <FileCheck className="h-4 w-4" /> Purchase Bill
-                        {!isp.bill_pdf_url && <span className="ml-auto text-[10px]">N/A</span>}
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item
-                        className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
-                          isp.bilti_image_url 
-                            ? 'hover:bg-accent hover:text-accent-foreground text-blue-600' 
-                            : 'text-muted-foreground/50 cursor-not-allowed'
-                        }`}
-                        disabled={!isp.bilti_image_url}
-                        onSelect={() => isp.bilti_image_url && handleViewDocuments([{ url: isp.bilti_image_url, label: 'Bilti/LR Image', type: 'image' }])}
-                      >
-                        <ClipboardList className="h-4 w-4" /> Bilti Image
-                        {!isp.bilti_image_url && <span className="ml-auto text-[10px]">N/A</span>}
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item
-                        className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
-                          isp.bilti_pdf_url 
-                            ? 'hover:bg-accent hover:text-accent-foreground text-blue-600' 
-                            : 'text-muted-foreground/50 cursor-not-allowed'
-                        }`}
-                        disabled={!isp.bilti_pdf_url}
-                        onSelect={() => isp.bilti_pdf_url && handleViewDocuments([{ url: isp.bilti_pdf_url, label: 'Bilti/LR PDF', type: 'pdf' }])}
-                      >
-                        <FileText className="h-4 w-4" /> Bilti PDF
-                        {!isp.bilti_pdf_url && <span className="ml-auto text-[10px]">N/A</span>}
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item
-                        className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
-                          isp.eway_bill_url 
-                            ? 'hover:bg-accent hover:text-accent-foreground text-blue-600' 
-                            : 'text-muted-foreground/50 cursor-not-allowed'
-                        }`}
-                        disabled={!isp.eway_bill_url}
-                        onSelect={() => isp.eway_bill_url && handleViewDocuments([{ url: isp.eway_bill_url, label: 'E-way Bill', type: 'pdf' }])}
-                      >
-                        <Route className="h-4 w-4" /> E-way Bill
-                        {!isp.eway_bill_url && <span className="ml-auto text-[10px]">N/A</span>}
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Separator className="my-1 h-px bg-border" />
-                      
-                      {/* Edit/Delete Actions */}
-                      <DropdownMenu.Item
-                        className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
-                        onSelect={() => {
-                          setSelectedISPId(isp.id);
-                          setEditModalOpen(true);
-                        }}
-                      >
-                        <Edit2 className="h-4 w-4" /> Edit
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item
-                        className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-                        onSelect={() => {
-                          setSelectedISP(isp);
-                          setDeleteDialogOpen(true);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" /> Delete
-                      </DropdownMenu.Item>
-                    </DropdownMenu.Content>
-                  </DropdownMenu.Portal>
-                </DropdownMenu.Root>
-              </div>
-            </article>
-          ))}
+        <div className="overflow-x-auto rounded-xl border border-border/60 bg-card/30">
+          <table className="w-full min-w-[900px] text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/40">
+                <th className="text-left py-3 px-3 font-semibold whitespace-nowrap">Slip</th>
+                <th className="text-left py-3 px-3 font-semibold min-w-[8rem]">Party</th>
+                <th className="text-left py-3 px-3 font-semibold whitespace-nowrap">Godown</th>
+                <th className="text-left py-3 px-3 font-semibold whitespace-nowrap">Vehicle</th>
+                <th className="text-left py-3 px-3 font-semibold whitespace-nowrap">Date</th>
+                <th className="text-right py-3 px-3 font-semibold whitespace-nowrap">Transport</th>
+                <th className="text-left py-3 px-3 font-semibold whitespace-nowrap">Bill #</th>
+                <th className="text-left py-3 px-3 font-semibold whitespace-nowrap">Status</th>
+                <th className="text-right py-3 px-3 font-semibold w-[1%]">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((isp) => (
+                <tr key={isp.id} className="border-b border-border/50 hover:bg-muted/25 transition-colors">
+                  <td className="py-2.5 px-3 font-medium whitespace-nowrap">{isp.slip_number}</td>
+                  <td className="py-2.5 px-3 max-w-[14rem] truncate" title={isp.party_name}>
+                    {isp.party_name}
+                  </td>
+                  <td className="py-2.5 px-3 whitespace-nowrap">{godownName(isp.godown_id)}</td>
+                  <td className="py-2.5 px-3 whitespace-nowrap">{getVehicleNumber(isp.vehicle_id)}</td>
+                  <td className="py-2.5 px-3 whitespace-nowrap">{new Date(isp.date).toLocaleDateString()}</td>
+                  <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                    {isp.transportation_cost != null ? `₹${isp.transportation_cost.toFixed(2)}` : '—'}
+                  </td>
+                  <td className="py-2.5 px-3 whitespace-nowrap">{isp.bill_number ?? '—'}</td>
+                  <td className="py-2.5 px-3 whitespace-nowrap capitalize">{isp.status}</td>
+                  <td className="py-2.5 px-2">
+                    <ISPRowActions
+                      isp={isp}
+                      onViewDocuments={handleViewDocuments}
+                      onLinkedLots={() => {
+                        setLinkedLotsISP(isp);
+                        setLinkedLotsOpen(true);
+                      }}
+                      onKaanta={() => {
+                        setKaantaWeightISP(isp);
+                        setKaantaWeightOpen(true);
+                      }}
+                      onPreview={() => {
+                        setPreviewISP(isp);
+                        setPreviewOpen(true);
+                      }}
+                      onEdit={() => {
+                        setSelectedISPId(isp.id);
+                        setEditModalOpen(true);
+                      }}
+                      onDelete={() => {
+                        setSelectedISP(isp);
+                        setDeleteDialogOpen(true);
+                      }}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -348,11 +337,7 @@ export function InwardSlipPassesTable() {
         ispId={selectedISPId}
       />
 
-      <InwardSlipPassPreviewDialog
-        open={previewOpen}
-        onOpenChange={setPreviewOpen}
-        isp={previewISP}
-      />
+      <InwardSlipPassPreviewDialog open={previewOpen} onOpenChange={setPreviewOpen} isp={previewISP} />
 
       <KaantaWeightDialog
         open={kaantaWeightOpen}
@@ -361,11 +346,7 @@ export function InwardSlipPassesTable() {
         onSuccess={refetch}
       />
 
-      <LinkedLotsDialog
-        open={linkedLotsOpen}
-        onOpenChange={setLinkedLotsOpen}
-        isp={linkedLotsISP}
-      />
+      <LinkedLotsDialog open={linkedLotsOpen} onOpenChange={setLinkedLotsOpen} isp={linkedLotsISP} godownId={godownFilter} />
 
       <DocumentViewerModal
         open={documentViewerOpen}
@@ -376,4 +357,3 @@ export function InwardSlipPassesTable() {
     </div>
   );
 }
-

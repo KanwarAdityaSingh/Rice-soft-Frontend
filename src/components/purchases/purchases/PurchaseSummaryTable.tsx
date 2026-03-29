@@ -1,19 +1,35 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import { Calculator, Calendar, Info, Eye, ChevronDown, ChevronUp } from 'lucide-react';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { EmptyState } from '../../admin/shared/EmptyState';
 import { SearchBar } from '../../admin/shared/SearchBar';
 import { useSaudas } from '../../../hooks/useSaudas';
+import { useTransporters } from '../../../hooks/useTransporters';
+import { useVehicleMap } from '../../../hooks/useVehicles';
 import { purchaseSummaryAPI } from '../../../services/purchaseSummary.api';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { vendorsAPI } from '../../../services/vendors.api';
 import { getRiceTypeLabel } from '../../../utils/riceType';
 import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
 import { GodownFilterSelect } from '../../shared/GodownFilterSelect';
-import type { SaudaPurchaseSummary, RiceCode, RiceType, Vendor, Sauda } from '../../../types/entities';
+import type {
+  SaudaPurchaseSummary,
+  RiceCode,
+  RiceType,
+  Vendor,
+  Sauda,
+  KaantaPurchaseOverview,
+  KaantaIspOverviewRow,
+} from '../../../types/entities';
+
+function safeNum(n: number | null | undefined): number {
+  return Number(n ?? 0);
+}
 
 export function PurchaseSummaryTable() {
   const { saudas, loading: saudasLoading } = useSaudas();
+  const { getVehicleNumber } = useVehicleMap();
+  const { transporters } = useTransporters(true);
 
   const [godownFilter, setGodownFilter] = useState<string | undefined>();
   const [startDate, setStartDate] = useState<string>('');
@@ -23,6 +39,8 @@ export function PurchaseSummaryTable() {
   const [saudaSummaries, setSaudaSummaries] = useState<SaudaPurchaseSummary[]>([]);
   const [loadingSummaries, setLoadingSummaries] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [kaantaOverview, setKaantaOverview] = useState<KaantaPurchaseOverview | null>(null);
+  const [kaantaOverviewLoading, setKaantaOverviewLoading] = useState(false);
   
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
@@ -82,6 +100,29 @@ export function PurchaseSummaryTable() {
     fetchSummaries();
   }, [filteredSaudas, godownFilter]);
 
+  useEffect(() => {
+    if (!expandedId) {
+      setKaantaOverview(null);
+      return;
+    }
+    let cancelled = false;
+    setKaantaOverviewLoading(true);
+    purchaseSummaryAPI
+      .getKaantaPurchaseOverview(expandedId, godownFilter)
+      .then((data) => {
+        if (!cancelled) setKaantaOverview(data);
+      })
+      .catch(() => {
+        if (!cancelled) setKaantaOverview(null);
+      })
+      .finally(() => {
+        if (!cancelled) setKaantaOverviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [expandedId, godownFilter]);
+
   const getRiceCodeName = (riceCodeId: string | null | undefined): string => {
     if (!riceCodeId) return 'N/A';
     const riceCode = riceCodes.find(rc => rc.rice_code_id === riceCodeId);
@@ -96,6 +137,18 @@ export function PurchaseSummaryTable() {
 
   const getSaudaInfo = (saudaId: string): Sauda | undefined => {
     return saudas.find(s => s.id === saudaId);
+  };
+
+  const ispVehicleLabel = (row: KaantaIspOverviewRow): string => {
+    if (row.vehicle_number && row.vehicle_number.trim()) return row.vehicle_number.trim();
+    if (row.vehicle_id) return getVehicleNumber(row.vehicle_id);
+    return '—';
+  };
+
+  const transporterLabel = (transporterId: string | null | undefined): string => {
+    if (!transporterId) return '—';
+    const t = transporters.find((x) => x.id === transporterId);
+    return t?.business_name ?? transporterId;
   };
 
   const toggleExpand = (id: string) => {
@@ -238,9 +291,8 @@ export function PurchaseSummaryTable() {
                   : null;
                 
                 return (
-                  <>
+                  <Fragment key={summary.sauda_id}>
                     <tr 
-                      key={summary.sauda_id} 
                       className="border-b border-border/60 hover:bg-muted/30 transition-colors"
                     >
                       <td className="py-3 px-4">
@@ -293,7 +345,7 @@ export function PurchaseSummaryTable() {
                     
                     {/* Expanded Details Row */}
                     {isExpanded && (
-                      <tr key={`${summary.sauda_id}-expanded`}>
+                      <tr>
                         <td colSpan={9} className="p-4 bg-muted/20 border-b border-border">
                           <div className="space-y-4">
                             <h4 className="text-sm font-semibold">Calculation Breakdown</h4>
@@ -324,6 +376,116 @@ export function PurchaseSummaryTable() {
                               </div>
                             </div>
 
+                            {/* Kaanta-linked summary (same step totals, kaanta-linked lots + ISP transport rollup) */}
+                            {kaantaOverviewLoading ? (
+                              <div className="flex justify-center py-6">
+                                <LoadingSpinner />
+                              </div>
+                            ) : kaantaOverview ? (
+                              <div className="mt-4 pt-4 border-t border-border space-y-3">
+                                <div>
+                                  <h4 className="text-sm font-semibold">Kaanta-linked purchase (weighbridge)</h4>
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    Rollup from lots tied to kaanta only. Transport is the sum of ISP charges listed below.
+                                  </p>
+                                </div>
+                                {(kaantaOverview.isps ?? []).length === 0 &&
+                                safeNum(kaantaOverview.summary?.total_lots) === 0 ? (
+                                  <p className="text-xs text-muted-foreground">
+                                    No kaanta-linked intake for this sauda yet.
+                                  </p>
+                                ) : (
+                                  <>
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 text-sm">
+                                      <div className="p-2 bg-background rounded-lg">
+                                        <div className="text-muted-foreground text-xs">Lots</div>
+                                        <div className="font-medium">{safeNum(kaantaOverview.summary?.total_lots)}</div>
+                                      </div>
+                                      <div className="p-2 bg-background rounded-lg">
+                                        <div className="text-muted-foreground text-xs">Weight</div>
+                                        <div className="font-medium">
+                                          {safeNum(kaantaOverview.summary?.total_weight).toFixed(2)} kg
+                                        </div>
+                                      </div>
+                                      <div className="p-2 bg-background rounded-lg">
+                                        <div className="text-muted-foreground text-xs">Base Amount</div>
+                                        <div className="font-medium">
+                                          ₹{safeNum(kaantaOverview.summary?.base_amount).toFixed(2)}
+                                        </div>
+                                      </div>
+                                      <div className="p-2 bg-background rounded-lg">
+                                        <div className="text-muted-foreground text-xs">Cash Discount</div>
+                                        <div className="font-medium text-red-500">
+                                          -₹{safeNum(kaantaOverview.summary?.cash_discount_amount).toFixed(2)}
+                                        </div>
+                                      </div>
+                                      <div className="p-2 bg-background rounded-lg">
+                                        <div className="text-muted-foreground text-xs">Broker Commission</div>
+                                        <div className="font-medium text-blue-500">
+                                          +₹{safeNum(kaantaOverview.summary?.broker_commission_amount).toFixed(2)}
+                                        </div>
+                                      </div>
+                                      <div className="p-2 bg-background rounded-lg">
+                                        <div className="text-muted-foreground text-xs">Transport</div>
+                                        <div className="font-medium text-blue-500">
+                                          +₹{safeNum(kaantaOverview.summary?.transportation_cost).toFixed(2)}
+                                        </div>
+                                      </div>
+                                      <div className="p-2 bg-emerald-500/10 rounded-lg sm:col-span-2">
+                                        <div className="text-muted-foreground text-xs">Net payable (kaanta scope)</div>
+                                        <div className="font-bold text-emerald-600">
+                                          ₹{safeNum(kaantaOverview.summary?.net_payable).toFixed(2)}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    {(kaantaOverview.isps ?? []).length > 0 && (
+                                      <div className="overflow-x-auto">
+                                        <h5 className="text-xs font-semibold text-muted-foreground mb-2">
+                                          Inward slip passes (≥1 kaanta)
+                                        </h5>
+                                        <table className="w-full text-xs">
+                                          <thead>
+                                            <tr className="border-b">
+                                              <th className="text-left py-2 px-2">Slip</th>
+                                              <th className="text-left py-2 px-2">Date</th>
+                                              <th className="text-left py-2 px-2">Vehicle</th>
+                                              <th className="text-left py-2 px-2">Party</th>
+                                              <th className="text-left py-2 px-2">Transporter</th>
+                                              <th className="text-right py-2 px-2">Kaantas</th>
+                                              <th className="text-right py-2 px-2">Lots</th>
+                                              <th className="text-right py-2 px-2">Transport</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {(kaantaOverview.isps ?? []).map((row) => (
+                                              <tr key={row.id} className="border-b border-border/40">
+                                                <td className="py-2 px-2 font-mono">{row.slip_number}</td>
+                                                <td className="py-2 px-2 whitespace-nowrap tabular-nums">
+                                                  {row.date}
+                                                </td>
+                                                <td className="py-2 px-2 font-mono uppercase">
+                                                  {ispVehicleLabel(row)}
+                                                </td>
+                                                <td className="py-2 px-2 font-medium">{row.party_name}</td>
+                                                <td className="py-2 px-2 text-muted-foreground">
+                                                  {transporterLabel(row.transporter_id)}
+                                                </td>
+                                                <td className="py-2 px-2 text-right">{row.kaanta_count}</td>
+                                                <td className="py-2 px-2 text-right">{row.lot_count}</td>
+                                                <td className="py-2 px-2 text-right">
+                                                  ₹{(row.transportation_cost ?? 0).toFixed(2)}
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            ) : null}
+
                             {/* Lots list */}
                             {summary.lot_details.length > 0 && (
                               <div className="mt-4">
@@ -336,7 +498,6 @@ export function PurchaseSummaryTable() {
                                         <th className="text-right py-2 px-2">Bags</th>
                                         <th className="text-right py-2 px-2">Weight</th>
                                         <th className="text-right py-2 px-2">Rate</th>
-                                        <th className="text-right py-2 px-2">Amount</th>
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -346,7 +507,6 @@ export function PurchaseSummaryTable() {
                                           <td className="py-2 px-2 text-right">{lot.no_of_bags}</td>
                                           <td className="py-2 px-2 text-right">{lot.received_weight.toFixed(2)} kg</td>
                                           <td className="py-2 px-2 text-right">₹{lot.rate.toFixed(2)}</td>
-                                          <td className="py-2 px-2 text-right font-medium">₹{lot.amount.toFixed(2)}</td>
                                         </tr>
                                       ))}
                                     </tbody>
@@ -358,7 +518,7 @@ export function PurchaseSummaryTable() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>

@@ -8,15 +8,17 @@ import { InventoryTable } from './InventoryTable';
 import { InventorySummaryPanel } from './InventorySummaryPanel';
 import { FlowControls } from './flow/FlowControls';
 import { InventoryFilters } from './InventoryFilters';
-import { GodownFilterSelect } from '../../shared/GodownFilterSelect';
 import type { FlowNodeData } from '../../../types/inventoryFlow';
 import type { ReactFlowInstance } from '../../../types/reactflow';
 import type { GroupingStrategy } from '../../../types/inventoryFlow';
 import type { ExtendedInventoryFilters } from '../../../utils/inventoryTransform';
 
-export function InventoryDashboard() {
+export interface InventoryDashboardProps {
+  godownFilter: string | undefined;
+}
+
+export function InventoryDashboard({ godownFilter }: InventoryDashboardProps) {
   const { loading, hierarchical, fetchHierarchicalInventory } = useInventory();
-  const [godownFilter, setGodownFilter] = useState<string | undefined>();
   const [viewMode, setViewMode] = useState<'diagram' | 'tree' | 'table' | 'summary'>('diagram');
   const [groupingStrategy, setGroupingStrategy] = useState<GroupingStrategy>('default');
   const [filters, setFilters] = useState<ExtendedInventoryFilters>({});
@@ -122,7 +124,6 @@ export function InventoryDashboard() {
             </p>
           </div>
         </div>
-        <GodownFilterSelect value={godownFilter} onChange={setGodownFilter} label="Godown" />
         <FlowControls
           reactFlowInstance={reactFlowInstance}
           onSearchChange={setSearchQuery}

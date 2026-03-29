@@ -745,12 +745,16 @@ export interface PincodeLookupResponse {
 export type CashDiscountType = 'rupees' | 'percentage';
 export type BrokerCommissionType = 'rupees' | 'percentage' | 'weight';
 
-// Sauda Types
+// Sauda Types — `rice_length` matches backend enum: dubar | tibar | wand
+export type RiceLength = 'dubar' | 'tibar' | 'wand';
+
 export interface Sauda {
   id: string;
   sauda_type: 'exgodown' | 'for';
   rice_code_id?: string | null;
   rice_type?: string | null;
+  /** Grade / length (nullable until set) */
+  rice_length?: RiceLength | null;
   rate: number;
   broker_id?: string | null;
   broker_commission?: number | null;
@@ -791,6 +795,7 @@ export interface CreateSaudaRequest {
   status?: 'draft' | 'active' | 'completed' | 'cancelled';
   is_dana_required?: boolean; // Optional, defaults to true if not provided
   sauda_date?: string | null; // Date of the sauda in YYYY-MM-DD format
+  rice_length?: RiceLength | null;
 }
 
 export interface UpdateSaudaRequest {
@@ -812,6 +817,7 @@ export interface UpdateSaudaRequest {
   status?: 'draft' | 'active' | 'completed' | 'cancelled';
   is_dana_required?: boolean;
   sauda_date?: string | null; // Date of the sauda in YYYY-MM-DD format
+  rice_length?: RiceLength | null;
 }
 
 export interface SaudaFilters {
@@ -1000,6 +1006,7 @@ export interface PurchaseSummarySaudaDetail {
   sauda_type: 'exgodown' | 'for';
   rice_code_id?: string | null;
   rice_type?: string | null;
+  rice_length?: RiceLength | null;
   rate: number;
   quantity?: number | null;
   received_until_now: number;
@@ -1016,8 +1023,12 @@ export interface PurchaseSummaryISPDetail {
   id: string;
   slip_number: string;
   date: string;
-  vehicle_id: string;
+  /** Resolved registration (e.g. kaanta overview); use with or instead of vehicle_id */
+  vehicle_number?: string | null;
+  /** Vehicle UUID when API returns a reference */
+  vehicle_id?: string | null;
   party_name: string;
+  transporter_id?: string | null;
   transportation_cost?: number | null;
 }
 
@@ -1082,6 +1093,42 @@ export interface ISPPurchaseSummary {
   }>;
   
   isp_details: PurchaseSummaryISPDetail;
+}
+
+/** Rollup from kaanta-linked lots only (`GET .../kaanta-overview`). Same step totals as sauda summary, scoped to LOT-Kaanta-linked rows. */
+export interface KaantaMetricSummary {
+  total_lots: number;
+  total_bags: number;
+  total_weight: number;
+  base_amount: number;
+  cash_discount_amount: number;
+  amount_after_discount: number;
+  broker_commission_amount: number;
+  amount_after_commission: number;
+  transportation_cost: number;
+  amount_after_transportation: number;
+  igst_amount: number;
+  final_total_amount: number;
+  net_payable: number;
+  lot_details?: PurchaseSummaryLotDetail[];
+}
+
+/** ISP row in kaanta overview: header fields plus counts (ISPs with ≥1 kaanta). */
+export interface KaantaIspOverviewRow extends PurchaseSummaryISPDetail {
+  kaanta_count: number;
+  lot_count: number;
+}
+
+export interface KaantaPurchaseOverview {
+  summary: KaantaMetricSummary;
+  isps: KaantaIspOverviewRow[];
+}
+
+/** Per sauda + ISP: kaanta-linked lots and kaantas (`GET .../kaanta-lots`). */
+export interface KaantaPurchaseIspDetail {
+  isp: InwardSlipPass;
+  kaantas: Kaanta[];
+  lots: PurchaseSummaryLotDetail[];
 }
 
 // ============================================================================
@@ -1575,9 +1622,19 @@ export interface PacketsInventory {
   };
 }
 
+/** GET /inventory/lots — lot_inventory rows enriched with inward slip lot metadata */
 export interface LotsInventory {
   lot_id: string;
-  available_quantity: number;
+  available_quantity: number | string;
+  godown_id?: string;
+  id?: string;
+  lot?: {
+    id: string;
+    lot_number?: string | null;
+    rice_code_id?: string | null;
+    rice_type?: string | null;
+    received_weight?: number | string | null;
+  };
 }
 
 export interface BagsInventory {

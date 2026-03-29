@@ -8,6 +8,7 @@ import { ActionButtons } from '../../components/admin/shared/ActionButtons'
 import { ConfirmDialog } from '../../components/admin/shared/ConfirmDialog'
 import { useSalesmen } from '../../hooks/useSalesmen'
 import { SalesmanFormModal } from '../../components/admin/salesmen/SalesmanFormModal'
+import type { Salesman } from '../../types/entities'
 
 export default function SalesmenPage() {
   const { salesmen, loading, deleteSalesman, refetch } = useSalesmen()
@@ -16,6 +17,7 @@ export default function SalesmenPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
+  const [editingSalesman, setEditingSalesman] = useState<Salesman | null>(null)
 
   const filtered = useMemo(() => {
     return salesmen.filter((s) => {
@@ -61,7 +63,13 @@ export default function SalesmenPage() {
               onChange={setStatusFilter}
             />
           </div>
-          <button className="btn-primary rounded-xl inline-flex items-center justify-center gap-2 w-full sm:w-auto" onClick={() => setCreateOpen(true)}>
+          <button
+            className="btn-primary rounded-xl inline-flex items-center justify-center gap-2 w-full sm:w-auto"
+            onClick={() => {
+              setEditingSalesman(null)
+              setCreateOpen(true)
+            }}
+          >
             <Plus className="h-4 w-4" /> Add Salesperson
           </button>
         </div>
@@ -97,6 +105,11 @@ export default function SalesmenPage() {
               <div className="mt-3 flex items-center justify-end">
                 <ActionButtons
                   isActive={s.is_active}
+                  permissionEntity="salesman"
+                  onEdit={() => {
+                    setEditingSalesman(s)
+                    setCreateOpen(true)
+                  }}
                   onDelete={() => {
                     setSelectedId(s.id)
                     setDeleteDialogOpen(true)
@@ -123,15 +136,16 @@ export default function SalesmenPage() {
         confirmText="Delete"
       />
 
-      <SalesmanFormModal 
-        open={createOpen} 
+      <SalesmanFormModal
+        open={createOpen}
+        editingSalesman={editingSalesman}
         onOpenChange={(open) => {
-          setCreateOpen(open);
-          // Refetch salesmen when modal closes to ensure we have the latest data
+          setCreateOpen(open)
           if (!open) {
-            refetch();
+            setEditingSalesman(null)
+            refetch()
           }
-        }} 
+        }}
       />
     </div>
   )

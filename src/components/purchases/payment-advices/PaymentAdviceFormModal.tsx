@@ -14,7 +14,7 @@ import { useInwardSlipPasses } from '../../../hooks/useInwardSlipPasses';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { transportersAPI } from '../../../services/transporters.api';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
-import { getRiceTypeLabel } from '../../../utils/riceType';
+import { getRiceTypeLabel, getRiceLengthLabel } from '../../../utils/riceType';
 import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { DateInputWithSteppers } from '../../shared/DateInputWithSteppers';
@@ -70,6 +70,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
   // Reference data
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
+  const [riceLengths, setRiceLengths] = useState<RiceType[]>([]);
   const [transporters, setTransporters] = useState<Transporter[]>([]);
   const [kaantas, setKaantas] = useState<Kaanta[]>([]);
   const [defaultRecipient, setDefaultRecipient] = useState<DefaultRecipient | null>(null);
@@ -128,14 +129,16 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
   useEffect(() => {
     const fetchReferenceData = async () => {
       try {
-        const [codes, types, trans, recipient] = await Promise.all([
+        const [codes, types, lengths, trans, recipient] = await Promise.all([
           riceCodesAPI.getAllRiceCodes(),
           riceCodesAPI.getRiceTypes(),
+          riceCodesAPI.getRiceLengths(),
           transportersAPI.getAllTransporters(),
           vendorsAPI.getDefaultRecipient()
         ]);
         setRiceCodes(codes);
         setRiceTypes(types);
+        setRiceLengths(lengths);
         setTransporters(trans);
         setDefaultRecipient(recipient);
       } catch (error) {
@@ -315,6 +318,14 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
     return transporter?.business_name || '';
   };
 
+  const formatSaudaDateLabel = (iso: string | null | undefined): string | null => {
+    if (!iso?.trim()) return null;
+    const raw = iso.trim();
+    const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T12:00:00` : raw);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toLocaleDateString('en-IN');
+  };
+
   const getSaudaDisplayName = (sauda: Sauda): string => {
     const parts: string[] = [];
     const vendorName = getVendorName(sauda.purchaser_id);
@@ -324,6 +335,8 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
     const riceTypeLabel = getRiceTypeLabel(sauda.rice_type, riceTypes);
     if (riceTypeLabel) parts.push(riceTypeLabel);
     parts.push(`₹${sauda.rate}/kg`);
+    const dateLabel = formatSaudaDateLabel(sauda.sauda_date);
+    if (dateLabel) parts.push(dateLabel);
     return parts.join(' - ');
   };
 
@@ -777,7 +790,9 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                             saudaItem.sauda_details.completion_percentage !== null && (
                               <div key={saudaItem.sauda_id} className="flex items-center gap-2">
                                 <span className="text-xs text-muted-foreground">
-                                  {idx + 1}. {getRiceCodeName(saudaItem.sauda_details.rice_code_id)} {getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes)}:
+                                  {idx + 1}.{' '}
+                                  {[getRiceCodeName(saudaItem.sauda_details.rice_code_id), getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes), getRiceLengthLabel(saudaItem.sauda_details.rice_length, riceLengths)].filter(Boolean).join(' ')}
+                                  :
                                 </span>
                                 <span className={`text-xs px-2 py-1 rounded-full ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).bgColor} ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).color} border ${getCompletionStatus(saudaItem.sauda_details.completion_percentage).borderColor}`}>
                                   {formatCompletionPercentage(saudaItem.sauda_details.completion_percentage)}
@@ -1082,8 +1097,19 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                             <div className="space-y-2">
                               {summary.saudas.map((saudaItem, idx) => (
                                 <div key={saudaItem.sauda_id} className="border border-border/50 rounded p-2 bg-muted/20">
+                                  {(() => {
+                                    const saudaKaantas = kaantas.filter(k => k.sauda_id === saudaItem.sauda_id);
+                                    const saudaKaantaWeight = saudaKaantas.reduce((sum, k) => sum + (k.kaanta_weight || 0), 0);
+                                    const saudaSaidSentWeight = saudaKaantas.reduce((sum, k) => sum + (k.said_sent_weight || 0), 0);
+                                    const isDanaRequired = saudaItem.sauda_details.is_dana_required ?? true;
+                                    const saudaDanaDeduction = isDanaRequired && saudaSaidSentWeight > 0
+                                      ? (saudaSaidSentWeight * 300 / 1000) / 100
+                                      : 0;
+                                    return (
+                                      <>
                                   <div className="font-semibold text-xs mb-1">
-                                    {idx + 1}. {getRiceCodeName(saudaItem.sauda_details.rice_code_id)} {getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes) || 'N/A'}
+                                    {idx + 1}.{' '}
+                                    {[getRiceCodeName(saudaItem.sauda_details.rice_code_id), getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes), getRiceLengthLabel(saudaItem.sauda_details.rice_length, riceLengths)].filter(Boolean).join(' ') || 'N/A'}
                                   </div>
                                   <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[10px]">
                                     <div className="flex justify-between">
@@ -1116,11 +1142,29 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                         <span>₹{saudaItem.broker_commission_amount.toFixed(2)}</span>
                                       </div>
                                     )}
+                                    <div className="col-span-2 flex justify-between text-[9px] text-muted-foreground">
+                                      <span>Pricing Base:</span>
+                                      <span className="text-right">
+                                        {isDanaRequired
+                                          ? `(${saudaKaantaWeight.toFixed(2)} - ${saudaDanaDeduction.toFixed(2)}) x ₹${saudaItem.sauda_details.rate.toFixed(2)}`
+                                          : `${saudaKaantaWeight.toFixed(2)} x ₹${saudaItem.sauda_details.rate.toFixed(2)}`
+                                        } = ₹{saudaItem.base_amount.toFixed(2)}
+                                      </span>
+                                    </div>
+                                    <div className="col-span-2 flex justify-between text-[9px] text-muted-foreground">
+                                      <span>Pricing Flow:</span>
+                                      <span className="text-right">
+                                        (₹{saudaItem.base_amount.toFixed(2)} - ₹{saudaItem.cash_discount_amount.toFixed(2)}) + ₹{saudaItem.broker_commission_amount.toFixed(2)} = ₹{saudaItem.final_total_amount.toFixed(2)}
+                                      </span>
+                                    </div>
                                     <div className="col-span-2 flex justify-between font-semibold border-t border-border/30 pt-0.5 mt-0.5">
                                       <span>Sauda Total:</span>
                                       <span>₹{saudaItem.final_total_amount.toFixed(2)}</span>
                                     </div>
                                   </div>
+                                      </>
+                                    );
+                                  })()}
                                 </div>
                               ))}
                             </div>
@@ -1167,7 +1211,8 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                   <div key={saudaItem.sauda_id} className="p-3">
                                     <div className="flex items-center justify-between mb-2">
                                       <div className="font-semibold text-xs">
-                                        {idx + 1}. {getRiceCodeName(saudaItem.sauda_details.rice_code_id)} {getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes) || 'N/A'}
+                                        {idx + 1}.{' '}
+                                        {[getRiceCodeName(saudaItem.sauda_details.rice_code_id), getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes), getRiceLengthLabel(saudaItem.sauda_details.rice_length, riceLengths)].filter(Boolean).join(' ') || 'N/A'}
                                       </div>
                                       <div className="flex items-center gap-2">
                                         {isDanaRequired ? (

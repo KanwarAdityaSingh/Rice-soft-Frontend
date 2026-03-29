@@ -7,13 +7,17 @@ import { ActionButtons } from '../shared/ActionButtons';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { Briefcase } from 'lucide-react';
 import { useSalesmen } from '../../../hooks/useSalesmen';
+import { SalesmanFormModal } from './SalesmanFormModal';
+import type { Salesman } from '../../../types/entities';
 
 export function SalesmenTable() {
-  const { salesmen, loading, deleteSalesman } = useSalesmen();
+  const { salesmen, loading, deleteSalesman, refetch } = useSalesmen();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedSalesman, setSelectedSalesman] = useState<{ id: string; name?: string } | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingSalesman, setEditingSalesman] = useState<Salesman | null>(null);
 
   const filteredSalesmen = salesmen.filter((salesman) => {
     const matchesSearch = 
@@ -74,7 +78,10 @@ export function SalesmenTable() {
                     <td className="py-3 px-4 text-right">
                       <ActionButtons
                         isActive={salesman.is_active}
-                        onEdit={() => console.log('Edit', salesman.id)}
+                        onEdit={() => {
+                          setEditingSalesman(salesman);
+                          setFormOpen(true);
+                        }}
                         onDelete={() => {
                           setSelectedSalesman(salesman);
                           setDeleteDialogOpen(true);
@@ -125,7 +132,10 @@ export function SalesmenTable() {
                 <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/60">
                   <ActionButtons
                     isActive={salesman.is_active}
-                    onEdit={() => console.log('Edit', salesman.id)}
+                    onEdit={() => {
+                      setEditingSalesman(salesman);
+                      setFormOpen(true);
+                    }}
                     onDelete={() => {
                       setSelectedSalesman(salesman);
                       setDeleteDialogOpen(true);
@@ -156,6 +166,18 @@ export function SalesmenTable() {
         title="Delete Salesperson"
         description={`Are you sure you want to delete ${selectedSalesman?.name}? This action cannot be undone.`}
         confirmText="Delete"
+      />
+
+      <SalesmanFormModal
+        open={formOpen}
+        editingSalesman={editingSalesman}
+        onOpenChange={(open) => {
+          setFormOpen(open);
+          if (!open) {
+            setEditingSalesman(null);
+            void refetch();
+          }
+        }}
       />
     </div>
   );

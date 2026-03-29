@@ -1,9 +1,13 @@
 import { apiService } from './api';
 import type { Vendor, CreateVendorRequest, UpdateVendorRequest, GSTLookupResponseData, PANLookupResponseData, VendorCheckResponse } from '../types/entities';
 
-/** Matches backend `LENIENT_BANK_VERIFY_FAIL_MESSAGE` — vendor persisted, bank verification did not complete. */
+/** Matches backend lenient create — vendor persisted, bank verification did not complete. */
 export const VENDOR_CREATE_LENIENT_BANK_MESSAGE =
   'Vendor created but bank could not be verified.';
+
+/** Matches backend lenient update — vendor persisted, bank verification did not complete. */
+export const VENDOR_UPDATE_LENIENT_BANK_MESSAGE =
+  'Vendor updated but bank could not be verified.';
 
 /** Matches backend `BANK_VERIFY_SUCCESS_MESSAGE` — fallback if envelope omits `verification_message`. */
 export const BANK_VERIFY_SUCCESS_MESSAGE = 'Bank details verified successfully.';
@@ -42,9 +46,23 @@ export const vendorsAPI = {
     };
   },
 
-  // Update vendor
-  updateVendor: (id: string, data: UpdateVendorRequest) => {
-    return apiService.post<Vendor>(`/vendors/updateVendor/${id}`, data);
+  // Update vendor (envelope: verification_message / verification_error when verify_bank is used)
+  updateVendor: async (
+    id: string,
+    data: UpdateVendorRequest
+  ): Promise<{
+    vendor: Vendor;
+    message: string;
+    verification_error?: string;
+    verification_message?: string;
+  }> => {
+    const res = await apiService.postEnvelope<Vendor>(`/vendors/updateVendor/${id}`, data);
+    return {
+      vendor: res.data,
+      message: res.message ?? '',
+      verification_error: res.verification_error,
+      verification_message: res.verification_message,
+    };
   },
 
   // Delete vendor

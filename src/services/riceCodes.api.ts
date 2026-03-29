@@ -25,6 +25,11 @@ export const riceCodesAPI = {
     return apiService.get<RiceType[]>('/riceCodes/getRiceTypes');
   },
 
+  /** Same shape as rice types: `{ value, label }[]` (e.g. dubar, tibar, wand). */
+  getRiceLengths: async (): Promise<RiceType[]> => {
+    return apiService.get<RiceType[]>('/riceCodes/getRiceLengths');
+  },
+
   // Create rice code
   createRiceCode: (data: CreateRiceCodeRequest) => {
     return apiService.post<RiceCode>('/riceCodes/createRiceCode', data);

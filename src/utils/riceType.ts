@@ -8,3 +8,13 @@ export const getRiceTypeLabel = (
   return riceType ? riceType.label : value;
 };
 
+/** Same shape as rice types — from GET /riceCodes/getRiceLengths */
+export const getRiceLengthLabel = (
+  value: string | null | undefined,
+  riceLengths: Array<{ value: string; label: string }>
+): string => {
+  if (!value) return '';
+  const row = riceLengths.find((r) => r.value === value);
+  return row ? row.label : value;
+};
+

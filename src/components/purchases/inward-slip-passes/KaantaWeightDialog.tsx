@@ -31,6 +31,14 @@ interface KaantaEntry {
   isEnabled: boolean;
 }
 
+const KAANTA_OVERWEIGHT_TOLERANCE_KG = 1000;
+
+/** Auto bag weight = smallest whole kg ≥ (net ÷ bags), i.e. Math.ceil(raw kg/bag). */
+function ceilToNearestGreaterWholeKg(rawKgPerBag: number): number | null {
+  if (!Number.isFinite(rawKgPerBag) || rawKgPerBag <= 0) return null;
+  return Math.ceil(rawKgPerBag);
+}
+
 export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: KaantaWeightDialogProps) {
   // Data loading
   const [saudas, setSaudas] = useState<Sauda[]>([]);
@@ -136,6 +144,7 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
       entry.full_truck_weight &&
       entry.empty_truck_weight &&
       entry.said_sent_weight &&
+      entry.no_of_bags &&
       entry.bag_weight
     );
   };
@@ -151,25 +160,31 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
 
   const updateEntry = (index: number, field: keyof KaantaEntry, value: string | boolean) => {
     const newEntries = [...kaantaEntries];
-    const entry = newEntries[index];
-    
-    newEntries[index] = { ...entry, [field]: value };
-    
-    // Auto-calculate bags based on Kaanta weight (Full - Empty), not sauda quantity
-    // Recalculate when bag_weight, full_truck_weight, or empty_truck_weight changes
-    if ((field === 'bag_weight' || field === 'full_truck_weight' || field === 'empty_truck_weight') && typeof value === 'string') {
+    newEntries[index] = { ...newEntries[index], [field]: value };
+
+    // Auto bag weight from net ÷ manual bag count: ceil to nearest greater whole kg.
+    if (
+      typeof value === 'string' &&
+      (field === 'no_of_bags' || field === 'full_truck_weight' || field === 'empty_truck_weight')
+    ) {
       const updatedEntry = newEntries[index];
       const fullWeight = parseFloat(updatedEntry.full_truck_weight) || 0;
       const emptyWeight = parseFloat(updatedEntry.empty_truck_weight) || 0;
       const kaantaWeight = Math.max(0, fullWeight - emptyWeight);
-      const bagWeight = parseFloat(updatedEntry.bag_weight) || 0;
-      
-      if (kaantaWeight > 0 && bagWeight > 0) {
-        const calculatedBags = Math.ceil(kaantaWeight / bagWeight);
-        newEntries[index] = { ...newEntries[index], no_of_bags: calculatedBags.toString() };
+      const bags = parseInt(updatedEntry.no_of_bags, 10);
+
+      if (kaantaWeight > 0 && !Number.isNaN(bags) && bags > 0) {
+        const rawKgPerBag = kaantaWeight / bags;
+        const ceiled = ceilToNearestGreaterWholeKg(rawKgPerBag);
+        newEntries[index] = {
+          ...newEntries[index],
+          bag_weight: ceiled !== null ? String(ceiled) : '',
+        };
+      } else {
+        newEntries[index] = { ...newEntries[index], bag_weight: '' };
       }
     }
-    
+
     setKaantaEntries(newEntries);
   };
 
@@ -241,8 +256,9 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
         const kaantaWeight = calculateKaantaWeight(entry);
         if (kaantaWeight > 0) {
           const remaining = calculateRemainingWeight(sauda.quantity, sauda.received_until_now);
-          if (remaining !== null && kaantaWeight > remaining) {
-            entryErrors.fullTruckWeight = `Cannot exceed remaining weight: ${remaining.toFixed(2)} kg`;
+          if (remaining !== null && kaantaWeight > remaining + KAANTA_OVERWEIGHT_TOLERANCE_KG) {
+            const maxAllowed = remaining + KAANTA_OVERWEIGHT_TOLERANCE_KG;
+            entryErrors.fullTruckWeight = `Cannot exceed ${maxAllowed.toFixed(2)} kg (remaining ${remaining.toFixed(2)} + ${KAANTA_OVERWEIGHT_TOLERANCE_KG} kg tolerance)`;
             isValid = false;
           }
         }
@@ -590,7 +606,7 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                               Add kaanta ({kaantaEntries.length} pending)
                             </h3>
                             <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
-                              Each entry creates a lot. Net weight = full − empty; bag count updates from net ÷ bag weight.
+                              Each entry creates a lot. Net weight = full − empty. Enter bag count; bag weight is auto from net ÷ bags, rounded up to the nearest greater whole kg (ceil).
                             </p>
                           </div>
                         </div>
@@ -758,28 +774,8 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                     </p>
                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                       <div>
-                                        <label className="block text-[11px] text-muted-foreground mb-0.5">Bag weight *</label>
-                                        <CustomSelect
-                                          value={entry.bag_weight || null}
-                                          onChange={(value) => updateEntry(index, 'bag_weight', value || '')}
-                                          options={[
-                                            { value: '5', label: '5 kg' },
-                                            { value: '10', label: '10 kg' },
-                                            { value: '26', label: '26 kg' },
-                                            { value: '30', label: '30 kg' },
-                                            { value: '50', label: '50 kg' },
-                                            { value: '55', label: '55 kg' },
-                                          ]}
-                                          placeholder="Select"
-                                          allowClear={false}
-                                        />
-                                        {entryErrors.bagWeight && (
-                                          <p className="text-[10px] text-red-500 mt-0.5">{entryErrors.bagWeight}</p>
-                                        )}
-                                      </div>
-                                      <div>
                                         <label className="block text-[11px] text-muted-foreground mb-0.5">
-                                          Count <span className="normal-case text-muted-foreground/80">(auto)</span>
+                                          Count <span className="normal-case text-muted-foreground/80">(manual) *</span>
                                         </label>
                                         <input
                                           type="number"
@@ -795,11 +791,43 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                           className={`w-full px-2.5 py-1.5 text-sm border rounded-md bg-background ${
                                             entryErrors.noOfBags ? 'border-red-500' : 'border-border'
                                           }`}
-                                          placeholder="—"
+                                          placeholder="e.g. 599"
                                         />
                                         {entryErrors.noOfBags && (
                                           <p className="text-[10px] text-red-500 mt-0.5">{entryErrors.noOfBags}</p>
                                         )}
+                                      </div>
+                                      <div>
+                                        <label className="block text-[11px] text-muted-foreground mb-0.5">
+                                          Bag weight <span className="normal-case text-muted-foreground/80">(auto)</span>
+                                        </label>
+                                        <div
+                                          className={`w-full px-2.5 py-1.5 text-sm border rounded-md bg-muted/50 tabular-nums ${
+                                            entryErrors.bagWeight ? 'border-red-500' : 'border-border'
+                                          }`}
+                                        >
+                                          {entry.bag_weight ? `${entry.bag_weight} kg` : '—'}
+                                        </div>
+                                        {entryErrors.bagWeight && (
+                                          <p className="text-[10px] text-red-500 mt-0.5">{entryErrors.bagWeight}</p>
+                                        )}
+                                        {(() => {
+                                          const kw = calculateKaantaWeight(entry);
+                                          const bags = parseInt(entry.no_of_bags, 10);
+                                          const bw = parseFloat(entry.bag_weight);
+                                          if (kw <= 0 || !bags || bags <= 0 || !entry.bag_weight || isNaN(bw)) {
+                                            return null;
+                                          }
+                                          const rawPerBag = kw / bags;
+                                          const ceiled = ceilToNearestGreaterWholeKg(rawPerBag);
+                                          if (ceiled === null || Math.abs(ceiled - bw) > 1e-6) return null;
+                                          if (Math.abs(rawPerBag - ceiled) < 1e-6) return null;
+                                          return (
+                                            <p className="text-[10px] text-amber-700 dark:text-amber-300 mt-1 leading-snug">
+                                              Rounded: raw {rawPerBag.toFixed(2)} kg/bag → {ceiled} kg (ceil, smallest whole kg ≥ raw).
+                                            </p>
+                                          );
+                                        })()}
                                       </div>
                                       <div className="sm:col-span-1 col-span-1">
                                         <label className="block text-[11px] text-muted-foreground mb-0.5">Bag type *</label>

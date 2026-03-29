@@ -8,7 +8,12 @@ import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { UserCircle } from 'lucide-react';
 import { useBrokers } from '../../../hooks/useBrokers';
 
-export function BrokersTable() {
+interface BrokersTableProps {
+  /** When set, shows Edit in the row menu (e.g. open `BrokerFormModal` with this id) */
+  onEditBroker?: (brokerId: string) => void;
+}
+
+export function BrokersTable({ onEditBroker }: BrokersTableProps = {}) {
   const { brokers, loading, deleteBroker } = useBrokers();
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string | undefined>();
@@ -86,7 +91,7 @@ export function BrokersTable() {
                     <td className="py-3 px-4 text-sm">{broker.address.city}</td>
                     <td className="py-3 px-4 text-right">
                       <ActionButtons
-                        onEdit={() => console.log('Edit', broker.id)}
+                        onEdit={onEditBroker ? () => onEditBroker(broker.id) : undefined}
                         onDelete={() => {
                           setSelectedBroker({ id: broker.id, business_name: broker.business_name || '' });
                           setDeleteDialogOpen(true);
@@ -140,7 +145,7 @@ export function BrokersTable() {
                 {/* Actions */}
                 <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/60">
                   <ActionButtons
-                    onEdit={() => console.log('Edit', broker.id)}
+                    onEdit={onEditBroker ? () => onEditBroker(broker.id) : undefined}
                     onDelete={() => {
                       setSelectedBroker(broker as { id: string; business_name?: string | undefined });
                       setDeleteDialogOpen(true);

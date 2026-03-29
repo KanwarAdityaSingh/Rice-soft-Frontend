@@ -41,7 +41,7 @@ export function useSalesmen() {
   const updateSalesman = async (id: string, data: UpdateSalesmanRequest) => {
     try {
       const updatedSalesman = await salesmenAPI.updateSalesman(id, data);
-      setSalesmen(salesmen.map((s) => (s.id === id ? updatedSalesman : s)));
+      setSalesmen((prev) => prev.map((s) => (s.id === id ? updatedSalesman : s)));
       // success('Salesman updated successfully');
       return updatedSalesman;
     } catch (err: any) {

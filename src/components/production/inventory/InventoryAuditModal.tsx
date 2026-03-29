@@ -54,7 +54,7 @@ export function InventoryAuditModal({
   loading = false,
 }: InventoryAuditModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [operationFilter, setOperationFilter] = useState<'all' | 'addition' | 'reduction' | 'adjustment'>('all');
+  const [operationFilter, setOperationFilter] = useState<'all' | 'addition' | 'reduction'>('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -63,6 +63,8 @@ export function InventoryAuditModal({
   // Transform and filter data
   const filteredData = useMemo(() => {
     let entries = (data as any[]).map((item) => ({ ...item, _type: auditType })) as AuditEntry[];
+
+    entries = entries.filter((e) => e.operation_type !== 'adjustment');
 
     // Filter by operation type
     if (operationFilter !== 'all') {
@@ -158,12 +160,11 @@ export function InventoryAuditModal({
   };
 
   const getOperationBadge = (type: string) => {
-    const styles = {
+    const styles: Record<string, string> = {
       addition: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
       reduction: 'bg-rose-500/10 text-rose-600 border-rose-500/20',
-      adjustment: 'bg-amber-500/10 text-amber-600 border-amber-500/20',
     };
-    return styles[type as keyof typeof styles] || styles.adjustment;
+    return styles[type] ?? 'bg-muted/80 text-muted-foreground border-border';
   };
 
   const getTypeIcon = () => {
@@ -183,8 +184,7 @@ export function InventoryAuditModal({
   const stats = useMemo(() => {
     const additions = filteredData.filter((e) => e.operation_type === 'addition').length;
     const reductions = filteredData.filter((e) => e.operation_type === 'reduction').length;
-    const adjustments = filteredData.filter((e) => e.operation_type === 'adjustment').length;
-    return { additions, reductions, adjustments, total: filteredData.length };
+    return { additions, reductions, total: filteredData.length };
   }, [filteredData]);
 
   const renderEntryDetails = (entry: AuditEntry) => {
@@ -332,7 +332,7 @@ export function InventoryAuditModal({
               </div>
 
               {/* Summary Stats */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-4">
                 <div className="p-3 rounded-xl bg-background border border-border">
                   <div className="flex items-center gap-2 text-muted-foreground text-xs">
                     <FileText className="h-3.5 w-3.5" />
@@ -353,13 +353,6 @@ export function InventoryAuditModal({
                     Reductions
                   </div>
                   <div className="text-lg font-bold text-rose-600 mt-1">{stats.reductions}</div>
-                </div>
-                <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/20">
-                  <div className="flex items-center gap-2 text-amber-600 text-xs">
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    Adjustments
-                  </div>
-                  <div className="text-lg font-bold text-amber-600 mt-1">{stats.adjustments}</div>
                 </div>
               </div>
             </div>
@@ -409,7 +402,6 @@ export function InventoryAuditModal({
                       <option value="all">All Operations</option>
                       <option value="addition">Additions Only</option>
                       <option value="reduction">Reductions Only</option>
-                      <option value="adjustment">Adjustments Only</option>
                     </select>
                   </div>
 

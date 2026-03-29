@@ -23,7 +23,8 @@ export default function BrokersPage() {
   const [bankVerifyFilter, setBankVerifyFilter] = useState<string | undefined>()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [createOpen, setCreateOpen] = useState(false)
+  const [brokerModalOpen, setBrokerModalOpen] = useState(false)
+  const [editBrokerId, setEditBrokerId] = useState<string | null>(null)
   const [brokerageSummaryBroker, setBrokerageSummaryBroker] = useState<{ id: string; name: string | null } | null>(null)
   const [saudas, setSaudas] = useState<Sauda[]>([])
   const [alertOpen, setAlertOpen] = useState(false)
@@ -220,7 +221,14 @@ export default function BrokersPage() {
               onChange={setBankVerifyFilter}
             />
           </div>
-          <button className="btn-primary rounded-xl inline-flex items-center justify-center gap-2 w-full sm:w-auto" onClick={() => setCreateOpen(true)}>
+          <button
+            type="button"
+            className="btn-primary rounded-xl inline-flex items-center justify-center gap-2 w-full sm:w-auto"
+            onClick={() => {
+              setEditBrokerId(null)
+              setBrokerModalOpen(true)
+            }}
+          >
             <Plus className="h-4 w-4" /> Add Broker
           </button>
         </div>
@@ -349,6 +357,11 @@ export default function BrokersPage() {
                 )}
                 <div className="ml-auto">
                   <ActionButtons
+                    permissionEntity="broker"
+                    onEdit={() => {
+                      setEditBrokerId(b.id)
+                      setBrokerModalOpen(true)
+                    }}
                     onDelete={async () => {
                       if (isBrokerInUse(b.id)) {
                         const saudaNames = await getSaudaNamesForBroker(b.id);
@@ -431,15 +444,16 @@ export default function BrokersPage() {
         brokerName={brokerageSummaryBroker?.name}
       />
 
-      <BrokerFormModal 
-        open={createOpen} 
+      <BrokerFormModal
+        open={brokerModalOpen}
+        brokerId={editBrokerId}
         onOpenChange={(open) => {
-          setCreateOpen(open);
-          // Refetch brokers when modal closes to ensure we have the latest data
+          setBrokerModalOpen(open)
           if (!open) {
-            refetch();
+            setEditBrokerId(null)
+            refetch()
           }
-        }} 
+        }}
       />
     </div>
   )

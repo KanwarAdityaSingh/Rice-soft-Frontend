@@ -7,19 +7,20 @@ import { EmptyState } from '../../admin/shared/EmptyState';
 import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
-import { Package, Eye, MoreVertical, Edit2, Trash2, UtensilsCrossed, Wheat, Mail, MessageCircle, Copy, Check, Ban } from 'lucide-react';
+import { Package, Eye, MoreVertical, Edit2, Trash2, UtensilsCrossed, Wheat, Mail, MessageCircle, Copy, Check, Ban, CheckCircle2 } from 'lucide-react';
 import { useSaudas } from '../../../hooks/useSaudas';
 import { useVendors } from '../../../hooks/useVendors';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { paymentAdvicesAPI } from '../../../services/paymentAdvices.api';
 import { inwardSlipPassesAPI } from '../../../services/inwardSlipPasses.api';
 import { kaantasAPI } from '../../../services/kaantas.api';
-import { getRiceTypeLabel } from '../../../utils/riceType';
+import { getRiceTypeLabel, getRiceLengthLabel } from '../../../utils/riceType';
 import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
 import { getSaudaSerialNumber, formatSaudaIdShort } from '../../../utils/saudaSerial';
 import { saudaToUpdatePayload } from '../../../utils/saudaPayload';
 import { SaudaFormModal } from './SaudaFormModal';
 import { SaudaPreviewDialog } from './SaudaPreviewDialog';
+import { SaudaWorkflowStatusBadge } from './SaudaWorkflowStatusBadge';
 import { SaudaEmailModal } from './SaudaEmailModal';
 import { SaudaWhatsAppModal } from './SaudaWhatsAppModal';
 import type {
@@ -35,22 +36,6 @@ import type {
 interface SaudasTableProps {
   onRefreshRef?: React.MutableRefObject<(() => void) | null>;
 }
-
-/** Workflow `s.status` (draft / active / completed / cancelled) — shown in cancelled-only list */
-function SaudaWorkflowStatusBadge({ status }: { status: Sauda['status'] }) {
-  const variant: Record<Sauda['status'], string> = {
-    draft: 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-600',
-    active: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-900 dark:text-emerald-200 border-emerald-200 dark:border-emerald-800',
-    completed: 'bg-sky-100 dark:bg-sky-900/30 text-sky-900 dark:text-sky-200 border-sky-200 dark:border-sky-800',
-    cancelled: 'bg-red-100 dark:bg-red-900/30 text-red-900 dark:text-red-200 border-red-200 dark:border-red-800',
-  };
-  return (
-    <span className={`inline-block text-[10px] px-2 py-0.5 rounded-full font-medium capitalize whitespace-nowrap border ${variant[status]}`}>
-      {status}
-    </span>
-  );
-}
-
 
 export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
   const [typeFilter, setTypeFilter] = useState<string | undefined>();
@@ -75,6 +60,8 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
   const [selectedSauda, setSelectedSauda] = useState<Sauda | null>(null);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [saudaToCancel, setSaudaToCancel] = useState<Sauda | null>(null);
+  const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
+  const [saudaToComplete, setSaudaToComplete] = useState<Sauda | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedSaudaId, setSelectedSaudaId] = useState<string | null>(null);
@@ -83,6 +70,7 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
   const [previewSerial, setPreviewSerial] = useState<number | null>(null);
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
+  const [riceLengths, setRiceLengths] = useState<RiceType[]>([]);
   
   // Document viewer state
   const [documentViewerOpen, setDocumentViewerOpen] = useState(false);
@@ -127,6 +115,18 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
     fetchRiceTypes();
   }, []);
 
+  useEffect(() => {
+    const fetchRiceLengths = async () => {
+      try {
+        const data = await riceCodesAPI.getRiceLengths();
+        setRiceLengths(data);
+      } catch (error) {
+        console.error('Failed to fetch rice lengths:', error);
+      }
+    };
+    fetchRiceLengths();
+  }, []);
+
   // Fetch usage data to check sauda dependencies
   useEffect(() => {
     const fetchUsageData = async () => {
@@ -169,7 +169,9 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
     
     const riceTypeLabel = getRiceTypeLabel(sauda.rice_type, riceTypes);
     if (riceTypeLabel) parts.push(riceTypeLabel);
-    
+    const riceLengthLabel = getRiceLengthLabel(sauda.rice_length, riceLengths);
+    if (riceLengthLabel) parts.push(riceLengthLabel);
+
     return parts.join(' - ') || 'Sauda';
   };
 
@@ -246,16 +248,18 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
       const purchaserName = getPurchaserName(s.purchaser_id).toLowerCase();
       const riceCodeName = getRiceCodeName(s.rice_code_id).toLowerCase();
       const riceTypeLabel = getRiceTypeLabel(s.rice_type, riceTypes).toLowerCase();
+      const riceLengthLabel = getRiceLengthLabel(s.rice_length, riceLengths).toLowerCase();
       const matchesSearch =
         displayName.includes(q) ||
         purchaserName.includes(q) ||
         riceCodeName.includes(q) ||
         riceTypeLabel.includes(q) ||
+        riceLengthLabel.includes(q) ||
         s.id.toLowerCase().includes(q);
 
       return matchesSearch;
     });
-  }, [saudas, typeFilter, searchQuery, riceCodes, riceTypes, vendors]);
+  }, [saudas, typeFilter, searchQuery, riceCodes, riceTypes, riceLengths, vendors]);
 
   return (
     <div>
@@ -399,7 +403,9 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                       </td>
                       <td className="py-3 px-4 text-sm min-w-[120px]">
                         <div className="flex flex-col gap-1.5">
-                          {showCancelledOnly && <SaudaWorkflowStatusBadge status={s.status} />}
+                          {(showCancelledOnly || s.status === 'completed') && (
+                            <SaudaWorkflowStatusBadge status={s.status} />
+                          )}
                           {s.completion_percentage !== null && (
                             <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${getCompletionStatus(s.completion_percentage).bgColor} ${getCompletionStatus(s.completion_percentage).color} border ${getCompletionStatus(s.completion_percentage).borderColor}`}>
                               {getCompletionStatus(s.completion_percentage).label}
@@ -535,6 +541,19 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                                 >
                                   <Edit2 className="h-4 w-4" /> Edit
                                 </DropdownMenu.Item>
+                                {s.status !== 'cancelled' &&
+                                  s.status !== 'completed' &&
+                                  (s.completion_percentage === null || s.completion_percentage < 100) && (
+                                    <DropdownMenu.Item
+                                      className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/30"
+                                      onSelect={() => {
+                                        setSaudaToComplete(s);
+                                        setCompleteDialogOpen(true);
+                                      }}
+                                    >
+                                      <CheckCircle2 className="h-4 w-4" /> Complete Sauda
+                                    </DropdownMenu.Item>
+                                  )}
                                 {s.status !== 'cancelled' && (
                                   <DropdownMenu.Item
                                     className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950/30"
@@ -635,7 +654,9 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                         : new Date(s.created_at).toLocaleDateString('en-IN')}
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-2">
-                    {showCancelledOnly && <SaudaWorkflowStatusBadge status={s.status} />}
+                    {(showCancelledOnly || s.status === 'completed') && (
+                      <SaudaWorkflowStatusBadge status={s.status} />
+                    )}
                     {s.completion_percentage !== null && (
                         <span className={`text-[10px] px-2 py-0.5 rounded-full ${getCompletionStatus(s.completion_percentage).bgColor} ${getCompletionStatus(s.completion_percentage).color} border ${getCompletionStatus(s.completion_percentage).borderColor}`}>
                           {getCompletionStatus(s.completion_percentage).label}
@@ -802,6 +823,19 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                       >
                         <Edit2 className="h-4 w-4" /> Edit
                       </DropdownMenu.Item>
+                      {s.status !== 'cancelled' &&
+                        s.status !== 'completed' &&
+                        (s.completion_percentage === null || s.completion_percentage < 100) && (
+                          <DropdownMenu.Item
+                            className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/30"
+                            onSelect={() => {
+                              setSaudaToComplete(s);
+                              setCompleteDialogOpen(true);
+                            }}
+                          >
+                            <CheckCircle2 className="h-4 w-4" /> Complete Sauda
+                          </DropdownMenu.Item>
+                        )}
                       {s.status !== 'cancelled' && (
                         <DropdownMenu.Item
                           className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950/30"
@@ -885,6 +919,36 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
             : ''
         }
         confirmText="Yes, cancel sauda"
+        variant="warning"
+      />
+
+      <ConfirmDialog
+        open={completeDialogOpen}
+        onOpenChange={(open) => {
+          setCompleteDialogOpen(open);
+          if (!open) setSaudaToComplete(null);
+        }}
+        onConfirm={async () => {
+          if (!saudaToComplete) return;
+          try {
+            await updateSaudaStatus(
+              saudaToComplete.id,
+              saudaToUpdatePayload(saudaToComplete, { status: 'completed' })
+            );
+          } catch (err: any) {
+            setAlertType('error');
+            setAlertTitle('Could not complete sauda');
+            setAlertMessage(err?.message || 'Please try again.');
+            setAlertOpen(true);
+          }
+        }}
+        title="Complete Sauda"
+        description={
+          saudaToComplete
+            ? `Mark “${getSaudaDisplayName(saudaToComplete)}” as completed in workflow? Delivery progress (e.g. ${saudaToComplete.completion_percentage != null ? `${saudaToComplete.completion_percentage.toFixed(2)}%` : 'N/A'} received) will stay as calculated.`
+            : ''
+        }
+        confirmText="Yes, mark completed"
         variant="warning"
       />
 

@@ -39,10 +39,9 @@ export function useBrokers() {
 
   const updateBroker = async (id: string, data: UpdateBrokerRequest) => {
     try {
-      const updatedBroker = await brokersAPI.updateBroker(id, data);
-      setBrokers(brokers.map((b) => (b.id === id ? updatedBroker : b)));
-      // success('Broker updated successfully');
-      return updatedBroker;
+      const result = await brokersAPI.updateBroker(id, data);
+      await fetchBrokers();
+      return result;
     } catch (err: any) {
       // showError(err.message || 'Failed to update broker');
       throw err;

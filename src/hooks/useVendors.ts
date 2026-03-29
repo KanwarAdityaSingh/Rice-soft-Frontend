@@ -39,13 +39,10 @@ export function useVendors() {
 
   const updateVendor = async (id: string, data: UpdateVendorRequest) => {
     try {
-      const updatedVendor = await vendorsAPI.updateVendor(id, data);
-      // Refetch all vendors to ensure we have the latest data from the server
+      const result = await vendorsAPI.updateVendor(id, data);
       await fetchVendors();
-      // success('Vendor updated successfully');
-      return updatedVendor;
+      return result;
     } catch (err: any) {
-      // showError(err.message || 'Failed to update vendor');
       throw err;
     }
   };

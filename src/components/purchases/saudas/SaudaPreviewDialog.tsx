@@ -5,8 +5,9 @@ import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { vendorsAPI } from '../../../services/vendors.api';
 import { useVendors } from '../../../hooks/useVendors';
 import { useBrokers } from '../../../hooks/useBrokers';
-import { getRiceTypeLabel } from '../../../utils/riceType';
+import { getRiceTypeLabel, getRiceLengthLabel } from '../../../utils/riceType';
 import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
+import { SaudaWorkflowStatusBadge } from './SaudaWorkflowStatusBadge';
 import { formatSaudaIdShort } from '../../../utils/saudaSerial';
 import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
 import type { Sauda, RiceCode, RiceType } from '../../../types/entities';
@@ -28,6 +29,7 @@ interface SaudaPreviewDialogProps {
 export function SaudaPreviewDialog({ open, onOpenChange, sauda, serialNumber }: SaudaPreviewDialogProps) {
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
+  const [riceLengths, setRiceLengths] = useState<RiceType[]>([]);
   const [defaultRecipient, setDefaultRecipient] = useState<DefaultRecipient | null>(null);
   const { vendors } = useVendors();
   const { brokers } = useBrokers();
@@ -40,13 +42,15 @@ export function SaudaPreviewDialog({ open, onOpenChange, sauda, serialNumber }: 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [codes, types, recipient] = await Promise.all([
+        const [codes, types, lengths, recipient] = await Promise.all([
           riceCodesAPI.getAllRiceCodes(),
           riceCodesAPI.getRiceTypes(),
+          riceCodesAPI.getRiceLengths(),
           vendorsAPI.getDefaultRecipient()
         ]);
         setRiceCodes(codes);
         setRiceTypes(types);
+        setRiceLengths(lengths);
         setDefaultRecipient(recipient);
       } catch (error) {
         console.error('Failed to fetch data:', error);
@@ -298,6 +302,12 @@ export function SaudaPreviewDialog({ open, onOpenChange, sauda, serialNumber }: 
                     <span className="font-semibold">{getRiceTypeLabel(sauda.rice_type, riceTypes) || '-'}</span>
                   </div>
                   <div className="flex justify-between">
+                    <span className="text-muted-foreground">Rice Length:</span>
+                    <span className="font-semibold">
+                      {getRiceLengthLabel(sauda.rice_length, riceLengths) || '—'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
                     <span className="text-muted-foreground">Date:</span>
                     <span className="font-semibold">
                       {sauda.sauda_date 
@@ -336,12 +346,18 @@ export function SaudaPreviewDialog({ open, onOpenChange, sauda, serialNumber }: 
                       )}
                     </span>
                   </div>
-                  {sauda.completion_percentage !== null && (
+                  {(sauda.status === 'completed' || sauda.completion_percentage !== null) && (
                     <div className="col-span-2 flex justify-between items-center mt-1 pt-1 border-t border-border/50">
                       <span className="text-muted-foreground">Status:</span>
-                      <span className={`text-xs px-2 py-1 rounded-full ${getCompletionStatus(sauda.completion_percentage).bgColor} ${getCompletionStatus(sauda.completion_percentage).color} border ${getCompletionStatus(sauda.completion_percentage).borderColor}`}>
-                        {getCompletionStatus(sauda.completion_percentage).label}
-                      </span>
+                      {sauda.status === 'completed' ? (
+                        <SaudaWorkflowStatusBadge status="completed" />
+                      ) : sauda.completion_percentage !== null ? (
+                        <span
+                          className={`text-xs px-2 py-1 rounded-full ${getCompletionStatus(sauda.completion_percentage).bgColor} ${getCompletionStatus(sauda.completion_percentage).color} border ${getCompletionStatus(sauda.completion_percentage).borderColor}`}
+                        >
+                          {getCompletionStatus(sauda.completion_percentage).label}
+                        </span>
+                      ) : null}
                     </div>
                   )}
                   {sauda.cash_discount != null && (

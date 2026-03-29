@@ -10,9 +10,12 @@ interface BrokerPreviewDialogProps {
   onOpenChange: (open: boolean) => void;
   formData: CreateBrokerRequest;
   onConfirm: (data: CreateBrokerRequest) => Promise<void>;
+  /** When `edit`, copy and user-account banner match update flow */
+  mode?: 'create' | 'edit';
 }
 
-export function BrokerPreviewDialog({ open, onOpenChange, formData, onConfirm }: BrokerPreviewDialogProps) {
+export function BrokerPreviewDialog({ open, onOpenChange, formData, onConfirm, mode = 'create' }: BrokerPreviewDialogProps) {
+  const isEdit = mode === 'edit';
   const [loading, setLoading] = useState(false);
 
   const handleConfirm = async () => {
@@ -106,10 +109,12 @@ export function BrokerPreviewDialog({ open, onOpenChange, formData, onConfirm }:
                 </div>
                 <div>
                   <Dialog.Title className="text-xl sm:text-2xl font-semibold">
-                    Review Broker Details
+                    {isEdit ? 'Review changes' : 'Review Broker Details'}
                   </Dialog.Title>
                   <Dialog.Description className="text-sm text-muted-foreground mt-1">
-                    Please review all the details before creating the broker
+                    {isEdit
+                      ? 'Please review all changes before saving the broker'
+                      : 'Please review all the details before creating the broker'}
                   </Dialog.Description>
                 </div>
               </div>
@@ -195,8 +200,8 @@ export function BrokerPreviewDialog({ open, onOpenChange, formData, onConfirm }:
 
             </div>
 
-            {/* User Account Information */}
-            {formData.contact_persons?.[0]?.name && getPrimaryEmail() && (
+            {/* User Account Information (create only) */}
+            {!isEdit && formData.contact_persons?.[0]?.name && getPrimaryEmail() && (
               <div className="bg-primary/10 border border-primary/20 rounded-lg p-3 text-sm mt-6">
                 A user account for this broker will be created with username {getFirstName()} and email {getPrimaryEmail()}
               </div>
@@ -221,12 +226,12 @@ export function BrokerPreviewDialog({ open, onOpenChange, formData, onConfirm }:
                 {loading ? (
                   <>
                     <LoadingSpinner size="sm" />
-                    <span>Creating Broker...</span>
+                    <span>{isEdit ? 'Saving…' : 'Creating Broker...'}</span>
                   </>
                 ) : (
                   <>
                     <CheckCircle2 className="h-4 w-4" />
-                    <span>Create Broker</span>
+                    <span>{isEdit ? 'Save changes' : 'Create Broker'}</span>
                   </>
                 )}
               </button>

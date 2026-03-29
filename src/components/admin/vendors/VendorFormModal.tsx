@@ -1,10 +1,14 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState, useEffect } from 'react';
-import { X, Search, ExternalLink } from 'lucide-react';
+import { X, Search, ExternalLink, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { useVendors } from '../../../hooks/useVendors';
-import { vendorsAPI, VENDOR_CREATE_LENIENT_BANK_MESSAGE } from '../../../services/vendors.api';
+import {
+  vendorsAPI,
+  VENDOR_CREATE_LENIENT_BANK_MESSAGE,
+  VENDOR_UPDATE_LENIENT_BANK_MESSAGE,
+} from '../../../services/vendors.api';
 import { leadsAPI } from '../../../services/leads.api';
 import { pincodeAPI } from '../../../services/pincode.api';
 import { bankAPI } from '../../../services/bank.api';
@@ -22,13 +26,44 @@ interface VendorFormModalProps {
   lockType?: boolean;
 }
 
-/** Backend `verify_bank` requires complete bank fields for its verify schema — align with account + IFSC + holder. */
-function shouldVerifyBankOnCreate(bd: VendorBankDetails | undefined): boolean {
+/** Backend `verify_bank` requires complete bank fields for its verify schema — align with account + IFSC + holder (create + update). */
+function shouldVerifyBank(bd: VendorBankDetails | undefined): boolean {
   if (!bd) return false;
   const accountNumber = bd.account_number?.trim();
   const ifsc = bd.ifsc_code?.trim().toUpperCase();
   const holder = bd.account_holder_name?.trim();
   return Boolean(accountNumber && holder && ifsc && ifsc.length === 11);
+}
+
+function getVendorSaveAlert(
+  isEdit: boolean,
+  message: string,
+  verification_error?: string,
+  verification_message?: string
+): { alertType: 'success' | 'warning'; alertTitle: string; alertMessage: string } {
+  const lenientMsg = isEdit ? VENDOR_UPDATE_LENIENT_BANK_MESSAGE : VENDOR_CREATE_LENIENT_BANK_MESSAGE;
+  const isLenientBank =
+    message.trim() === lenientMsg.trim() ||
+    /bank could not be verified/i.test(message);
+  if (isLenientBank) {
+    const main = message || lenientMsg;
+    const detail = verification_error?.trim();
+    return {
+      alertType: 'warning',
+      alertTitle: isEdit ? 'Vendor Updated' : 'Vendor Created',
+      alertMessage: detail ? `${main}\n\n${detail}` : main,
+    };
+  }
+  const defaultSuccess = isEdit
+    ? 'The vendor has been updated successfully.'
+    : 'The vendor has been created successfully.';
+  const baseMsg = message?.trim() || defaultSuccess;
+  const bankLine = verification_message?.trim() || '';
+  return {
+    alertType: 'success',
+    alertTitle: isEdit ? 'Vendor Updated Successfully' : 'Vendor Created Successfully',
+    alertMessage: bankLine ? `${baseMsg}\n\n${bankLine}` : baseMsg,
+  };
 }
 
 // Helper function to convert ALL CAPS text to Title Case
@@ -231,7 +266,6 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
     setErrors({});
     setOriginalGstNumber('');
     setOriginalPanNumber('');
-    setBankAccountVerified(false);
     setBankDetailsLockedFromIfsc(false);
     setGstAutoFilledFields(new Set());
   };
@@ -550,8 +584,6 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
   };
 
   const [ifscLoading, setIfscLoading] = useState(false);
-  const [verifyingBankAccount, setVerifyingBankAccount] = useState(false);
-  const [bankAccountVerified, setBankAccountVerified] = useState(false);
   /** Bank name & branch filled by IFSC lookup — not editable until IFSC is changed. */
   const [bankDetailsLockedFromIfsc, setBankDetailsLockedFromIfsc] = useState(false);
 
@@ -589,93 +621,6 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       setErrors({ ...errors, ifsc_code: error?.message || 'IFSC code not found' });
     } finally {
       setIfscLoading(false);
-    }
-  };
-
-  const handleVerifyBankAccount = async () => {
-    const accountNumber = formData.bank_details?.account_number;
-    const ifscCode = formData.bank_details?.ifsc_code;
-
-    if (!accountNumber || !ifscCode) {
-      setAlertType('warning');
-      setAlertTitle('Missing Information');
-      setAlertMessage('Please enter both account number and IFSC code before verifying.');
-      setAlertOpen(true);
-      return;
-    }
-
-    setVerifyingBankAccount(true);
-    setBankAccountVerified(false);
-    
-    try {
-      console.log('Calling verify bank account API:', { accountNumber, ifscCode });
-      const response = await vendorsAPI.verifyBankAccount(accountNumber, ifscCode);
-      console.log('Verify bank account response:', response);
-      
-      // Check if account exists
-      if (!response.account_exists) {
-        setBankAccountVerified(false);
-        setAlertType('error');
-        setAlertTitle('Account Not Found');
-        setAlertMessage('The bank account could not be verified. Please check the account number and IFSC code.');
-        setAlertOpen(true);
-        return;
-      }
-
-      const verifiedAccountHolderName = response.account_holder_name;
-      const currentAccountHolderName = formData.bank_details?.account_holder_name?.trim();
-
-      // If account holder name is already filled, check if it matches
-      if (currentAccountHolderName && verifiedAccountHolderName) {
-        const normalizedCurrent = currentAccountHolderName.toUpperCase().replace(/\s+/g, ' ');
-        const normalizedVerified = verifiedAccountHolderName.toUpperCase().replace(/\s+/g, ' ');
-        
-        if (normalizedCurrent !== normalizedVerified) {
-          setBankAccountVerified(false);
-          setGstAutoFilledFields((prev) => {
-            const next = new Set(prev);
-            next.delete('account_holder_name');
-            return next;
-          });
-          setAlertType('error');
-          setAlertTitle('Account Holder Name Mismatch');
-          setAlertMessage(`The account holder name does not match. Expected: "${verifiedAccountHolderName}", but found: "${currentAccountHolderName}". Please verify the details.`);
-          setAlertOpen(true);
-          return;
-        }
-      }
-
-      // Update form data with verified details
-      const updatedBankDetails = {
-        ...formData.bank_details,
-        account_number: accountNumber,
-        ifsc_code: ifscCode,
-      };
-
-      // Fill in account holder name if empty
-      if (verifiedAccountHolderName && !currentAccountHolderName) {
-        updatedBankDetails.account_holder_name = toTitleCase(verifiedAccountHolderName);
-      }
-
-      setFormData({
-        ...formData,
-        bank_details: updatedBankDetails,
-      });
-
-      setBankAccountVerified(true);
-      setAlertType('success');
-      setAlertTitle('Bank Account Verified');
-      setAlertMessage(response.message || 'Bank account details have been verified successfully.');
-      setAlertOpen(true);
-    } catch (error: any) {
-      console.error('Bank account verification error:', error);
-      setBankAccountVerified(false);
-      setAlertType('error');
-      setAlertTitle('Verification Failed');
-      setAlertMessage(error?.message || 'Failed to verify bank account. Please check the details and try again.');
-      setAlertOpen(true);
-    } finally {
-      setVerifyingBankAccount(false);
     }
   };
 
@@ -745,10 +690,18 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
     if (isEditMode && vendorId) {
       setLoading(true);
       try {
-        await updateVendor(vendorId, formData as UpdateVendorRequest);
-        setAlertType('success');
-        setAlertTitle('Vendor Updated Successfully');
-        setAlertMessage('The vendor has been updated successfully.');
+        const updatePayload: UpdateVendorRequest = {
+          ...(formData as UpdateVendorRequest),
+          ...(shouldVerifyBank(formData.bank_details) ? { verify_bank: true } : {}),
+        };
+        const { message, verification_error, verification_message } = await updateVendor(
+          vendorId,
+          updatePayload
+        );
+        const a = getVendorSaveAlert(true, message, verification_error, verification_message);
+        setAlertType(a.alertType);
+        setAlertTitle(a.alertTitle);
+        setAlertMessage(a.alertMessage);
         setAlertOpen(true);
         onOpenChange(false);
       } catch (error: any) {
@@ -775,34 +728,30 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
     setLoading(true);
     try {
       if (isEditMode && vendorId) {
-        await updateVendor(vendorId, data as UpdateVendorRequest);
-        setAlertType('success');
-        setAlertTitle('Vendor Updated Successfully');
-        setAlertMessage('The vendor has been updated successfully.');
+        const updatePayload: UpdateVendorRequest = {
+          ...(data as UpdateVendorRequest),
+          ...(shouldVerifyBank((data as CreateVendorRequest).bank_details) ? { verify_bank: true } : {}),
+        };
+        const { message, verification_error, verification_message } = await updateVendor(
+          vendorId,
+          updatePayload
+        );
+        const a = getVendorSaveAlert(true, message, verification_error, verification_message);
+        setAlertType(a.alertType);
+        setAlertTitle(a.alertTitle);
+        setAlertMessage(a.alertMessage);
       } else {
         const base = data as CreateVendorRequest;
         const createPayload: CreateVendorRequest = {
           ...base,
-          ...(shouldVerifyBankOnCreate(base.bank_details) ? { verify_bank: true } : {}),
+          ...(shouldVerifyBank(base.bank_details) ? { verify_bank: true } : {}),
         };
         const { message, verification_error, verification_message } = await createVendor(createPayload);
         resetForm();
-        const isLenientBank =
-          message.trim() === VENDOR_CREATE_LENIENT_BANK_MESSAGE.trim() ||
-          /bank could not be verified/i.test(message);
-        if (isLenientBank) {
-          setAlertType('warning');
-          setAlertTitle('Vendor Created');
-          const main = message || VENDOR_CREATE_LENIENT_BANK_MESSAGE;
-          const detail = verification_error?.trim();
-          setAlertMessage(detail ? `${main}\n\n${detail}` : main);
-        } else {
-          setAlertType('success');
-          setAlertTitle('Vendor Created Successfully');
-          const baseMsg = message?.trim() || 'The vendor has been created successfully.';
-          const bankLine = verification_message?.trim() || '';
-          setAlertMessage(bankLine ? `${baseMsg}\n\n${bankLine}` : baseMsg);
-        }
+        const a = getVendorSaveAlert(false, message, verification_error, verification_message);
+        setAlertType(a.alertType);
+        setAlertTitle(a.alertTitle);
+        setAlertMessage(a.alertMessage);
       }
       setPreviewOpen(false);
       setAlertOpen(true);
@@ -1304,8 +1253,6 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                             account_number: e.target.value 
                           } 
                         });
-                        // Reset verification status when account number changes
-                        setBankAccountVerified(false);
                       }}
                       className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                     />
@@ -1327,8 +1274,6 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                               ifsc_code: value 
                             } 
                           });
-                          // Reset verification status when IFSC changes
-                          setBankAccountVerified(false);
                           // Auto-lookup when 11 characters are entered
                           if (value.length === 11) {
                             handleIFSCLookup(value);
@@ -1380,55 +1325,6 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                     </div>
                     {errors.ifsc_code && <p className="mt-1 text-xs text-red-600">{errors.ifsc_code}</p>}
                   </div>
-
-                  {/* Verify Bank Account — edit only (not shown on create) */}
-                  {isEditMode &&
-                    formData.bank_details?.account_number &&
-                    formData.bank_details?.ifsc_code &&
-                    formData.bank_details.ifsc_code.length === 11 && (
-                    <div className="flex items-center gap-2">
-                      <button 
-                        type="button" 
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleVerifyBankAccount();
-                        }}
-                        disabled={verifyingBankAccount}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                          bankAccountVerified 
-                            ? 'bg-green-500/20 text-green-700 dark:text-green-400 border border-green-500/30' 
-                            : 'bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20'
-                        }`}
-                      >
-                        {verifyingBankAccount ? (
-                          <>
-                            <LoadingSpinner size="sm" />
-                            <span>Verifying...</span>
-                          </>
-                        ) : bankAccountVerified ? (
-                          <>
-                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                            <span>Verified</span>
-                          </>
-                        ) : (
-                          <>
-                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <span>Verify Bank Account</span>
-                          </>
-                        )}
-                      </button>
-                      {bankAccountVerified && (
-                        <span className="text-xs text-green-600 dark:text-green-400">
-                          Account details verified successfully
-                        </span>
-                      )}
-                    </div>
-                  )}
 
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Bank Name (auto-filled)</label>
@@ -1484,9 +1380,10 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                         type="button" 
                         onClick={handleSubmit}
                         disabled={loading}
-                        className="btn-primary flex-1"
+                        className="btn-primary flex-1 inline-flex items-center justify-center gap-2 disabled:opacity-70"
                       >
-                        {isEditMode ? 'Update Vendor' : 'Create Vendor'}
+                        {loading && isEditMode && <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />}
+                        {isEditMode ? (loading ? 'Updating…' : 'Update Vendor') : 'Create Vendor'}
                       </button>
                     )}
                   </div>
@@ -1588,9 +1485,10 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                       type="button" 
                       onClick={handleSubmit}
                       disabled={loading}
-                      className="btn-primary flex-1"
+                      className="btn-primary flex-1 inline-flex items-center justify-center gap-2 disabled:opacity-70"
                     >
-                      Update Vendor
+                      {loading && <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />}
+                      {loading ? 'Updating…' : 'Update Vendor'}
                     </button>
                   </div>
                 </div>

@@ -1,19 +1,22 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { useSalesmen } from '../../../hooks/useSalesmen';
 import { validateEmail } from '../../../utils/validation';
 import { SalespersonPreviewDialog } from './SalespersonPreviewDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
-import type { CreateSalesmanRequest } from '../../../types/entities';
+import type { CreateSalesmanRequest, Salesman } from '../../../types/entities';
 
 interface SalesmanFormModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** When set, the modal updates this salesperson instead of creating one */
+  editingSalesman?: Salesman | null;
 }
 
-export function SalesmanFormModal({ open, onOpenChange }: SalesmanFormModalProps) {
-  const { createSalesman } = useSalesmen();
+export function SalesmanFormModal({ open, onOpenChange, editingSalesman = null }: SalesmanFormModalProps) {
+  const { createSalesman, updateSalesman } = useSalesmen();
+  const isEdit = Boolean(editingSalesman);
   const [formData, setFormData] = useState<CreateSalesmanRequest>({
     name: '',
     email: '',
@@ -26,6 +29,21 @@ export function SalesmanFormModal({ open, onOpenChange }: SalesmanFormModalProps
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    if (editingSalesman) {
+      setFormData({
+        name: editingSalesman.name,
+        email: editingSalesman.email,
+        phone: editingSalesman.phone,
+        is_active: editingSalesman.is_active,
+      });
+    } else {
+      setFormData({ name: '', email: '', phone: '' });
+    }
+    setErrors({});
+  }, [open, editingSalesman]);
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -45,13 +63,42 @@ export function SalesmanFormModal({ open, onOpenChange }: SalesmanFormModalProps
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Validate and show preview instead of directly saving
-    if (validateForm()) {
-      // Close form modal and open preview dialog
-      onOpenChange(false);
-      setPreviewOpen(true);
+    if (!validateForm()) return;
+
+    if (editingSalesman) {
+      setLoading(true);
+      try {
+        await updateSalesman(editingSalesman.id, {
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          is_active: formData.is_active,
+        });
+        setFormData({ name: '', email: '', phone: '' });
+        setErrors({});
+        setAlertType('success');
+        setAlertTitle('Salesperson Updated');
+        setAlertMessage('The salesperson has been updated successfully.');
+        setAlertOpen(true);
+        onOpenChange(false);
+      } catch (error: any) {
+        setAlertType('error');
+        setAlertTitle('Failed to Update Salesperson');
+        setAlertMessage(
+          error?.message ||
+            error?.data?.message ||
+            error?.response?.data?.message ||
+            'An error occurred while updating the salesperson. Please try again.'
+        );
+        setAlertOpen(true);
+      } finally {
+        setLoading(false);
+      }
+      return;
     }
+
+    onOpenChange(false);
+    setPreviewOpen(true);
   };
 
   const handlePreviewConfirm = async (data: CreateSalesmanRequest) => {
@@ -61,27 +108,22 @@ export function SalesmanFormModal({ open, onOpenChange }: SalesmanFormModalProps
       setPreviewOpen(false);
       setFormData({ name: '', email: '', phone: '' });
       setErrors({});
-      // Show success alert
       setAlertType('success');
       setAlertTitle('Salesperson Created Successfully');
       setAlertMessage('The salesperson has been created successfully.');
       setAlertOpen(true);
-      // Close the form modal after success
       onOpenChange(false);
     } catch (error: any) {
-      // Show error alert with API response
       setAlertType('error');
       setAlertTitle('Failed to Create Salesperson');
-      // Extract error message from various possible locations
-      const errorMessage = 
-        error?.message || 
-        error?.data?.message || 
-        error?.response?.data?.message || 
+      const errorMessage =
+        error?.message ||
+        error?.data?.message ||
+        error?.response?.data?.message ||
         'An error occurred while creating the salesperson. Please try again.';
       setAlertMessage(errorMessage);
       setAlertOpen(true);
       setPreviewOpen(false);
-      // Reopen the form modal so user can edit
       onOpenChange(true);
     } finally {
       setLoading(false);
@@ -95,18 +137,23 @@ export function SalesmanFormModal({ open, onOpenChange }: SalesmanFormModalProps
         <Dialog.Content className="fixed left-[50%] top-[50%] z-50 max-w-md translate-x-[-50%] translate-y-[-50%] w-full">
           <div className="glass rounded-2xl p-6 shadow-xl">
             <div className="flex items-center justify-between mb-6">
-              <Dialog.Title className="text-xl font-semibold">Create Salesperson</Dialog.Title>
+              <Dialog.Title className="text-xl font-semibold">
+                {isEdit ? 'Edit Salesperson' : 'Create Salesperson'}
+              </Dialog.Title>
               <button onClick={() => onOpenChange(false)} className="rounded-lg p-1 hover:bg-muted/50 transition-colors">
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             <form onSubmit={(e) => { e.preventDefault(); handleSubmit(e); }} className="space-y-4">
-              <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 mb-2">
-                <p className="text-sm text-primary/90">
-                  <span className="font-medium">Note:</span> The user will be created with password: <span className="font-mono font-semibold">defaultPassword123</span>
-                </p>
-              </div>
+              {!isEdit && (
+                <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 mb-2">
+                  <p className="text-sm text-primary/90">
+                    <span className="font-medium">Note:</span> The user will be created with password:{' '}
+                    <span className="font-mono font-semibold">defaultPassword123</span>
+                  </p>
+                </div>
+              )}
               <div>
                 <label className="text-sm font-medium mb-1.5 block">Name *</label>
                 <input
@@ -140,17 +187,32 @@ export function SalesmanFormModal({ open, onOpenChange }: SalesmanFormModalProps
                 {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone}</p>}
               </div>
 
+              {isEdit && (
+                <div className="flex items-center gap-2">
+                  <input
+                    id="salesman-active"
+                    type="checkbox"
+                    checked={formData.is_active !== false}
+                    onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                    className="h-4 w-4 rounded border-border"
+                  />
+                  <label htmlFor="salesman-active" className="text-sm font-medium">
+                    Active
+                  </label>
+                </div>
+              )}
+
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={() => onOpenChange(false)} className="flex-1 rounded-lg border border-border bg-background/60 px-4 py-2 text-sm font-medium hover:bg-muted transition-colors">
                   Cancel
                 </button>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   onClick={handleSubmit}
                   disabled={loading}
                   className="btn-primary flex-1"
                 >
-                  Create Salesperson
+                  {isEdit ? 'Update Salesperson' : 'Create Salesperson'}
                 </button>
               </div>
             </form>
@@ -161,13 +223,7 @@ export function SalesmanFormModal({ open, onOpenChange }: SalesmanFormModalProps
       {/* Preview Dialog */}
       <SalespersonPreviewDialog
         open={previewOpen}
-        onOpenChange={(open) => {
-          setPreviewOpen(open);
-          if (!open) {
-            // If preview is closed without confirming, optionally reopen the form
-            // For now, we'll just close it
-          }
-        }}
+        onOpenChange={setPreviewOpen}
         formData={formData}
         onConfirm={handlePreviewConfirm}
       />

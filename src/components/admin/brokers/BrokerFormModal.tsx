@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Search, Plus } from 'lucide-react';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { useBrokers } from '../../../hooks/useBrokers';
@@ -9,21 +9,214 @@ import { validateEmail, validatePAN, validateAadhaar, validatePhone, validateGST
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { BrokerPreviewDialog } from './BrokerPreviewDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
-import type { CreateBrokerRequest, BrokerBankDetails } from '../../../types/entities';
-import { BROKER_CREATE_LENIENT_BANK_MESSAGE } from '../../../services/brokers.api';
+import type { CreateBrokerRequest, BrokerBankDetails, Broker, UpdateBrokerRequest } from '../../../types/entities';
+import {
+  BROKER_CREATE_LENIENT_BANK_MESSAGE,
+  BROKER_UPDATE_LENIENT_BANK_MESSAGE,
+} from '../../../services/brokers.api';
 
 interface BrokerFormModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** When set, loads broker and saves via `POST /brokers/updateBroker/:id` */
+  brokerId?: string | null;
 }
 
-/** Backend `verify_bank` requires complete bank fields for its verify schema — align with account + IFSC + holder. */
-function shouldVerifyBankOnCreate(bd: BrokerBankDetails | undefined | null): boolean {
+const INITIAL_BROKER_FORM: CreateBrokerRequest = {
+  business_name: '',
+  contact_persons: [{ name: '', phones: [''], emails: [''] }],
+  address: {
+    street: '',
+    city: '',
+    state: '',
+    pincode: '',
+    country: 'India',
+  },
+  business_details: {
+    pan_number: '',
+    aadhaar_number: '',
+    gst_number: '',
+    business_type: 'individual',
+  },
+  bank_details: {
+    account_holder_name: '',
+    account_number: '',
+    ifsc_code: '',
+    bank_name: '',
+    branch: '',
+  },
+  type: 'both',
+  is_active: true,
+};
+
+/**
+ * API only accepts `individual` | `company`. Dropdown uses those two; GST/PAN may return
+ * other values; CustomSelect may pass `null`. Never send empty or invalid enums.
+ */
+function normalizeBrokerBusinessType(
+  raw: string | null | undefined
+): 'individual' | 'company' {
+  if (raw == null || String(raw).trim() === '') return 'individual';
+  const v = String(raw).toLowerCase().trim();
+  if (v === 'individual') return 'individual';
+  if (v === 'company') return 'company';
+  // partnership, llp, etc. from upstream lookups → treat as company for this form/API
+  return 'company';
+}
+
+/** Normalize form data for create/update API (shared by preview confirm and direct update). */
+function cleanBrokerFormPayload(data: CreateBrokerRequest): CreateBrokerRequest {
+  const cleanedFormData: CreateBrokerRequest = { ...data };
+  delete (cleanedFormData as { contact_person?: unknown }).contact_person;
+
+  if (cleanedFormData.business_details) {
+    cleanedFormData.business_details = {
+      ...cleanedFormData.business_details,
+      business_type: normalizeBrokerBusinessType(
+        cleanedFormData.business_details.business_type as string | undefined
+      ),
+    };
+  }
+
+  if (cleanedFormData.business_name !== undefined) {
+    const trimmed = cleanedFormData.business_name.trim();
+    cleanedFormData.business_name = trimmed || undefined;
+  }
+
+  if (cleanedFormData.business_details) {
+    if (cleanedFormData.business_details.pan_number !== undefined) {
+      const pan = cleanedFormData.business_details.pan_number.trim().toUpperCase();
+      cleanedFormData.business_details.pan_number = pan || undefined;
+    }
+    if (cleanedFormData.business_details.aadhaar_number !== undefined) {
+      const aadhaar = cleanedFormData.business_details.aadhaar_number.replace(/\s/g, '').trim();
+      cleanedFormData.business_details.aadhaar_number = aadhaar || undefined;
+    }
+    if (cleanedFormData.business_details.gst_number !== undefined) {
+      const gst = cleanedFormData.business_details.gst_number.trim().toUpperCase();
+      cleanedFormData.business_details.gst_number = gst || undefined;
+    }
+  }
+
+  if (cleanedFormData.address?.pincode !== undefined) {
+    cleanedFormData.address.pincode = cleanedFormData.address.pincode.trim();
+  }
+
+  if (cleanedFormData.bank_details) {
+    const bankDetails = cleanedFormData.bank_details;
+    if (bankDetails.account_holder_name !== undefined) {
+      const trimmed = bankDetails.account_holder_name?.trim();
+      bankDetails.account_holder_name = trimmed || undefined;
+    }
+    if (bankDetails.account_number !== undefined) {
+      const trimmed = bankDetails.account_number?.trim();
+      bankDetails.account_number = trimmed || undefined;
+    }
+    if (bankDetails.ifsc_code !== undefined) {
+      const trimmed = bankDetails.ifsc_code?.trim().toUpperCase();
+      bankDetails.ifsc_code = trimmed || undefined;
+    }
+    if (bankDetails.bank_name !== undefined) {
+      const trimmed = bankDetails.bank_name?.trim();
+      bankDetails.bank_name = trimmed || undefined;
+    }
+    if (bankDetails.branch !== undefined) {
+      const trimmed = bankDetails.branch?.trim();
+      bankDetails.branch = trimmed || undefined;
+    }
+  }
+
+  if (cleanedFormData.contact_persons) {
+    cleanedFormData.contact_persons = cleanedFormData.contact_persons
+      .filter((cp) => cp.name && cp.name.trim().length > 0)
+      .map((cp) => ({
+        name: cp.name.trim(),
+        phones: cp.phones.filter((phone) => phone && phone.trim().length > 0),
+        emails: cp.emails
+          ? cp.emails.filter((email) => email && email.trim().length > 0).map((email) => email.trim())
+          : [],
+      }))
+      .filter((cp) => cp.phones.length > 0);
+  }
+
+  return cleanedFormData;
+}
+
+function brokerEntityToForm(b: Broker): CreateBrokerRequest {
+  const contact_persons =
+    b.contact_persons?.length > 0
+      ? b.contact_persons.map((p) => ({
+          name: p.name ?? '',
+          phones: p.phones?.length ? [...p.phones] : [''],
+          emails: p.emails?.length ? [...p.emails] : [''],
+        }))
+      : [{ name: '', phones: [''], emails: [''] }];
+  return {
+    business_name: b.business_name ?? '',
+    contact_persons,
+    address: {
+      street: b.address?.street ?? '',
+      city: b.address?.city ?? '',
+      state: b.address?.state ?? '',
+      pincode: b.address?.pincode ?? '',
+      country: b.address?.country ?? 'India',
+    },
+    business_details: {
+      pan_number: b.business_details?.pan_number ?? '',
+      aadhaar_number: b.business_details?.aadhaar_number ?? '',
+      gst_number: b.business_details?.gst_number ?? '',
+      business_type: normalizeBrokerBusinessType(b.business_details?.business_type),
+    },
+    bank_details: {
+      account_holder_name: b.bank_details?.account_holder_name ?? '',
+      account_number: b.bank_details?.account_number ?? '',
+      ifsc_code: b.bank_details?.ifsc_code ?? '',
+      bank_name: b.bank_details?.bank_name ?? '',
+      branch: b.bank_details?.branch ?? '',
+    },
+    broker_details: b.broker_details ?? undefined,
+    type: b.type ?? 'both',
+    is_active: b.is_active ?? true,
+  };
+}
+
+/** Backend `verify_bank` requires complete bank fields for its verify schema — align with account + IFSC + holder (create + update). */
+function shouldVerifyBank(bd: BrokerBankDetails | undefined | null): boolean {
   if (!bd) return false;
   const accountNumber = bd.account_number?.trim();
   const ifsc = bd.ifsc_code?.trim().toUpperCase();
   const holder = bd.account_holder_name?.trim();
   return Boolean(accountNumber && holder && ifsc && ifsc.length === 11);
+}
+
+function getBrokerSaveAlert(
+  isEdit: boolean,
+  message: string,
+  verification_error?: string,
+  verification_message?: string
+): { alertType: 'success' | 'warning'; alertTitle: string; alertMessage: string } {
+  const lenientMsg = isEdit ? BROKER_UPDATE_LENIENT_BANK_MESSAGE : BROKER_CREATE_LENIENT_BANK_MESSAGE;
+  const isLenientBank =
+    message.trim() === lenientMsg.trim() || /bank could not be verified/i.test(message);
+  if (isLenientBank) {
+    const main = message || lenientMsg;
+    const detail = verification_error?.trim();
+    return {
+      alertType: 'warning',
+      alertTitle: isEdit ? 'Broker Updated' : 'Broker Created',
+      alertMessage: detail ? `${main}\n\n${detail}` : main,
+    };
+  }
+  const defaultSuccess = isEdit
+    ? 'The broker has been updated successfully.'
+    : 'The broker has been created successfully.';
+  const baseMsg = message?.trim() || defaultSuccess;
+  const bankLine = verification_message?.trim() || '';
+  return {
+    alertType: 'success',
+    alertTitle: isEdit ? 'Broker Updated Successfully' : 'Broker Created Successfully',
+    alertMessage: bankLine ? `${baseMsg}\n\n${bankLine}` : baseMsg,
+  };
 }
 
 // Helper function to convert ALL CAPS text to Title Case
@@ -46,34 +239,11 @@ const toTitleCase = (str: string | undefined | null): string => {
     .join(' ');
 };
 
-export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
-  const { createBroker } = useBrokers();
-  const [formData, setFormData] = useState<CreateBrokerRequest>({
-    business_name: '',
-    contact_persons: [{ name: '', phones: [''], emails: [''] }],
-    address: {
-      street: '',
-      city: '',
-      state: '',
-      pincode: '',
-      country: 'India',
-    },
-    business_details: {
-      pan_number: '',
-      aadhaar_number: '',
-      gst_number: '',
-      business_type: 'individual',
-    },
-    bank_details: {
-      account_holder_name: '',
-      account_number: '',
-      ifsc_code: '',
-      bank_name: '',
-      branch: '',
-    },
-    type: 'both',
-    is_active: true,
-  });
+export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerFormModalProps) {
+  const { createBroker, updateBroker } = useBrokers();
+  const isEdit = Boolean(brokerId);
+  const [formData, setFormData] = useState<CreateBrokerRequest>(() => structuredClone(INITIAL_BROKER_FORM));
+  const [loadingInitial, setLoadingInitial] = useState(false);
 
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -87,10 +257,61 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
   const [alertMessage, setAlertMessage] = useState('');
   const [ifscLoading, setIfscLoading] = useState(false);
   const [gstAutoFilledFields, setGstAutoFilledFields] = useState<Set<string>>(new Set());
-  const [verifyingBankAccount, setVerifyingBankAccount] = useState(false);
-  const [bankAccountVerified, setBankAccountVerified] = useState(false);
+  /** Snapshot from server — in edit, GST/PAN cannot be changed (same pattern as VendorFormModal). */
+  const [originalGstNumber, setOriginalGstNumber] = useState('');
+  const [originalPanNumber, setOriginalPanNumber] = useState('');
   /** Name field read-only when filled from PAN / Aadhaar lookup (per contact row index). */
   const [contactPersonNameFromGovApi, setContactPersonNameFromGovApi] = useState<boolean[]>([false]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!brokerId) {
+      setFormData(structuredClone(INITIAL_BROKER_FORM));
+      setErrors({});
+      setStep(1);
+      setGstAutoFilledFields(new Set());
+      setOriginalGstNumber('');
+      setOriginalPanNumber('');
+      setContactPersonNameFromGovApi([false]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingInitial(true);
+    brokersAPI
+      .getBrokerById(brokerId)
+      .then((b) => {
+        if (cancelled) return;
+        setFormData(brokerEntityToForm(b));
+        const gst = (b.business_details?.gst_number ?? '').trim();
+        const pan = (b.business_details?.pan_number ?? '').trim();
+        setOriginalGstNumber(gst);
+        setOriginalPanNumber(pan);
+        // First contact name typically tied to PAN — lock in edit when PAN exists (gov identity)
+        const n = Math.max(1, b.contact_persons?.length ?? 1);
+        const nameLocks = new Array(n).fill(false);
+        if (pan.length > 0 && n >= 1) nameLocks[0] = true;
+        setContactPersonNameFromGovApi(nameLocks);
+        setErrors({});
+        setStep(1);
+        setGstAutoFilledFields(new Set());
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        const msg = e instanceof Error ? e.message : 'Could not load broker details.';
+        setAlertType('error');
+        setAlertTitle('Failed to load broker');
+        setAlertMessage(msg);
+        setAlertOpen(true);
+        onOpenChange(false);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingInitial(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally omit onOpenChange — stable close handler would still change identity per parent render
+  }, [open, brokerId]);
 
   const handleIFSCLookup = async (ifscCode: string) => {
     // Only lookup if IFSC is exactly 11 characters (basic validation, let API handle detailed validation)
@@ -124,93 +345,6 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
       setErrors({ ...errors, ifsc_code: error?.message || 'IFSC code not found' });
     } finally {
       setIfscLoading(false);
-    }
-  };
-
-  const handleVerifyBankAccount = async () => {
-    const accountNumber = formData.bank_details?.account_number;
-    const ifscCode = formData.bank_details?.ifsc_code;
-
-    if (!accountNumber || !ifscCode) {
-      setAlertType('warning');
-      setAlertTitle('Missing Information');
-      setAlertMessage('Please enter both account number and IFSC code before verifying.');
-      setAlertOpen(true);
-      return;
-    }
-
-    setVerifyingBankAccount(true);
-    setBankAccountVerified(false);
-    
-    try {
-      console.log('Calling verify bank account API:', { accountNumber, ifscCode });
-      const response = await brokersAPI.verifyBankAccount(accountNumber, ifscCode);
-      console.log('Verify bank account response:', response);
-      
-      // Check if account exists
-      if (!response.account_exists) {
-        setBankAccountVerified(false);
-        setAlertType('error');
-        setAlertTitle('Account Not Found');
-        setAlertMessage('The bank account could not be verified. Please check the account number and IFSC code.');
-        setAlertOpen(true);
-        return;
-      }
-
-      const verifiedAccountHolderName = response.account_holder_name;
-      const currentAccountHolderName = formData.bank_details?.account_holder_name?.trim();
-
-      // If account holder name is already filled, check if it matches
-      if (currentAccountHolderName && verifiedAccountHolderName) {
-        const normalizedCurrent = currentAccountHolderName.toUpperCase().replace(/\s+/g, ' ');
-        const normalizedVerified = verifiedAccountHolderName.toUpperCase().replace(/\s+/g, ' ');
-        
-        if (normalizedCurrent !== normalizedVerified) {
-          setBankAccountVerified(false);
-          setGstAutoFilledFields((prev) => {
-            const next = new Set(prev);
-            next.delete('account_holder_name');
-            return next;
-          });
-          setAlertType('error');
-          setAlertTitle('Account Holder Name Mismatch');
-          setAlertMessage(`The account holder name does not match. Expected: "${verifiedAccountHolderName}", but found: "${currentAccountHolderName}". Please verify the details.`);
-          setAlertOpen(true);
-          return;
-        }
-      }
-
-      // Update form data with verified details
-      const updatedBankDetails = {
-        ...formData.bank_details,
-        account_number: accountNumber,
-        ifsc_code: ifscCode,
-      };
-
-      // Fill in account holder name if empty
-      if (verifiedAccountHolderName && !currentAccountHolderName) {
-        updatedBankDetails.account_holder_name = toTitleCase(verifiedAccountHolderName);
-      }
-
-      setFormData({
-        ...formData,
-        bank_details: updatedBankDetails,
-      });
-
-      setBankAccountVerified(true);
-      setAlertType('success');
-      setAlertTitle('Bank Account Verified');
-      setAlertMessage(response.message || 'Bank account details have been verified successfully.');
-      setAlertOpen(true);
-    } catch (error: any) {
-      console.error('Bank account verification error:', error);
-      setBankAccountVerified(false);
-      setAlertType('error');
-      setAlertTitle('Verification Failed');
-      setAlertMessage(error?.message || 'Failed to verify bank account. Please check the details and try again.');
-      setAlertOpen(true);
-    } finally {
-      setVerifyingBankAccount(false);
     }
   };
 
@@ -402,18 +536,24 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         autoFilledFields.add('pan_number');
       }
       
-      // Set business type if available
-      if (mapped?.business_details?.business_type) {
-        businessDetailsUpdate.business_type = mapped.business_details.business_type;
+      // Set business type if available (map to API enum individual | company)
+      if (
+        mapped?.business_details?.business_type != null &&
+        String(mapped.business_details.business_type).trim() !== ''
+      ) {
+        businessDetailsUpdate.business_type = normalizeBrokerBusinessType(
+          mapped.business_details.business_type
+        );
         autoFilledFields.add('business_type');
       }
       
-      // Auto-fill account holder name with business name (editable unless already locked by GST lookup)
+      // Auto-fill account holder from PAN-derived business name — lock field like GST path
       const bankDetailsUpdate = {
         ...formData.bank_details,
         account_holder_name: businessName,
       };
-      
+      autoFilledFields.add('account_holder_name');
+
       setFormData({
         ...formData,
         business_name: businessName,
@@ -505,8 +645,13 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         autoFilledFields.add('pan_number');
       }
       
-      if (mapped?.business_details?.business_type) {
-        businessDetailsUpdate.business_type = mapped.business_details.business_type;
+      if (
+        mapped?.business_details?.business_type != null &&
+        String(mapped.business_details.business_type).trim() !== ''
+      ) {
+        businessDetailsUpdate.business_type = normalizeBrokerBusinessType(
+          mapped.business_details.business_type
+        );
         autoFilledFields.add('business_type');
       }
       
@@ -630,190 +775,121 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Validate and show preview instead of directly saving
-    if (validateForm()) {
-      // Close form modal and open preview dialog
-      onOpenChange(false);
-      setPreviewOpen(true);
+    if (!validateForm()) return;
+
+    // Edit: save directly via updateBroker (no preview step)
+    if (brokerId) {
+      setLoading(true);
+      try {
+        const cleanedFormData = cleanBrokerFormPayload(formData);
+        const updatePayload: UpdateBrokerRequest = {
+          ...cleanedFormData,
+          ...(shouldVerifyBank(cleanedFormData.bank_details) ? { verify_bank: true } : {}),
+        };
+        const { message, verification_error, verification_message } = await updateBroker(
+          brokerId,
+          updatePayload
+        );
+        setFormData(structuredClone(INITIAL_BROKER_FORM));
+        setErrors({});
+        setStep(1);
+        setGstAutoFilledFields(new Set());
+        setContactPersonNameFromGovApi([false]);
+        const alert = getBrokerSaveAlert(true, message, verification_error, verification_message);
+        setAlertType(alert.alertType);
+        setAlertTitle(alert.alertTitle);
+        setAlertMessage(alert.alertMessage);
+        setAlertOpen(true);
+        onOpenChange(false);
+      } catch (error: unknown) {
+        handlePersistError(error);
+      } finally {
+        setLoading(false);
+      }
+      return;
     }
+
+    // Create: close form and open review dialog
+    onOpenChange(false);
+    setPreviewOpen(true);
+  };
+
+  const handlePersistError = (error: unknown) => {
+    const err = error as {
+      message?: string;
+      data?: { message?: string };
+      response?: { data?: { message?: string } };
+      error?: string;
+    };
+    setAlertType('error');
+    setAlertTitle(brokerId ? 'Failed to Update Broker' : 'Failed to Create Broker');
+
+    let errorMessage =
+      err?.message ||
+      err?.data?.message ||
+      err?.response?.data?.message ||
+      err?.error ||
+      'An error occurred while saving the broker. Please try again.';
+
+    const errorText = (err?.error || errorMessage || '').toLowerCase();
+    const fullErrorString = JSON.stringify(error || {}).toLowerCase();
+    const updatedAutoFilledFields = new Set(gstAutoFilledFields);
+
+    if (
+      errorText.includes('brokers_email_unique_idx') ||
+      errorText.includes('duplicate key value violates unique constraint') ||
+      fullErrorString.includes('brokers_email_unique_idx') ||
+      fullErrorString.includes('duplicate key value violates unique constraint') ||
+      (errorText.includes('duplicate') && errorText.includes('email'))
+    ) {
+      errorMessage = 'A broker with this email address already exists. Please use a different email address.';
+    }
+
+    if (errorText.includes('pan number already exists') || errorText.includes('pan already exists')) {
+      updatedAutoFilledFields.delete('pan_number');
+    }
+    if (errorText.includes('gst number already exists') || errorText.includes('gst already exists')) {
+      updatedAutoFilledFields.delete('gst_number');
+    }
+
+    if (errorText.includes('already exists') || errorText.includes('duplicate') || errorText.includes('invalid')) {
+      setGstAutoFilledFields(new Set());
+    } else {
+      setGstAutoFilledFields(updatedAutoFilledFields);
+    }
+
+    setAlertMessage(errorMessage);
+    setAlertOpen(true);
+    setPreviewOpen(false);
+    onOpenChange(true);
   };
 
   const handlePreviewConfirm = async (data: CreateBrokerRequest) => {
     setLoading(true);
     try {
-      // Clean up form data before submission according to API contract
-      const cleanedFormData: CreateBrokerRequest = { ...data };
-      
-      // Remove contact_person field (not allowed by backend)
-      delete (cleanedFormData as any).contact_person;
-      
-      // Clean business_name: convert empty string to undefined (optional field)
-      if (cleanedFormData.business_name !== undefined) {
-        const trimmed = cleanedFormData.business_name.trim();
-        cleanedFormData.business_name = trimmed || undefined;
-      }
-      
-      // Clean business_details
-      if (cleanedFormData.business_details) {
-        // PAN number: ensure uppercase and convert empty to undefined (API contract: automatically converted to uppercase)
-        if (cleanedFormData.business_details.pan_number !== undefined) {
-          const pan = cleanedFormData.business_details.pan_number.trim().toUpperCase();
-          cleanedFormData.business_details.pan_number = pan || undefined;
-        }
-        
-        // Aadhaar number: remove spaces and convert empty to undefined (API contract: spaces removed automatically)
-        if (cleanedFormData.business_details.aadhaar_number !== undefined) {
-          const aadhaar = cleanedFormData.business_details.aadhaar_number.replace(/\s/g, '').trim();
-          cleanedFormData.business_details.aadhaar_number = aadhaar || undefined;
-        }
-        
-        // GST number: ensure uppercase and convert empty to undefined (API contract: automatically converted to uppercase)
-        if (cleanedFormData.business_details.gst_number !== undefined) {
-          const gst = cleanedFormData.business_details.gst_number.trim().toUpperCase();
-          cleanedFormData.business_details.gst_number = gst || undefined;
-        }
-      }
-      
-      // Clean address: pincode can be empty string (optional), others are required
-      if (cleanedFormData.address) {
-        if (cleanedFormData.address.pincode !== undefined) {
-          cleanedFormData.address.pincode = cleanedFormData.address.pincode.trim();
-        }
-      }
-      
-      // Clean bank_details: all fields optional, convert empty strings to undefined
-      if (cleanedFormData.bank_details) {
-        const bankDetails = cleanedFormData.bank_details;
-        if (bankDetails.account_holder_name !== undefined) {
-          const trimmed = bankDetails.account_holder_name?.trim();
-          bankDetails.account_holder_name = trimmed || undefined;
-        }
-        if (bankDetails.account_number !== undefined) {
-          const trimmed = bankDetails.account_number?.trim();
-          bankDetails.account_number = trimmed || undefined;
-        }
-        if (bankDetails.ifsc_code !== undefined) {
-          const trimmed = bankDetails.ifsc_code?.trim().toUpperCase();
-          bankDetails.ifsc_code = trimmed || undefined;
-        }
-        if (bankDetails.bank_name !== undefined) {
-          const trimmed = bankDetails.bank_name?.trim();
-          bankDetails.bank_name = trimmed || undefined;
-        }
-        if (bankDetails.branch !== undefined) {
-          const trimmed = bankDetails.branch?.trim();
-          bankDetails.branch = trimmed || undefined;
-        }
-      }
-      
-      // Filter out empty contact persons (ones with no name) and clean up phones and emails arrays
-      if (cleanedFormData.contact_persons) {
-        cleanedFormData.contact_persons = cleanedFormData.contact_persons
-          .filter(cp => cp.name && cp.name.trim().length > 0)
-          .map(cp => ({
-            name: cp.name.trim(),
-            phones: cp.phones.filter(phone => phone && phone.trim().length > 0),
-            emails: cp.emails ? cp.emails.filter(email => email && email.trim().length > 0).map(email => email.trim()) : []
-          }))
-          .filter(cp => cp.phones.length > 0); // Remove contact persons with no valid phones
-      }
-      
+      const cleanedFormData = cleanBrokerFormPayload(data);
+
       const createPayload: CreateBrokerRequest = {
         ...cleanedFormData,
-        ...(shouldVerifyBankOnCreate(cleanedFormData.bank_details) ? { verify_bank: true } : {}),
+        ...(shouldVerifyBank(cleanedFormData.bank_details) ? { verify_bank: true } : {}),
       };
 
       const { message, verification_error, verification_message } = await createBroker(createPayload);
       setPreviewOpen(false);
-      setFormData({
-        business_name: '',
-        contact_persons: [{ name: '', phones: [''], emails: [''] }],
-        address: { street: '', city: '', state: '', pincode: '', country: 'India' },
-        business_details: { pan_number: '', aadhaar_number: '', gst_number: '', business_type: 'individual' },
-        bank_details: {
-          account_holder_name: '',
-          account_number: '',
-          ifsc_code: '',
-          bank_name: '',
-          branch: '',
-        },
-        type: 'both',
-        is_active: true,
-      });
+      setFormData(structuredClone(INITIAL_BROKER_FORM));
       setErrors({});
       setStep(1);
-      setBankAccountVerified(false);
       setGstAutoFilledFields(new Set());
       setContactPersonNameFromGovApi([false]);
 
-      const isLenientBank =
-        message.trim() === BROKER_CREATE_LENIENT_BANK_MESSAGE.trim() ||
-        /bank could not be verified/i.test(message);
-      if (isLenientBank) {
-        setAlertType('warning');
-        setAlertTitle('Broker Created');
-        const main = message || BROKER_CREATE_LENIENT_BANK_MESSAGE;
-        const detail = verification_error?.trim();
-        setAlertMessage(detail ? `${main}\n\n${detail}` : main);
-      } else {
-        setAlertType('success');
-        setAlertTitle('Broker Created Successfully');
-        const baseMsg = message?.trim() || 'The broker has been created successfully.';
-        const bankLine = verification_message?.trim() || '';
-        setAlertMessage(bankLine ? `${baseMsg}\n\n${bankLine}` : baseMsg);
-      }
+      const alert = getBrokerSaveAlert(false, message, verification_error, verification_message);
+      setAlertType(alert.alertType);
+      setAlertTitle(alert.alertTitle);
+      setAlertMessage(alert.alertMessage);
       setAlertOpen(true);
       onOpenChange(false);
-    } catch (error: any) {
-      // Show error alert with API response
-      setAlertType('error');
-      setAlertTitle('Failed to Create Broker');
-      
-      // Extract error message from various possible locations
-      let errorMessage = 
-        error?.message || 
-        error?.data?.message || 
-        error?.response?.data?.message ||
-        error?.error ||
-        'An error occurred while creating the broker. Please try again.';
-      
-      // Check for duplicate email constraint error
-      // The error can be in error.error (string) or in the error message
-      const errorText = (error?.error || errorMessage || '').toLowerCase();
-      const fullErrorString = JSON.stringify(error || {}).toLowerCase();
-      
-      // Clear auto-filled fields when error occurs so user can edit them
-      const updatedAutoFilledFields = new Set(gstAutoFilledFields);
-      
-      if (errorText.includes('brokers_email_unique_idx') || 
-          errorText.includes('duplicate key value violates unique constraint') ||
-          fullErrorString.includes('brokers_email_unique_idx') ||
-          fullErrorString.includes('duplicate key value violates unique constraint') ||
-          (errorText.includes('duplicate') && errorText.includes('email'))) {
-        errorMessage = 'A broker with this email address already exists. Please use a different email address.';
-      }
-      
-      // Check for PAN/GST number already exists errors and clear those fields from auto-filled
-      if (errorText.includes('pan number already exists') || errorText.includes('pan already exists')) {
-        updatedAutoFilledFields.delete('pan_number');
-      }
-      if (errorText.includes('gst number already exists') || errorText.includes('gst already exists')) {
-        updatedAutoFilledFields.delete('gst_number');
-      }
-      
-      // If any validation error occurs, clear all auto-filled fields to allow editing
-      if (errorText.includes('already exists') || errorText.includes('duplicate') || errorText.includes('invalid')) {
-        setGstAutoFilledFields(new Set());
-      } else {
-        setGstAutoFilledFields(updatedAutoFilledFields);
-      }
-      
-      setAlertMessage(errorMessage);
-      setAlertOpen(true);
-      setPreviewOpen(false);
-      // Reopen the form modal so user can edit
-      onOpenChange(true);
+    } catch (error: unknown) {
+      handlePersistError(error);
     } finally {
       setLoading(false);
     }
@@ -826,12 +902,18 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-full max-w-3xl translate-x-[-50%] translate-y-[-50%]">
           <div className="glass rounded-2xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
-              <Dialog.Title className="text-xl font-semibold">Create Broker</Dialog.Title>
+              <Dialog.Title className="text-xl font-semibold">{isEdit ? 'Edit Broker' : 'Create Broker'}</Dialog.Title>
               <button onClick={() => onOpenChange(false)} className="rounded-lg p-1 hover:bg-muted/50 transition-colors">
                 <X className="h-5 w-5" />
               </button>
             </div>
 
+            {loadingInitial ? (
+              <div className="flex justify-center py-16">
+                <LoadingSpinner />
+              </div>
+            ) : (
+            <>
             {/* Steps */}
             <div className="flex gap-2 mb-6">
               <button
@@ -871,17 +953,22 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Business Type *</label>
                     <CustomSelect
-                      value={formData.business_details.business_type}
-                      onChange={(value) => setFormData({ 
-                        ...formData, 
-                        business_details: { ...formData.business_details, business_type: value as any } 
-                      })}
+                      value={normalizeBrokerBusinessType(formData.business_details.business_type)}
+                      onChange={(value) =>
+                        setFormData({
+                          ...formData,
+                          business_details: {
+                            ...formData.business_details,
+                            business_type: normalizeBrokerBusinessType(value ?? undefined),
+                          },
+                        })
+                      }
                       options={[
                         { value: 'individual', label: 'Individual (Person)' },
                         { value: 'company', label: 'Company (Pvt Ltd / Ltd)' }
                       ]}
                       placeholder="Select Business Type"
-                      disabled={gstAutoFilledFields.has('business_type')}
+                      disabled={isEdit || gstAutoFilledFields.has('business_type')}
                     />
                   </div>
 
@@ -897,37 +984,65 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                   {formData.business_details.business_type !== 'individual' && (
                     <div>
                       <label className="text-sm font-medium mb-1.5 block">GST Number *</label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={formData.business_details.gst_number || ''}
-                          onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, gst_number: e.target.value.toUpperCase() } })}
-                          className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                          placeholder="27ABCDE1234F1Z5"
-                        />
-                        <button type="button" onClick={handleGSTLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
-                          {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
-                        </button>
-                      </div>
+                      {isEdit && originalGstNumber.trim().length > 0 ? (
+                        <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm pointer-events-none select-none">
+                          {originalGstNumber}
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={formData.business_details.gst_number || ''}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                business_details: {
+                                  ...formData.business_details,
+                                  gst_number: e.target.value.toUpperCase(),
+                                },
+                              })
+                            }
+                            className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                            placeholder="27ABCDE1234F1Z5"
+                          />
+                          <button type="button" onClick={handleGSTLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
+                            {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                          </button>
+                        </div>
+                      )}
                       {errors.gst_number && <p className="mt-1 text-xs text-red-600">{errors.gst_number}</p>}
                     </div>
                   )}
                   
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">PAN Number{formData.business_details.business_type === 'individual' ? ' *' : ''}</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={formData.business_details.pan_number}
-                        onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, pan_number: e.target.value.toUpperCase() } })}
-                        className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
-                        placeholder="ABCDE1234F"
-                        readOnly={gstAutoFilledFields.has('pan_number')}
-                      />
-                      <button type="button" onClick={handlePANLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
-                        {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
-                      </button>
-                    </div>
+                    {isEdit && originalPanNumber.trim().length > 0 ? (
+                      <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm pointer-events-none select-none">
+                        {originalPanNumber}
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={formData.business_details.pan_number}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              business_details: {
+                                ...formData.business_details,
+                                pan_number: e.target.value.toUpperCase(),
+                              },
+                            })
+                          }
+                          className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
+                          placeholder="ABCDE1234F"
+                          readOnly={gstAutoFilledFields.has('pan_number')}
+                        />
+                        <button type="button" onClick={handlePANLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
+                          {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    )}
                     {errors.pan_number && <p className="mt-1 text-xs text-red-600">{errors.pan_number}</p>}
                   </div>
 
@@ -963,7 +1078,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                       value={formData.business_name}
                       onChange={(e) => setFormData({ ...formData, business_name: e.target.value })}
                       className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
-                      readOnly={gstAutoFilledFields.has('business_name')}
+                      readOnly={isEdit || gstAutoFilledFields.has('business_name')}
                     />
                     {errors.business_name && <p className="mt-1 text-xs text-red-600">{errors.business_name}</p>}
                   </div>
@@ -1288,7 +1403,10 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                           account_holder_name: e.target.value 
                         } 
                       })}
-                      readOnly={gstAutoFilledFields.has('account_holder_name')}
+                      readOnly={
+                        (isEdit && originalPanNumber.trim().length > 0) ||
+                        gstAutoFilledFields.has('account_holder_name')
+                      }
                       className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
                     />
                   </div>
@@ -1306,8 +1424,6 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                             account_number: e.target.value 
                           } 
                         });
-                        // Reset verification status when account number changes
-                        setBankAccountVerified(false);
                       }}
                       className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                     />
@@ -1328,8 +1444,6 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                               ifsc_code: value 
                             } 
                           });
-                          // Reset verification status when IFSC changes
-                          setBankAccountVerified(false);
                           // Auto-lookup when 11 characters are entered
                           if (value.length === 11) {
                             handleIFSCLookup(value);
@@ -1357,52 +1471,6 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                     </div>
                     {errors.ifsc_code && <p className="mt-1 text-xs text-red-600">{errors.ifsc_code}</p>}
                   </div>
-
-                  {/* Verify Bank Account Button */}
-                  {formData.bank_details?.account_number && formData.bank_details?.ifsc_code && formData.bank_details.ifsc_code.length === 11 && (
-                    <div className="flex items-center gap-2">
-                      <button 
-                        type="button" 
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleVerifyBankAccount();
-                        }}
-                        disabled={verifyingBankAccount}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                          bankAccountVerified 
-                            ? 'bg-green-500/20 text-green-700 dark:text-green-400 border border-green-500/30' 
-                            : 'bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20'
-                        }`}
-                      >
-                        {verifyingBankAccount ? (
-                          <>
-                            <LoadingSpinner size="sm" />
-                            <span>Verifying...</span>
-                          </>
-                        ) : bankAccountVerified ? (
-                          <>
-                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                            <span>Verified</span>
-                          </>
-                        ) : (
-                          <>
-                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <span>Verify Bank Account</span>
-                          </>
-                        )}
-                      </button>
-                      {bankAccountVerified && (
-                        <span className="text-xs text-green-600 dark:text-green-400">
-                          Account details verified successfully
-                        </span>
-                      )}
-                    </div>
-                  )}
 
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Bank Name (auto-filled)</label>
@@ -1446,13 +1514,21 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
                       disabled={loading}
                       className="btn-primary flex-1"
                     >
-                      Create Broker
+                      {loading && brokerId ? (
+                        'Updating…'
+                      ) : isEdit ? (
+                        'Update broker'
+                      ) : (
+                        'Create Broker'
+                      )}
                     </button>
                   </div>
                 </div>
               )}
 
             </form>
+            </>
+            )}
           </div>
         </Dialog.Content>
       </Dialog.Portal>
@@ -1469,6 +1545,7 @@ export function BrokerFormModal({ open, onOpenChange }: BrokerFormModalProps) {
         }}
         formData={formData}
         onConfirm={handlePreviewConfirm}
+        mode="create"
       />
 
       {/* Alert Dialog for API Response */}

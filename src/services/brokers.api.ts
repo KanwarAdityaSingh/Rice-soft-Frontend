@@ -12,6 +12,10 @@ import type {
 export const BROKER_CREATE_LENIENT_BANK_MESSAGE =
   'Broker created but bank could not be verified.';
 
+/** Matches backend lenient update — broker persisted, bank verification did not complete. */
+export const BROKER_UPDATE_LENIENT_BANK_MESSAGE =
+  'Broker updated but bank could not be verified.';
+
 export const brokersAPI = {
   // Get all brokers
   getAllBrokers: (includeInactive: boolean = false, type?: string, bankVerified?: boolean) => {
@@ -60,9 +64,23 @@ export const brokersAPI = {
     };
   },
 
-  // Update broker
-  updateBroker: (id: string, data: UpdateBrokerRequest) => {
-    return apiService.post<Broker>(`/brokers/updateBroker/${id}`, data);
+  // Update broker (envelope: verification_message / verification_error when verify_bank is used)
+  updateBroker: async (
+    id: string,
+    data: UpdateBrokerRequest
+  ): Promise<{
+    broker: Broker;
+    message: string;
+    verification_error?: string;
+    verification_message?: string;
+  }> => {
+    const res = await apiService.postEnvelope<Broker>(`/brokers/updateBroker/${id}`, data);
+    return {
+      broker: res.data,
+      message: res.message ?? '',
+      verification_error: res.verification_error,
+      verification_message: res.verification_message,
+    };
   },
 
   // Delete broker

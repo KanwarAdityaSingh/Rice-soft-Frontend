@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
-import { Sprout, Plus, List } from 'lucide-react'
+import { Sprout, Plus, List, Ruler } from 'lucide-react'
 import { SearchBar } from '../../components/admin/shared/SearchBar'
 import { LoadingSpinner } from '../../components/admin/shared/LoadingSpinner'
 import { EmptyState } from '../../components/admin/shared/EmptyState'
@@ -9,6 +9,7 @@ import { AlertDialog } from '../../components/shared/AlertDialog'
 import { useRiceCodes } from '../../hooks/useRiceCodes'
 import { RiceCodeFormModal } from '../../components/admin/rice-codes/RiceCodeFormModal'
 import { RiceTypesModal } from '../../components/admin/rice-codes/RiceTypesModal'
+import { RiceLengthsModal } from '../../components/admin/rice-codes/RiceLengthsModal'
 import { leadsAPI } from '../../services/leads.api'
 import { saudasAPI } from '../../services/saudas.api'
 import { vendorsAPI } from '../../services/vendors.api'
@@ -25,6 +26,7 @@ export default function RiceCodesPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editRiceCode, setEditRiceCode] = useState<RiceCode | null>(null)
   const [riceTypesOpen, setRiceTypesOpen] = useState(false)
+  const [riceLengthsOpen, setRiceLengthsOpen] = useState(false)
   const [saudas, setSaudas] = useState<Sauda[]>([])
   const [alertOpen, setAlertOpen] = useState(false)
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('error')
@@ -231,12 +233,20 @@ export default function RiceCodesPage() {
         <div className="w-full">
           <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search rice codes..." />
         </div>
-        <div className="flex justify-end gap-3">
+        <div className="flex flex-wrap justify-end gap-3">
           <button
+            type="button"
             className="btn-secondary rounded-xl inline-flex items-center justify-center gap-2"
             onClick={() => setRiceTypesOpen(true)}
           >
             <List className="h-4 w-4" /> View Rice Types
+          </button>
+          <button
+            type="button"
+            className="btn-secondary rounded-xl inline-flex items-center justify-center gap-2"
+            onClick={() => setRiceLengthsOpen(true)}
+          >
+            <Ruler className="h-4 w-4" /> View Rice Lengths
           </button>
           {isAdmin() && (
             <button
@@ -387,10 +397,9 @@ export default function RiceCodesPage() {
         onUpdate={updateRiceCode}
       />
 
-      <RiceTypesModal
-        open={riceTypesOpen}
-        onOpenChange={setRiceTypesOpen}
-      />
+      <RiceTypesModal open={riceTypesOpen} onOpenChange={setRiceTypesOpen} />
+
+      <RiceLengthsModal open={riceLengthsOpen} onOpenChange={setRiceLengthsOpen} />
     </div>
   )
 }
