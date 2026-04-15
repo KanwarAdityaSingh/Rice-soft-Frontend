@@ -1,18 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { vendorsAPI } from '../services/vendors.api';
 import type { Vendor, CreateVendorRequest, UpdateVendorRequest } from '../types/entities';
 
-export function useVendors() {
+export type UseVendorsOptions = {
+  /** When true, requests `include_inactive=true` so inactive vendors are returned. */
+  includeInactive?: boolean;
+};
+
+export function useVendors(options: UseVendorsOptions = {}) {
+  const { includeInactive = false } = options;
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Toast removed for now
 
-  const fetchVendors = async () => {
+  const fetchVendors = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await vendorsAPI.getAllVendors();
+      const data = await vendorsAPI.getAllVendors(includeInactive);
       setVendors(data);
     } catch (err: any) {
       setError(err.message);
@@ -20,11 +26,11 @@ export function useVendors() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [includeInactive]);
 
   useEffect(() => {
-    fetchVendors();
-  }, []);
+    void fetchVendors();
+  }, [fetchVendors]);
 
   const createVendor = async (data: CreateVendorRequest) => {
     try {

@@ -21,7 +21,9 @@ import { isAdmin } from '../../utils/permissions'
 import type { Lead } from '../../types/entities'
 
 export default function VendorsPage() {
-  const { vendors, loading, deleteVendor, refetch } = useVendors()
+  const [statusFilter, setStatusFilter] = useState<string | undefined>('active')
+  const includeInactive = statusFilter !== 'active'
+  const { vendors, loading, deleteVendor, refetch } = useVendors({ includeInactive })
   const navigate = useNavigate()
   const [searchQuery, setSearchQuery] = useState('')
   const [bankVerifyFilter, setBankVerifyFilter] = useState<string | undefined>()
@@ -48,13 +50,16 @@ export default function VendorsPage() {
         (primaryContact?.emails?.[0] || '').toLowerCase().includes(q) ||
         (primaryContact?.phones?.[0] || '').includes(searchQuery)
 
+      const matchesStatus =
+        statusFilter === 'inactive' ? !v.is_active : statusFilter === 'active' ? v.is_active : true
+
       const verified = Boolean(v.bank_details_verified_at)
       const matchesBankFilter =
         bankVerifyFilter === 'verified' ? verified : bankVerifyFilter === 'unverified' ? !verified : true
 
-      return matchesSearch && matchesBankFilter
+      return matchesSearch && matchesStatus && matchesBankFilter
     })
-  }, [vendors, searchQuery, bankVerifyFilter])
+  }, [vendors, searchQuery, bankVerifyFilter, statusFilter])
 
   // Fetch lead details for vendors with lead_id
   useEffect(() => {
@@ -195,6 +200,15 @@ export default function VendorsPage() {
           <div className="min-w-0 flex-1">
             <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search by business, contact, email, or phone..." />
           </div>
+          <FilterDropdown
+            label="Status"
+            options={[
+              { label: 'Active', value: 'active' },
+              { label: 'Inactive', value: 'inactive' },
+            ]}
+            value={statusFilter}
+            onChange={setStatusFilter}
+          />
           <FilterDropdown
             label="Bank"
             options={[

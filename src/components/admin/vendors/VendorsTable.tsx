@@ -12,9 +12,10 @@ import { PartySiteFormModal } from '../shared/PartySiteFormModal';
 import { PartySitesDialog } from '../shared/PartySitesDialog';
 
 export function VendorsTable() {
-  const { vendors, loading, deleteVendor, refetch } = useVendors();
+  const [statusFilter, setStatusFilter] = useState<string | undefined>('active');
+  const includeInactive = statusFilter !== 'active';
+  const { vendors, loading, deleteVendor, refetch } = useVendors({ includeInactive });
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [typeFilter, setTypeFilter] = useState<string | undefined>();
   const [bankVerifyFilter, setBankVerifyFilter] = useState<string | undefined>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -40,7 +41,8 @@ export function VendorsTable() {
       (primaryContact?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (primaryContact?.emails?.[0] || '').toLowerCase().includes(searchQuery.toLowerCase());
     
-    const matchesStatus = statusFilter ? (statusFilter === 'active' ? vendor.is_active : !vendor.is_active) : true;
+    const matchesStatus =
+      statusFilter === 'inactive' ? !vendor.is_active : statusFilter === 'active' ? vendor.is_active : true;
     const matchesType = typeFilter ? vendor.type === typeFilter : true;
     const verified = Boolean(vendor.bank_details_verified_at);
     const matchesBank =

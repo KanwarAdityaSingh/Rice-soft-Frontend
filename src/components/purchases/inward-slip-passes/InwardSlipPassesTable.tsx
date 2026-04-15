@@ -248,7 +248,6 @@ export function InwardSlipPassesTable() {
                 <th className="text-left py-3 px-3 font-semibold whitespace-nowrap">Date</th>
                 <th className="text-right py-3 px-3 font-semibold whitespace-nowrap">Transport</th>
                 <th className="text-left py-3 px-3 font-semibold whitespace-nowrap">Bill #</th>
-                <th className="text-left py-3 px-3 font-semibold whitespace-nowrap">Status</th>
                 <th className="text-right py-3 px-3 font-semibold w-[1%]">Actions</th>
               </tr>
             </thead>
@@ -266,7 +265,6 @@ export function InwardSlipPassesTable() {
                     {isp.transportation_cost != null ? `₹${isp.transportation_cost.toFixed(2)}` : '—'}
                   </td>
                   <td className="py-2.5 px-3 whitespace-nowrap">{isp.bill_number ?? '—'}</td>
-                  <td className="py-2.5 px-3 whitespace-nowrap capitalize">{isp.status}</td>
                   <td className="py-2.5 px-2">
                     <ISPRowActions
                       isp={isp}

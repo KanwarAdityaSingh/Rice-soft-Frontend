@@ -243,6 +243,10 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
   const filtered = useMemo(() => {
     return saudas.filter((s) => {
       if (typeFilter && s.sauda_type !== typeFilter) return false;
+      if (!showCancelledOnly) {
+        if (s.status === 'completed') return false;
+        if (s.completion_percentage != null && s.completion_percentage >= 100) return false;
+      }
       const q = searchQuery.toLowerCase();
       const displayName = getSaudaDisplayName(s).toLowerCase();
       const purchaserName = getPurchaserName(s.purchaser_id).toLowerCase();
@@ -259,7 +263,7 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
 
       return matchesSearch;
     });
-  }, [saudas, typeFilter, searchQuery, riceCodes, riceTypes, riceLengths, vendors]);
+  }, [saudas, typeFilter, searchQuery, riceCodes, riceTypes, riceLengths, vendors, showCancelledOnly]);
 
   return (
     <div>
@@ -885,10 +889,6 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
           );
           })}
         </div>
-
-          <div className="mt-6 flex items-center justify-between text-sm text-muted-foreground">
-            <span>Showing {filtered.length} of {saudas.length} saudas</span>
-          </div>
         </>
       )}
 

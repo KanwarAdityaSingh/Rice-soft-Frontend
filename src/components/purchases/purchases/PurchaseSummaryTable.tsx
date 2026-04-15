@@ -65,7 +65,7 @@ export function PurchaseSummaryTable() {
     fetchReferenceData();
   }, []);
 
-  // Filter saudas by date (include all statuses: draft, active, completed)
+  // Filter saudas by date (include all statuses: draft, active, completed).
   const filteredSaudas = useMemo(() => {
     return saudas.filter(s => {
       const createdAt = new Date(s.created_at);
@@ -75,18 +75,24 @@ export function PurchaseSummaryTable() {
     });
   }, [saudas, startDate, endDate]);
 
-  // Fetch summaries when saudas change
+  // Fetch summaries when saudas change — do not call getSaudaSummary for 0% completion (no delivery yet).
   useEffect(() => {
     const fetchSummaries = async () => {
       if (filteredSaudas.length === 0) {
         setSaudaSummaries([]);
         return;
       }
-      
+
+      const saudasToFetch = filteredSaudas.filter((s) => s.completion_percentage !== 0);
+      if (saudasToFetch.length === 0) {
+        setSaudaSummaries([]);
+        return;
+      }
+
       setLoadingSummaries(true);
       try {
         const summaries = await Promise.all(
-          filteredSaudas.map(s =>
+          saudasToFetch.map((s) =>
             purchaseSummaryAPI.getSaudaSummary(s.id, 0, godownFilter).catch(() => null)
           )
         );
@@ -155,11 +161,14 @@ export function PurchaseSummaryTable() {
     setExpandedId(expandedId === id ? null : id);
   };
 
-  // Filter summaries by search query
+  // Drop 0% completion (defensive if list vs summary disagree); then filter by search.
   const filteredSummaries = useMemo(() => {
-    if (!searchQuery) return saudaSummaries;
+    const withProgress = saudaSummaries.filter(
+      (summary) => summary.sauda_details.completion_percentage !== 0
+    );
+    if (!searchQuery) return withProgress;
     const q = searchQuery.toLowerCase();
-    return saudaSummaries.filter(summary => {
+    return withProgress.filter((summary) => {
       const saudaInfo = getSaudaInfo(summary.sauda_id);
       const vendorName = getVendorName(saudaInfo?.purchaser_id).toLowerCase();
       const riceCodeName = getRiceCodeName(saudaInfo?.rice_code_id).toLowerCase();
@@ -167,6 +176,13 @@ export function PurchaseSummaryTable() {
       return vendorName.includes(q) || riceCodeName.includes(q) || riceTypeLabel.includes(q);
     });
   }, [saudaSummaries, searchQuery, saudas, vendors, riceCodes, riceTypes]);
+
+  useEffect(() => {
+    if (!expandedId) return;
+    if (!filteredSummaries.some((s) => s.sauda_id === expandedId)) {
+      setExpandedId(null);
+    }
+  }, [expandedId, filteredSummaries]);
 
   // Calculate totals
   const totals = useMemo(() => {
@@ -264,7 +280,7 @@ export function PurchaseSummaryTable() {
         <EmptyState 
           icon={Calculator} 
           title="No purchase summaries found" 
-          description="No saudas with lots found for the selected date range."
+          description="No saudas with any delivery yet (0% completion is hidden), or none match the date range, search, or godown filter."
         />
       ) : (
         <div className="overflow-x-auto">

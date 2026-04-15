@@ -416,7 +416,36 @@ export interface BrokerBrokerageCommissionSummaryQuery {
   to_date?: string;
 }
 
-/** One purchase-sauda line from PurchaseSummaryDAO.getSaudaSummary rules */
+/** Party on a brokerage summary line (purchase side). */
+export interface BrokerCommissionSummaryParty {
+  purchaser_id: string;
+  business_name: string;
+  gst_number: string | null;
+}
+
+/** ISP row nested under a brokerage summary sauda line. */
+export interface BrokerCommissionSummaryIsp {
+  id: string;
+  slip_number: string;
+  date: string;
+  vehicle_number: string | null;
+  party_name: string;
+  transporter_id: string | null;
+  transportation_cost: number | null;
+}
+
+/** Payment advice row nested under a brokerage summary sauda line. */
+export interface BrokerCommissionSummaryPaymentAdviceRow {
+  id: string;
+  sr_number: string | null;
+  amount: number;
+  date_of_payment: string;
+  status: string;
+  sauda_id: string;
+  inward_slip_pass_id: string | null;
+}
+
+/** One purchase-sauda line from brokerage commission summary API */
 export interface BrokerCommissionSummaryLine {
   sauda_id: string;
   sauda_display_id: string;
@@ -426,12 +455,17 @@ export interface BrokerCommissionSummaryLine {
   broker_commission_type: BrokerCommissionType | null;
   amount_after_discount: number;
   broker_commission_amount: number;
+  party?: BrokerCommissionSummaryParty;
+  isps?: BrokerCommissionSummaryIsp[];
+  payment_advices?: BrokerCommissionSummaryPaymentAdviceRow[];
 }
 
 export interface BrokerCommissionSummary {
   broker_id: string;
   lines: BrokerCommissionSummaryLine[];
   total_broker_commission: number;
+  period_from?: string | null;
+  period_to?: string | null;
 }
 
 // GST/PAN Lookup Types
