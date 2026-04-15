@@ -97,3 +97,13 @@ export function exceedsRemainingWeight(
   return kaantaWeight > remaining;
 }
 
+/**
+ * Dana deduction (kg): 300g per quintal of said-sent weight.
+ * Any fractional kg rounds up (e.g. 0.3 kg → 1 kg) for display and weight math in payment advice.
+ */
+export function danaDeductionKgFromSaidSent(saidSentWeightKg: number): number {
+  if (!Number.isFinite(saidSentWeightKg) || saidSentWeightKg <= 0) return 0;
+  const rawKg = (saidSentWeightKg * 300) / 1000 / 100;
+  return Math.ceil(rawKg - 1e-9);
+}
+

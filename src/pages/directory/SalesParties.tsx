@@ -9,6 +9,8 @@ import { ConfirmDialog } from '../../components/admin/shared/ConfirmDialog';
 import { AlertDialog } from '../../components/shared/AlertDialog';
 import { useSalesParties } from '../../hooks/useSalesParties';
 import { SalesPartyFormModal } from '../../components/admin/sales-parties/SalesPartyFormModal';
+import { PartySiteFormModal } from '../../components/admin/shared/PartySiteFormModal';
+import { PartySitesDialog } from '../../components/admin/shared/PartySitesDialog';
 import { leadsAPI } from '../../services/leads.api';
 import { salesSaudasAPI } from '../../services/salesSaudas.api';
 import { isAdmin } from '../../utils/permissions';
@@ -28,6 +30,8 @@ export default function SalesPartiesPage() {
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('error');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+  const [addSiteCtx, setAddSiteCtx] = useState<{ id: string; name: string } | null>(null);
+  const [viewSitesCtx, setViewSitesCtx] = useState<{ id: string; name: string } | null>(null);
 
   const filtered = useMemo(() => {
     return salesParties.filter((s) => {
@@ -247,6 +251,8 @@ export default function SalesPartiesPage() {
                 <div className="mt-3 flex items-center justify-end">
                   <ActionButtons
                     isActive={s.is_active}
+                    onAddSite={() => setAddSiteCtx({ id: s.id, name: s.business_name })}
+                    onViewSites={() => setViewSitesCtx({ id: s.id, name: s.business_name })}
                     onEdit={() => {
                       setSelectedSalesPartyId(s.id);
                       setEditModalOpen(true);
@@ -325,6 +331,27 @@ export default function SalesPartiesPage() {
           }
         }}
         salesPartyId={selectedSalesPartyId}
+      />
+
+      <PartySiteFormModal
+        open={addSiteCtx !== null}
+        onOpenChange={(open) => {
+          if (!open) setAddSiteCtx(null);
+        }}
+        kind="sales_party"
+        partyId={addSiteCtx?.id ?? ''}
+        partyName={addSiteCtx?.name}
+        onSaved={() => refetch()}
+      />
+
+      <PartySitesDialog
+        open={viewSitesCtx !== null}
+        onOpenChange={(open) => {
+          if (!open) setViewSitesCtx(null);
+        }}
+        kind="sales_party"
+        partyId={viewSitesCtx?.id ?? ''}
+        partyName={viewSitesCtx?.name ?? ''}
       />
     </div>
   );

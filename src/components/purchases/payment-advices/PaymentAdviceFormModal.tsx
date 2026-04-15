@@ -15,7 +15,12 @@ import { useBrokers } from '../../../hooks/useBrokers';
 import { transportersAPI } from '../../../services/transporters.api';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { getRiceTypeLabel, getRiceLengthLabel } from '../../../utils/riceType';
-import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
+import {
+  getCompletionStatus,
+  formatCompletionPercentage,
+  formatWeightDisplay,
+  danaDeductionKgFromSaidSent,
+} from '../../../utils/saudaCompletion';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { DateInputWithSteppers } from '../../shared/DateInputWithSteppers';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
@@ -462,8 +467,12 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
     });
   };
 
+  /** Amount before RTGS/other charges: purchase summary net payable (broker excluded from vendor payment). Falls back to final total if API omits net_payable. */
+  const summaryPayableBase =
+    summary != null ? (summary.net_payable ?? summary.final_total_amount) : 0;
+
   const calculateNetPayable = () => {
-    const baseAmount = formData.amount || (summary?.final_total_amount ?? 0);
+    const baseAmount = formData.amount ?? summaryPayableBase;
     let net = baseAmount;
     (formData.charges || []).forEach(charge => {
       if (charge.charge_type === 'fixed') {
@@ -486,7 +495,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
     setKaantas([]);
   };
 
-  const previewAmount = formData.amount || (summary?.final_total_amount ?? 0);
+  const previewAmount = formData.amount ?? summaryPayableBase;
   const activeSaudas = saudas.filter(s => s.status === 'active' || s.status === 'completed' || s.status === 'draft');
 
   // Calculate bill weight (sauda quantity), kaanta weight, final weight
@@ -503,7 +512,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
     // Single sauda: only calculate if is_dana_required is true
     const isDanaRequired = selectedSauda.is_dana_required ?? true; // Default to true
     if (isDanaRequired && totalSaidSentWeight > 0) {
-      calculatedDanaDeduction = (totalSaidSentWeight * 300 / 1000) / 100;
+      calculatedDanaDeduction = danaDeductionKgFromSaidSent(totalSaidSentWeight);
     }
   } else if (linkType === 'isp' && kaantas.length > 0) {
     // ISP: calculate separately per sauda
@@ -523,8 +532,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
       if (isDanaRequired) {
         const saudaSaidSentWeight = saudaKaantas.reduce((sum, k) => sum + (k.said_sent_weight || 0), 0);
         if (saudaSaidSentWeight > 0) {
-          const saudaDanaDeduction = (saudaSaidSentWeight * 300 / 1000) / 100;
-          calculatedDanaDeduction += saudaDanaDeduction;
+          calculatedDanaDeduction += danaDeductionKgFromSaidSent(saudaSaidSentWeight);
         }
       }
     }
@@ -894,7 +902,11 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                           className={`w-full px-3 py-2 border rounded-lg bg-background ${
                             errors.amount ? 'border-red-500' : 'border-border'
                           }`}
-                          placeholder={summary ? `Auto: ₹${summary.final_total_amount.toFixed(2)}` : 'Leave empty to auto-calculate'}
+                          placeholder={
+                            summary
+                              ? `Auto: ₹${(summary.net_payable ?? summary.final_total_amount).toFixed(2)}`
+                              : 'Leave empty to auto-calculate'
+                          }
                         />
                         {errors.amount && (
                           <p className="text-xs text-red-500 mt-1">{errors.amount}</p>
@@ -1101,10 +1113,13 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                     const saudaKaantas = kaantas.filter(k => k.sauda_id === saudaItem.sauda_id);
                                     const saudaKaantaWeight = saudaKaantas.reduce((sum, k) => sum + (k.kaanta_weight || 0), 0);
                                     const saudaSaidSentWeight = saudaKaantas.reduce((sum, k) => sum + (k.said_sent_weight || 0), 0);
-                                    const isDanaRequired = saudaItem.sauda_details.is_dana_required ?? true;
+                                    const sauda = saudas.find(s => s.id === saudaItem.sauda_id);
+                                    const isDanaRequired = sauda?.is_dana_required ?? true;
                                     const saudaDanaDeduction = isDanaRequired && saudaSaidSentWeight > 0
-                                      ? (saudaSaidSentWeight * 300 / 1000) / 100
+                                      ? danaDeductionKgFromSaidSent(saudaSaidSentWeight)
                                       : 0;
+                                    const vendorSaudaTotal =
+                                      saudaItem.final_total_amount - saudaItem.broker_commission_amount;
                                     return (
                                       <>
                                   <div className="font-semibold text-xs mb-1">
@@ -1137,8 +1152,8 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                       </div>
                                     )}
                                     {saudaItem.broker_commission_amount > 0 && (
-                                      <div className="flex justify-between">
-                                        <span className="text-muted-foreground">+ Broker Commission:</span>
+                                      <div className="flex justify-between text-amber-700 dark:text-amber-400">
+                                        <span className="text-muted-foreground">- Broker Commission:</span>
                                         <span>₹{saudaItem.broker_commission_amount.toFixed(2)}</span>
                                       </div>
                                     )}
@@ -1154,12 +1169,14 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                     <div className="col-span-2 flex justify-between text-[9px] text-muted-foreground">
                                       <span>Pricing Flow:</span>
                                       <span className="text-right">
-                                        (₹{saudaItem.base_amount.toFixed(2)} - ₹{saudaItem.cash_discount_amount.toFixed(2)}) + ₹{saudaItem.broker_commission_amount.toFixed(2)} = ₹{saudaItem.final_total_amount.toFixed(2)}
+                                        {saudaItem.broker_commission_amount > 0
+                                          ? `(₹${saudaItem.base_amount.toFixed(2)} - ₹${saudaItem.cash_discount_amount.toFixed(2)}) - ₹${saudaItem.broker_commission_amount.toFixed(2)} = ₹${vendorSaudaTotal.toFixed(2)}`
+                                          : `(₹${saudaItem.base_amount.toFixed(2)} - ₹${saudaItem.cash_discount_amount.toFixed(2)}) = ₹${vendorSaudaTotal.toFixed(2)}`}
                                       </span>
                                     </div>
                                     <div className="col-span-2 flex justify-between font-semibold border-t border-border/30 pt-0.5 mt-0.5">
-                                      <span>Sauda Total:</span>
-                                      <span>₹{saudaItem.final_total_amount.toFixed(2)}</span>
+                                      <span>Sauda Total (vendor):</span>
+                                      <span>₹{vendorSaudaTotal.toFixed(2)}</span>
                                     </div>
                                   </div>
                                       </>
@@ -1203,9 +1220,11 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                   // Calculate dana deduction for this sauda's kaantas
                                   const saudaKaantas = kaantas.filter(k => k.sauda_id === saudaItem.sauda_id);
                                   const saudaSaidSentWeight = saudaKaantas.reduce((sum, k) => sum + (k.said_sent_weight || 0), 0);
-                                  const saudaDanaDeduction = isDanaRequired && saudaSaidSentWeight > 0 
-                                    ? (saudaSaidSentWeight * 300 / 1000) / 100 
+                                  const saudaDanaDeduction = isDanaRequired && saudaSaidSentWeight > 0
+                                    ? danaDeductionKgFromSaidSent(saudaSaidSentWeight)
                                     : 0;
+                                  const vendorSaudaTotal =
+                                    saudaItem.final_total_amount - saudaItem.broker_commission_amount;
                                   
                                   return (
                                   <div key={saudaItem.sauda_id} className="p-3">
@@ -1225,7 +1244,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                           </span>
                                         )}
                                         <div className="text-xs font-bold text-primary">
-                                          ₹{saudaItem.final_total_amount.toFixed(2)}
+                                          ₹{vendorSaudaTotal.toFixed(2)}
                                         </div>
                                       </div>
                                     </div>
@@ -1255,8 +1274,8 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                         </div>
                                       )}
                                       {saudaItem.broker_commission_amount > 0 && (
-                                        <div className="flex justify-between">
-                                          <span className="text-muted-foreground">+ Broker Commission:</span>
+                                        <div className="flex justify-between text-amber-700 dark:text-amber-400">
+                                          <span className="text-muted-foreground">- Broker Commission:</span>
                                           <span>₹{saudaItem.broker_commission_amount.toFixed(2)}</span>
                                         </div>
                                       )}
@@ -1288,8 +1307,8 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                               {/* Total Row */}
                               <div className="bg-primary/10 px-3 py-2 border-t-2 border-primary/30">
                                 <div className="flex justify-between items-center text-sm font-bold">
-                                  <span>Total (All Saudas):</span>
-                                  <span className="text-primary">₹{summary.final_total_amount.toFixed(2)}</span>
+                                  <span>Total (net payable, pre-charges):</span>
+                                  <span className="text-primary">₹{(summary.net_payable ?? summary.final_total_amount).toFixed(2)}</span>
                                 </div>
                                 {/* Weight Calculation Flow */}
                                 {(billWeight > 0 || kaantaWeight > 0 || danaDeduction > 0 || finalWeight > 0) && (
@@ -1443,10 +1462,12 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                 <span className="text-muted-foreground">Amount</span>
                                 <span className="font-bold">{(summary?.base_amount ?? 0).toFixed(2)}</span>
                               </div>
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Brokerage Rs {selectedSauda?.broker_commission_type === 'percentage' ? `${selectedSauda?.broker_commission || 0}%` : ''}</span>
+                              {(summary?.broker_commission_amount ?? 0) > 0 && (
+                              <div className="flex justify-between text-amber-700 dark:text-amber-400">
+                                <span className="text-muted-foreground">Less: Brokerage Rs {selectedSauda?.broker_commission_type === 'percentage' ? `${selectedSauda?.broker_commission || 0}%` : ''}</span>
                                 <span className="font-medium">{(summary?.broker_commission_amount ?? 0).toFixed(2)}</span>
                               </div>
+                              )}
                               <div className="flex justify-between">
                                 <span className="text-muted-foreground">CD {selectedSauda?.cash_discount_type === 'percentage' ? `${selectedSauda?.cash_discount || 0}%` : ''}</span>
                                 <span className="font-medium">{(summary?.cash_discount_amount ?? 0).toFixed(2)}</span>
@@ -1538,7 +1559,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
         paymentAdviceData={createdPaymentAdvice ? {
           adviceNumber: createdPaymentAdvice.transaction_id || invoiceNo,
           vendorName: selectedISP?.party_name || (selectedSauda ? getVendorName(selectedSauda.purchaser_id) : '') || '',
-          amount: createdPaymentAdvice.amount || 0,
+          amount: createdPaymentAdvice.net_payable ?? createdPaymentAdvice.amount ?? 0,
           date: createdPaymentAdvice.date_of_payment,
         } : undefined}
         onSuccess={() => {

@@ -11,6 +11,7 @@ import VendorsPage from './pages/directory/Vendors.tsx'
 import SalesPartiesPage from './pages/directory/SalesParties.tsx'
 import TransportersPage from './pages/directory/Transporters.tsx'
 import VehiclesPage from './pages/directory/Vehicles.tsx'
+import DriversPage from './pages/directory/Drivers.tsx'
 import RiceCodesPage from './pages/directory/RiceCodes.tsx'
 import GodownsPage from './pages/directory/Godowns'
 import LeadsPage from './pages/crm/Leads'
@@ -190,6 +191,16 @@ function AnimatedRoutes() {
             <ProtectedRoute>
               <AppLayout>
                 <VehiclesPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/directory/drivers"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <DriversPage />
               </AppLayout>
             </ProtectedRoute>
           }

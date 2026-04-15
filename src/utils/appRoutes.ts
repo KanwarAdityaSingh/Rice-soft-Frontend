@@ -22,3 +22,9 @@ export function getDirectoryVehiclesPagePath(options?: { create?: boolean }): st
   const path = `${base}/directory/vehicles`;
   return options?.create ? `${path}?create=1` : path;
 }
+
+/** Path (same origin) to Drivers directory. */
+export function getDirectoryDriversPagePath(): string {
+  const base = getAppBasePath();
+  return `${base}/directory/drivers`;
+}

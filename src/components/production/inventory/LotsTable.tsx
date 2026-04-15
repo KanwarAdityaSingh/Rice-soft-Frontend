@@ -86,7 +86,10 @@ export function LotsTable({ godownId }: LotsTableProps) {
   };
 
   const getCreatedAt = (li: LotsInventory): string | undefined => {
-    return lots.find((l) => l.id === li.lot_id)?.created_at;
+    const lot = lots.find((l) => l.id === li.lot_id);
+    if (!lot) return undefined;
+    const isp = lot.inward_slip_pass_created_at?.trim();
+    return isp || lot.created_at;
   };
 
   const openLotAudit = async (li: LotsInventory) => {

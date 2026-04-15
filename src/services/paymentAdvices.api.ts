@@ -1,4 +1,5 @@
 import { apiService } from './api';
+import { floorNetPayable } from '../utils/money';
 import type { 
   PaymentAdvice, 
   CreatePaymentAdviceRequest, 
@@ -30,12 +31,24 @@ export const paymentAdvicesAPI = {
 
   // Create payment advice
   createPaymentAdvice: (data: CreatePaymentAdviceRequest) => {
-    return apiService.post<PaymentAdvice>('/payment-advices', data);
+    const payload: CreatePaymentAdviceRequest = {
+      ...data,
+      ...(data.amount !== undefined && data.amount !== null
+        ? { amount: floorNetPayable(data.amount) }
+        : {}),
+    };
+    return apiService.post<PaymentAdvice>('/payment-advices', payload);
   },
 
   // Update payment advice
   updatePaymentAdvice: (id: string, data: UpdatePaymentAdviceRequest) => {
-    return apiService.put<PaymentAdvice>(`/payment-advices/${id}`, data);
+    const payload: UpdatePaymentAdviceRequest = {
+      ...data,
+      ...(data.amount !== undefined && data.amount !== null
+        ? { amount: floorNetPayable(data.amount) }
+        : {}),
+    };
+    return apiService.put<PaymentAdvice>(`/payment-advices/${id}`, payload);
   },
 
   // Upload payment slip
@@ -98,7 +111,7 @@ export const paymentAdvicesAPI = {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, amount: floorNetPayable(data.amount) }),
     });
     const result = await response.json();
     if (!response.ok || result.status !== 'success') {
@@ -127,7 +140,7 @@ export const paymentAdvicesAPI = {
     formData.append('emails', JSON.stringify(data.emails));
     formData.append('adviceNumber', data.adviceNumber);
     formData.append('vendorName', data.vendorName);
-    formData.append('amount', data.amount.toString());
+    formData.append('amount', floorNetPayable(data.amount).toString());
     formData.append('date', data.date);
     if (data.bankDetails) {
       formData.append('bankDetails', JSON.stringify(data.bankDetails));
@@ -166,7 +179,7 @@ export const paymentAdvicesAPI = {
     formData.append('whatsappNumbers', JSON.stringify(data.whatsappNumbers));
     formData.append('adviceNumber', data.adviceNumber);
     formData.append('vendorName', data.vendorName);
-    formData.append('amount', data.amount.toString());
+    formData.append('amount', floorNetPayable(data.amount).toString());
     formData.append('date', data.date);
     if (data.file) {
       formData.append('file', data.file);

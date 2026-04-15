@@ -115,6 +115,50 @@ export type SalesParty = Omit<Vendor, 'type'>;
 export type CreateSalesPartyRequest = Omit<CreateVendorRequest, 'type'>;
 export type UpdateSalesPartyRequest = Omit<UpdateVendorRequest, 'type'>;
 
+/** Additional locations for a purchase party; primary address stays on `Vendor.address`. */
+export interface VendorSite {
+  id: string;
+  vendor_id: string;
+  name?: string | null;
+  address: VendorAddress;
+  google_location_link?: string | null;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CreateVendorSiteRequest {
+  vendor_id: string;
+  name?: string | null;
+  address: VendorAddress;
+  google_location_link?: string | null;
+  is_active?: boolean;
+}
+
+export type UpdateVendorSiteRequest = Partial<Omit<CreateVendorSiteRequest, 'vendor_id'>>;
+
+/** Additional locations for a sales party; primary address stays on `SalesParty.address`. */
+export interface SalesPartySite {
+  id: string;
+  sales_party_id: string;
+  name?: string | null;
+  address: VendorAddress;
+  google_location_link?: string | null;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CreateSalesPartySiteRequest {
+  sales_party_id: string;
+  name?: string | null;
+  address: VendorAddress;
+  google_location_link?: string | null;
+  is_active?: boolean;
+}
+
+export type UpdateSalesPartySiteRequest = Partial<Omit<CreateSalesPartySiteRequest, 'sales_party_id'>>;
+
 // Transporter Types
 export interface TransporterAddress {
   street: string;
@@ -203,6 +247,32 @@ export interface VehicleVerificationResponse {
   permit_validity: string | null;
   challan_details: any[] | null;
 }
+
+/** Driver (driving licence) master — normalized licence + phone; Surepass payload in verification_details when wired */
+export interface Driver {
+  id: string;
+  license_number: string;
+  phone: string;
+  name: string | null;
+  is_verified: boolean;
+  verified_at: string | null;
+  verification_details: Record<string, unknown> | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateDriverRequest {
+  license_number: string;
+  phone: string;
+  name?: string | null;
+  is_verified?: boolean;
+  verified_at?: string | null;
+  verification_details?: Record<string, unknown> | null;
+  is_active?: boolean;
+}
+
+export interface UpdateDriverRequest extends Partial<CreateDriverRequest> {}
 
 export interface CreateTransporterRequest {
   business_name: string;
@@ -960,6 +1030,8 @@ export interface Lot {
   received_weight: number;
   rate: number;
   amount: number;
+  /** When set, inward slip pass creation time (preferred for “lot date” in UI). */
+  inward_slip_pass_created_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1253,7 +1325,7 @@ export interface PaymentAdvice {
   bill_number?: string | null; // Purchase bill number from ISP
   bill_weight?: number | null; // Sum of said_sent_weight from kaantas
   kanta_weight?: number | null; // Sum of kaanta_weight from kaantas
-  dana_deduction?: number | null; // Calculated as (said_sent_weight * 300/1000)/100
+  dana_deduction?: number | null; // 300g per Qtl of said_sent; whole kg (ceil)
   final_weight?: number | null; // kaanta_weight - dana_deduction
   charges: Charge[];
   created_at: string;
@@ -1448,6 +1520,10 @@ export interface Packaging {
   packet_type: PacketType;
   packaging_vendor_id: string | null;
   ordered_weight: number | string | null;
+  /** Vendor bill reference (optional) */
+  bill_number?: string | null;
+  bill_date?: string | null; // ISO date (YYYY-MM-DD)
+  packaging_bill_url?: string | null;
   /** Master costing inputs (per empty bag weight, rate, GST %) */
   empty_bag_weight_kg?: number | string | null;
   empty_bag_rate_per_kg?: number | string | null;
@@ -1475,6 +1551,9 @@ export interface CreatePackagingRequest {
   empty_bag_weight_kg?: number | null;
   empty_bag_rate_per_kg?: number | null;
   empty_bag_gst_percent?: number | null;
+  bill_number?: string | null;
+  bill_date?: string | null;
+  packaging_bill_url?: string | null;
 }
 
 export interface UpdatePackagingRequest {
@@ -1485,6 +1564,9 @@ export interface UpdatePackagingRequest {
   empty_bag_weight_kg?: number | null;
   empty_bag_rate_per_kg?: number | null;
   empty_bag_gst_percent?: number | null;
+  bill_number?: string | null;
+  bill_date?: string | null;
+  packaging_bill_url?: string | null;
 }
 
 export interface AddPacketsInventoryRequest {
@@ -1606,6 +1688,9 @@ export interface FinishedGoodsInventory {
     packaging_number: string | null; // Sequential number: PACK-001, PACK-002, etc.
     holding_capacity: number;
     packet_type: PacketType;
+    bill_number?: string | null;
+    bill_date?: string | null;
+    packaging_bill_url?: string | null;
   };
 }
 
@@ -1619,6 +1704,9 @@ export interface PacketsInventory {
     packet_type: PacketType;
     packaging_vendor_id: string | null;
     ordered_weight: number | null;
+    bill_number?: string | null;
+    bill_date?: string | null;
+    packaging_bill_url?: string | null;
   };
 }
 
@@ -1702,6 +1790,9 @@ export interface HierarchicalInventory {
       packaging_number: string | null; // Sequential number: PACK-001, PACK-002, etc.
       holding_capacity: number;
       packet_type: string;
+      bill_number?: string | null;
+      bill_date?: string | null;
+      packaging_bill_url?: string | null;
       vendor: {
         id: string;
         name: string;

@@ -1,9 +1,49 @@
 import { useEffect, useState, useRef } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Users, Store, UserCheck, UserCircle, ChevronRight, Settings, LogOut, X, Sprout, ShoppingCart, Package, FileText, CreditCard, Truck, Car, BookOpen, FlaskConical, Box, TrendingUp, ShoppingBag, Receipt, FileDigit, ScrollText, StickyNote, Warehouse, History } from 'lucide-react'
+import { Store, UserCheck, UserCircle, ChevronRight, ChevronDown, Settings, LogOut, X, Sprout, ShoppingCart, Package, FileText, CreditCard, Truck, Car, IdCard, BookOpen, FlaskConical, Box, TrendingUp, ShoppingBag, Receipt, FileDigit, ScrollText, StickyNote, Warehouse, History, type LucideIcon } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { canRead, isCustomUser, getPermissions } from '../utils/permissions'
+import type { PermissionsEntityKey } from '../types/entities'
 import { Tooltip } from '@mui/material'
+
+type NavLinkDef = {
+  to: string
+  label: string
+  icon: LucideIcon
+  key: PermissionsEntityKey | null
+}
+
+type NavGroupDef = {
+  id: string
+  title: string
+  items: NavLinkDef[]
+}
+
+/** v2: default all groups collapsed; v1 had default expanded */
+const SIDEBAR_GROUPS_OPEN_KEY = 'sidebar_nav_groups_open_v2'
+
+function isLinkActive(pathname: string, to: string, allLinks: { to: string }[]): boolean {
+  const pathMatches = pathname === to || pathname.startsWith(to + '/')
+  if (!pathMatches) return false
+  const hasMoreSpecificMatch = allLinks.some((otherLink) => {
+    if (otherLink.to === to) return false
+    return (
+      otherLink.to.length > to.length &&
+      (pathname.startsWith(otherLink.to + '/') || pathname === otherLink.to)
+    )
+  })
+  return !hasMoreSpecificMatch
+}
+
+function readStoredGroupOpen(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(SIDEBAR_GROUPS_OPEN_KEY)
+    if (!raw) return {}
+    return JSON.parse(raw) as Record<string, boolean>
+  } catch {
+    return {}
+  }
+}
 
 interface SidebarProps {
   collapsedDefault?: boolean
@@ -36,46 +76,116 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
     onCollapsedChange?.(collapsed)
   }, [collapsed, onCollapsedChange])
 
-  const baseLinks = [
-    // { to: '/crm/leads', label: 'Leads', icon: Users, key: 'leads' as const },
-    // { to: '/crm/analytics', label: 'Analytics', icon: BarChart3, key: null as any },
-    // { to: '/crm/leaderboard', label: 'Leaderboard', icon: Trophy, key: null as any },
-    { to: '/directory/vendors', label: 'Purchase Party', icon: Store, key: 'vendor' as const },
-    { to: '/directory/sales-parties', label: 'Sales Party', icon: ShoppingBag, key: null as any },
-    { to: '/directory/transporters', label: 'Transporters', icon: Truck, key: null as any },
-    { to: '/directory/vehicles', label: 'Vehicles', icon: Car, key: null as any },
-    { to: '/directory/salesmen', label: 'Salesperson', icon: UserCheck, key: 'salesman' as const },
-    { to: '/directory/brokers', label: 'Brokers', icon: UserCircle, key: 'broker' as const },
-    { to: '/directory/rice-codes', label: 'Rice Codes', icon: Sprout, key: 'riceCode' as const },
-    { to: '/directory/godowns', label: 'Godowns', icon: Warehouse, key: null as any },
-    { to: '/purchases/saudas', label: 'Saudas', icon: Package, key: null as any },
-    { to: '/purchases/inward-slip-passes', label: 'Inward Slip Passes', icon: FileText, key: null as any },
-    { to: '/purchases/lots', label: 'Lots', icon: Package, key: null as any },
-    { to: '/purchases', label: 'Purchases', icon: ShoppingCart, key: null as any },
-    { to: '/purchases/payment-advices', label: 'Payment Advices', icon: CreditCard, key: null as any },
-    { to: '/production/recipes', label: 'Recipes', icon: BookOpen, key: null as any },
-    { to: '/production/products', label: 'Products', icon: Package, key: null as any },
-    { to: '/production/product-rate-history', label: 'Product Rate History', icon: History, key: null as any },
-    { to: '/production/packaging', label: 'Packaging', icon: Box, key: null as any },
-    { to: '/production/packaging-vendors', label: 'Packaging Vendors', icon: ShoppingBag, key: null as any },
-    { to: '/production/batches', label: 'Batches', icon: FlaskConical, key: null as any },
-    { to: '/production/inventory', label: 'Inventory', icon: TrendingUp, key: null as any },
-    { to: '/sales/sales-saudas', label: 'Sales Saudas', icon: Receipt, key: null as any },
-    { to: '/sales/invoice-dispatches', label: 'Invoice Dispatches', icon: FileDigit, key: null as any },
-    { to: '/sales/inventory-ledger', label: 'Inventory Ledger', icon: ScrollText, key: null as any },
-    { to: '/sales/credit-notes', label: 'Credit Notes', icon: StickyNote, key: null as any },
+  const navGroups: NavGroupDef[] = [
+    {
+      id: 'parties-people',
+      title: 'Parties & people',
+      items: [
+        { to: '/directory/vendors', label: 'Purchase Party', icon: Store, key: 'vendor' },
+        { to: '/directory/sales-parties', label: 'Sales Party', icon: ShoppingBag, key: null },
+        { to: '/directory/salesmen', label: 'Salesperson', icon: UserCheck, key: 'salesman' },
+        { to: '/directory/brokers', label: 'Brokers', icon: UserCircle, key: 'broker' },
+      ],
+    },
+    {
+      id: 'logistics',
+      title: 'Logistics',
+      items: [
+        { to: '/directory/transporters', label: 'Transporters', icon: Truck, key: null },
+        { to: '/directory/vehicles', label: 'Vehicles', icon: Car, key: null },
+        { to: '/directory/drivers', label: 'Drivers', icon: IdCard, key: null },
+      ],
+    },
+    {
+      id: 'directory-masters',
+      title: 'Masters',
+      items: [
+        { to: '/directory/rice-codes', label: 'Rice Codes', icon: Sprout, key: 'riceCode' },
+        { to: '/directory/godowns', label: 'Godowns', icon: Warehouse, key: null },
+      ],
+    },
+    {
+      id: 'purchases',
+      title: 'Purchases',
+      items: [
+        { to: '/purchases/saudas', label: 'Saudas', icon: Package, key: null },
+        { to: '/purchases/inward-slip-passes', label: 'Inward Slip Passes', icon: FileText, key: null },
+        { to: '/purchases/lots', label: 'Lots', icon: Package, key: null },
+        { to: '/purchases', label: 'Purchases', icon: ShoppingCart, key: null },
+        { to: '/purchases/payment-advices', label: 'Payment Advices', icon: CreditCard, key: null },
+      ],
+    },
+    {
+      id: 'production',
+      title: 'Production',
+      items: [
+        { to: '/production/recipes', label: 'Recipes', icon: BookOpen, key: null },
+        { to: '/production/products', label: 'Products', icon: Package, key: null },
+        { to: '/production/product-rate-history', label: 'Product Rate History', icon: History, key: null },
+        { to: '/production/packaging', label: 'Packaging', icon: Box, key: null },
+        { to: '/production/packaging-vendors', label: 'Packaging Vendors', icon: ShoppingBag, key: null },
+        { to: '/production/batches', label: 'Batches', icon: FlaskConical, key: null },
+        { to: '/production/inventory', label: 'Inventory', icon: TrendingUp, key: null },
+      ],
+    },
+    {
+      id: 'sales',
+      title: 'Sales',
+      items: [
+        { to: '/sales/sales-saudas', label: 'Sales Saudas', icon: Receipt, key: null },
+        { to: '/sales/invoice-dispatches', label: 'Invoice Dispatches', icon: FileDigit, key: null },
+        { to: '/sales/inventory-ledger', label: 'Inventory Ledger', icon: ScrollText, key: null },
+        { to: '/sales/credit-notes', label: 'Credit Notes', icon: StickyNote, key: null },
+      ],
+    },
   ]
 
-  const links = baseLinks.filter((l) => {
-    if (!l.key) return true; // non-entity routes always visible
-    // Check if permissions exist - if they do, check them regardless of user type
-    const permissions = getPermissions();
-    if (permissions && typeof permissions === 'object' && l.key && permissions[l.key as keyof typeof permissions]) {
-      return canRead(l.key);
+  const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>(() => {
+    const stored = readStoredGroupOpen()
+    const next: Record<string, boolean> = { ...stored }
+    for (const g of navGroups) {
+      if (next[g.id] === undefined) next[g.id] = false
     }
-    // If no permissions stored, only filter for custom users (legacy behavior)
+    return next
+  })
+
+  useEffect(() => {
+    localStorage.setItem(SIDEBAR_GROUPS_OPEN_KEY, JSON.stringify(groupOpen))
+  }, [groupOpen])
+
+  const linkVisible = (l: NavLinkDef): boolean => {
+    if (!l.key) return true
+    const permissions = getPermissions()
+    if (permissions && typeof permissions === 'object' && permissions[l.key]) {
+      return canRead(l.key)
+    }
     return !isCustomUser() || canRead(l.key)
-  }) as Array<{ to: string; label: string; icon: any }>
+  }
+
+  const filteredGroups = navGroups
+    .map((g) => ({ ...g, items: g.items.filter(linkVisible) }))
+    .filter((g) => g.items.length > 0)
+
+  const links = filteredGroups.flatMap((g) => g.items)
+
+  // Expand the group that contains the current route (so the active item is never hidden)
+  useEffect(() => {
+    const groups = navGroups
+      .map((g) => ({ ...g, items: g.items.filter(linkVisible) }))
+      .filter((g) => g.items.length > 0)
+    const flat = groups.flatMap((g) => g.items)
+    for (const g of groups) {
+      for (const item of g.items) {
+        if (isLinkActive(location.pathname, item.to, flat)) {
+          setGroupOpen((prev) => {
+            if (prev[g.id] === true) return prev
+            return { ...prev, [g.id]: true }
+          })
+          return
+        }
+      }
+    }
+  }, [location.pathname])
 
   // Close mobile menu when route changes
   useEffect(() => {
@@ -107,6 +217,8 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
 
   // On mobile, always show expanded. On desktop, use collapsed state
   const isCollapsed = collapsed
+  /** Icon-only rail: no room for group headers — show all links (collapse state ignored). */
+  const showGroupHeaders = !collapsed || mobileOpen
 
   return (
     <>
@@ -158,65 +270,110 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
             </Tooltip>
           </div>
 
-        {/* Links */}
-        <nav ref={navRef} className="flex-1 px-2 space-y-1 overflow-y-auto">
-          {links.map(({ to, label, icon: Icon }) => {
-            // More precise matching: exact match or path starts with route + '/'
-            // But only if no more specific route also matches
-            const pathMatches = location.pathname === to || location.pathname.startsWith(to + '/')
-            
-            // Check if there's a more specific route that also matches
-            const hasMoreSpecificMatch = pathMatches && links.some(otherLink => {
-              if (otherLink.to === to) return false
-              // Check if otherLink is more specific (longer path) and also matches
-              return otherLink.to.length > to.length && 
-                     (location.pathname.startsWith(otherLink.to + '/') || location.pathname === otherLink.to)
-            })
-            
-            const active = pathMatches && !hasMoreSpecificMatch
-            const linkContent = (
-              <Link
-                to={to}
-                className={`group flex items-center gap-3 rounded-xl px-2 py-2 text-sm transition-colors ${
-                  active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                }`}
+        {/* Links (grouped) */}
+        <nav ref={navRef} className="flex-1 px-2 pb-2 overflow-y-auto">
+          {filteredGroups.map((group, groupIndex) => {
+            const isOpen = showGroupHeaders ? (groupOpen[group.id] ?? false) : true
+            return (
+            <div
+              key={group.id}
+              className={
+                groupIndex > 0
+                  ? collapsed && !mobileOpen
+                    ? 'mt-2 border-t border-border/50 pt-2'
+                    : 'mt-4 border-t border-border/50 pt-3'
+                  : ''
+              }
+            >
+              {showGroupHeaders && (
+                <button
+                  type="button"
+                  className="mb-1 flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/50"
+                  onClick={() =>
+                    setGroupOpen((prev) => ({
+                      ...prev,
+                      [group.id]: !(prev[group.id] ?? false),
+                    }))
+                  }
+                  aria-expanded={isOpen}
+                  aria-controls={`nav-group-${group.id}`}
+                  aria-label={`${isOpen ? 'Collapse' : 'Expand'} section: ${group.title}`}
+                >
+                  <ChevronDown
+                    className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ${
+                      isOpen ? '' : '-rotate-90'
+                    }`}
+                    aria-hidden
+                  />
+                  <span className="flex-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/90">
+                    {group.title}
+                  </span>
+                </button>
+              )}
+              <div
+                id={`nav-group-${group.id}`}
+                className={`space-y-1 ${showGroupHeaders && !isOpen ? 'hidden' : ''}`}
               >
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted/70">
-                  <Icon className="h-4.5 w-4.5" />
-                </span>
-                {/* Always show label on mobile, respect collapsed on desktop */}
-                <span className={`font-medium md:hidden`}>{label}</span>
-                {!collapsed && <span className="font-medium hidden md:inline">{label}</span>}
-              </Link>
-            )
-            
-            // On desktop, show tooltip when collapsed. On mobile, never show tooltip
-            return collapsed && !mobileOpen ? (
-              <Tooltip 
-                key={to} 
-                title={label} 
-                placement="right" 
-                arrow
-                disableInteractive
-                enterDelay={300}
-                enterNextDelay={300}
-                slotProps={{
-                  popper: {
-                    modifiers: [
-                      {
-                        name: 'offset',
-                        options: {
-                          offset: [0, 8],
+                {group.items.map(({ to, label, icon: Icon }) => {
+                  const active = isLinkActive(location.pathname, to, links)
+                  const linkContent = (
+                    <Link
+                      to={to}
+                      className={`group flex items-center gap-3 rounded-xl px-2 py-2 text-sm transition-colors ${
+                        active
+                          ? 'bg-primary/10 text-primary'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                      }`}
+                    >
+                      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted/70">
+                        <Icon className="h-4.5 w-4.5" />
+                      </span>
+                      <span className="font-medium md:hidden">{label}</span>
+                      {!collapsed && <span className="font-medium hidden md:inline">{label}</span>}
+                    </Link>
+                  )
+
+                  return collapsed && !mobileOpen ? (
+                    <Tooltip
+                      key={to}
+                      title={
+                        <span>
+                          <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">
+                            {group.title}
+                          </span>
+                          <span>{label}</span>
+                        </span>
+                      }
+                      placement="right"
+                      arrow
+                      disableInteractive
+                      enterDelay={300}
+                      enterNextDelay={300}
+                      slotProps={{
+                        popper: {
+                          modifiers: [
+                            {
+                              name: 'offset',
+                              options: {
+                                offset: [0, 8],
+                              },
+                            },
+                          ],
                         },
-                      },
-                    ],
-                  },
-                }}
-              >
-                <div ref={active ? activeLinkRef : null} className="w-full">{linkContent}</div>
-              </Tooltip>
-            ) : (
-              <div key={to} ref={active ? activeLinkRef : null}>{linkContent}</div>
+                      }}
+                    >
+                      <div ref={active ? activeLinkRef : null} className="w-full">
+                        {linkContent}
+                      </div>
+                    </Tooltip>
+                  ) : (
+                    <div key={to} ref={active ? activeLinkRef : null}>
+                      {linkContent}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
             )
           })}
         </nav>

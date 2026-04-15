@@ -8,6 +8,8 @@ import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { Store } from 'lucide-react';
 import { useVendors } from '../../../hooks/useVendors';
 import { VendorFormModal } from './VendorFormModal';
+import { PartySiteFormModal } from '../shared/PartySiteFormModal';
+import { PartySitesDialog } from '../shared/PartySitesDialog';
 
 export function VendorsTable() {
   const { vendors, loading, deleteVendor, refetch } = useVendors();
@@ -19,6 +21,8 @@ export function VendorsTable() {
   const [selectedVendor, setSelectedVendor] = useState<{ id: string; business_name?: string } | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
+  const [addSiteCtx, setAddSiteCtx] = useState<{ id: string; name: string } | null>(null);
+  const [viewSitesCtx, setViewSitesCtx] = useState<{ id: string; name: string } | null>(null);
 
   const getTypeLabel = (type: string) => {
     switch (type) {
@@ -133,6 +137,8 @@ export function VendorsTable() {
                     <td className="py-3 px-4 text-right">
                       <ActionButtons
                         isActive={vendor.is_active}
+                        onAddSite={() => setAddSiteCtx({ id: vendor.id, name: vendor.business_name })}
+                        onViewSites={() => setViewSitesCtx({ id: vendor.id, name: vendor.business_name })}
                         onEdit={() => {
                           setSelectedVendorId(vendor.id);
                           setEditModalOpen(true);
@@ -181,6 +187,27 @@ export function VendorsTable() {
           }
         }}
         vendorId={selectedVendorId}
+      />
+
+      <PartySiteFormModal
+        open={addSiteCtx !== null}
+        onOpenChange={(open) => {
+          if (!open) setAddSiteCtx(null);
+        }}
+        kind="vendor"
+        partyId={addSiteCtx?.id ?? ''}
+        partyName={addSiteCtx?.name}
+        onSaved={() => refetch()}
+      />
+
+      <PartySitesDialog
+        open={viewSitesCtx !== null}
+        onOpenChange={(open) => {
+          if (!open) setViewSitesCtx(null);
+        }}
+        kind="vendor"
+        partyId={viewSitesCtx?.id ?? ''}
+        partyName={viewSitesCtx?.name ?? ''}
       />
     </div>
   );

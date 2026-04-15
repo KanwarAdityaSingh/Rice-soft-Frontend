@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
-import { Box, Plus, Scale, TrendingUp, Package, FlaskConical, Warehouse } from 'lucide-react';
+import { Box, Plus, Scale, TrendingUp, Package, FlaskConical, Warehouse, FileText, ExternalLink } from 'lucide-react';
 import { SearchBar } from '../../admin/shared/SearchBar';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { EmptyState } from '../../admin/shared/EmptyState';
@@ -133,6 +133,8 @@ export function PackagingTable() {
       const productName = productMap.get(p.product_id)?.toLowerCase() || '';
       const vendorName = p.packaging_vendor_id ? vendorMap.get(p.packaging_vendor_id)?.toLowerCase() || '' : '';
       const packagingNumber = p.packaging_number?.toLowerCase() || '';
+      const billNumber = (p.bill_number ?? '').toLowerCase();
+      const billDateStr = (p.bill_date ?? '').toLowerCase();
       const godownText = (p.packets_inventory ?? [])
         .map((pi) => `${pi.godown_name ?? ''} ${pi.godown_code ?? ''}`.toLowerCase())
         .join(' ');
@@ -142,6 +144,8 @@ export function PackagingTable() {
         vendorName.includes(q) ||
         p.holding_capacity.toString().includes(q) ||
         packagingNumber.includes(q) ||
+        billNumber.includes(q) ||
+        billDateStr.includes(q) ||
         p.id.toLowerCase().includes(q) ||
         godownText.includes(q)
       );
@@ -306,6 +310,34 @@ export function PackagingTable() {
                   {pkg.packaging_vendor_id && (
                     <div className="text-xs text-muted-foreground pt-2 border-t border-border/40">
                       <span className="font-medium">Vendor:</span> {vendorMap.get(pkg.packaging_vendor_id) || 'Unknown'}
+                    </div>
+                  )}
+                  {(pkg.bill_number || pkg.bill_date || pkg.packaging_bill_url) && (
+                    <div className="text-xs text-muted-foreground pt-2 border-t border-border/40 space-y-1">
+                      <div className="flex items-center gap-1.5 font-medium text-foreground/90">
+                        <FileText className="h-3.5 w-3.5 shrink-0" />
+                        Packaging bill
+                      </div>
+                      {(pkg.bill_number || pkg.bill_date) && (
+                        <p>
+                          {pkg.bill_number && <span className="font-mono">{pkg.bill_number}</span>}
+                          {pkg.bill_number && pkg.bill_date && <span className="mx-1">·</span>}
+                          {pkg.bill_date && (
+                            <span>{pkg.bill_date.slice(0, 10)}</span>
+                          )}
+                        </p>
+                      )}
+                      {pkg.packaging_bill_url && (
+                        <a
+                          href={pkg.packaging_bill_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-primary font-medium hover:underline"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          Open bill file
+                        </a>
+                      )}
                     </div>
                   )}
                   {ordW != null && ordW > 0 && (

@@ -1,4 +1,4 @@
-import { Edit2, Trash2, MoreVertical, Key, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Edit2, Trash2, MoreVertical, Key, ToggleLeft, ToggleRight, MapPin, MapPinned } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { StatusBadge } from './StatusBadge';
 import type { PermissionsEntityKey } from '../../../types/entities';
@@ -11,9 +11,21 @@ interface ActionButtonsProps {
   isActive?: boolean;
   permissionEntity?: PermissionsEntityKey;
   onPermissions?: () => void;
+  /** Extra locations (vendor / sales party sites) */
+  onAddSite?: () => void;
+  onViewSites?: () => void;
 }
 
-export function ActionButtons({ onEdit, onDelete, onToggleStatus, isActive, permissionEntity, onPermissions }: ActionButtonsProps) {
+export function ActionButtons({
+  onEdit,
+  onDelete,
+  onToggleStatus,
+  isActive,
+  permissionEntity,
+  onPermissions,
+  onAddSite,
+  onViewSites,
+}: ActionButtonsProps) {
   const allowEdit = (() => {
     if (!onEdit) return false;
     if (!permissionEntity) return true;
@@ -49,6 +61,22 @@ export function ActionButtons({ onEdit, onDelete, onToggleStatus, isActive, perm
                 onSelect={onPermissions}
               >
                 <Key className="h-4 w-4" /> Permissions
+              </DropdownMenu.Item>
+            )}
+            {allowEdit && onAddSite && (
+              <DropdownMenu.Item
+                className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+                onSelect={onAddSite}
+              >
+                <MapPin className="h-4 w-4" /> Add site
+              </DropdownMenu.Item>
+            )}
+            {allowEdit && onViewSites && (
+              <DropdownMenu.Item
+                className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+                onSelect={onViewSites}
+              >
+                <MapPinned className="h-4 w-4" /> View sites
               </DropdownMenu.Item>
             )}
             {allowEdit && (

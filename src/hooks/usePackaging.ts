@@ -79,6 +79,12 @@ export function usePackaging() {
     }
   };
 
+  const uploadPackagingBill = async (id: string, file: File, billNumber?: string, billDate?: string) => {
+    const result = await packagingAPI.uploadPackagingBill(id, file, billNumber, billDate);
+    setPackaging((prev) => prev.map((p) => (p.id === id ? result.packaging : p)));
+    return result;
+  };
+
   return {
     packaging,
     loading,
@@ -87,6 +93,7 @@ export function usePackaging() {
     updatePackaging,
     deletePackaging,
     addPacketsInventory,
+    uploadPackagingBill,
     refetch: fetchPackaging,
     fetchPackagingByProduct,
   };

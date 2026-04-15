@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState, useEffect, useMemo } from 'react';
-import { X, Warehouse, Layers3, Store, Plus, Receipt } from 'lucide-react';
+import { X, Warehouse, Layers3, Store, Plus, Receipt, FileText, ExternalLink } from 'lucide-react';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { usePackaging } from '../../../hooks/usePackaging';
@@ -21,6 +21,19 @@ interface PackagingFormModalProps {
 }
 
 const DEFAULT_PACKET_TYPE: PacketType = 'pp';
+
+const MAX_PACKAGING_BILL_BYTES = 10 * 1024 * 1024;
+const PACKAGING_BILL_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'application/pdf'];
+
+function validatePackagingBillFile(file: File): string | null {
+  if (file.size > MAX_PACKAGING_BILL_BYTES) {
+    return 'File size must be less than 10MB';
+  }
+  if (file.type && !PACKAGING_BILL_MIME_TYPES.includes(file.type)) {
+    return 'File must be JPEG, PNG, GIF, or PDF';
+  }
+  return null;
+}
 
 const inputClassName =
   'w-full px-3.5 py-2.5 text-sm rounded-xl border bg-background transition-shadow focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50';
@@ -55,7 +68,7 @@ function SectionCard({
 }
 
 export function PackagingFormModal({ open, onOpenChange, packagingId }: PackagingFormModalProps) {
-  const { createPackaging, updatePackaging, packaging } = usePackaging();
+  const { createPackaging, updatePackaging, packaging, uploadPackagingBill } = usePackaging();
   const { packagingVendors, refetch: refetchPackagingVendors } = usePackagingVendors();
   const { products } = useProducts();
   const { godowns } = useGodowns(false);
@@ -76,10 +89,16 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+  const [billNumber, setBillNumber] = useState('');
+  const [billDate, setBillDate] = useState('');
+  const [packagingBillFile, setPackagingBillFile] = useState<File | null>(null);
   useEffect(() => {
     if (packagingId && open) {
       const pkg = packaging.find((p) => p.id === packagingId);
       if (pkg) {
+        setBillNumber(pkg.bill_number?.trim() ?? '');
+        setBillDate(pkg.bill_date ? pkg.bill_date.slice(0, 10) : '');
+        setPackagingBillFile(null);
         setFormData({
           product_id: pkg.product_id,
           holding_capacity: Number(pkg.holding_capacity),
@@ -99,6 +118,9 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
         });
       }
     } else if (open) {
+      setBillNumber('');
+      setBillDate('');
+      setPackagingBillFile(null);
       setFormData({
         product_id: '',
         holding_capacity: 0,
@@ -145,6 +167,12 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
+    if (packagingBillFile) {
+      const fileErr = validatePackagingBillFile(packagingBillFile);
+      if (fileErr) {
+        newErrors.packaging_bill = fileErr;
+      }
+    }
     if (!formData.product_id) {
       newErrors.product_id = 'Product is required';
     }
@@ -205,6 +233,8 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
           packet_type: formData.packet_type,
           packaging_vendor_id: formData.packaging_vendor_id,
           ordered_weight: formData.ordered_weight,
+          bill_number: billNumber.trim() ? billNumber.trim() : null,
+          bill_date: billDate || null,
         };
         if (formData.empty_bag_weight_kg != null) {
           updatePayload.empty_bag_weight_kg = formData.empty_bag_weight_kg;
@@ -214,6 +244,15 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
         }
         updatePayload.empty_bag_gst_percent = EMPTY_BAG_GST_PERCENT;
         await updatePackaging(packagingId, updatePayload);
+        if (packagingBillFile) {
+          await uploadPackagingBill(
+            packagingId,
+            packagingBillFile,
+            billNumber.trim() || undefined,
+            billDate || undefined
+          );
+          setPackagingBillFile(null);
+        }
         setAlertType('success');
         setAlertTitle('Packaging Updated');
         setAlertMessage('Packaging has been updated successfully.');
@@ -231,7 +270,18 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
           empty_bag_rate_per_kg: Number(formData.empty_bag_rate_per_kg),
           empty_bag_gst_percent: EMPTY_BAG_GST_PERCENT,
         };
-        await createPackaging(createData);
+        if (billNumber.trim()) createData.bill_number = billNumber.trim();
+        if (billDate) createData.bill_date = billDate;
+        const created = await createPackaging(createData);
+        if (packagingBillFile) {
+          await uploadPackagingBill(
+            created.id,
+            packagingBillFile,
+            billNumber.trim() || undefined,
+            billDate || undefined
+          );
+          setPackagingBillFile(null);
+        }
         setAlertType('success');
         setAlertTitle('Packaging Created');
         setAlertMessage('Packaging lot has been created successfully.');
@@ -588,6 +638,78 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
                           One-off reference weight from the vendor (not auto-synced with stock).
                         </p>
                       </div>
+                    </div>
+                  </SectionCard>
+
+                  <SectionCard
+                    icon={FileText}
+                    title="Packaging bill"
+                    description="Optional vendor bill number, date, and a scanned bill (JPEG, PNG, GIF, or PDF, max 10MB)."
+                  >
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1.5 block text-sm font-medium text-foreground">Bill number</label>
+                        <input
+                          type="text"
+                          value={billNumber}
+                          onChange={(e) => {
+                            setBillNumber(e.target.value);
+                            if (errors.packaging_bill) setErrors({ ...errors, packaging_bill: '' });
+                          }}
+                          className={`${inputClassName} border-border`}
+                          placeholder="e.g. INV-1024"
+                          autoComplete="off"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-sm font-medium text-foreground">Bill date</label>
+                        <input
+                          type="date"
+                          value={billDate}
+                          onChange={(e) => {
+                            setBillDate(e.target.value);
+                            if (errors.packaging_bill) setErrors({ ...errors, packaging_bill: '' });
+                          }}
+                          className={`${inputClassName} border-border`}
+                        />
+                      </div>
+                    </div>
+                    {packagingId && editingPackaging?.packaging_bill_url && (
+                      <a
+                        href={editingPackaging.packaging_bill_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                        View current bill
+                      </a>
+                    )}
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-foreground">
+                        {packagingId ? 'Replace bill file' : 'Attach bill file'}
+                      </label>
+                      <input
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png,.gif,image/jpeg,image/png,image/gif,application/pdf"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] ?? null;
+                          setPackagingBillFile(f);
+                          if (errors.packaging_bill) setErrors({ ...errors, packaging_bill: '' });
+                        }}
+                        className={`block w-full text-sm text-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-2 file:text-sm file:font-medium file:text-primary ${errors.packaging_bill ? 'rounded-xl border border-destructive p-1' : ''}`}
+                      />
+                      {packagingBillFile && (
+                        <p className="mt-1.5 text-xs text-muted-foreground">
+                          Selected: {packagingBillFile.name}
+                        </p>
+                      )}
+                      {errors.packaging_bill && (
+                        <p className="mt-1.5 text-xs font-medium text-destructive">{errors.packaging_bill}</p>
+                      )}
+                      <p className={fieldHintClass}>
+                        Upload runs when you save. Bill number and date are also sent with the file when attached.
+                      </p>
                     </div>
                   </SectionCard>
 

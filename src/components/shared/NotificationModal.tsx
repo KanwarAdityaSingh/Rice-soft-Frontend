@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { X, Mail, MessageCircle, Send, Loader2, Plus, Trash2, Eye, EyeOff, FileText } from 'lucide-react';
 import { useToast } from './Toast';
 import { LoadingSpinner } from '../admin/shared/LoadingSpinner';
+import { floorNetPayable } from '../../utils/money';
 
 const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
@@ -102,7 +103,10 @@ export function NotificationModal({
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(paymentAdviceData),
+          body: JSON.stringify({
+            ...paymentAdviceData,
+            amount: floorNetPayable(paymentAdviceData.amount),
+          }),
         });
         const result = await response.json();
         if (result.status !== 'success') {
@@ -164,7 +168,7 @@ export function NotificationModal({
         url = `${API_BASE_URL}/payment-advices/send-email`;
         formData.append('adviceNumber', paymentAdviceData.adviceNumber);
         formData.append('vendorName', paymentAdviceData.vendorName);
-        formData.append('amount', paymentAdviceData.amount.toString());
+        formData.append('amount', floorNetPayable(paymentAdviceData.amount).toString());
         formData.append('date', paymentAdviceData.date);
         if (paymentAdviceData.bankDetails) {
           formData.append('bankDetails', JSON.stringify(paymentAdviceData.bankDetails));
@@ -233,7 +237,7 @@ export function NotificationModal({
         url = `${API_BASE_URL}/payment-advices/send-whatsapp`;
         formData.append('adviceNumber', paymentAdviceData.adviceNumber);
         formData.append('vendorName', paymentAdviceData.vendorName);
-        formData.append('amount', paymentAdviceData.amount.toString());
+        formData.append('amount', floorNetPayable(paymentAdviceData.amount).toString());
         formData.append('date', paymentAdviceData.date);
         if (!pdfFile && !pdfUrl) {
           throw new Error('PDF file or URL is required for payment advice');

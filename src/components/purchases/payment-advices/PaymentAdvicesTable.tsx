@@ -367,7 +367,7 @@ export function PaymentAdvicesTable() {
             paymentAdviceData={{
               adviceNumber: selectedPAForNotification.transaction_id || selectedPAForNotification.id,
               vendorName: getVendorName(selectedPAForNotification.payer_id) || getISPInfo(selectedPAForNotification.inward_slip_pass_id)?.party_name || 'Vendor',
-              amount: selectedPAForNotification.amount || 0,
+              amount: selectedPAForNotification.net_payable ?? selectedPAForNotification.amount ?? 0,
               date: selectedPAForNotification.date_of_payment,
             }}
             onSuccess={() => {
@@ -386,7 +386,7 @@ export function PaymentAdvicesTable() {
             paymentAdviceData={{
               adviceNumber: selectedPAForNotification.transaction_id || selectedPAForNotification.id,
               vendorName: getVendorName(selectedPAForNotification.payer_id) || getISPInfo(selectedPAForNotification.inward_slip_pass_id)?.party_name || 'Vendor',
-              amount: selectedPAForNotification.amount || 0,
+              amount: selectedPAForNotification.net_payable ?? selectedPAForNotification.amount ?? 0,
               date: selectedPAForNotification.date_of_payment,
             }}
             onSuccess={() => {

@@ -421,14 +421,14 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                               </div>
                             )}
                             {saudaItem.broker_commission_amount > 0 && (
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">+ Broker Commission:</span>
+                              <div className="flex justify-between text-amber-700 dark:text-amber-400">
+                                <span className="text-muted-foreground">- Broker Commission:</span>
                                 <span>₹{saudaItem.broker_commission_amount.toFixed(2)}</span>
                               </div>
                             )}
                             <div className="flex justify-between font-semibold border-t border-border/30 pt-0.5 mt-0.5">
-                              <span>Sauda Total:</span>
-                              <span>₹{saudaItem.final_total_amount.toFixed(2)}</span>
+                              <span>Sauda Total (vendor):</span>
+                              <span>₹{(saudaItem.final_total_amount - saudaItem.broker_commission_amount).toFixed(2)}</span>
                             </div>
                           </div>
                         </div>
@@ -497,8 +497,8 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                       </div>
                     )}
                     {summary.broker_commission_amount > 0 && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">+ Broker Commission:</span>
+                      <div className="flex justify-between text-amber-700 dark:text-amber-400">
+                        <span className="text-muted-foreground">- Broker Commission:</span>
                         <span>₹{summary.broker_commission_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                       </div>
                     )}
