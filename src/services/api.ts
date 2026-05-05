@@ -60,6 +60,9 @@ class ApiService {
   private baseURL: string;
   private logoutCallback: (() => void) | null = null;
 
+  /** Coalesce identical in-flight GETs (e.g. React Strict Mode double-mount). */
+  private inFlightGetByUrl = new Map<string, Promise<ApiResponse<unknown>>>();
+
   constructor(baseURL: string = API_BASE_URL) {
     this.baseURL = baseURL;
   }
@@ -116,81 +119,98 @@ class ApiService {
     options: RequestInit = {}
   ): Promise<ApiResponse<T>> {
     const url = `${this.baseURL}${endpoint}`;
-    
-    const config: RequestInit = {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-      ...options,
-    };
+    const method = (options.method ?? 'GET').toUpperCase();
 
-    // Add authorization header if token exists
-    const token = localStorage.getItem('auth:token');
-    if (token) {
-      config.headers = {
-        ...config.headers,
-        Authorization: `Bearer ${token}`,
+    const execute = async (): Promise<ApiResponse<T>> => {
+      const config: RequestInit = {
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+        ...options,
       };
-    }
 
-    try {
-      const response = await fetch(url, config);
-      const data = await response.json();
-
-      // Global check: session validity (applies to both success and error responses)
-      if (data?.isSessionValid === false) {
-        this.handleSessionInvalidation();
+      // Add authorization header if token exists
+      const token = localStorage.getItem('auth:token');
+      if (token) {
+        config.headers = {
+          ...config.headers,
+          Authorization: `Bearer ${token}`,
+        };
       }
 
-      if (!response.ok) {
-        // Handle 401 Unauthorized - session expired or invalid token
-        // Only trigger logout if this is an authenticated request (not login endpoint)
-        if (response.status === 401 && endpoint !== '/auth/loginUser') {
-          // Clear auth data from localStorage
-          localStorage.removeItem('auth:token');
-          localStorage.removeItem('auth:user');
-          localStorage.removeItem('auth:permissions');
-          
-          // Call logout callback if registered (to update React state)
-          if (this.logoutCallback) {
-            this.logoutCallback();
-          }
-          
-          // Redirect to login page (respecting basename if configured)
-          const basename = (import.meta as any).env?.BASE_URL 
-            ? (import.meta as any).env.BASE_URL.replace(/\/$/, '') 
-            : '/riceops';
-          const loginPath = `${basename}/login`;
-          const currentPath = window.location.pathname;
-          
-          // Only redirect if not already on login page
-          if (!currentPath.endsWith('/login') && currentPath !== loginPath) {
-            window.location.href = loginPath;
-          }
+      try {
+        const response = await fetch(url, config);
+        const data = await response.json();
+
+        // Global check: session validity (applies to both success and error responses)
+        if (data?.isSessionValid === false) {
+          this.handleSessionInvalidation();
         }
-        
-        console.error('API Error:', { url, status: response.status, data });
+
+        if (!response.ok) {
+          // Handle 401 Unauthorized - session expired or invalid token
+          // Only trigger logout if this is an authenticated request (not login endpoint)
+          if (response.status === 401 && endpoint !== '/auth/loginUser') {
+            // Clear auth data from localStorage
+            localStorage.removeItem('auth:token');
+            localStorage.removeItem('auth:user');
+            localStorage.removeItem('auth:permissions');
+
+            // Call logout callback if registered (to update React state)
+            if (this.logoutCallback) {
+              this.logoutCallback();
+            }
+
+            // Redirect to login page (respecting basename if configured)
+            const basename = (import.meta as any).env?.BASE_URL
+              ? (import.meta as any).env.BASE_URL.replace(/\/$/, '')
+              : '/riceops';
+            const loginPath = `${basename}/login`;
+            const currentPath = window.location.pathname;
+
+            // Only redirect if not already on login page
+            if (!currentPath.endsWith('/login') && currentPath !== loginPath) {
+              window.location.href = loginPath;
+            }
+          }
+
+          console.error('API Error:', { url, status: response.status, data });
+          throw new ApiError(
+            data.message || data.error || 'An error occurred',
+            response.status,
+            data
+          );
+        }
+
+        return data;
+      } catch (error) {
+        if (error instanceof ApiError) {
+          throw error;
+        }
+
+        // Network or other errors
         throw new ApiError(
-          data.message || data.error || 'An error occurred',
-          response.status,
-          data
+          'Network error. Please check your connection.',
+          0,
+          error
         );
       }
+    };
 
-      return data;
-    } catch (error) {
-      if (error instanceof ApiError) {
-        throw error;
+    if (method === 'GET') {
+      const existing = this.inFlightGetByUrl.get(url);
+      if (existing) {
+        return existing as Promise<ApiResponse<T>>;
       }
-      
-      // Network or other errors
-      throw new ApiError(
-        'Network error. Please check your connection.',
-        0,
-        error
-      );
+      const pending = execute().finally(() => {
+        this.inFlightGetByUrl.delete(url);
+      }) as Promise<ApiResponse<unknown>>;
+      this.inFlightGetByUrl.set(url, pending);
+      return pending as Promise<ApiResponse<T>>;
     }
+
+    return execute();
   }
 
   // Authentication endpoints

@@ -1,16 +1,40 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { useEffect, useState } from 'react';
-import { X, Loader2, CheckCircle, FileDigit, Truck, Package, AlertTriangle } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import {
+  X,
+  Loader2,
+  CheckCircle,
+  FileDigit,
+  Truck,
+  Package,
+  AlertTriangle,
+  ExternalLink,
+  ChevronDown,
+} from 'lucide-react';
 import { useInvoiceDispatches } from '../../../hooks/useInvoiceDispatches';
 import { useTransporters } from '../../../hooks/useTransporters';
 import { useVehicleMap } from '../../../hooks/useVehicles';
 import { usePackaging } from '../../../hooks/usePackaging';
 import { inventoryAPI } from '../../../services/inventory.api';
+import { salesSaudasAPI } from '../../../services/salesSaudas.api';
+import { salesPartySitesAPI } from '../../../services/salesPartySites.api';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { toast } from '../../../utils/toast';
 import { useGodowns } from '../../../hooks/useGodowns';
-import type { InvoiceDispatch, EInvoice, EWayBill } from '../../../types/sales';
+import type { InvoiceDispatch, EInvoice, EWayBill, CreateEWayBillRequest } from '../../../types/sales';
+import type { SalesPartySite } from '../../../types/entities';
 import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
+
+function nicPayloadIsMock(payload: unknown): boolean {
+  if (payload == null || typeof payload !== 'object') return false;
+  return (payload as { mock?: boolean }).mock === true;
+}
+
+function formatPartySiteLabel(site: SalesPartySite): string {
+  const n = site.name?.trim();
+  const line = [site.address?.city, site.address?.state].filter(Boolean).join(', ');
+  return n ? `${n}${line ? ` · ${line}` : ''}` : line || site.id.slice(0, 8);
+}
 
 interface InvoiceDispatchDetailModalProps {
   dispatchId: string | null;
@@ -27,7 +51,8 @@ export function InvoiceDispatchDetailModal({
   onSuccess,
   getProductName,
 }: InvoiceDispatchDetailModalProps) {
-  const { getById, confirm, getEInvoice, getEWayBills, generateEInvoice, generateEWayBill } = useInvoiceDispatches();
+  const { getById, patch, confirm, getEInvoice, getEWayBills, generateEInvoice, generateEWayBill } =
+    useInvoiceDispatches();
   const { transporters } = useTransporters();
   const { getVehicleNumber } = useVehicleMap();
   const { packaging } = usePackaging();
@@ -41,6 +66,34 @@ export function InvoiceDispatchDetailModal({
   const [fgiByProduct, setFgiByProduct] = useState<Record<string, number>>({});
   const [loadingFgi, setLoadingFgi] = useState(false);
 
+  const [partySites, setPartySites] = useState<SalesPartySite[]>([]);
+  const [loadingSites, setLoadingSites] = useState(false);
+  const [patchDeliverySiteId, setPatchDeliverySiteId] = useState('');
+  const [patchLrNumber, setPatchLrNumber] = useState('');
+  const [patchTcsAmount, setPatchTcsAmount] = useState('');
+  const [savingPatch, setSavingPatch] = useState(false);
+
+  const [eWayVehicleNumber, setEWayVehicleNumber] = useState('');
+  const [eWayDistanceKm, setEWayDistanceKm] = useState('');
+  const [eWayRoute, setEWayRoute] = useState('');
+  const [eWayTransporterId, setEWayTransporterId] = useState<string>('');
+  const [eWayAdvancedOpen, setEWayAdvancedOpen] = useState(false);
+
+  const buildEWayBody = useCallback((): CreateEWayBillRequest => {
+    const body: CreateEWayBillRequest = {};
+    const v = eWayVehicleNumber.trim();
+    if (v) body.vehicle_number = v;
+    const dk = eWayDistanceKm.trim();
+    if (dk !== '') {
+      const n = Number(dk);
+      if (!Number.isNaN(n)) body.distance_km = n;
+    }
+    const r = eWayRoute.trim();
+    if (r) body.route = r;
+    if (eWayTransporterId) body.transporter_id = eWayTransporterId;
+    return body;
+  }, [eWayVehicleNumber, eWayDistanceKm, eWayRoute, eWayTransporterId]);
+
   useEffect(() => {
     if (open && dispatchId) {
       setLoading(true);
@@ -53,8 +106,55 @@ export function InvoiceDispatchDetailModal({
       setEInvoice(undefined);
       setEWayBills([]);
       setFgiByProduct({});
+      setPartySites([]);
+      setEWayVehicleNumber('');
+      setEWayDistanceKm('');
+      setEWayRoute('');
+      setEWayTransporterId('');
+      setEWayAdvancedOpen(false);
     }
   }, [open, dispatchId, getById]);
+
+  useEffect(() => {
+    if (!dispatch) return;
+    setPatchDeliverySiteId(dispatch.delivery_site_id ?? '');
+    setPatchLrNumber(dispatch.lr_number ?? '');
+    setPatchTcsAmount(
+      dispatch.tcs_amount != null && !Number.isNaN(Number(dispatch.tcs_amount))
+        ? String(dispatch.tcs_amount)
+        : ''
+    );
+  }, [dispatch?.id, dispatch?.delivery_site_id, dispatch?.lr_number, dispatch?.tcs_amount]);
+
+  useEffect(() => {
+    if (!open || !dispatch?.sales_sauda_id) {
+      setPartySites([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingSites(true);
+    salesSaudasAPI
+      .getById(dispatch.sales_sauda_id)
+      .then((sauda) => {
+        if (cancelled || !sauda?.sales_party_id) {
+          if (!cancelled) setPartySites([]);
+          return Promise.resolve(null);
+        }
+        return salesPartySitesAPI.list(sauda.sales_party_id);
+      })
+      .then((sites) => {
+        if (!cancelled && sites && Array.isArray(sites)) setPartySites(sites);
+      })
+      .catch(() => {
+        if (!cancelled) setPartySites([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSites(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, dispatch?.sales_sauda_id]);
 
   useEffect(() => {
     if (!open || !dispatchId || !dispatch) return;
@@ -90,6 +190,39 @@ export function InvoiceDispatchDetailModal({
       .finally(() => setLoadingFgi(false));
   }, [open, dispatch?.id, dispatch?.godown_id, dispatch?.status, dispatch?.lines?.length]);
 
+  const handleSavePatch = async () => {
+    if (!dispatch) return;
+    const nextSite = patchDeliverySiteId.trim() || null;
+    const nextLr = patchLrNumber.trim() || null;
+    const tcsTrim = patchTcsAmount.trim();
+    let nextTcs: number | null = null;
+    if (tcsTrim !== '') {
+      const n = Number(tcsTrim);
+      if (Number.isNaN(n)) {
+        toast.error('Validation', 'TCS amount must be a valid number');
+        return;
+      }
+      nextTcs = n;
+    }
+    setSavingPatch(true);
+    try {
+      await patch(dispatch.id, {
+        delivery_site_id: nextSite,
+        lr_number: nextLr,
+        tcs_amount: nextTcs,
+      });
+      const updated = await getById(dispatch.id);
+      setDispatch(updated);
+      toast.success('Saved', 'Dispatch details updated');
+      onSuccess?.();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Save failed';
+      toast.error('Error', msg);
+    } finally {
+      setSavingPatch(false);
+    }
+  };
+
   const runAction = async (
     key: string,
     fn: () => Promise<unknown>
@@ -109,7 +242,7 @@ export function InvoiceDispatchDetailModal({
         const einv = await getEInvoice(dispatchId);
         setEInvoice(einv);
       }
-      if (key === 'e-way' && dispatchId) {
+      if ((key === 'e-way' || key === 'e-way-force') && dispatchId) {
         const ewb = await getEWayBills(dispatchId);
         setEWayBills(ewb);
       }
@@ -209,6 +342,71 @@ export function InvoiceDispatchDetailModal({
                   </div>
                 )}
               </div>
+
+              <div className="rounded-lg border border-dashed border-border/70 bg-muted/15 p-3 space-y-3 text-sm">
+                <div className="font-medium text-foreground">LR, TCS & ship-to</div>
+                <p className="text-xs text-muted-foreground">
+                  Optional overrides for NIC e-invoice / e-way. Same as bill-to if ship-to is cleared.
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                      Ship-to site
+                    </label>
+                    <select
+                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                      disabled={loadingSites}
+                      value={patchDeliverySiteId}
+                      onChange={(e) => setPatchDeliverySiteId(e.target.value)}
+                    >
+                      <option value="">Same as bill-to</option>
+                      {partySites.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {formatPartySiteLabel(s)}
+                        </option>
+                      ))}
+                    </select>
+                    {loadingSites && (
+                      <p className="mt-1 text-xs text-muted-foreground">Loading sites…</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                      LR number
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                      value={patchLrNumber}
+                      onChange={(e) => setPatchLrNumber(e.target.value)}
+                      placeholder="Transporter LR / doc no."
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                      TCS amount
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                      value={patchTcsAmount}
+                      onChange={(e) => setPatchTcsAmount(e.target.value)}
+                      placeholder="Optional"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={savingPatch}
+                  onClick={() => void handleSavePatch()}
+                  className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-muted hover:bg-muted/80 disabled:opacity-50"
+                >
+                  {savingPatch && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Save LR / TCS / ship-to
+                </button>
+              </div>
+
               {dispatch.lines && dispatch.lines.length > 0 && (
                 <div>
                   <h4 className="text-sm font-medium mb-2">Lines</h4>
@@ -290,78 +488,120 @@ export function InvoiceDispatchDetailModal({
               )}
               {dispatch.status === 'confirmed' && eInvoice !== undefined && (
                 <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
-                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                  <h4 className="text-sm font-medium mb-2 flex flex-wrap items-center gap-2">
                     <FileDigit className="h-4 w-4" /> E-Invoice
+                    {eInvoice != null && nicPayloadIsMock(eInvoice.government_response_payload) && (
+                      <span className="rounded bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-200">
+                        Mock NIC
+                      </span>
+                    )}
                   </h4>
                   {eInvoice == null ? (
                     <p className="text-sm text-muted-foreground">Not generated yet. Use the button below to generate.</p>
                   ) : (
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      {eInvoice.irn && (
-                        <div>
-                          <span className="text-muted-foreground">IRN</span>
-                          <p className="font-medium break-all">{eInvoice.irn}</p>
-                        </div>
-                      )}
-                      {eInvoice.acknowledgement_number && (
-                        <div>
-                          <span className="text-muted-foreground">Ack. number</span>
-                          <p className="font-medium">{eInvoice.acknowledgement_number}</p>
-                        </div>
-                      )}
-                      {eInvoice.ack_date && (
-                        <div>
-                          <span className="text-muted-foreground">Ack. date</span>
-                          <p className="font-medium">{eInvoice.ack_date}</p>
-                        </div>
-                      )}
-                      {eInvoice.qr_code_content && (
-                        <div className="col-span-2">
-                          <span className="text-muted-foreground">QR content</span>
-                          <p className="font-mono text-xs break-all mt-0.5">{eInvoice.qr_code_content}</p>
-                        </div>
-                      )}
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        {eInvoice.irn && (
+                          <div>
+                            <span className="text-muted-foreground">IRN</span>
+                            <p className="font-medium break-all">{eInvoice.irn}</p>
+                          </div>
+                        )}
+                        {eInvoice.acknowledgement_number && (
+                          <div>
+                            <span className="text-muted-foreground">Ack. number</span>
+                            <p className="font-medium">{eInvoice.acknowledgement_number}</p>
+                          </div>
+                        )}
+                        {eInvoice.ack_date && (
+                          <div>
+                            <span className="text-muted-foreground">Ack. date</span>
+                            <p className="font-medium">{eInvoice.ack_date}</p>
+                          </div>
+                        )}
+                        {eInvoice.qr_code_content && (
+                          <div className="col-span-2">
+                            <span className="text-muted-foreground">QR content</span>
+                            <p className="font-mono text-xs break-all mt-0.5">{eInvoice.qr_code_content}</p>
+                          </div>
+                        )}
+                      </div>
+                      <details className="text-xs">
+                        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                          Government response (audit)
+                        </summary>
+                        <pre className="mt-2 max-h-28 overflow-auto rounded border bg-background/80 p-2 font-mono">
+                          {JSON.stringify(eInvoice.government_response_payload, null, 2)}
+                        </pre>
+                      </details>
                     </div>
                   )}
                 </div>
               )}
-              {dispatch.status === 'confirmed' && eWayBills.length > 0 && (
+              {dispatch.status === 'confirmed' && (
                 <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
                   <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
                     <Truck className="h-4 w-4" /> E-Way Bill(s)
                   </h4>
-                  <div className="space-y-2">
-                    {eWayBills.map((ewb) => (
-                      <div key={ewb.id} className="rounded border bg-background/60 p-2 text-sm">
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                          {ewb.eway_bill_number && (
-                            <div>
-                              <span className="text-muted-foreground">EWB number</span>
-                              <p className="font-medium">{ewb.eway_bill_number}</p>
-                            </div>
-                          )}
-                          {ewb.vehicle_number && (
-                            <div>
-                              <span className="text-muted-foreground">Vehicle</span>
-                              <p className="font-medium">{ewb.vehicle_number}</p>
-                            </div>
-                          )}
-                          {ewb.distance_km != null && (
-                            <div>
-                              <span className="text-muted-foreground">Distance (km)</span>
-                              <p className="font-medium">{ewb.distance_km}</p>
-                            </div>
-                          )}
-                          {ewb.route && (
-                            <div className="col-span-2">
-                              <span className="text-muted-foreground">Route</span>
-                              <p className="font-medium">{ewb.route}</p>
-                            </div>
-                          )}
+                  {eWayBills.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">None yet. Generate below (vehicle on dispatch or in overrides).</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {eWayBills.map((ewb) => (
+                        <div key={ewb.id} className="rounded border bg-background/60 p-2 text-sm">
+                          <div className="mb-1 flex flex-wrap items-center gap-2">
+                            {nicPayloadIsMock(ewb.payload) && (
+                              <span className="rounded bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-200">
+                                Mock NIC
+                              </span>
+                            )}
+                            {ewb.print_url && (
+                              <a
+                                href={ewb.print_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                              >
+                                <ExternalLink className="h-3 w-3" /> Print / PDF
+                              </a>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                            {ewb.eway_bill_number && (
+                              <div>
+                                <span className="text-muted-foreground">EWB number</span>
+                                <p className="font-medium">{ewb.eway_bill_number}</p>
+                              </div>
+                            )}
+                            {ewb.vehicle_number && (
+                              <div>
+                                <span className="text-muted-foreground">Vehicle</span>
+                                <p className="font-medium">{ewb.vehicle_number}</p>
+                              </div>
+                            )}
+                            {ewb.distance_km != null && (
+                              <div>
+                                <span className="text-muted-foreground">Distance (km)</span>
+                                <p className="font-medium">{ewb.distance_km}</p>
+                              </div>
+                            )}
+                            {ewb.valid_until && (
+                              <div>
+                                <span className="text-muted-foreground">Valid until</span>
+                                <p className="font-medium">{ewb.valid_until}</p>
+                              </div>
+                            )}
+                            {ewb.route && (
+                              <div className="col-span-2">
+                                <span className="text-muted-foreground">Route</span>
+                                <p className="font-medium">{ewb.route}</p>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
               {dispatch.status === 'draft' && (
@@ -382,33 +622,125 @@ export function InvoiceDispatchDetailModal({
                 </div>
               )}
               {dispatch.status === 'confirmed' && (
-                <div className="flex flex-wrap gap-2 pt-2 border-t">
+                <div className="space-y-3 border-t pt-3">
                   <button
                     type="button"
-                    disabled={!!actionLoading}
-                    onClick={() =>
-                      runAction('e-invoice', () => generateEInvoice(dispatch.id))
-                    }
-                    className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-muted hover:bg-muted/80 disabled:opacity-50"
+                    onClick={() => setEWayAdvancedOpen((o) => !o)}
+                    className="flex w-full items-center justify-between rounded-lg border border-border/60 bg-muted/25 px-3 py-2 text-left text-sm font-medium hover:bg-muted/40"
                   >
-                    {actionLoading === 'e-invoice' && (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    )}
-                    <FileDigit className="h-4 w-4" /> Generate E-Invoice
+                    E-way overrides (vehicle, distance, route, transporter)
+                    <ChevronDown
+                      className={`h-4 w-4 shrink-0 transition-transform ${eWayAdvancedOpen ? 'rotate-180' : ''}`}
+                    />
                   </button>
-                  <button
-                    type="button"
-                    disabled={!!actionLoading}
-                    onClick={() =>
-                      runAction('e-way', () => generateEWayBill(dispatch.id))
-                    }
-                    className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-muted hover:bg-muted/80 disabled:opacity-50"
-                  >
-                    {actionLoading === 'e-way' && (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                  {eWayAdvancedOpen && (
+                    <div className="grid grid-cols-1 gap-3 rounded-lg border border-dashed border-border/70 p-3 sm:grid-cols-2 text-sm">
+                      <div className="sm:col-span-2">
+                        <label className="mb-1 block text-xs text-muted-foreground">
+                          Vehicle number (required if dispatch has no vehicle)
+                        </label>
+                        <input
+                          type="text"
+                          className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                          value={eWayVehicleNumber}
+                          onChange={(e) => setEWayVehicleNumber(e.target.value)}
+                          placeholder="Override registration"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs text-muted-foreground">Distance (km)</label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                          value={eWayDistanceKm}
+                          onChange={(e) => setEWayDistanceKm(e.target.value)}
+                          placeholder="Optional"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs text-muted-foreground">Transporter override</label>
+                        <select
+                          className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                          value={eWayTransporterId}
+                          onChange={(e) => setEWayTransporterId(e.target.value)}
+                        >
+                          <option value="">Use dispatch transporter</option>
+                          {transporters.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.business_name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="mb-1 block text-xs text-muted-foreground">Route</label>
+                        <input
+                          type="text"
+                          className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                          value={eWayRoute}
+                          onChange={(e) => setEWayRoute(e.target.value)}
+                          placeholder="Optional"
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={!!actionLoading}
+                      onClick={() =>
+                        runAction('e-invoice', () => generateEInvoice(dispatch.id))
+                      }
+                      className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-muted hover:bg-muted/80 disabled:opacity-50"
+                    >
+                      {actionLoading === 'e-invoice' && (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      )}
+                      <FileDigit className="h-4 w-4" /> Generate E-Invoice
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!!actionLoading}
+                      onClick={() =>
+                        runAction('e-way', () =>
+                          generateEWayBill(dispatch.id, { body: buildEWayBody() })
+                        )
+                      }
+                      className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-muted hover:bg-muted/80 disabled:opacity-50"
+                    >
+                      {actionLoading === 'e-way' && (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      )}
+                      <Truck className="h-4 w-4" /> Generate E-Way Bill
+                    </button>
+                    {eWayBills.length > 0 && (
+                      <button
+                        type="button"
+                        disabled={!!actionLoading}
+                        onClick={() => {
+                          if (
+                            !window.confirm(
+                              'Regenerate e-way bill? This calls NIC again with force=true and may add another e-way row.'
+                            )
+                          )
+                            return;
+                          void runAction('e-way-force', () =>
+                            generateEWayBill(dispatch.id, {
+                              force: true,
+                              body: buildEWayBody(),
+                            })
+                          );
+                        }}
+                        className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium border border-border bg-background hover:bg-muted/50 disabled:opacity-50"
+                      >
+                        {actionLoading === 'e-way-force' && (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        )}
+                        <Truck className="h-4 w-4" /> Regenerate E-Way (force)
+                      </button>
                     )}
-                    <Truck className="h-4 w-4" /> Generate E-Way Bill
-                  </button>
+                  </div>
                 </div>
               )}
             </div>

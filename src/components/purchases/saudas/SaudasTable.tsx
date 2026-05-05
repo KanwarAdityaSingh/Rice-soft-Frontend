@@ -62,7 +62,6 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
   const [saudaToCancel, setSaudaToCancel] = useState<Sauda | null>(null);
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
   const [saudaToComplete, setSaudaToComplete] = useState<Sauda | null>(null);
-  const [createOpen, setCreateOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedSaudaId, setSelectedSaudaId] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -92,39 +91,27 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
   const [copiedSaudaId, setCopiedSaudaId] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchRiceCodes = async () => {
+    let cancelled = false;
+    const loadRiceMeta = async () => {
       try {
-        const data = await riceCodesAPI.getAllRiceCodes();
-        setRiceCodes(data);
+        const [codes, types, lengths] = await Promise.all([
+          riceCodesAPI.getAllRiceCodes(),
+          riceCodesAPI.getRiceTypes(),
+          riceCodesAPI.getRiceLengths(),
+        ]);
+        if (!cancelled) {
+          setRiceCodes(codes);
+          setRiceTypes(types);
+          setRiceLengths(lengths);
+        }
       } catch (error) {
-        console.error('Failed to fetch rice codes:', error);
+        console.error('Failed to fetch rice codes / types / lengths:', error);
       }
     };
-    fetchRiceCodes();
-  }, []);
-
-  useEffect(() => {
-    const fetchRiceTypes = async () => {
-      try {
-        const data = await riceCodesAPI.getRiceTypes();
-        setRiceTypes(data);
-      } catch (error) {
-        console.error('Failed to fetch rice types:', error);
-      }
+    void loadRiceMeta();
+    return () => {
+      cancelled = true;
     };
-    fetchRiceTypes();
-  }, []);
-
-  useEffect(() => {
-    const fetchRiceLengths = async () => {
-      try {
-        const data = await riceCodesAPI.getRiceLengths();
-        setRiceLengths(data);
-      } catch (error) {
-        console.error('Failed to fetch rice lengths:', error);
-      }
-    };
-    fetchRiceLengths();
   }, []);
 
   // Fetch usage data to check sauda dependencies
@@ -984,41 +971,34 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
         message={alertMessage}
       />
 
-      <SaudaFormModal
-        open={createOpen}
-        onOpenChange={(open) => {
-          setCreateOpen(open);
-          if (!open) {
-            refetch();
-          }
-        }}
-        onSuccess={refetch}
-      />
+      {editModalOpen && selectedSaudaId ? (
+        <SaudaFormModal
+          open={editModalOpen}
+          onOpenChange={(open) => {
+            setEditModalOpen(open);
+            if (!open) {
+              setSelectedSaudaId(null);
+              refetch();
+            }
+          }}
+          saudaId={selectedSaudaId}
+          onSuccess={refetch}
+        />
+      ) : null}
 
-      <SaudaFormModal
-        open={editModalOpen}
-        onOpenChange={(open) => {
-          setEditModalOpen(open);
-          if (!open) {
-            setSelectedSaudaId(null);
-            refetch();
-          }
-        }}
-        saudaId={selectedSaudaId}
-        onSuccess={refetch}
-      />
-
-      <SaudaPreviewDialog
-        open={previewOpen}
-        onOpenChange={(open) => {
-          setPreviewOpen(open);
-          if (!open) {
-            setPreviewSerial(null);
-          }
-        }}
-        sauda={previewSauda}
-        serialNumber={previewSerial ?? undefined}
-      />
+      {previewOpen && previewSauda ? (
+        <SaudaPreviewDialog
+          open={previewOpen}
+          onOpenChange={(open) => {
+            setPreviewOpen(open);
+            if (!open) {
+              setPreviewSerial(null);
+            }
+          }}
+          sauda={previewSauda}
+          serialNumber={previewSerial ?? undefined}
+        />
+      ) : null}
 
       <DocumentViewerModal
         open={documentViewerOpen}

@@ -23,7 +23,7 @@ export const kaantasAPI = {
     return apiService.post<Kaanta>('/kaantas', data);
   },
 
-  // Update kaanta (does NOT update associated lot)
+  // Update kaanta (backend syncs linked inward slip lot, lot_inventory, bags_inventory)
   updateKaanta: (id: string, data: UpdateKaantaRequest) => {
     return apiService.put<Kaanta>(`/kaantas/${id}`, data);
   },

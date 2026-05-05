@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState, useEffect } from 'react';
-import { X, Scale, Package, Check, Circle, Trash2, Image as ImageIcon, Upload } from 'lucide-react';
+import { X, Scale, Package, Check, Circle, Trash2, Pencil, Image as ImageIcon, Upload } from 'lucide-react';
 import { kaantasAPI } from '../../../services/kaantas.api';
 import { saudasAPI } from '../../../services/saudas.api';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
@@ -10,7 +10,16 @@ import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentVie
 import { CustomSelect } from '../../shared/CustomSelect';
 import { getRiceTypeLabel } from '../../../utils/riceType';
 import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay, calculateRemainingWeight } from '../../../utils/saudaCompletion';
-import type { InwardSlipPass, Sauda, RiceCode, RiceType, BagType, CreateKaantaRequest, Kaanta } from '../../../types/entities';
+import type {
+  InwardSlipPass,
+  Sauda,
+  RiceCode,
+  RiceType,
+  BagType,
+  CreateKaantaRequest,
+  Kaanta,
+  UpdateKaantaRequest,
+} from '../../../types/entities';
 import { KAANTA_BAG_TYPE_OPTIONS, formatKaantaBagTypeLabel } from '../../../constants/bagAndPacketTypes';
 
 interface KaantaWeightDialogProps {
@@ -39,6 +48,22 @@ function ceilToNearestGreaterWholeKg(rawKgPerBag: number): number | null {
   return Math.ceil(rawKgPerBag);
 }
 
+function kaantaToEditDraft(kaanta: Kaanta): KaantaEntry {
+  return {
+    sauda_id: kaanta.sauda_id,
+    full_truck_weight: String(kaanta.full_truck_weight),
+    empty_truck_weight: String(kaanta.empty_truck_weight),
+    said_sent_weight:
+      kaanta.said_sent_weight != null && kaanta.said_sent_weight !== undefined
+        ? String(kaanta.said_sent_weight)
+        : '',
+    bag_weight: String(kaanta.bag_weight),
+    no_of_bags: String(kaanta.no_of_bags),
+    bag_type: kaanta.bag_type,
+    isEnabled: true,
+  };
+}
+
 export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: KaantaWeightDialogProps) {
   // Data loading
   const [saudas, setSaudas] = useState<Sauda[]>([]);
@@ -58,7 +83,11 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
   const [deletingKaantaId, setDeletingKaantaId] = useState<string | null>(null);
-  
+  const [editingKaantaId, setEditingKaantaId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<KaantaEntry | null>(null);
+  const [editErrors, setEditErrors] = useState<Record<string, string>>({});
+  const [updatingKaantaId, setUpdatingKaantaId] = useState<string | null>(null);
+
   // Image upload state
   const [uploadingImage, setUploadingImage] = useState<Record<string, boolean>>({});
   const [documentViewerOpen, setDocumentViewerOpen] = useState(false);
@@ -70,6 +99,15 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
       fetchData();
     }
   }, [open, isp]);
+
+  useEffect(() => {
+    if (!open) {
+      setEditingKaantaId(null);
+      setEditDraft(null);
+      setEditErrors({});
+      setUpdatingKaantaId(null);
+    }
+  }, [open]);
 
   const fetchData = async () => {
     if (!isp?.sauda_ids?.length) return;
@@ -317,6 +355,145 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
     }
   };
 
+  const beginEditKaanta = (kaanta: Kaanta) => {
+    setEditingKaantaId(kaanta.id);
+    setEditDraft(kaantaToEditDraft(kaanta));
+    setEditErrors({});
+  };
+
+  const cancelEditKaanta = () => {
+    setEditingKaantaId(null);
+    setEditDraft(null);
+    setEditErrors({});
+  };
+
+  const updateEditDraftField = (field: keyof KaantaEntry, value: string | boolean) => {
+    if (!editDraft) return;
+    let next: KaantaEntry = { ...editDraft, [field]: value } as KaantaEntry;
+
+    if (
+      typeof value === 'string' &&
+      (field === 'no_of_bags' || field === 'full_truck_weight' || field === 'empty_truck_weight')
+    ) {
+      const fullWeight = parseFloat(next.full_truck_weight) || 0;
+      const emptyWeight = parseFloat(next.empty_truck_weight) || 0;
+      const kaantaWeight = Math.max(0, fullWeight - emptyWeight);
+      const bags = parseInt(next.no_of_bags, 10);
+
+      if (kaantaWeight > 0 && !Number.isNaN(bags) && bags > 0) {
+        const rawKgPerBag = kaantaWeight / bags;
+        const ceiled = ceilToNearestGreaterWholeKg(rawKgPerBag);
+        next = {
+          ...next,
+          bag_weight: ceiled !== null ? String(ceiled) : '',
+        };
+      } else {
+        next = { ...next, bag_weight: '' };
+      }
+    }
+
+    setEditDraft(next);
+    setEditErrors({});
+  };
+
+  const validateEditDraft = (original: Kaanta): boolean => {
+    if (!editDraft) return false;
+    const entryErrors: Record<string, string> = {};
+    let isValid = true;
+
+    const full = parseFloat(editDraft.full_truck_weight);
+    const empty = parseFloat(editDraft.empty_truck_weight);
+    const saidSent = parseFloat(editDraft.said_sent_weight);
+    const bagWt = parseFloat(editDraft.bag_weight);
+    const bags = parseInt(editDraft.no_of_bags, 10);
+
+    if (!editDraft.full_truck_weight || isNaN(full) || full <= 0) {
+      entryErrors.fullTruckWeight = 'Required and must be > 0';
+      isValid = false;
+    }
+
+    if (!editDraft.empty_truck_weight || isNaN(empty) || empty <= 0) {
+      entryErrors.emptyTruckWeight = 'Required and must be > 0';
+      isValid = false;
+    }
+
+    if (full > 0 && empty > 0 && empty >= full) {
+      entryErrors.emptyTruckWeight = 'Must be less than full weight';
+      isValid = false;
+    }
+
+    if (!editDraft.said_sent_weight || isNaN(saidSent) || saidSent <= 0) {
+      entryErrors.saidSentWeight = 'Required and must be > 0';
+      isValid = false;
+    }
+
+    if (!editDraft.bag_weight || isNaN(bagWt) || bagWt <= 0) {
+      entryErrors.bagWeight = 'Required and must be > 0';
+      isValid = false;
+    }
+
+    if (!editDraft.no_of_bags || isNaN(bags) || bags <= 0) {
+      entryErrors.noOfBags = 'Required and must be > 0';
+      isValid = false;
+    }
+
+    const sauda = getSaudaById(editDraft.sauda_id);
+    if (sauda) {
+      const kaantaWeight = calculateKaantaWeight(editDraft);
+      if (kaantaWeight > 0) {
+        const remaining = calculateRemainingWeight(sauda.quantity, sauda.received_until_now);
+        if (remaining !== null) {
+          const maxAllowed = remaining + original.kaanta_weight + KAANTA_OVERWEIGHT_TOLERANCE_KG;
+          if (kaantaWeight > maxAllowed) {
+            entryErrors.fullTruckWeight = `Net cannot exceed ${maxAllowed.toFixed(2)} kg for this sauda (includes this kaanta's current ${original.kaanta_weight.toFixed(2)} kg + ${KAANTA_OVERWEIGHT_TOLERANCE_KG} kg tolerance)`;
+            isValid = false;
+          }
+        }
+      }
+    }
+
+    setEditErrors(entryErrors);
+    return isValid;
+  };
+
+  const handleSaveKaantaEdit = async (original: Kaanta) => {
+    if (!editDraft || editingKaantaId !== original.id) return;
+    if (!validateEditDraft(original)) {
+      setAlertType('warning');
+      setAlertTitle('Check fields');
+      setAlertMessage('Fix the highlighted errors before saving.');
+      setAlertOpen(true);
+      return;
+    }
+
+    setUpdatingKaantaId(original.id);
+    try {
+      const payload: UpdateKaantaRequest = {
+        full_truck_weight: parseFloat(editDraft.full_truck_weight),
+        empty_truck_weight: parseFloat(editDraft.empty_truck_weight),
+        said_sent_weight: parseFloat(editDraft.said_sent_weight),
+        bag_weight: parseFloat(editDraft.bag_weight),
+        no_of_bags: parseInt(editDraft.no_of_bags, 10),
+        bag_type: editDraft.bag_type,
+      };
+      await kaantasAPI.updateKaanta(original.id, payload);
+      setAlertType('success');
+      setAlertTitle('Updated');
+      setAlertMessage('Kaanta saved. Linked lot and inventory were updated on the server.');
+      setAlertOpen(true);
+      cancelEditKaanta();
+      await fetchData();
+      if (onSuccess) onSuccess();
+    } catch (error: any) {
+      setAlertType('error');
+      setAlertTitle('Error');
+      setAlertMessage(error.message || 'Failed to update kaanta');
+      setAlertOpen(true);
+    } finally {
+      setUpdatingKaantaId(null);
+    }
+  };
+
   const handleDeleteKaanta = async (kaantaId: string) => {
     setDeletingKaantaId(kaantaId);
     try {
@@ -463,12 +640,16 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                   {/* Already Created Kaantas */}
                   {existingKaantas.length > 0 && (
                     <div className="mb-5">
-                      <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+                      <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">
                         Recorded ({existingKaantas.length})
                       </h3>
+                      <p className="text-[11px] text-muted-foreground mb-2 leading-relaxed">
+                        Use Edit to correct weights or bags; the server updates the linked lot and inventory.
+                      </p>
                       <ul className="space-y-2">
                         {existingKaantas.map((kaanta) => {
                           const sauda = getSaudaById(kaanta.sauda_id);
+                          const isEditing = editingKaantaId === kaanta.id && editDraft !== null;
                           return (
                             <li
                               key={kaanta.id}
@@ -486,21 +667,200 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                     </code>
                                   </div>
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteKaanta(kaanta.id)}
-                                  disabled={deletingKaantaId === kaanta.id}
-                                  className="p-1.5 hover:bg-destructive/10 rounded-md text-destructive transition-colors disabled:opacity-50 shrink-0"
-                                  title="Delete kaanta"
-                                >
-                                  {deletingKaantaId === kaanta.id ? (
-                                    <LoadingSpinner />
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {isEditing ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={cancelEditKaanta}
+                                        disabled={updatingKaantaId === kaanta.id}
+                                        className="px-2 py-1 text-[11px] border border-border rounded-md hover:bg-muted transition-colors disabled:opacity-50"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSaveKaantaEdit(kaanta)}
+                                        disabled={updatingKaantaId === kaanta.id}
+                                        className="px-2 py-1 text-[11px] bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+                                      >
+                                        {updatingKaantaId === kaanta.id ? 'Saving…' : 'Save'}
+                                      </button>
+                                    </>
                                   ) : (
-                                    <Trash2 className="h-3.5 w-3.5" />
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => beginEditKaanta(kaanta)}
+                                        disabled={updatingKaantaId !== null || deletingKaantaId !== null}
+                                        className="p-1.5 hover:bg-muted rounded-md text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                                        title="Edit kaanta"
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteKaanta(kaanta.id)}
+                                        disabled={
+                                          deletingKaantaId === kaanta.id ||
+                                          updatingKaantaId !== null ||
+                                          editingKaantaId !== null
+                                        }
+                                        className="p-1.5 hover:bg-destructive/10 rounded-md text-destructive transition-colors disabled:opacity-50"
+                                        title="Delete kaanta"
+                                      >
+                                        {deletingKaantaId === kaanta.id ? (
+                                          <LoadingSpinner />
+                                        ) : (
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        )}
+                                      </button>
+                                    </>
                                   )}
-                                </button>
+                                </div>
                               </div>
 
+                              {isEditing && editDraft ? (
+                                <div className="px-3 py-2.5 space-y-3 text-xs">
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                      <label className="block text-[10px] text-muted-foreground mb-0.5">Full (kg) *</label>
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={editDraft.full_truck_weight}
+                                        onChange={(e) => {
+                                          const value = e.target.value;
+                                          if (value === '' || (!isNaN(parseFloat(value)) && parseFloat(value) >= 0)) {
+                                            updateEditDraftField('full_truck_weight', value);
+                                          }
+                                        }}
+                                        onWheel={(e) => e.currentTarget.blur()}
+                                        className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background ${
+                                          editErrors.fullTruckWeight ? 'border-red-500' : 'border-border'
+                                        }`}
+                                      />
+                                      {editErrors.fullTruckWeight && (
+                                        <p className="text-[10px] text-red-500 mt-0.5">{editErrors.fullTruckWeight}</p>
+                                      )}
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] text-muted-foreground mb-0.5">Empty (kg) *</label>
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={editDraft.empty_truck_weight}
+                                        onChange={(e) => {
+                                          const value = e.target.value;
+                                          if (value === '' || (!isNaN(parseFloat(value)) && parseFloat(value) >= 0)) {
+                                            updateEditDraftField('empty_truck_weight', value);
+                                          }
+                                        }}
+                                        onWheel={(e) => e.currentTarget.blur()}
+                                        className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background ${
+                                          editErrors.emptyTruckWeight ? 'border-red-500' : 'border-border'
+                                        }`}
+                                      />
+                                      {editErrors.emptyTruckWeight && (
+                                        <p className="text-[10px] text-red-500 mt-0.5">{editErrors.emptyTruckWeight}</p>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-muted-foreground mb-0.5">
+                                      Weight as per bill (kg) *
+                                    </label>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      value={editDraft.said_sent_weight}
+                                      onChange={(e) => {
+                                        const value = e.target.value;
+                                        if (value === '' || (!isNaN(parseFloat(value)) && parseFloat(value) >= 0)) {
+                                          updateEditDraftField('said_sent_weight', value);
+                                        }
+                                      }}
+                                      onWheel={(e) => e.currentTarget.blur()}
+                                      className={`w-full max-w-xs px-2 py-1.5 text-sm border rounded-md bg-background ${
+                                        editErrors.saidSentWeight ? 'border-red-500' : 'border-border'
+                                      }`}
+                                    />
+                                    {editErrors.saidSentWeight && (
+                                      <p className="text-[10px] text-red-500 mt-0.5">{editErrors.saidSentWeight}</p>
+                                    )}
+                                  </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                    <div>
+                                      <label className="block text-[10px] text-muted-foreground mb-0.5">Bag count *</label>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        value={editDraft.no_of_bags}
+                                        onChange={(e) => {
+                                          const value = e.target.value;
+                                          if (value === '' || (!isNaN(parseInt(value, 10)) && parseInt(value, 10) >= 0)) {
+                                            updateEditDraftField('no_of_bags', value);
+                                          }
+                                        }}
+                                        onWheel={(e) => e.currentTarget.blur()}
+                                        className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background ${
+                                          editErrors.noOfBags ? 'border-red-500' : 'border-border'
+                                        }`}
+                                      />
+                                      {editErrors.noOfBags && (
+                                        <p className="text-[10px] text-red-500 mt-0.5">{editErrors.noOfBags}</p>
+                                      )}
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] text-muted-foreground mb-0.5">
+                                        Bag weight (auto)
+                                      </label>
+                                      <div
+                                        className={`w-full px-2 py-1.5 text-sm border rounded-md bg-muted/50 tabular-nums ${
+                                          editErrors.bagWeight ? 'border-red-500' : 'border-border'
+                                        }`}
+                                      >
+                                        {editDraft.bag_weight ? `${editDraft.bag_weight} kg` : '—'}
+                                      </div>
+                                      {editErrors.bagWeight && (
+                                        <p className="text-[10px] text-red-500 mt-0.5">{editErrors.bagWeight}</p>
+                                      )}
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] text-muted-foreground mb-0.5">Bag type *</label>
+                                      <CustomSelect
+                                        value={editDraft.bag_type}
+                                        onChange={(value) => updateEditDraftField('bag_type', value as BagType)}
+                                        options={KAANTA_BAG_TYPE_OPTIONS.map((o) => ({
+                                          value: o.value,
+                                          label: o.label,
+                                        }))}
+                                        placeholder="Type"
+                                        allowClear={false}
+                                      />
+                                    </div>
+                                  </div>
+                                  <div className="text-[11px] tabular-nums text-muted-foreground">
+                                    Net (preview):{' '}
+                                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                                      {calculateKaantaWeight(editDraft).toFixed(2)} kg
+                                    </span>
+                                    {sauda && sauda.quantity != null && (
+                                      <span className="ml-2">
+                                        (Headroom for this sauda:{' '}
+                                        {(
+                                          calculateRemainingWeight(sauda.quantity, sauda.received_until_now)! +
+                                          kaanta.kaanta_weight
+                                        ).toFixed(2)}{' '}
+                                        kg incl. this kaanta)
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
                               <div className="px-3 py-2.5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-3 gap-y-2 text-xs tabular-nums">
                                 <div>
                                   <div className="text-muted-foreground">Full</div>
@@ -532,6 +892,7 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                   </div>
                                 </div>
                               </div>
+                              )}
 
                               <div className="px-3 pb-2.5 pt-0 flex gap-2">
                                 <div className="flex-1 min-w-0">

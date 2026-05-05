@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp, Eye, FileQuestion, IndianRupee, X } from 'lucide-react';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { EmptyState } from '../shared/EmptyState';
@@ -37,6 +37,11 @@ function formatDateLabel(iso: string | null | undefined): string {
   if (!iso) return '—';
   const d = new Date(iso.includes('T') ? iso : `${iso}T12:00:00`);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-IN');
+}
+
+/** Rows where broker_commission_amount is strictly positive. */
+function linesWithPositiveCommission(lines: BrokerCommissionSummaryLine[]) {
+  return lines.filter((row) => (row.broker_commission_amount ?? 0) > 0);
 }
 
 interface BrokerBrokerageCommissionSummaryModalProps {
@@ -150,6 +155,21 @@ export function BrokerBrokerageCommissionSummaryModal({
     const t = transporters.find((x) => x.id === id);
     return t?.business_name ?? id;
   };
+
+  const visibleLines = useMemo(
+    () => (data ? linesWithPositiveCommission(data.lines) : []),
+    [data]
+  );
+
+  useEffect(() => {
+    if (visibleLines.length === 0) {
+      setDetailSaudaId(null);
+      return;
+    }
+    if (detailSaudaId && !visibleLines.some((r) => r.sauda_id === detailSaudaId)) {
+      setDetailSaudaId(null);
+    }
+  }, [detailSaudaId, visibleLines]);
 
   const fetchSummary = useCallback(async () => {
     if (!brokerId) return;
@@ -282,13 +302,19 @@ export function BrokerBrokerageCommissionSummaryModal({
                   description="Try widening the date range or clearing filters."
                 />
               )}
-              {!loading && !error && data && data.lines.length > 0 && (
+              {!loading && !error && data && data.lines.length > 0 && visibleLines.length === 0 && (
+                <EmptyState
+                  icon={FileQuestion}
+                  title="No brokerage to show"
+                  description="All matching saudas have ₹0 commission for this broker. Try different filters or date range."
+                />
+              )}
+              {!loading && !error && data && visibleLines.length > 0 && (
                 <>
                   <div className="overflow-x-auto overflow-y-auto max-h-[min(52vh,520px)] rounded-lg border border-border/60">
-                    <table className="w-full text-sm min-w-[680px]">
+                    <table className="w-full text-sm min-w-[560px]">
                       <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm z-[1]">
                         <tr className="border-b border-border text-left">
-                          <th className="py-2.5 px-3 font-semibold whitespace-nowrap">Sauda</th>
                           <th className="py-2.5 px-3 font-semibold min-w-[10rem]">Party</th>
                           <th className="py-2.5 px-3 font-semibold whitespace-nowrap text-right">Rule</th>
                           <th className="py-2.5 px-3 font-semibold whitespace-nowrap text-right">Commission</th>
@@ -298,17 +324,14 @@ export function BrokerBrokerageCommissionSummaryModal({
                         </tr>
                       </thead>
                       <tbody>
-                        {data.lines.map((row) => {
+                        {visibleLines.map((row) => {
                           const isps = row.isps ?? [];
                           const pas = row.payment_advices ?? [];
                           const expanded = detailSaudaId === row.sauda_id;
                           return (
                             <Fragment key={row.sauda_id}>
                               <tr className="border-b border-border/50 hover:bg-muted/20">
-                                <td className="py-2.5 px-3 font-medium whitespace-nowrap">
-                                  {row.sauda_display_id?.trim() || row.sauda_id.slice(0, 8)}
-                                </td>
-                                <td className="py-2.5 px-3 max-w-[14rem]">
+                                <td className="py-2.5 px-3 max-w-[16rem]">
                                   <span className="block truncate" title={row.party?.business_name ?? ''}>
                                     {row.party?.business_name ?? '—'}
                                   </span>
@@ -341,7 +364,7 @@ export function BrokerBrokerageCommissionSummaryModal({
                               </tr>
                               {expanded && (
                                 <tr className="border-b border-border/50 bg-muted/15">
-                                  <td colSpan={7} className="p-4 sm:p-5 align-top">
+                                  <td colSpan={6} className="p-4 sm:p-5 align-top">
                                     <div className="space-y-5 max-w-full">
                                       <BreakdownPanel row={row} />
 

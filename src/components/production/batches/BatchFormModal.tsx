@@ -12,8 +12,29 @@ import { useInventory } from '../../../hooks/useInventory';
 import { lotsAPI } from '../../../services/lots.api';
 import { inventoryAPI } from '../../../services/inventory.api';
 import { useGodowns } from '../../../hooks/useGodowns';
-import type { CreateBatchRequest, Batch, BatchProduct, BatchPackaging, Recipe, Lot, LotsInventory, Packaging, PackagingVendor } from '../../../types/entities';
+import type {
+  AttachBatchProductRequest,
+  Batch,
+  BatchProduct,
+  BatchPackaging,
+  QualityParameter,
+  Recipe,
+  Lot,
+  LotsInventory,
+  Packaging,
+  PackagingVendor,
+} from '../../../types/entities';
 import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
+import { parametersAPI } from '../../../services/parameters.api';
+import { QualityParametersFields } from '../../shared/QualityParametersFields';
+import {
+  draftFromQualityParameter,
+  qualityDraftHasAnyValue,
+  qualityDraftToNullableFields,
+  qualityParameterRowHasValues,
+  emptyQualityParameterDraft,
+  type QualityParameterFieldKey,
+} from '../../../utils/qualityParameters';
 
 interface BatchFormModalProps {
   open: boolean;
@@ -29,6 +50,114 @@ function packagingHoldingCapacityKg(p: Packaging): number {
   if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
   const n = parseFloat(String(v));
   return Number.isFinite(n) ? n : 0;
+}
+
+function formatBatchProductCostRupee(value: unknown): string | null {
+  if (value == null || value === '') return null;
+  const n = typeof value === 'number' ? value : parseFloat(String(value));
+  if (!Number.isFinite(n)) return null;
+  return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+interface BatchProductQualityBlockProps {
+  batchId: string;
+  productId: string;
+  parameter: QualityParameter | null;
+  disabled: boolean;
+  onRowChange: (productId: string, row: QualityParameter | null) => void;
+  onNotify: (type: 'success' | 'error' | 'warning', title: string, message: string) => void;
+}
+
+function BatchProductQualityBlock({
+  batchId,
+  productId,
+  parameter,
+  disabled,
+  onRowChange,
+  onNotify,
+}: BatchProductQualityBlockProps) {
+  const [expanded, setExpanded] = useState(false);
+  const [draft, setDraft] = useState(emptyQualityParameterDraft());
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setDraft(draftFromQualityParameter(parameter));
+  }, [parameter]);
+
+  const setField = (key: QualityParameterFieldKey, value: string) => {
+    setDraft((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const refetchRow = async (): Promise<QualityParameter | null> => {
+    const rows = await parametersAPI.list({ batch_id: batchId, product_id: productId });
+    return rows?.[0] ?? null;
+  };
+
+  const handleSave = async () => {
+    const hasValues = qualityDraftHasAnyValue(draft);
+    const fields = qualityDraftToNullableFields(draft);
+    setSaving(true);
+    try {
+      if (parameter?.id) {
+        if (!hasValues) {
+          await parametersAPI.delete(parameter.id);
+          onRowChange(productId, await refetchRow());
+          onNotify('success', 'Saved', 'Quality parameters cleared.');
+        } else {
+          await parametersAPI.update(parameter.id, fields);
+          onRowChange(productId, await refetchRow());
+          onNotify('success', 'Saved', 'Quality parameters updated.');
+        }
+      } else {
+        if (!hasValues) {
+          onNotify('warning', 'Nothing to save', 'Enter at least one value first.');
+          return;
+        }
+        await parametersAPI.create({
+          batch_id: batchId,
+          product_id: productId,
+          ...fields,
+        });
+        onRowChange(productId, await refetchRow());
+        onNotify('success', 'Saved', 'Quality parameters saved.');
+      }
+      setExpanded(false);
+    } catch (e: any) {
+      onNotify('error', 'Error', e?.message || 'Failed to save quality parameters.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const summaryLabel = qualityParameterRowHasValues(parameter) ? 'Recorded' : 'Not set';
+
+  return (
+    <div className="mt-2 pt-2 border-t border-border/60">
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className="flex w-full items-center justify-between gap-2 text-left text-xs font-medium text-muted-foreground hover:text-foreground"
+      >
+        <span>Quality parameters</span>
+        <span className="shrink-0 text-[10px] font-normal tabular-nums">{summaryLabel}</span>
+      </button>
+      {expanded && (
+        <div className="mt-2 space-y-2">
+          <QualityParametersFields draft={draft} onChange={setField} disabled={disabled || saving} compact />
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={disabled || saving}
+              className="px-3 py-1 text-xs rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Save parameters'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalProps) {
@@ -53,9 +182,12 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
   const [currentBatch, setCurrentBatch] = useState<Batch | null>(null);
   const [batchProducts, setBatchProducts] = useState<BatchProduct[]>([]);
   const [batchPackaging, setBatchPackaging] = useState<BatchPackaging[]>([]);
+  const [parametersByProductId, setParametersByProductId] = useState<Record<string, QualityParameter | null>>({});
   
   // Stage 2: Product Attachment
   const [selectedProductId, setSelectedProductId] = useState<string>('');
+  /** Optional total cost (₹) when attaching a product — empty means omit */
+  const [attachProductCost, setAttachProductCost] = useState<string>('');
   
   // Stage 3: Packaging Attachment
   const [packagingForProducts, setPackagingForProducts] = useState<Record<string, Packaging[]>>({});
@@ -118,6 +250,37 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
       loadPackagingForProducts();
     }
   }, [batchProducts, currentBatch]);
+
+  // Load quality-parameter rows per batch product (optional 0–1 row per product in practice)
+  useEffect(() => {
+    if (!open || !currentBatch?.id || batchProducts.length === 0) {
+      if (!open) setParametersByProductId({});
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      const map: Record<string, QualityParameter | null> = {};
+      try {
+        await Promise.all(
+          batchProducts.map(async (bp) => {
+            const rows = await parametersAPI.list({
+              batch_id: currentBatch.id,
+              product_id: bp.product_id,
+            });
+            map[bp.product_id] = rows?.[0] ?? null;
+          })
+        );
+        if (!cancelled) setParametersByProductId(map);
+      } catch (e) {
+        console.error('Failed to load batch quality parameters:', e);
+        if (!cancelled) setParametersByProductId({});
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, currentBatch?.id, batchProducts]);
 
   const loadLotsData = async (godown: string) => {
     setLoadingData(true);
@@ -196,7 +359,9 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
     setSelectedRecipe(null);
     setBatchProducts([]);
     setBatchPackaging([]);
+    setParametersByProductId({});
     setSelectedProductId('');
+    setAttachProductCost('');
     setPackagingForProducts({});
     setPackagingQuantities({});
     setCurrentStage(1);
@@ -247,14 +412,34 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
   // Stage 2: Add Product to Batch
   const handleAddProduct = async () => {
     if (!selectedProductId || !currentBatch) return;
-    
+
+    const costTrimmed = attachProductCost.trim();
+    let costValue: number | undefined;
+    if (costTrimmed !== '') {
+      const parsed = parseFloat(costTrimmed);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        setAlertType('warning');
+        setAlertTitle('Invalid cost');
+        setAlertMessage('Cost must be zero or positive.');
+        setAlertOpen(true);
+        return;
+      }
+      costValue = Math.round(parsed * 100) / 100;
+    }
+
+    const payload: AttachBatchProductRequest = { product_id: selectedProductId };
+    if (costValue !== undefined) {
+      payload.cost = costValue;
+    }
+
     setLoading(true);
     try {
-      const batchData = await addProductToBatch(currentBatch.id, selectedProductId);
+      const batchData = await addProductToBatch(currentBatch.id, payload);
       const updatedProducts = await getBatchProducts(currentBatch.id);
       setBatchProducts(updatedProducts);
       setSelectedProductId('');
-      
+      setAttachProductCost('');
+
       // Check if batch status is 'ready_to_pack'
       if (batchData && batchData.status === 'ready_to_pack') {
         // Enable Stage 3
@@ -263,11 +448,11 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
         setCurrentBatch(batchData);
         setAlertType('success');
         setAlertTitle('Stage 2 Complete - Ready to Pack');
-        setAlertMessage(`Batch ${batchData.batch_number} is now ready to pack (Status: ${batchData.status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}). You can now add packaging.`);
+        setAlertMessage(`Batch ${batchData.batch_number} is now ready to pack (Status: ${batchData.status.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}). You can now add packaging.`);
       } else {
         setAlertType('success');
         setAlertTitle('Product Added');
-        setAlertMessage(`Product added to batch ${currentBatch.batch_number} successfully. Current status: ${currentBatch.status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}.`);
+        setAlertMessage(`Product added to batch ${currentBatch.batch_number} successfully. Current status: ${currentBatch.status.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}.`);
       }
       setAlertOpen(true);
       await refetch();
@@ -290,7 +475,12 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
       const updatedProducts = await getBatchProducts(currentBatch.id);
       setBatchProducts(updatedProducts);
       // Remove packaging for this product
-      setBatchPackaging(prev => prev.filter(bp => bp.product_id !== productId));
+      setBatchPackaging((prev) => prev.filter((bp) => bp.product_id !== productId));
+      setParametersByProductId((prev) => {
+        const next = { ...prev };
+        delete next[productId];
+        return next;
+      });
       await refetch();
     } catch (error: any) {
       setAlertType('error');
@@ -342,14 +532,20 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
       // Fetch updated batch details to check status
       const updatedBatch = await getBatchDetails(currentBatch.id);
       setCurrentBatch(updatedBatch as any);
+
+      const productIdsInBatch = batchProducts.map((bp) => bp.product_id);
+      const productIdsWithPackaging = new Set(updatedPackaging.map((p) => p.product_id));
+      const allBatchProductsHavePackaging =
+        productIdsInBatch.length > 0 &&
+        productIdsInBatch.every((id) => productIdsWithPackaging.has(id));
       
-      // Check if batch is now packaged (stage 3 complete)
-      if (updatedBatch.status === 'packaged') {
+      // Only auto-close when the batch is packaged AND every attached product has packaging,
+      // so multi-product batches stay open until the user finishes all products.
+      if (updatedBatch.status === 'packaged' && allBatchProductsHavePackaging) {
         setAlertType('success');
         setAlertTitle('Stage 3 Complete - Batch Packaged');
         setAlertMessage(`Batch ${updatedBatch.batch_number} has been packaged successfully! Status: ${updatedBatch.status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}.`);
         setAlertOpen(true);
-        // Close form automatically after stage 3 completion
         setTimeout(() => {
           onOpenChange(false);
         }, 2000);
@@ -783,62 +979,107 @@ export function BatchFormModal({ open, onOpenChange, batchId }: BatchFormModalPr
 
                       {currentBatch.status === 'recipe_attached' || currentBatch.status === 'ready_to_pack' || currentBatch.status === 'packaged' ? (
                         <div className="space-y-4">
-                          <div className="flex gap-2">
-                            <select
-                              value={selectedProductId}
-                              onChange={(e) => setSelectedProductId(e.target.value)}
-                              className="flex-1 px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
-                            >
-                              <option value="">Select a product</option>
-                              {products.map((product) => (
-                                <option key={product.id} value={product.id}>
-                                  {product.name} {product.brand ? `(${product.brand})` : ''}
-                                </option>
-                              ))}
-                            </select>
+                          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                            <div className="flex-1 min-w-[200px] space-y-1">
+                              <label className="block text-xs font-medium text-muted-foreground">Product *</label>
+                              <select
+                                value={selectedProductId}
+                                onChange={(e) => setSelectedProductId(e.target.value)}
+                                className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                              >
+                                <option value="">Select a product</option>
+                                {products.map((product) => (
+                                  <option key={product.id} value={product.id}>
+                                    {product.name} {product.brand ? `(${product.brand})` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="w-full sm:w-36 space-y-1">
+                              <label className="block text-xs font-medium text-muted-foreground">Cost (₹)</label>
+                              <input
+                                type="number"
+                                min={0}
+                                step={0.01}
+                                value={attachProductCost}
+                                onChange={(e) => setAttachProductCost(e.target.value)}
+                                disabled={loading}
+                                className="w-full px-3 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary text-sm tabular-nums"
+                                placeholder="Optional"
+                              />
+                            </div>
                             <button
+                              type="button"
                               onClick={handleAddProduct}
                               disabled={loading || !selectedProductId}
-                              className="btn-primary px-4 py-2 rounded-lg inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="btn-primary px-4 py-2 rounded-lg inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed sm:shrink-0"
                             >
                               <Plus className="h-4 w-4" /> Add Product
                             </button>
                           </div>
+                          <p className="text-xs text-muted-foreground">
+                            Leave cost blank to omit (server keeps existing cost on re-attach). Max 2 decimal places — values are rounded to paise on save.
+                          </p>
 
                           {batchProducts.length > 0 && (
                             <div className="space-y-2">
                               <h4 className="text-sm font-semibold text-muted-foreground">Attached Products ({batchProducts.length})</h4>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <div className="flex flex-col gap-2">
                                 {batchProducts.map((bp) => {
-                                  const product = products.find(p => p.id === bp.product_id);
+                                  const product = products.find((p) => p.id === bp.product_id);
+                                  const costLabel = formatBatchProductCostRupee(bp.cost);
                                   return (
-                                    <div 
-                                      key={bp.id} 
-                                      className="group relative flex items-center justify-between p-3 rounded-lg bg-gradient-to-br from-card to-muted/30 border border-border hover:border-primary/40 hover:shadow-md transition-all duration-200"
+                                    <div
+                                      key={bp.id}
+                                      className="group relative rounded-lg bg-gradient-to-br from-card to-muted/30 border border-border hover:border-primary/40 hover:shadow-md transition-all duration-200"
                                     >
-                                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                                        <div className="p-2 rounded-lg bg-primary/10 text-primary flex-shrink-0">
-                                          <Package className="h-4 w-4" />
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                          <div className="font-medium text-sm text-foreground truncate">
-                                            {product?.name || 'Unknown Product'}
+                                      <div className="flex items-center justify-between p-3">
+                                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                                          <div className="p-2 rounded-lg bg-primary/10 text-primary flex-shrink-0">
+                                            <Package className="h-4 w-4" />
                                           </div>
-                                          {product?.brand && (
-                                            <div className="text-xs text-muted-foreground mt-0.5">
-                                              {product.brand}
+                                          <div className="flex-1 min-w-0">
+                                            <div className="font-medium text-sm text-foreground truncate">
+                                              {product?.name || 'Unknown Product'}
                                             </div>
-                                          )}
+                                            {product?.brand && (
+                                              <div className="text-xs text-muted-foreground mt-0.5">{product.brand}</div>
+                                            )}
+                                            {costLabel ? (
+                                              <div className="text-xs text-muted-foreground mt-1 tabular-nums">
+                                                Attached cost{' '}
+                                                <span className="font-semibold text-foreground">{costLabel}</span>
+                                              </div>
+                                            ) : null}
+                                          </div>
                                         </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleRemoveProduct(bp.product_id)}
+                                          disabled={loading}
+                                          className="ml-2 p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-all duration-200 disabled:opacity-50 flex-shrink-0"
+                                          title="Remove product"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </button>
                                       </div>
-                                      <button
-                                        onClick={() => handleRemoveProduct(bp.product_id)}
-                                        disabled={loading}
-                                        className="ml-2 p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-all duration-200 disabled:opacity-50 flex-shrink-0"
-                                        title="Remove product"
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                      </button>
+                                      <div className="px-3 pb-3">
+                                        <BatchProductQualityBlock
+                                          batchId={currentBatch!.id}
+                                          productId={bp.product_id}
+                                          parameter={parametersByProductId[bp.product_id] ?? null}
+                                          disabled={loading}
+                                          onRowChange={(pid, row) =>
+                                            setParametersByProductId((prev) => ({ ...prev, [pid]: row }))
+                                          }
+                                          onNotify={(type, title, message) => {
+                                            setAlertType(type);
+                                            setAlertTitle(title);
+                                            setAlertMessage(message);
+                                            setAlertOpen(true);
+                                          }}
+                                        />
+                                      </div>
                                     </div>
                                   );
                                 })}

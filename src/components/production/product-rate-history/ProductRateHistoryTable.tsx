@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { History } from 'lucide-react';
+import { History, Download } from 'lucide-react';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { EmptyState } from '../../admin/shared/EmptyState';
 import { useProducts } from '../../../hooks/useProducts';
 import { productsAPI } from '../../../services/products.api';
 import { HOLDING_CAPACITIES } from '../../../constants/packaging';
 import type { ProductRateHistoryResponse } from '../../../types/entities';
+import { downloadProductRateHistoryPdf } from '../../../utils/productRateHistoryPdf';
 
 export function ProductRateHistoryTable() {
   const { products, loading: productsLoading } = useProducts();
@@ -51,6 +52,22 @@ export function ProductRateHistoryTable() {
   }, [productId, holdingFilter, fromDate, toDate, load]);
 
   const points = data?.points ?? [];
+
+  const handleDownloadPdf = () => {
+    if (!data || points.length === 0) return;
+    const filtersSummary: string[] = [`Rows exported: ${points.length}`];
+    filtersSummary.push(holdingFilter ? `Bag size: ${holdingFilter} kg only` : 'Bag size: all');
+    filtersSummary.push(
+      fromDate || toDate
+        ? `Date filter: ${fromDate || '-'} to ${toDate || '-'}`
+        : 'Date filter: none (all loaded history)'
+    );
+    downloadProductRateHistoryPdf(points, {
+      productName: data.product.name,
+      filtersSummary,
+      generatedAtLabel: `Generated: ${new Date().toLocaleString()}`,
+    });
+  };
 
   return (
     <div className="space-y-4">
@@ -118,6 +135,16 @@ export function ProductRateHistoryTable() {
           >
             Refresh
           </button>
+          <button
+            type="button"
+            className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/20 disabled:opacity-50 inline-flex items-center gap-2"
+            onClick={handleDownloadPdf}
+            disabled={!productId || loading || points.length === 0}
+            title={points.length === 0 ? 'Load history first' : 'Download as PDF'}
+          >
+            <Download className="h-4 w-4" />
+            Download PDF
+          </button>
         </div>
       </div>
 
@@ -156,7 +183,6 @@ export function ProductRateHistoryTable() {
                   <th className="text-left p-3 font-medium">When</th>
                   <th className="text-right p-3 font-medium">Bag (kg)</th>
                   <th className="text-right p-3 font-medium">Rate (₹)</th>
-                  <th className="text-left p-3 font-medium">Recorded by</th>
                 </tr>
               </thead>
               <tbody>
@@ -169,7 +195,6 @@ export function ProductRateHistoryTable() {
                     <td className="p-3 text-right tabular-nums">
                       ₹{Number(row.rate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
-                    <td className="p-3">{row.created_by_full_name?.trim() || '—'}</td>
                   </tr>
                 ))}
               </tbody>

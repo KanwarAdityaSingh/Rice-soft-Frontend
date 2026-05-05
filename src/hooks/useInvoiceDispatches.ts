@@ -3,6 +3,7 @@ import { invoiceDispatchesAPI } from '../services/invoiceDispatches.api';
 import type {
   InvoiceDispatch,
   CreateInvoiceDispatchRequest,
+  PatchInvoiceDispatchRequest,
   InvoiceDispatchStatus,
   EInvoice,
   EWayBill,
@@ -52,6 +53,15 @@ export function useInvoiceDispatches(params?: UseInvoiceDispatchesParams) {
     return created;
   }, [fetchList]);
 
+  const patch = useCallback(
+    async (id: string, data: PatchInvoiceDispatchRequest) => {
+      const updated = await invoiceDispatchesAPI.patch(id, data);
+      await fetchList();
+      return updated;
+    },
+    [fetchList]
+  );
+
   const confirm = useCallback(async (id: string) => {
     const updated = await invoiceDispatchesAPI.confirm(id);
     await fetchList();
@@ -71,8 +81,11 @@ export function useInvoiceDispatches(params?: UseInvoiceDispatchesParams) {
   }, []);
 
   const generateEWayBill = useCallback(
-    async (id: string, body?: CreateEWayBillRequest): Promise<EWayBill> => {
-      return invoiceDispatchesAPI.generateEWayBill(id, body);
+    async (
+      id: string,
+      options?: { body?: CreateEWayBillRequest; force?: boolean }
+    ): Promise<EWayBill> => {
+      return invoiceDispatchesAPI.generateEWayBill(id, options);
     },
     []
   );
@@ -84,6 +97,7 @@ export function useInvoiceDispatches(params?: UseInvoiceDispatchesParams) {
     refetch: fetchList,
     getById,
     create,
+    patch,
     confirm,
     getEInvoice,
     getEWayBills,

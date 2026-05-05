@@ -20,6 +20,15 @@ import { AlertDialog } from '../../shared/AlertDialog';
 import { DateInputWithSteppers } from '../../shared/DateInputWithSteppers';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import type { CreateInwardSlipPassRequest, UpdateInwardSlipPassRequest, RiceCode, RiceType, Sauda, Vehicle, OtherBill } from '../../../types/entities';
+import { parametersAPI } from '../../../services/parameters.api';
+import { QualityParametersFields } from '../../shared/QualityParametersFields';
+import {
+  draftFromQualityParameter,
+  emptyQualityParameterDraft,
+  qualityDraftHasAnyValue,
+  qualityDraftToNullableFields,
+  type QualityParameterFieldKey,
+} from '../../../utils/qualityParameters';
 
 // Default recipient type
 interface DefaultRecipient {
@@ -176,6 +185,9 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   const [saudaDropdownOpen, setSaudaDropdownOpen] = useState(false);
   const saudaDropdownRef = useRef<HTMLDivElement>(null);
 
+  const [ispQualityParameterId, setIspQualityParameterId] = useState<string | null>(null);
+  const [ispQualityDraft, setIspQualityDraft] = useState(emptyQualityParameterDraft());
+
   useEffect(() => {
     if (open && ispId && isEditMode) {
       loadISPData();
@@ -232,6 +244,16 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
           console.error('Failed to load vehicle:', err);
         }
       }
+      try {
+        const rows = await parametersAPI.list({ inward_slip_pass_id: ispId });
+        const row = rows?.[0] ?? null;
+        setIspQualityParameterId(row?.id ?? null);
+        setIspQualityDraft(draftFromQualityParameter(row));
+      } catch (err) {
+        console.error('Failed to load quality parameters for ISP:', err);
+        setIspQualityParameterId(null);
+        setIspQualityDraft(emptyQualityParameterDraft());
+      }
       setErrors({});
     } catch (error: any) {
       setAlertType('error');
@@ -276,6 +298,8 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     setVehicleNumberInput('');
     setSelectedVehicle(null);
     setVehicleDropdownOpen(false);
+    setIspQualityParameterId(null);
+    setIspQualityDraft(emptyQualityParameterDraft());
   };
 
   const validateForm = (): boolean => {
@@ -428,6 +452,33 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     }
   };
 
+  const setIspQualityField = (key: QualityParameterFieldKey, value: string) => {
+    setIspQualityDraft((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const persistIspQualityParameters = async (targetIspId: string) => {
+    const hasValues = qualityDraftHasAnyValue(ispQualityDraft);
+    const fields = qualityDraftToNullableFields(ispQualityDraft);
+    if (ispQualityParameterId) {
+      if (!hasValues) {
+        await parametersAPI.delete(ispQualityParameterId);
+      } else {
+        await parametersAPI.update(ispQualityParameterId, fields);
+      }
+    } else {
+      if (!hasValues) return;
+      await parametersAPI.create({
+        inward_slip_pass_id: targetIspId,
+        ...fields,
+      });
+    }
+
+    const rows = await parametersAPI.list({ inward_slip_pass_id: targetIspId });
+    const row = rows?.[0] ?? null;
+    setIspQualityParameterId(row?.id ?? null);
+    setIspQualityDraft(draftFromQualityParameter(row));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
@@ -449,25 +500,42 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
         notes: formData.notes?.trim() || null, // Convert empty string to null
       };
       
+      let targetIspId: string;
+
       if (isEditMode && ispId) {
         await updateInwardSlipPass(ispId, cleanedData as UpdateInwardSlipPassRequest);
-        // Upload any new pending files
         await uploadPendingFiles(ispId);
-        setAlertType('success');
-        setAlertTitle('Success');
-        setAlertMessage('ISP updated successfully');
+        targetIspId = ispId;
       } else {
-        // Remove slip_number from create request - backend will auto-generate it
-        const { slip_number, ...createData } = cleanedData;
+        const { slip_number, ...createData } = cleanedData as CreateInwardSlipPassRequest & {
+          slip_number?: string | null;
+        };
+        void slip_number;
         const newISP = await createInwardSlipPass(createData as CreateInwardSlipPassRequest);
-        // Upload pending files after creation
-        if (newISP && newISP.id) {
-          await uploadPendingFiles(newISP.id);
+        if (!newISP?.id) {
+          throw new Error('Create inward slip pass did not return an id.');
         }
-        setAlertType('success');
-        setAlertTitle('Success');
-        setAlertMessage('ISP created successfully');
+        await uploadPendingFiles(newISP.id);
+        targetIspId = newISP.id;
       }
+
+      try {
+        await persistIspQualityParameters(targetIspId);
+      } catch (paramErr: any) {
+        setAlertType('warning');
+        setAlertTitle('ISP saved');
+        setAlertMessage(
+          paramErr?.message
+            ? `Quality parameters could not be saved: ${paramErr.message}`
+            : 'Quality parameters could not be saved. Try saving again.'
+        );
+        setAlertOpen(true);
+        return;
+      }
+
+      setAlertType('success');
+      setAlertTitle('Success');
+      setAlertMessage(isEditMode ? 'ISP updated successfully' : 'ISP created successfully');
       setAlertOpen(true);
       setTimeout(() => {
         onOpenChange(false);
@@ -1566,6 +1634,22 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                         {uploadingOtherBill ? 'Uploading...' : 'Add Document'}
                       </button>
                     </div>
+                  </div>
+
+                  {/* Quality parameters — persisted with Create / Update */}
+                  <div className="space-y-2 pt-2 border-t border-border">
+                    <div>
+                      <label className="block text-xs font-medium">Quality parameters</label>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        Optional rice inspection fields. Cleared fields remove stored values when you save.
+                      </p>
+                    </div>
+                    <QualityParametersFields
+                      draft={ispQualityDraft}
+                      onChange={setIspQualityField}
+                      disabled={loading || loadingISP}
+                      compact
+                    />
                   </div>
 
                   {/* Notes */}

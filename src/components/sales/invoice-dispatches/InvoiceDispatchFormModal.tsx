@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { X, Loader2, ExternalLink } from 'lucide-react';
 import { useInvoiceDispatches } from '../../../hooks/useInvoiceDispatches';
 import { useSalesSaudas } from '../../../hooks/useSalesSaudas';
@@ -9,10 +9,18 @@ import { toast } from '../../../utils/toast';
 import { useGodowns } from '../../../hooks/useGodowns';
 import { DateInputWithSteppers } from '../../shared/DateInputWithSteppers';
 import type { CreateInvoiceDispatchRequest } from '../../../types/sales';
+import type { SalesPartySite } from '../../../types/entities';
+import { salesPartySitesAPI } from '../../../services/salesPartySites.api';
 import {
   getTransporterInvoiceDispatchBlockers,
   isTransporterEligibleForInvoiceDispatch,
 } from '../../../utils/transporterInvoiceDispatchEligibility';
+
+function formatPartySiteLabel(site: SalesPartySite): string {
+  const n = site.name?.trim();
+  const line = [site.address?.city, site.address?.state].filter(Boolean).join(', ');
+  return n ? `${n}${line ? ` · ${line}` : ''}` : line || site.id.slice(0, 8);
+}
 
 const VEHICLE_VERIFIED_ONLY_MESSAGE =
   'Only verified vehicles can be used for invoice dispatch. Verify the vehicle in Directory first.';
@@ -41,7 +49,14 @@ export function InvoiceDispatchFormModal({
     dispatch_date: new Date().toISOString().split('T')[0],
     transporter_id: null,
     vehicle_id: null,
+    delivery_site_id: null,
+    lr_number: null,
+    distance_km: undefined,
+    route_description: null,
   });
+  const [tcsAmountInput, setTcsAmountInput] = useState('');
+  const [partySites, setPartySites] = useState<SalesPartySite[]>([]);
+  const [loadingPartySites, setLoadingPartySites] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
 
@@ -65,6 +80,26 @@ export function InvoiceDispatchFormModal({
     selectedVehicle && !selectedVehicle.is_verified
   );
 
+  const selectedSaudaPartyId = useMemo(
+    () => salesSaudas.find((s) => s.id === formData.sales_sauda_id)?.sales_party_id,
+    [salesSaudas, formData.sales_sauda_id]
+  );
+
+  const loadPartySites = useCallback(
+    async (salesPartyId: string) => {
+      setLoadingPartySites(true);
+      try {
+        const sites = await salesPartySitesAPI.list(salesPartyId);
+        setPartySites(Array.isArray(sites) ? sites : []);
+      } catch {
+        setPartySites([]);
+      } finally {
+        setLoadingPartySites(false);
+      }
+    },
+    []
+  );
+
   useEffect(() => {
     if (open) {
       setFormData({
@@ -74,10 +109,25 @@ export function InvoiceDispatchFormModal({
         dispatch_date: new Date().toISOString().split('T')[0],
         transporter_id: null,
         vehicle_id: null,
+        delivery_site_id: null,
+        lr_number: null,
+        distance_km: undefined,
+        route_description: null,
       });
+      setTcsAmountInput('');
+      setPartySites([]);
       setErrors({});
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!formData.sales_sauda_id || !selectedSaudaPartyId) {
+      setPartySites([]);
+      return;
+    }
+    setFormData((p) => ({ ...p, delivery_site_id: null }));
+    void loadPartySites(selectedSaudaPartyId);
+  }, [formData.sales_sauda_id, selectedSaudaPartyId, loadPartySites]);
 
   const validate = (): boolean => {
     const e: Record<string, string> = {};
@@ -107,12 +157,28 @@ export function InvoiceDispatchFormModal({
     setLoading(true);
     setErrors({});
     try {
+      const tcsTrim = tcsAmountInput.trim();
+      let tcs_amount: number | undefined;
+      if (tcsTrim !== '') {
+        const n = Number(tcsTrim);
+        if (Number.isNaN(n)) {
+          setErrors({ submit: 'TCS amount must be a valid number' });
+          setLoading(false);
+          return;
+        }
+        tcs_amount = n;
+      }
       await create({
         ...formData,
         internal_invoice_number: formData.internal_invoice_number.trim(),
         dispatch_date: formData.dispatch_date || undefined,
         transporter_id: formData.transporter_id || undefined,
         vehicle_id: formData.vehicle_id || undefined,
+        delivery_site_id: formData.delivery_site_id || undefined,
+        lr_number: formData.lr_number?.trim() || undefined,
+        tcs_amount,
+        distance_km: formData.distance_km,
+        route_description: formData.route_description?.trim() || undefined,
       });
       toast.success(
         'Invoice dispatch created',
@@ -307,6 +373,99 @@ export function InvoiceDispatchFormModal({
                 <p className="mt-1 text-xs text-red-600">{errors.vehicle_id}</p>
               )}
             </div>
+
+            <div className="md:col-span-2 rounded-lg border border-dashed border-border/70 bg-muted/10 p-4">
+              <p className="mb-3 text-sm font-medium">NIC / e-way (optional)</p>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-x-6">
+                <div className="md:col-span-2">
+                  <label className="mb-1 block text-sm font-medium">Ship-to site</label>
+                  <p className="mb-2 text-xs text-muted-foreground">
+                    Leave blank to use party billing address. Sites belong to the selected sales order&apos;s customer.
+                  </p>
+                  <select
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                    disabled={loadingPartySites || !formData.sales_sauda_id}
+                    value={formData.delivery_site_id ?? ''}
+                    onChange={(e) =>
+                      setFormData((p) => ({
+                        ...p,
+                        delivery_site_id: e.target.value || null,
+                      }))
+                    }
+                  >
+                    <option value="">Same as bill-to</option>
+                    {partySites.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {formatPartySiteLabel(s)}
+                      </option>
+                    ))}
+                  </select>
+                  {loadingPartySites && (
+                    <p className="mt-1 text-xs text-muted-foreground">Loading sites…</p>
+                  )}
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">LR number</label>
+                  <input
+                    type="text"
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                    value={formData.lr_number ?? ''}
+                    onChange={(e) =>
+                      setFormData((p) => ({
+                        ...p,
+                        lr_number: e.target.value.trim() === '' ? null : e.target.value,
+                      }))
+                    }
+                    placeholder="Transporter LR / doc no."
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">TCS amount</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                    value={tcsAmountInput}
+                    onChange={(e) => setTcsAmountInput(e.target.value)}
+                    placeholder="Optional"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">Distance (km)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="any"
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                    value={formData.distance_km ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setFormData((p) => ({
+                        ...p,
+                        distance_km: v === '' ? undefined : Number(v),
+                      }));
+                    }}
+                    placeholder="Optional"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="mb-1 block text-sm font-medium">Route description</label>
+                  <input
+                    type="text"
+                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                    value={formData.route_description ?? ''}
+                    onChange={(e) =>
+                      setFormData((p) => ({
+                        ...p,
+                        route_description: e.target.value.trim() === '' ? null : e.target.value,
+                      }))
+                    }
+                    placeholder="Optional"
+                  />
+                </div>
+              </div>
+            </div>
+
             {errors.submit && (
               <p className="md:col-span-2 text-sm text-red-600">{errors.submit}</p>
             )}

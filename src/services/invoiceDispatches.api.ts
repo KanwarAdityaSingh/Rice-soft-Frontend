@@ -2,6 +2,7 @@ import { apiService } from './api';
 import type {
   InvoiceDispatch,
   CreateInvoiceDispatchRequest,
+  PatchInvoiceDispatchRequest,
   InvoiceDispatchStatus,
   EInvoice,
   EWayBill,
@@ -29,6 +30,9 @@ export const invoiceDispatchesAPI = {
   create: (data: CreateInvoiceDispatchRequest) =>
     apiService.post<InvoiceDispatch>(BASE, data),
 
+  patch: (id: string, data: PatchInvoiceDispatchRequest) =>
+    apiService.patch<InvoiceDispatch>(`${BASE}/${id}`, data),
+
   confirm: (id: string) => apiService.post<InvoiceDispatch>(`${BASE}/${id}/confirm`),
 
   /** Get e-invoice for dispatch; returns null if not yet generated */
@@ -42,6 +46,14 @@ export const invoiceDispatchesAPI = {
   getEWayBills: (id: string) =>
     apiService.get<EWayBill[]>(`${BASE}/${id}/e-way-bill`),
 
-  generateEWayBill: (id: string, body?: CreateEWayBillRequest) =>
-    apiService.post<EWayBill>(`${BASE}/${id}/e-way-bill`, body ?? {}),
+  generateEWayBill: (
+    id: string,
+    options?: { body?: CreateEWayBillRequest; force?: boolean }
+  ) => {
+    const params = new URLSearchParams();
+    if (options?.force) params.set('force', 'true');
+    const q = params.toString();
+    const path = q ? `${BASE}/${id}/e-way-bill?${q}` : `${BASE}/${id}/e-way-bill`;
+    return apiService.post<EWayBill>(path, options?.body ?? {});
+  },
 };

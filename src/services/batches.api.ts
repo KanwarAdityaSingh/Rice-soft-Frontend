@@ -1,5 +1,15 @@
 import { apiService } from './api';
-import type { Batch, BatchWithDetails, CreateBatchRequest, UpdateBatchRequest, BatchLotUsage, BatchRiceCodeUsage, BatchProduct, BatchPackaging } from '../types/entities';
+import type {
+  Batch,
+  BatchWithDetails,
+  CreateBatchRequest,
+  UpdateBatchRequest,
+  BatchLotUsage,
+  BatchRiceCodeUsage,
+  BatchProduct,
+  BatchPackaging,
+  AttachBatchProductRequest,
+} from '../types/entities';
 
 export const batchesAPI = {
   // Get all batches
@@ -39,7 +49,7 @@ export const batchesAPI = {
   },
 
   // Batch Products (Stage 2)
-  addProductToBatch: (batchId: string, data: { product_id: string }) => {
+  addProductToBatch: (batchId: string, data: AttachBatchProductRequest) => {
     return apiService.post<Batch>(`/batches/${batchId}/products`, data);
   },
 

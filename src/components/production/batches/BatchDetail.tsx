@@ -10,8 +10,24 @@ import { inventoryAPI } from '../../../services/inventory.api';
 import { useProducts } from '../../../hooks/useProducts';
 import { usePackaging } from '../../../hooks/usePackaging';
 import { useGodowns } from '../../../hooks/useGodowns';
-import type { BatchWithDetails, BatchLotUsage, BatchRiceCodeUsage, FinishedGoodsInventory } from '../../../types/entities';
+import type {
+  BatchWithDetails,
+  BatchLotUsage,
+  BatchRiceCodeUsage,
+  BatchProduct,
+  FinishedGoodsInventory,
+  QualityParameter,
+} from '../../../types/entities';
 import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
+import { parametersAPI } from '../../../services/parameters.api';
+import { qualityParameterDisplayRows } from '../../../utils/qualityParameters';
+
+function formatBatchProductCostRupee(value: unknown): string | null {
+  if (value == null || value === '') return null;
+  const n = typeof value === 'number' ? value : parseFloat(String(value));
+  if (!Number.isFinite(n)) return null;
+  return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 
 export function BatchDetail() {
   const { id } = useParams<{ id: string }>();
@@ -25,6 +41,8 @@ export function BatchDetail() {
   const [lots, setLots] = useState<any[]>([]);
   const [riceCodes, setRiceCodes] = useState<any[]>([]);
   const [finishedGoods, setFinishedGoods] = useState<FinishedGoodsInventory[]>([]);
+  const [batchProducts, setBatchProducts] = useState<BatchProduct[]>([]);
+  const [parametersByProductId, setParametersByProductId] = useState<Record<string, QualityParameter | null>>({});
   const [loading, setLoading] = useState(true);
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('error');
@@ -36,20 +54,36 @@ export function BatchDetail() {
       if (!id) return;
       setLoading(true);
       try {
-        const [batchData, lotUsageData, riceCodeUsageData, lotsData, riceCodesData, finishedGoodsData] = await Promise.all([
-          batchesAPI.getBatchById(id),
-          batchesAPI.getBatchLotUsage(id),
-          batchesAPI.getBatchRiceCodeUsage(id),
-          lotsAPI.getAllLots(),
-          riceCodesAPI.getAllRiceCodes(),
-          inventoryAPI.getFinishedGoods({ batch_id: id }),
-        ]);
+        const [batchData, lotUsageData, riceCodeUsageData, lotsData, riceCodesData, finishedGoodsData, batchProductsData] =
+          await Promise.all([
+            batchesAPI.getBatchById(id),
+            batchesAPI.getBatchLotUsage(id),
+            batchesAPI.getBatchRiceCodeUsage(id),
+            lotsAPI.getAllLots(),
+            riceCodesAPI.getAllRiceCodes(),
+            inventoryAPI.getFinishedGoods({ batch_id: id }),
+            batchesAPI.getBatchProducts(id),
+          ]);
         setBatch(batchData);
         setLotUsage(lotUsageData);
         setRiceCodeUsage(riceCodeUsageData);
         setLots(lotsData);
         setRiceCodes(riceCodesData);
         setFinishedGoods(finishedGoodsData);
+        setBatchProducts(batchProductsData ?? []);
+
+        const paramMap: Record<string, QualityParameter | null> = {};
+        await Promise.all(
+          (batchProductsData ?? []).map(async (bp) => {
+            try {
+              const rows = await parametersAPI.list({ batch_id: id, product_id: bp.product_id });
+              paramMap[bp.product_id] = rows?.[0] ?? null;
+            } catch {
+              paramMap[bp.product_id] = null;
+            }
+          })
+        );
+        setParametersByProductId(paramMap);
       } catch (error: any) {
         setAlertType('error');
         setAlertTitle('Error');
@@ -65,8 +99,13 @@ export function BatchDetail() {
   const getLotDisplayName = (lotId: string): string => {
     const lot = lots.find((l) => l.id === lotId);
     if (!lot) return lotId;
-    const riceCode = riceCodes.find((rc) => rc.rice_code_id === lot.rice_code_id);
     return lot.lot_number || lotId;
+  };
+
+  const packagingCapacityKg = (holding_capacity: unknown): number => {
+    if (typeof holding_capacity === 'number') return Number.isFinite(holding_capacity) ? holding_capacity : 0;
+    const n = parseFloat(String(holding_capacity ?? ''));
+    return Number.isFinite(n) ? n : 0;
   };
 
   const getRiceCodeName = (riceCodeId: string): string => {
@@ -173,8 +212,8 @@ export function BatchDetail() {
           </div>
         )}
 
-        {/* Attached Products (Stage 2) */}
-        {batch.products && batch.products.length > 0 && (
+        {/* Attached Products (Stage 2) + quality parameters */}
+        {batchProducts.length > 0 && (
           <div className="rounded-xl border border-border bg-card p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 rounded-lg bg-primary/10">
@@ -182,15 +221,44 @@ export function BatchDetail() {
               </div>
               <h2 className="text-lg font-semibold">Attached Products</h2>
             </div>
-            <div className="space-y-2">
-              {batch.products.map((bp) => {
-                const product = products.find(p => p.id === bp.product_id);
+            <div className="space-y-4">
+              {batchProducts.map((bp) => {
+                const product = products.find((p) => p.id === bp.product_id);
+                const paramRow = parametersByProductId[bp.product_id] ?? null;
+                const paramRows = qualityParameterDisplayRows(paramRow);
+                const costLabel = formatBatchProductCostRupee(bp.cost);
                 return (
-                  <div key={bp.id} className="p-3 rounded-lg bg-muted/30 border border-border">
-                    <span className="text-sm font-medium">{product?.name || 'Unknown Product'}</span>
-                    {product?.brand && (
-                      <span className="text-xs text-muted-foreground ml-2">({product.brand})</span>
-                    )}
+                  <div key={bp.id} className="rounded-lg border border-border bg-muted/20 p-4 space-y-3">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <div>
+                        <span className="text-sm font-semibold">{product?.name || 'Unknown Product'}</span>
+                        {product?.brand && (
+                          <span className="text-xs text-muted-foreground ml-2">({product.brand})</span>
+                        )}
+                      </div>
+                      {costLabel ? (
+                        <span className="text-sm font-medium tabular-nums text-foreground">
+                          Cost: {costLabel}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="border-t border-border/60 pt-3">
+                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                        Quality parameters
+                      </h3>
+                      {paramRows.length > 0 ? (
+                        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                          {paramRows.map(({ key, label, value }) => (
+                            <div key={key} className="flex flex-col sm:flex-row sm:gap-2 sm:items-baseline">
+                              <dt className="text-muted-foreground shrink-0">{label}</dt>
+                              <dd className="font-medium sm:ml-auto sm:text-right break-words">{value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">No quality parameters recorded for this product.</p>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -210,8 +278,9 @@ export function BatchDetail() {
             <div className="space-y-2">
               {batch.packaging_list.map((bpkg) => {
                 const product = products.find(p => p.id === bpkg.product_id);
-                const pkg = packaging.find(p => p.id === bpkg.packaging_id);
-                const packetsNeeded = pkg ? Math.ceil(bpkg.quantity / pkg.holding_capacity) : 0;
+                const pkg = packaging.find((p) => p.id === bpkg.packaging_id);
+                const cap = pkg ? packagingCapacityKg(pkg.holding_capacity) : 0;
+                const packetsNeeded = cap > 0 ? Math.ceil(bpkg.quantity / cap) : 0;
                 return (
                   <div key={bpkg.id} className="p-3 rounded-lg bg-muted/30 border border-border">
                     <div className="flex items-center justify-between">

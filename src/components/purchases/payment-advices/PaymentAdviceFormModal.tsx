@@ -21,6 +21,7 @@ import {
   formatWeightDisplay,
   danaDeductionKgFromSaidSent,
 } from '../../../utils/saudaCompletion';
+import { ispSaudaVendorAmountAfterCommission } from '../../../utils/ispSaudaVendorAmount';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { DateInputWithSteppers } from '../../shared/DateInputWithSteppers';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
@@ -876,45 +877,6 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                             : 'Purchase bill number from ISP'}
                         </p>
                       </div>
-
-                      <div>
-                        <label className="block text-sm font-medium mb-1">
-                          Amount (₹) <span className="text-muted-foreground text-xs">(Optional)</span>
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={formData.amount || ''}
-                          onChange={(e) => {
-                            const value = parseFloat(e.target.value);
-                            if (isNaN(value) || value === 0) {
-                              setFormData({ ...formData, amount: undefined });
-                              setErrors({ ...errors, amount: '' });
-                            } else if (value < 0) {
-                              setErrors({ ...errors, amount: 'Negative values not allowed' });
-                              setFormData({ ...formData, amount: undefined });
-                            } else {
-                              setFormData({ ...formData, amount: value });
-                              setErrors({ ...errors, amount: '' });
-                            }
-                          }}
-                          className={`w-full px-3 py-2 border rounded-lg bg-background ${
-                            errors.amount ? 'border-red-500' : 'border-border'
-                          }`}
-                          placeholder={
-                            summary
-                              ? `Auto: ₹${(summary.net_payable ?? summary.final_total_amount).toFixed(2)}`
-                              : 'Leave empty to auto-calculate'
-                          }
-                        />
-                        {errors.amount && (
-                          <p className="text-xs text-red-500 mt-1">{errors.amount}</p>
-                        )}
-                        {!errors.amount && (
-                          <p className="text-xs text-muted-foreground mt-1">Leave empty to auto-calculate</p>
-                        )}
-                      </div>
                     </div>
 
                     {/* Charges Section */}
@@ -1119,7 +1081,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                       ? danaDeductionKgFromSaidSent(saudaSaidSentWeight)
                                       : 0;
                                     const vendorSaudaTotal =
-                                      saudaItem.final_total_amount - saudaItem.broker_commission_amount;
+                                      ispSaudaVendorAmountAfterCommission(saudaItem);
                                     return (
                                       <>
                                   <div className="font-semibold text-xs mb-1">
@@ -1131,12 +1093,12 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                       <span className="text-muted-foreground">Weight:</span>
                                       <span>{saudaItem.total_weight.toFixed(2)} kg</span>
                                     </div>
-                                    {saudaItem.sauda_details.quantity && (
-                                      <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Received/Expected:</span>
-                                        <span>{formatWeightDisplay(saudaItem.sauda_details.received_until_now, saudaItem.sauda_details.quantity)}</span>
-                                      </div>
-                                    )}
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">Received:</span>
+                                      <span>
+                                        {formatWeightDisplay(saudaItem.sauda_details.received_until_now, undefined)}
+                                      </span>
+                                    </div>
                                     <div className="flex justify-between">
                                       <span className="text-muted-foreground">Rate:</span>
                                       <span>₹{saudaItem.sauda_details.rate.toFixed(2)}/kg</span>
@@ -1207,6 +1169,40 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                 <span className="text-right text-xs">{selectedISP?.party_address || '-'}</span>
                               </div>
                             </div>
+
+                            {/* Logistics — compact, below party / above Sauda-wise */}
+                            <div className="rounded-lg border border-border/60 bg-muted/15 px-3 py-2 text-[10px] leading-snug text-muted-foreground space-y-1">
+                              <div className="flex justify-between gap-2">
+                                <span>Truck No</span>
+                                <span className="text-right text-foreground/90 font-medium tabular-nums shrink-0">
+                                  {vehicle?.vehicle_number || '-'}
+                                </span>
+                              </div>
+                              <div className="flex justify-between gap-2">
+                                <span>Bag</span>
+                                <span className="text-right text-foreground/90 font-medium tabular-nums shrink-0">
+                                  {summary.total_bags}
+                                </span>
+                              </div>
+                              <div className="flex justify-between gap-2">
+                                <span>DUE Date</span>
+                                <span className="text-right text-foreground/90 font-medium shrink-0">
+                                  {dueDate ? new Date(dueDate).toLocaleDateString('en-IN') : '-'}
+                                </span>
+                              </div>
+                              <div className="flex justify-between gap-2">
+                                <span>FREIGHT</span>
+                                <span className="text-right text-foreground/90 font-medium tabular-nums shrink-0">
+                                  {summary.transportation_cost.toFixed(2)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between gap-2">
+                                <span>Transporter</span>
+                                <span className="text-right text-foreground/90 font-medium max-w-[65%] truncate shrink-0">
+                                  {getTransporterName(selectedISP?.transporter_id) || '-'}
+                                </span>
+                              </div>
+                            </div>
                             
                             {/* Per-Sauda Table */}
                             <div className="border border-border rounded-lg overflow-hidden">
@@ -1224,7 +1220,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                     ? danaDeductionKgFromSaidSent(saudaSaidSentWeight)
                                     : 0;
                                   const vendorSaudaTotal =
-                                    saudaItem.final_total_amount - saudaItem.broker_commission_amount;
+                                    ispSaudaVendorAmountAfterCommission(saudaItem);
                                   
                                   return (
                                   <div key={saudaItem.sauda_id} className="p-3">
@@ -1233,7 +1229,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                         {idx + 1}.{' '}
                                         {[getRiceCodeName(saudaItem.sauda_details.rice_code_id), getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes), getRiceLengthLabel(saudaItem.sauda_details.rice_length, riceLengths)].filter(Boolean).join(' ') || 'N/A'}
                                       </div>
-                                      <div className="flex items-center gap-2">
+                                      <div className="flex items-center gap-2 shrink-0">
                                         {isDanaRequired ? (
                                           <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700">
                                             Dana Required
@@ -1243,9 +1239,11 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                             Dana Not Required
                                           </span>
                                         )}
-                                        <div className="text-xs font-bold text-primary">
-                                          ₹{vendorSaudaTotal.toFixed(2)}
-                                        </div>
+                                        {summary.saudas.length > 1 && (
+                                          <div className="text-xs font-bold text-primary tabular-nums">
+                                            ₹{vendorSaudaTotal.toFixed(2)}
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
                                     <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[10px]">
@@ -1253,12 +1251,12 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                         <span className="text-muted-foreground">Weight:</span>
                                         <span>{saudaItem.total_weight.toFixed(2)} kg</span>
                                       </div>
-                                      {saudaItem.sauda_details.quantity && (
-                                        <div className="flex justify-between">
-                                          <span className="text-muted-foreground">Received/Expected:</span>
-                                          <span>{formatWeightDisplay(saudaItem.sauda_details.received_until_now, saudaItem.sauda_details.quantity)}</span>
-                                        </div>
-                                      )}
+                                      <div className="flex justify-between">
+                                        <span className="text-muted-foreground">Received:</span>
+                                        <span>
+                                          {formatWeightDisplay(saudaItem.sauda_details.received_until_now, undefined)}
+                                        </span>
+                                      </div>
                                       <div className="flex justify-between">
                                         <span className="text-muted-foreground">Rate:</span>
                                         <span>₹{saudaItem.sauda_details.rate.toFixed(2)}/kg</span>
@@ -1351,41 +1349,12 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                               </div>
                             </div>
                             
-                            {/* Transportation */}
-                            <div className="grid grid-cols-2 gap-x-6 gap-y-1 mt-3">
-                              <div className="space-y-1">
-                                {summary.transportation_cost > 0 && (
-                                  <div className="flex justify-between">
-                                    <span className="text-muted-foreground">+ Transport:</span>
-                                    <span className="font-medium">₹{summary.transportation_cost.toFixed(2)}</span>
-                                  </div>
-                                )}
+                            {summary.transportation_cost > 0 && (
+                              <div className="mt-3 flex justify-between text-sm px-0.5">
+                                <span className="text-muted-foreground">+ Transport:</span>
+                                <span className="font-medium">₹{summary.transportation_cost.toFixed(2)}</span>
                               </div>
-                              
-                              {/* Right Column for ISP */}
-                              <div className="space-y-1 border-l border-border pl-4">
-                                <div className="flex justify-between">
-                                  <span className="text-muted-foreground">Truck No</span>
-                                  <span className="font-medium">{vehicle?.vehicle_number || '-'}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span className="text-muted-foreground">Bag</span>
-                                  <span className="font-medium">{summary.total_bags}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span className="text-muted-foreground">DUE Date</span>
-                                  <span className="font-medium">{dueDate ? new Date(dueDate).toLocaleDateString('en-IN') : '-'}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span className="text-muted-foreground">FREIGHT</span>
-                                  <span className="font-medium">{summary.transportation_cost.toFixed(2)}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span className="text-muted-foreground">Transporter</span>
-                                  <span className="font-medium text-xs">{getTransporterName(selectedISP?.transporter_id) || '-'}</span>
-                                </div>
-                              </div>
-                            </div>
+                            )}
                             
                             {/* Charges and Net Payable for ISP */}
                             {(formData.charges || []).length > 0 && (
@@ -1406,9 +1375,16 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                             )}
                             
                             <div className="mt-3 pt-3 border-t-2 border-primary/30 bg-primary/10 rounded-lg p-3">
-                              <div className="flex justify-between items-center">
-                                <span className="font-bold text-sm">Net Payable:</span>
-                                <span className="font-bold text-xl text-primary">₹{calculateNetPayable().toFixed(2)}</span>
+                              <div className="flex justify-between items-start gap-3">
+                                <div className="min-w-0">
+                                  <span className="font-bold text-sm">Net Payable:</span>
+                                  <p className="text-xs text-muted-foreground mt-1 leading-snug">
+                                    Final net payable after charges and deductions.
+                                  </p>
+                                </div>
+                                <span className="font-bold text-xl text-primary tabular-nums shrink-0">
+                                  ₹{calculateNetPayable().toFixed(2)}
+                                </span>
                               </div>
                             </div>
                           </div>
@@ -1484,37 +1460,56 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                 </span>
                               </div>
                             ))}
-                            <div className="flex justify-between border-t border-border pt-2 mt-2">
-                              <span className="font-bold">Net Payable</span>
-                              <span className="font-bold text-lg text-primary">{calculateNetPayable().toFixed(2)}</span>
+                            <div className="flex justify-between items-start gap-3 border-t border-border pt-2 mt-2">
+                              <div className="min-w-0">
+                                <span className="font-bold">Net Payable</span>
+                                <p className="text-xs text-muted-foreground mt-1 leading-snug">
+                                  Final net payable after charges and deductions.
+                                </p>
+                              </div>
+                              <span className="font-bold text-lg text-primary tabular-nums shrink-0">
+                                {calculateNetPayable().toFixed(2)}
+                              </span>
                             </div>
                           </div>
 
-                          {/* Right Column */}
-                          <div className="space-y-1 border-l border-border pl-4">
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Truck No</span>
-                              <span className="font-medium">{vehicle?.vehicle_number || '-'}</span>
+                          {/* Right Column — logistics; de-emphasized */}
+                          <div className="space-y-1 border-l border-border pl-3 text-[10px] leading-snug text-muted-foreground">
+                            <div className="flex justify-between gap-2">
+                              <span>Truck No</span>
+                              <span className="text-right text-foreground/90 font-medium tabular-nums shrink-0">
+                                {vehicle?.vehicle_number || '-'}
+                              </span>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Item</span>
-                              <span className="font-medium">{getRiceCodeName(selectedSauda?.rice_code_id) || 'RICE'}</span>
+                            <div className="flex justify-between gap-2">
+                              <span>Item</span>
+                              <span className="text-right text-foreground/90 font-medium max-w-[55%] truncate shrink-0">
+                                {getRiceCodeName(selectedSauda?.rice_code_id) || 'RICE'}
+                              </span>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Bag</span>
-                              <span className="font-medium">{totalBags}</span>
+                            <div className="flex justify-between gap-2">
+                              <span>Bag</span>
+                              <span className="text-right text-foreground/90 font-medium tabular-nums shrink-0">
+                                {totalBags}
+                              </span>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">DUE Date</span>
-                              <span className="font-medium">{dueDate ? new Date(dueDate).toLocaleDateString('en-IN') : '-'}</span>
+                            <div className="flex justify-between gap-2">
+                              <span>DUE Date</span>
+                              <span className="text-right text-foreground/90 font-medium shrink-0">
+                                {dueDate ? new Date(dueDate).toLocaleDateString('en-IN') : '-'}
+                              </span>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">FREIGHT</span>
-                              <span className="font-medium">{(selectedISP?.transportation_cost ?? summary?.transportation_cost ?? 0).toFixed(2)}</span>
+                            <div className="flex justify-between gap-2">
+                              <span>FREIGHT</span>
+                              <span className="text-right text-foreground/90 font-medium tabular-nums shrink-0">
+                                {(selectedISP?.transportation_cost ?? summary?.transportation_cost ?? 0).toFixed(2)}
+                              </span>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Transporter</span>
-                              <span className="font-medium text-xs">{getTransporterName(selectedISP?.transporter_id) || '-'}</span>
+                            <div className="flex justify-between gap-2">
+                              <span>Transporter</span>
+                              <span className="text-right text-foreground/90 font-medium max-w-[55%] truncate shrink-0">
+                                {getTransporterName(selectedISP?.transporter_id) || '-'}
+                              </span>
                             </div>
                           </div>
                         </div>

@@ -1194,6 +1194,8 @@ export interface ISPPurchaseSummary {
     base_amount: number;
     cash_discount_amount: number;
     broker_commission_amount: number;
+    /** After broker commission; use for vendor line matching Pricing Flow (base − discount − broker). */
+    amount_after_commission?: number;
     final_total_amount: number;
     lot_details: PurchaseSummaryLotDetail[];
   }>;
@@ -1435,6 +1437,36 @@ export interface UpdateRecipeRequest {
   formula?: RecipeFormulaItem[];
 }
 
+/** One line from POST /recipes/preview-cost or POST /recipes/:id/preview-cost */
+export interface RecipeCostPreviewLine {
+  lot_id: string;
+  percentage?: number;
+  kg_from_lot: number;
+  rate: number;
+  line_cost: number;
+}
+
+export interface RecipeCostPreviewByFormulaRequest {
+  quantity_kg: number;
+  formula: RecipeFormulaItem[];
+}
+
+export interface RecipeCostPreviewByRecipeIdRequest {
+  quantity_kg: number;
+}
+
+export interface RecipeCostPreviewResponse {
+  quantity_kg: number;
+  lines: RecipeCostPreviewLine[];
+  total_cost: number;
+  blended_rate_per_kg: number;
+  /** Present when previewing a saved recipe */
+  recipe_id?: string | null;
+  recipe_name?: string | null;
+  /** Human-readable note about the formula basis */
+  assumption?: string | null;
+}
+
 // Product Types
 export interface Product {
   id: string;
@@ -1628,8 +1660,16 @@ export interface BatchProduct {
   id: string;
   batch_id: string;
   product_id: string;
+  /** Optional total cost captured at attach time (money, 2 d.p.) */
+  cost?: number | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface AttachBatchProductRequest {
+  product_id: string;
+  /** Optional; omit or null to skip / leave unchanged on upsert */
+  cost?: number | null;
 }
 
 export interface BatchPackaging {
@@ -1641,6 +1681,44 @@ export interface BatchPackaging {
   created_at: string;
   updated_at: string;
 }
+
+/** Optional quality/spec row; may link inward slip pass and/or batch + product */
+export interface QualityParameter {
+  id: string;
+  inward_slip_pass_id: string | null;
+  batch_id: string | null;
+  product_id: string | null;
+  purity: string | null;
+  natural_admixture: string | null;
+  average_grain_length: string | null;
+  moisture: string | null;
+  broken_grain: string | null;
+  damage_discolour_grain: string | null;
+  immature_grains: string | null;
+  whiteness: string | null;
+  foreign_matter: string | null;
+  black_grains: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateQualityParameterRequest {
+  inward_slip_pass_id?: string | null;
+  batch_id?: string | null;
+  product_id?: string | null;
+  purity?: string | null;
+  natural_admixture?: string | null;
+  average_grain_length?: string | null;
+  moisture?: string | null;
+  broken_grain?: string | null;
+  damage_discolour_grain?: string | null;
+  immature_grains?: string | null;
+  whiteness?: string | null;
+  foreign_matter?: string | null;
+  black_grains?: string | null;
+}
+
+export type UpdateQualityParameterRequest = Partial<CreateQualityParameterRequest>;
 
 export interface BatchWithDetails extends Batch {
   product?: {

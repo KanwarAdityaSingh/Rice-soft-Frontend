@@ -1,13 +1,21 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState, useEffect } from 'react';
-import { X, Plus, Trash2, AlertCircle } from 'lucide-react';
+import { X, Plus, Trash2, AlertCircle, Calculator, Loader2 } from 'lucide-react';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { useRecipes } from '../../../hooks/useRecipes';
 import { lotsAPI } from '../../../services/lots.api';
 import { inventoryAPI } from '../../../services/inventory.api';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
-import type { CreateRecipeRequest, UpdateRecipeRequest, RecipeFormulaItem, Lot, LotsInventory } from '../../../types/entities';
+import { recipesAPI } from '../../../services/recipes.api';
+import type {
+  CreateRecipeRequest,
+  UpdateRecipeRequest,
+  RecipeFormulaItem,
+  Lot,
+  LotsInventory,
+  RecipeCostPreviewResponse,
+} from '../../../types/entities';
 
 interface RecipeFormModalProps {
   open: boolean;
@@ -32,6 +40,11 @@ export function RecipeFormModal({ open, onOpenChange, recipeId }: RecipeFormModa
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
 
+  const [previewQuantityKg, setPreviewQuantityKg] = useState<number>(1000);
+  const [costPreview, setCostPreview] = useState<RecipeCostPreviewResponse | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
   // Load recipe data if editing
   useEffect(() => {
     if (recipeId && open) {
@@ -49,6 +62,13 @@ export function RecipeFormModal({ open, onOpenChange, recipeId }: RecipeFormModa
       });
     }
   }, [recipeId, open, recipes]);
+
+  useEffect(() => {
+    if (!open) {
+      setCostPreview(null);
+      setPreviewError(null);
+    }
+  }, [open]);
 
   // Fetch lots and inventory
   useEffect(() => {
@@ -196,6 +216,41 @@ export function RecipeFormModal({ open, onOpenChange, recipeId }: RecipeFormModa
 
   const totalPercentage = calculateTotalPercentage();
   const isValidPercentage = Math.abs(totalPercentage - 100) < 0.01;
+
+  const formatInr = (n: number) =>
+    `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+
+  const canRunCostPreview =
+    isValidPercentage &&
+    !loadingLots &&
+    previewQuantityKg > 0 &&
+    formData.formula.length > 0 &&
+    formData.formula.every((f) => f.lot_id);
+
+  const handlePreviewCost = async () => {
+    if (!canRunCostPreview) return;
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      const formula = formData.formula
+        .filter((f) => f.lot_id)
+        .map((f) => ({ lot_id: f.lot_id, percentage: f.percentage }));
+      const data = recipeId
+        ? await recipesAPI.previewRecipeCostById(recipeId, { quantity_kg: previewQuantityKg })
+        : await recipesAPI.previewRecipeCostByFormula({ quantity_kg: previewQuantityKg, formula });
+      setCostPreview(data);
+    } catch (e: any) {
+      const msg =
+        e?.message ||
+        e?.data?.message ||
+        (typeof e?.data === 'string' ? e.data : null) ||
+        'Failed to preview cost.';
+      setPreviewError(msg);
+      setCostPreview(null);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
 
   return (
     <>
@@ -352,6 +407,143 @@ export function RecipeFormModal({ open, onOpenChange, recipeId }: RecipeFormModa
                   )}
                   {errors.percentage_total && (
                     <p className="mt-2 text-sm text-destructive">{errors.percentage_total}</p>
+                  )}
+                </div>
+
+                {/* Cost preview — inward slip lot rates */}
+                <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <Calculator className="h-5 w-5 text-primary shrink-0" />
+                      <div>
+                        <h3 className="text-sm font-semibold">Recipe cost preview</h3>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Uses{' '}
+                          <code className="text-[10px] bg-muted px-1 py-0.5 rounded">
+                            kg × (% ÷ 100) × lot rate
+                          </code>
+                          . Percentages must total 100%.
+                          {recipeId ? (
+                            <span className="block mt-1 text-amber-700 dark:text-amber-400/90">
+                              This preview calls the saved recipe on the server—save formula changes before calculating if you edited lots or percentages.
+                            </span>
+                          ) : (
+                            <span className="block mt-1">Uses the formula as entered below.</span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="w-full sm:w-48">
+                      <label htmlFor="preview-qty-kg" className="block text-xs font-medium mb-1">
+                        Quantity (kg)
+                      </label>
+                      <input
+                        id="preview-qty-kg"
+                        type="number"
+                        min={0.01}
+                        step={0.01}
+                        value={previewQuantityKg || ''}
+                        onChange={(e) => {
+                          const v = parseFloat(e.target.value);
+                          setPreviewQuantityKg(Number.isFinite(v) ? v : 0);
+                          setCostPreview(null);
+                          setPreviewError(null);
+                        }}
+                        className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handlePreviewCost()}
+                      disabled={!canRunCostPreview || previewLoading}
+                      className="btn-primary px-4 py-2 rounded-lg text-sm inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {previewLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      {previewLoading ? 'Calculating…' : 'Calculate cost'}
+                    </button>
+                  </div>
+                  {!canRunCostPreview && (
+                    <p className="text-xs text-muted-foreground">
+                      Select all lots, set percentages to sum to 100%, and enter a positive quantity.
+                    </p>
+                  )}
+                  {previewError && (
+                    <div className="flex gap-2 text-sm text-destructive rounded-lg border border-destructive/30 bg-destructive/10 p-3">
+                      <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                      <span>{previewError}</span>
+                    </div>
+                  )}
+                  {costPreview && costPreview.lines?.length > 0 && (
+                    <div className="space-y-3 border-t border-border pt-4">
+                      {(costPreview.recipe_name || costPreview.assumption) && (
+                        <div className="text-xs space-y-1">
+                          {costPreview.recipe_name && (
+                            <p>
+                              <span className="text-muted-foreground">Recipe:</span>{' '}
+                              <span className="font-medium">{costPreview.recipe_name}</span>
+                            </p>
+                          )}
+                          {costPreview.assumption && (
+                            <p className="text-muted-foreground">{costPreview.assumption}</p>
+                          )}
+                        </div>
+                      )}
+                      <div className="overflow-x-auto rounded-lg border border-border">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-muted/40 border-b border-border text-left">
+                              <th className="py-2 px-3 font-semibold">Lot</th>
+                              <th className="py-2 px-3 font-semibold text-right">%</th>
+                              <th className="py-2 px-3 font-semibold text-right">kg from lot</th>
+                              <th className="py-2 px-3 font-semibold text-right">Rate / kg</th>
+                              <th className="py-2 px-3 font-semibold text-right">Line cost</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {costPreview.lines.map((line, idx) => (
+                              <tr key={`${line.lot_id}-${idx}`} className="border-b border-border/60 last:border-0">
+                                <td className="py-2 px-3">{getLotDisplayName(line.lot_id) || line.lot_id}</td>
+                                <td className="py-2 px-3 text-right font-mono tabular-nums">
+                                  {line.percentage != null ? `${Number(line.percentage).toFixed(2)}%` : '—'}
+                                </td>
+                                <td className="py-2 px-3 text-right font-mono tabular-nums">
+                                  {Number(line.kg_from_lot).toLocaleString('en-IN', {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 4,
+                                  })}
+                                </td>
+                                <td className="py-2 px-3 text-right font-mono tabular-nums">
+                                  {formatInr(Number(line.rate))}
+                                </td>
+                                <td className="py-2 px-3 text-right font-mono tabular-nums font-medium">
+                                  {formatInr(Number(line.line_cost))}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="bg-muted/25 font-semibold">
+                              <td colSpan={4} className="py-2 px-3 text-right">
+                                Total ({Number(costPreview.quantity_kg).toLocaleString('en-IN')} kg)
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono tabular-nums">
+                                {formatInr(Number(costPreview.total_cost))}
+                              </td>
+                            </tr>
+                            <tr className="bg-primary/5">
+                              <td colSpan={4} className="py-2 px-3 text-right text-muted-foreground font-normal">
+                                Blended rate / kg
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono tabular-nums text-primary font-semibold">
+                                {formatInr(Number(costPreview.blended_rate_per_kg))}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
                   )}
                 </div>
 

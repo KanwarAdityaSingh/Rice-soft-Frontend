@@ -10,6 +10,7 @@ import { useBrokers } from '../../../hooks/useBrokers';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { getRiceTypeLabel, getRiceLengthLabel } from '../../../utils/riceType';
 import { formatWeightDisplay } from '../../../utils/saudaCompletion';
+import { ispSaudaVendorAmountAfterCommission } from '../../../utils/ispSaudaVendorAmount';
 import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
 import type { PaymentAdvice, RiceCode, RiceType, Sauda, InwardSlipPass, Vehicle, ISPPurchaseSummary, SaudaPurchaseSummary } from '../../../types/entities';
 
@@ -356,11 +357,10 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                                 {[getRiceCodeName(saudaItem.sauda_details.rice_code_id), getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes), getRiceLengthLabel(saudaItem.sauda_details.rice_length, riceLengths)].filter(Boolean).join(' ')}
                               </span>
                             </div>
-                            {saudaItem.sauda_details.quantity && (
-                              <div className="text-[10px] text-muted-foreground mt-0.5">
-                                {formatWeightDisplay(saudaItem.sauda_details.received_until_now, saudaItem.sauda_details.quantity)}
-                              </div>
-                            )}
+                            <div className="text-[10px] text-muted-foreground mt-0.5">
+                              Received:{' '}
+                              {formatWeightDisplay(saudaItem.sauda_details.received_until_now, undefined)}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -404,12 +404,12 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                               <span className="text-muted-foreground">Weight:</span>
                               <span>{saudaItem.total_weight.toFixed(2)} kg</span>
                             </div>
-                            {saudaItem.sauda_details.quantity && (
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Received/Expected:</span>
-                                <span>{formatWeightDisplay(saudaItem.sauda_details.received_until_now, saudaItem.sauda_details.quantity)}</span>
-                              </div>
-                            )}
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Received:</span>
+                              <span>
+                                {formatWeightDisplay(saudaItem.sauda_details.received_until_now, undefined)}
+                              </span>
+                            </div>
                             <div className="flex justify-between">
                               <span className="text-muted-foreground">Base Amount:</span>
                               <span>₹{saudaItem.base_amount.toFixed(2)}</span>
@@ -428,7 +428,7 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                             )}
                             <div className="flex justify-between font-semibold border-t border-border/30 pt-0.5 mt-0.5">
                               <span>Sauda Total (vendor):</span>
-                              <span>₹{(saudaItem.final_total_amount - saudaItem.broker_commission_amount).toFixed(2)}</span>
+                              <span>₹{ispSaudaVendorAmountAfterCommission(saudaItem).toFixed(2)}</span>
                             </div>
                           </div>
                         </div>
@@ -526,9 +526,12 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
               )}
 
               {/* Final Amount */}
-              <div className="bg-primary/10 rounded-lg p-3 text-center mt-4 border-2 border-primary/30">
-                <p className="text-xs text-muted-foreground mb-1">Net Payable</p>
-                <p className="text-2xl font-bold text-primary">
+              <div className="bg-primary/10 rounded-lg p-3 mt-4 border-2 border-primary/30">
+                <p className="text-xs font-semibold text-foreground mb-0.5">Net Payable</p>
+                <p className="text-[11px] text-muted-foreground mb-2 leading-snug">
+                  Final net payable after charges and deductions.
+                </p>
+                <p className="text-2xl font-bold text-primary text-center tabular-nums">
                   ₹{(paymentAdvice.net_payable || paymentAdvice.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               </div>

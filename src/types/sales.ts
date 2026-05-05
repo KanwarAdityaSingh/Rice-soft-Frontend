@@ -100,6 +100,10 @@ export interface InvoiceDispatch {
   party_address: string | null;
   party_gst_number: string | null;
   party_pan_number: string | null;
+  /** Optional ship-to; references sales_party_sites. `null` = same as bill-to. */
+  delivery_site_id?: string | null;
+  lr_number?: string | null;
+  tcs_amount?: number | null;
   transporter_id: string | null;
   vehicle_id: string | null;
   distance_km: number | null;
@@ -115,10 +119,20 @@ export interface CreateInvoiceDispatchRequest {
   sales_sauda_id: string;
   internal_invoice_number: string;
   dispatch_date?: string;
+  delivery_site_id?: string | null;
+  lr_number?: string | null;
+  tcs_amount?: number | null;
   transporter_id?: string | null;
   vehicle_id?: string | null;
   distance_km?: number;
   route_description?: string | null;
+}
+
+/** At least one field required by API; use `delivery_site_id: null` to clear ship-to. */
+export interface PatchInvoiceDispatchRequest {
+  delivery_site_id?: string | null;
+  lr_number?: string | null;
+  tcs_amount?: number | null;
 }
 
 // --- E-Invoice ---
@@ -145,6 +159,9 @@ export interface EWayBill {
   distance_km: number | null;
   route: string | null;
   transporter_id: string | null;
+  /** NIC PDF / print link when returned */
+  print_url?: string | null;
+  valid_until?: string | null;
   payload: unknown;
   created_at: string;
   updated_at: string;

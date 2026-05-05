@@ -37,13 +37,13 @@ export default function SaudasPage() {
 
       <SaudasTable onRefreshRef={tableRefreshRef} />
 
-      <SaudaFormModal
-        open={createOpen}
-        onOpenChange={(open) => {
-          setCreateOpen(open);
-        }}
-        onSuccess={handleSaudaSuccess}
-      />
+      {createOpen ? (
+        <SaudaFormModal
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          onSuccess={handleSaudaSuccess}
+        />
+      ) : null}
     </div>
   );
 }

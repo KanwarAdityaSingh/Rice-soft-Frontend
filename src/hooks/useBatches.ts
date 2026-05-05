@@ -1,6 +1,14 @@
 import { useState, useEffect } from 'react';
 import { batchesAPI } from '../services/batches.api';
-import type { Batch, BatchWithDetails, CreateBatchRequest, UpdateBatchRequest, BatchProduct, BatchPackaging } from '../types/entities';
+import type {
+  Batch,
+  BatchWithDetails,
+  CreateBatchRequest,
+  UpdateBatchRequest,
+  BatchProduct,
+  BatchPackaging,
+  AttachBatchProductRequest,
+} from '../types/entities';
 
 export function useBatches(godown_id?: string) {
   const [batches, setBatches] = useState<Batch[]>([]);
@@ -68,9 +76,9 @@ export function useBatches(godown_id?: string) {
   };
 
   // Batch Products (Stage 2)
-  const addProductToBatch = async (batchId: string, productId: string) => {
+  const addProductToBatch = async (batchId: string, data: AttachBatchProductRequest) => {
     try {
-      const response = await batchesAPI.addProductToBatch(batchId, { product_id: productId });
+      const response = await batchesAPI.addProductToBatch(batchId, data);
       await fetchBatches();
       return response;
     } catch (err: any) {
