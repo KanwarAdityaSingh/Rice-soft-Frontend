@@ -248,7 +248,7 @@ export interface VehicleVerificationResponse {
   challan_details: any[] | null;
 }
 
-/** Driver (driving licence) master — normalized licence + phone; Surepass payload in verification_details when wired */
+/** Driver (driving licence) master — normalized licence + phone; after Surepass DL verify, mapped snapshot (DOB, expiry, age, address, etc.) stored in verification_details */
 export interface Driver {
   id: string;
   license_number: string;
@@ -273,6 +273,17 @@ export interface CreateDriverRequest {
 }
 
 export interface UpdateDriverRequest extends Partial<CreateDriverRequest> {}
+
+/** Surepass DL verify (does NOT create/update driver record) — mapped fields from gateway */
+export interface DriverVerificationResponse {
+  license_number: string;
+  full_name: string | null;
+  date_of_birth: string | null;
+  date_of_expiry: string | null;
+  /** Gateway may coerce from Surepass JSON */
+  age: number | string | null;
+  address: string | null;
+}
 
 export interface CreateTransporterRequest {
   business_name: string;

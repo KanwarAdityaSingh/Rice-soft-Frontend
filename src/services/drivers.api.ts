@@ -1,5 +1,10 @@
 import { apiService } from './api';
-import type { Driver, CreateDriverRequest, UpdateDriverRequest } from '../types/entities';
+import type {
+  Driver,
+  CreateDriverRequest,
+  UpdateDriverRequest,
+  DriverVerificationResponse,
+} from '../types/entities';
 
 export const driversAPI = {
   getAllDrivers: (includeInactive?: boolean) => {
@@ -14,6 +19,12 @@ export const driversAPI = {
     apiService.get<Driver>(`/drivers/by-license/${encodeURIComponent(licenseNumber)}`),
 
   createDriver: (data: CreateDriverRequest) => apiService.post<Driver>('/drivers', data),
+
+  /** Verify licence via Surepass (does NOT persist driver record) */
+  verifyDriver: (licenseNumber: string) =>
+    apiService.post<DriverVerificationResponse>('/drivers/verify', {
+      license_number: licenseNumber,
+    }),
 
   updateDriver: (id: string, data: UpdateDriverRequest) =>
     apiService.put<Driver>(`/drivers/${id}`, data),

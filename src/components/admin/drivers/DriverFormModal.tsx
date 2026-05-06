@@ -1,10 +1,10 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useEffect, useState } from 'react';
-import { X, IdCard, Shield, Loader2 } from 'lucide-react';
+import { X, IdCard, Shield, Loader2, Check } from 'lucide-react';
 import { driversAPI } from '../../../services/drivers.api';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
-import type { CreateDriverRequest, Driver } from '../../../types/entities';
+import type { CreateDriverRequest, Driver, DriverVerificationResponse } from '../../../types/entities';
 
 function normalizeLicenseInput(value: string): string {
   return value.replace(/\s+/g, ' ').trim().toUpperCase();
@@ -31,6 +31,9 @@ export function DriverFormModal({ open, onOpenChange, driverId }: DriverFormModa
     license_number: '',
     phone: '',
     name: null,
+    is_verified: false,
+    verified_at: null,
+    verification_details: null,
     is_active: true,
   });
 
@@ -38,6 +41,8 @@ export function DriverFormModal({ open, onOpenChange, driverId }: DriverFormModa
   const [loading, setLoading] = useState(false);
   const [loadingDriver, setLoadingDriver] = useState(false);
   const [loadedDriver, setLoadedDriver] = useState<Driver | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [verifiedFields, setVerifiedFields] = useState<Set<string>>(new Set());
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
@@ -67,6 +72,14 @@ export function DriverFormModal({ open, onOpenChange, driverId }: DriverFormModa
         verification_details: d.verification_details,
         is_active: d.is_active,
       });
+      if (d.is_verified) {
+        const next = new Set<string>();
+        if (d.license_number) next.add('license_number');
+        if (d.name) next.add('name');
+        setVerifiedFields(next);
+      } else {
+        setVerifiedFields(new Set());
+      }
       setErrors({});
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : 'Failed to load driver';
@@ -85,9 +98,13 @@ export function DriverFormModal({ open, onOpenChange, driverId }: DriverFormModa
       license_number: '',
       phone: '',
       name: null,
+      is_verified: false,
+      verified_at: null,
+      verification_details: null,
       is_active: true,
     });
     setErrors({});
+    setVerifiedFields(new Set());
   };
 
   const validateForm = (): boolean => {
@@ -103,6 +120,61 @@ export function DriverFormModal({ open, onOpenChange, driverId }: DriverFormModa
     return Object.keys(newErrors).length === 0;
   };
 
+  const buildVerificationDetailsFromResponse = (r: DriverVerificationResponse): Record<string, unknown> => ({
+    source: 'surepass_dl_verify',
+    full_name: r.full_name,
+    date_of_birth: r.date_of_birth,
+    date_of_expiry: r.date_of_expiry,
+    age: r.age,
+    address: r.address,
+  });
+
+  const handleVerify = async () => {
+    const lic = normalizeLicenseInput(formData.license_number);
+    if (!lic) {
+      setErrors({ license_number: 'Enter licence number first' });
+      return;
+    }
+
+    setVerifying(true);
+    try {
+      const result = await driversAPI.verifyDriver(lic);
+      const nextVerified = new Set<string>();
+      if (result.license_number) nextVerified.add('license_number');
+      if (result.full_name) nextVerified.add('name');
+
+      setFormData((prev) => ({
+        ...prev,
+        license_number: result.license_number || prev.license_number,
+        name: result.full_name?.trim() || prev.name,
+        is_verified: true,
+        verified_at: new Date().toISOString(),
+        verification_details: buildVerificationDetailsFromResponse(result),
+      }));
+      setVerifiedFields(nextVerified);
+      setErrors((prev) => {
+        if (!prev.license_number) return prev;
+        const { license_number: _drop, ...rest } = prev;
+        return rest;
+      });
+      setAlertType('success');
+      setAlertTitle('Licence verified');
+      setAlertMessage(
+        `Name: ${result.full_name || 'N/A'}${result.date_of_expiry ? ` · Valid until ${result.date_of_expiry}` : ''}`,
+      );
+      setAlertOpen(true);
+    } catch (error: unknown) {
+      setAlertType('error');
+      setAlertTitle('Verification failed');
+      setAlertMessage(
+        error instanceof Error ? error.message : 'Could not verify licence. You can still enter details manually.',
+      );
+      setAlertOpen(true);
+    } finally {
+      setVerifying(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
@@ -113,6 +185,12 @@ export function DriverFormModal({ open, onOpenChange, driverId }: DriverFormModa
       name: formData.name?.trim() || null,
       is_active: formData.is_active ?? true,
     };
+
+    if (formData.is_verified) {
+      payload.is_verified = true;
+      payload.verified_at = formData.verified_at;
+      payload.verification_details = formData.verification_details ?? null;
+    }
 
     if (isEditMode && driverId) {
       if (loadedDriver?.is_verified) {
@@ -157,10 +235,10 @@ export function DriverFormModal({ open, onOpenChange, driverId }: DriverFormModa
     }
   };
 
+  const verificationPayload =
+    loadedDriver?.verification_details ?? formData.verification_details ?? null;
   const verificationJson =
-    loadedDriver?.verification_details != null
-      ? JSON.stringify(loadedDriver.verification_details, null, 2)
-      : '';
+    verificationPayload != null ? JSON.stringify(verificationPayload, null, 2) : '';
 
   return (
     <>
@@ -199,17 +277,39 @@ export function DriverFormModal({ open, onOpenChange, driverId }: DriverFormModa
                   )}
 
                   <div>
-                    <label className="block text-sm font-medium mb-1">License number</label>
-                    <input
-                      type="text"
-                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                      value={formData.license_number}
-                      onChange={(e) => setFormData((p) => ({ ...p, license_number: e.target.value }))}
-                      placeholder="e.g. DL-1420110012345"
-                      autoComplete="off"
-                    />
+                    <label className="block text-sm font-medium mb-1">Licence number</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        className={`flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm read-only:cursor-not-allowed ${
+                          errors.license_number ? 'border-red-500' : ''
+                        } ${isEditMode ? 'opacity-60' : ''}`}
+                        value={formData.license_number}
+                        onChange={(e) => setFormData((p) => ({ ...p, license_number: e.target.value }))}
+                        placeholder="e.g. DL04 20110012345"
+                        autoComplete="off"
+                        disabled={isEditMode}
+                        readOnly={!isEditMode && verifiedFields.has('license_number')}
+                      />
+                      {!isEditMode && (
+                        <button
+                          type="button"
+                          onClick={() => void handleVerify()}
+                          disabled={verifying || !normalizeLicenseInput(formData.license_number)}
+                          className="px-4 py-2 shrink-0 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2"
+                        >
+                          {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Shield className="h-4 w-4" />}
+                          Verify
+                        </button>
+                      )}
+                    </div>
                     {errors.license_number && (
                       <p className="mt-1 text-xs text-red-600">{errors.license_number}</p>
+                    )}
+                    {formData.is_verified && (
+                      <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
+                        <Check className="h-3 w-3 shrink-0" /> Verified via Surepass
+                      </p>
                     )}
                   </div>
 
@@ -230,10 +330,11 @@ export function DriverFormModal({ open, onOpenChange, driverId }: DriverFormModa
                     <label className="block text-sm font-medium mb-1">Name (optional)</label>
                     <input
                       type="text"
-                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm read-only:cursor-not-allowed"
                       value={formData.name ?? ''}
                       onChange={(e) => setFormData((p) => ({ ...p, name: e.target.value || null }))}
                       placeholder="As on licence"
+                      readOnly={verifiedFields.has('name')}
                     />
                   </div>
 
