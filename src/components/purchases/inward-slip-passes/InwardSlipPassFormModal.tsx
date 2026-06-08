@@ -22,6 +22,7 @@ import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import type { CreateInwardSlipPassRequest, UpdateInwardSlipPassRequest, RiceCode, RiceType, Sauda, Vehicle, OtherBill } from '../../../types/entities';
 import { parametersAPI } from '../../../services/parameters.api';
 import { QualityParametersFields } from '../../shared/QualityParametersFields';
+import { UploadedDocumentPreview, extractUploadResponseUrl } from '../../shared/UploadedDocumentPreview';
 import {
   draftFromQualityParameter,
   emptyQualityParameterDraft,
@@ -177,6 +178,12 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   const [billDate, setBillDate] = useState<string>('');
   /** True when ISP already has a purchase bill PDF from the server (edit mode). */
   const [hasExistingPurchaseBill, setHasExistingPurchaseBill] = useState(false);
+  /** Latest known attachment URLs (from server load or after upload) for inline preview. */
+  const [billAttachmentPreviewUrls, setBillAttachmentPreviewUrls] = useState<{
+    purchase_bill: string | null;
+    bilti: string | null;
+    eway_bill: string | null;
+  }>({ purchase_bill: null, bilti: null, eway_bill: null });
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
@@ -231,6 +238,11 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
       setDisplaySlipNumber(isp.slip_number); // Store for display only
       setOtherBills(isp.other_bills || []); // Load other_bills array
       setHasExistingPurchaseBill(Boolean(isp.bill_pdf_url));
+      setBillAttachmentPreviewUrls({
+        purchase_bill: isp.bill_pdf_url ?? null,
+        bilti: isp.bilti_image_url ?? isp.bilti_pdf_url ?? null,
+        eway_bill: isp.eway_bill_url ?? null,
+      });
       // Load bill number and date
       setBillNumber(isp.bill_number || '');
       setBillDate(isp.bill_date || '');
@@ -294,6 +306,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     setBillNumber('');
     setBillDate('');
     setHasExistingPurchaseBill(false);
+    setBillAttachmentPreviewUrls({ purchase_bill: null, bilti: null, eway_bill: null });
     // Reset vehicle state
     setVehicleNumberInput('');
     setSelectedVehicle(null);
@@ -561,25 +574,36 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
 
     setUploading(prev => ({ ...prev, [field]: true }));
     try {
-      let uploadFn;
-      let uploadPromise;
+      let result: unknown;
       switch (field) {
         case 'purchase_bill':
-          uploadPromise = inwardSlipPassesAPI.uploadPurchaseBill(uploadIspId, file, billNumber || undefined, billDate || undefined);
+          result = await inwardSlipPassesAPI.uploadPurchaseBill(
+            uploadIspId,
+            file,
+            billNumber || undefined,
+            billDate || undefined
+          );
           break;
         case 'bilti':
-          uploadFn = inwardSlipPassesAPI.uploadBilti;
-          uploadPromise = uploadFn(uploadIspId, file);
+          result = await inwardSlipPassesAPI.uploadBilti(uploadIspId, file);
           break;
         case 'eway_bill':
-          uploadFn = inwardSlipPassesAPI.uploadEwayBill;
-          uploadPromise = uploadFn(uploadIspId, file);
+          result = await inwardSlipPassesAPI.uploadEwayBill(uploadIspId, file);
           break;
         default:
           throw new Error('Unknown upload field');
       }
-      await uploadPromise;
-      setUploadSuccess(prev => ({ ...prev, [field]: true }));
+      const uploadedUrl = extractUploadResponseUrl(result);
+      if (
+        uploadedUrl &&
+        (field === 'purchase_bill' || field === 'bilti' || field === 'eway_bill')
+      ) {
+        setBillAttachmentPreviewUrls((prev) => ({ ...prev, [field]: uploadedUrl }));
+      }
+      if (field === 'purchase_bill') {
+        setHasExistingPurchaseBill(true);
+      }
+      setUploadSuccess((prev) => ({ ...prev, [field]: true }));
       if (isEditMode) {
         setAlertType('success');
         setAlertTitle('Success');
@@ -1513,6 +1537,12 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                           {errors.purchase_bill && (
                             <p className="mt-0.5 text-[9px] text-red-500">{errors.purchase_bill}</p>
                           )}
+                          <UploadedDocumentPreview
+                            url={billAttachmentPreviewUrls.purchase_bill}
+                            compact
+                            alt="Purchase bill"
+                            className="mt-1"
+                          />
                         </div>
                       </div>
                       {/* Bilti and Eway Bill */}
@@ -1525,6 +1555,12 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                             {uploading[field] && <div className="absolute right-1.5 top-1/2 -translate-y-1/2"><Loader2 className="h-3 w-3 animate-spin text-primary" /></div>}
                             {uploadSuccess[field] && !uploading[field] && <div className="absolute right-1.5 top-1/2 -translate-y-1/2"><Check className="h-3 w-3 text-emerald-500" /></div>}
                           </div>
+                          <UploadedDocumentPreview
+                            url={billAttachmentPreviewUrls[field]}
+                            compact
+                            alt={field.replace(/_/g, ' ')}
+                            className="mt-1"
+                          />
                         </div>
                       ))}
                     </div>
@@ -1541,7 +1577,13 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                     {(otherBills.length > 0 || pendingOtherBills.length > 0) && (
                       <div className="space-y-1.5">
                         {otherBills.map((bill, index) => (
-                          <div key={index} className="flex items-center justify-between p-1.5 bg-muted/30 rounded border border-border">
+                          <div key={index} className="flex items-start gap-2 p-1.5 bg-muted/30 rounded border border-border">
+                            <UploadedDocumentPreview
+                              url={bill.url}
+                              compact
+                              alt={bill.name}
+                              className="w-[4.5rem] shrink-0"
+                            />
                             <div className="flex-1 min-w-0">
                               <div className="text-xs font-medium truncate">{bill.name}</div>
                               <div className="text-[10px] text-muted-foreground">

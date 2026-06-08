@@ -1,5 +1,6 @@
 import { apiService } from './api';
-import type { Godown, CreateGodownRequest, GSTLookupResponseData, UpdateGodownRequest } from '../types/entities';
+import type { Godown, CreateGodownRequest, UpdateGodownRequest } from '../types/entities';
+import { kycAPI } from './kyc.api';
 
 const BASE = '/godowns';
 
@@ -13,8 +14,7 @@ export const godownsAPI = {
 
   getById: (id: string) => apiService.get<Godown>(`${BASE}/${id}`),
 
-  lookupGST: (gstNumber: string) =>
-    apiService.get<GSTLookupResponseData>(`${BASE}/lookupGST?gst_number=${encodeURIComponent(gstNumber)}`),
+  lookupGST: (gstNumber: string) => kycAPI.lookupGSTAdvanced(gstNumber),
 
   create: (data: CreateGodownRequest) => apiService.post<Godown>(BASE, data),
 

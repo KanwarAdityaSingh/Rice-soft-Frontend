@@ -1,5 +1,6 @@
 import { apiService } from './api';
-import type { Transporter, CreateTransporterRequest, UpdateTransporterRequest, GSTLookupResponseData, PANLookupResponseData } from '../types/entities';
+import type { Transporter, CreateTransporterRequest, UpdateTransporterRequest, KycPersistContext } from '../types/entities';
+import { kycAPI } from './kyc.api';
 
 export const transportersAPI = {
   // Get all transporters
@@ -31,19 +32,17 @@ export const transportersAPI = {
     return apiService.delete<{ success: boolean; message: string }>(`/transporters/${id}`);
   },
 
-  // GST Lookup
-  lookupGST: (gstNumber: string) => {
-    return apiService.get<GSTLookupResponseData>(`/transporters/lookupGST?gst_number=${gstNumber}`);
-  },
+  // GST Lookup (Surepass GSTIN Advanced — snapshots persisted on save via kyc_verification_details)
+  lookupGST: (gstNumber: string, persist?: KycPersistContext) =>
+    kycAPI.lookupGSTAdvanced(gstNumber, persist),
 
-  // PAN Lookup
-  lookupPAN: (panNumber: string) => {
-    return apiService.get<PANLookupResponseData>(`/transporters/lookupPAN?pan_number=${panNumber}`);
-  },
+  // PAN Lookup (Surepass PAN Comprehensive — snapshots persisted on save via kyc_verification_details)
+  lookupPAN: (panNumber: string, persist?: KycPersistContext) =>
+    kycAPI.lookupPANComprehensive(panNumber, persist),
 
-  // Verify bank account
+  // Verify bank account (Surepass via /kyc/bank/verify)
   verifyBankAccount: (accountNumber: string, ifscCode: string) => {
-    return apiService.get<any>(`/transporters/verifyBankAccount?id_number=${accountNumber}&ifsc=${ifscCode.toUpperCase()}`);
+    return kycAPI.verifyBank(accountNumber, ifscCode);
   },
 };
 

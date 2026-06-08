@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { SearchBar } from '../../admin/shared/SearchBar';
 import { FilterDropdown } from '../../admin/shared/FilterDropdown';
@@ -7,7 +8,7 @@ import { EmptyState } from '../../admin/shared/EmptyState';
 import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
-import { Package, Eye, MoreVertical, Edit2, Trash2, UtensilsCrossed, Wheat, Mail, MessageCircle, Copy, Check, Ban, CheckCircle2 } from 'lucide-react';
+import { Package, Eye, MoreVertical, Edit2, Trash2, UtensilsCrossed, Wheat, Mail, MessageCircle, Copy, Check, Ban, CheckCircle2, X, List } from 'lucide-react';
 import { useSaudas } from '../../../hooks/useSaudas';
 import { useVendors } from '../../../hooks/useVendors';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
@@ -89,6 +90,9 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
   const [copiedSaudaId, setCopiedSaudaId] = useState<string | null>(null);
+  /** Opens dialog with full kaanta / PA identifiers (ISP slip numbers only, no UUIDs). */
+  const [usageDetailSaudaId, setUsageDetailSaudaId] = useState<string | null>(null);
+  const [copiedUsageToken, setCopiedUsageToken] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -187,6 +191,21 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
     };
   };
 
+  /** ISP / kaanta / PA identifiers for Usage column (same sources as delete warning). */
+  const getSaudaUsageDisplay = (saudaId: string) => {
+    const counts = getSaudaUsageCounts(saudaId);
+    const paymentAdviceLabels = paymentAdvices
+      .filter((pa) => pa.sauda_id === saudaId)
+      .map((pa) => pa.transaction_id || pa.id);
+    const ispRows = inwardSlipPasses
+      .filter((isp) => isp.sauda_ids?.includes(saudaId))
+      .map((isp) => ({ id: isp.id, slipNumber: isp.slip_number || '—' }));
+    const kaantaRows = kaantas
+      .filter((k) => k.sauda_id === saudaId)
+      .map((k) => ({ rowId: k.id, kaantaId: k.kaanta_id }));
+    return { counts, paymentAdviceLabels, ispRows, kaantaRows };
+  };
+
   // Get usage details for a sauda (for delete warning)
   const getSaudaUsageDetails = async (saudaId: string): Promise<{
     paymentAdvices: string[];
@@ -227,13 +246,19 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
     }
   };
 
+  const copyUsageSnippet = async (token: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedUsageToken(token);
+      setTimeout(() => setCopiedUsageToken(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
   const filtered = useMemo(() => {
     return saudas.filter((s) => {
       if (typeFilter && s.sauda_type !== typeFilter) return false;
-      if (!showCancelledOnly) {
-        if (s.status === 'completed') return false;
-        if (s.completion_percentage != null && s.completion_percentage >= 100) return false;
-      }
       const q = searchQuery.toLowerCase();
       const displayName = getSaudaDisplayName(s).toLowerCase();
       const purchaserName = getPurchaserName(s.purchaser_id).toLowerCase();
@@ -250,7 +275,7 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
 
       return matchesSearch;
     });
-  }, [saudas, typeFilter, searchQuery, riceCodes, riceTypes, riceLengths, vendors, showCancelledOnly]);
+  }, [saudas, typeFilter, searchQuery, riceCodes, riceTypes, riceLengths, vendors]);
 
   return (
     <div>
@@ -324,16 +349,16 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
               <tbody>
                 {filtered.map((s) => {
                   const serial = getSaudaSerialNumber(s.id, saudas);
-                  const counts = getSaudaUsageCounts(s.id);
+                  const usage = getSaudaUsageDisplay(s.id);
                   const usageParts: string[] = [];
-                  if (counts.paymentAdvices > 0) {
-                    usageParts.push(`${counts.paymentAdvices} PA`);
+                  if (usage.counts.paymentAdvices > 0) {
+                    usageParts.push(`${usage.counts.paymentAdvices} PA`);
                   }
-                  if (counts.isps > 0) {
-                    usageParts.push(`${counts.isps} ISP`);
+                  if (usage.counts.isps > 0) {
+                    usageParts.push(`${usage.counts.isps} ISP`);
                   }
-                  if (counts.kaantas > 0) {
-                    usageParts.push(`${counts.kaantas} Kaanta`);
+                  if (usage.counts.kaantas > 0) {
+                    usageParts.push(`${usage.counts.kaantas} Kaanta`);
                   }
                   
                   return (
@@ -394,9 +419,7 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                       </td>
                       <td className="py-3 px-4 text-sm min-w-[120px]">
                         <div className="flex flex-col gap-1.5">
-                          {(showCancelledOnly || s.status === 'completed') && (
-                            <SaudaWorkflowStatusBadge status={s.status} />
-                          )}
+                          <SaudaWorkflowStatusBadge status={s.status} />
                           {s.completion_percentage !== null && (
                             <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${getCompletionStatus(s.completion_percentage).bgColor} ${getCompletionStatus(s.completion_percentage).color} border ${getCompletionStatus(s.completion_percentage).borderColor}`}>
                               {getCompletionStatus(s.completion_percentage).label}
@@ -439,9 +462,45 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                       </td>
                       <td className="py-3 px-4 text-sm">
                         {usageParts.length > 0 ? (
-                          <span className="text-xs text-amber-600 dark:text-amber-400">
-                            {usageParts.join(', ')}
-                          </span>
+                          <div className="space-y-1 text-xs text-amber-600 dark:text-amber-400 max-w-[18rem]">
+                            <div className="flex flex-wrap items-center justify-between gap-1.5">
+                              <span>{usageParts.join(', ')}</span>
+                              <button
+                                type="button"
+                                onClick={() => setUsageDetailSaudaId(s.id)}
+                                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-amber-500/35 bg-amber-500/5 text-amber-800 hover:bg-amber-500/15 dark:text-amber-200"
+                                title="Full usage (payment advices, ISPs, kaanta IDs)"
+                                aria-label="Full usage details"
+                              >
+                                <List className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                            {usage.paymentAdviceLabels.map((label, i) => (
+                              <div
+                                key={`pa-${i}-${label}`}
+                                className="font-mono text-[10px] text-amber-700/90 dark:text-amber-300/85"
+                                title={label}
+                              >
+                                PA: {label}
+                              </div>
+                            ))}
+                            {usage.ispRows.map((isp) => (
+                              <div
+                                key={isp.id}
+                                className="text-[10px] text-amber-700/90 dark:text-amber-300/85"
+                              >
+                                ISP: {isp.slipNumber}
+                              </div>
+                            ))}
+                            {usage.kaantaRows.map((k, idx) => (
+                              <div
+                                key={k.rowId}
+                                className="text-[10px] text-amber-700/90 dark:text-amber-300/85"
+                              >
+                                {usage.kaantaRows.length > 1 ? `Kaanta ${idx + 1}` : 'Kaanta'}
+                              </div>
+                            ))}
+                          </div>
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
@@ -645,10 +704,8 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                         : new Date(s.created_at).toLocaleDateString('en-IN')}
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-2">
-                    {(showCancelledOnly || s.status === 'completed') && (
                       <SaudaWorkflowStatusBadge status={s.status} />
-                    )}
-                    {s.completion_percentage !== null && (
+                      {s.completion_percentage !== null && (
                         <span className={`text-[10px] px-2 py-0.5 rounded-full ${getCompletionStatus(s.completion_percentage).bgColor} ${getCompletionStatus(s.completion_percentage).color} border ${getCompletionStatus(s.completion_percentage).borderColor}`}>
                           {getCompletionStatus(s.completion_percentage).label}
                         </span>
@@ -707,26 +764,62 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                   </div>
                 )}
               </div>
-              <div className="mt-3 flex items-center justify-between">
-                {isSaudaInUse(s.id) && (() => {
-                  const counts = getSaudaUsageCounts(s.id);
+              <div className="mt-3 flex flex-wrap items-start justify-between gap-2">
+                {isSaudaInUse(s.id) ? (() => {
+                  const usageDisp = getSaudaUsageDisplay(s.id);
                   const parts: string[] = [];
-                  if (counts.paymentAdvices > 0) {
-                    parts.push(`${counts.paymentAdvices} payment advice${counts.paymentAdvices !== 1 ? 's' : ''}`);
+                  if (usageDisp.counts.paymentAdvices > 0) {
+                    parts.push(`${usageDisp.counts.paymentAdvices} payment advice${usageDisp.counts.paymentAdvices !== 1 ? 's' : ''}`);
                   }
-                  if (counts.isps > 0) {
-                    parts.push(`${counts.isps} ISP${counts.isps !== 1 ? 's' : ''}`);
+                  if (usageDisp.counts.isps > 0) {
+                    parts.push(`${usageDisp.counts.isps} ISP${usageDisp.counts.isps !== 1 ? 's' : ''}`);
                   }
-                  if (counts.kaantas > 0) {
-                    parts.push(`${counts.kaantas} kaanta${counts.kaantas !== 1 ? 's' : ''}`);
+                  if (usageDisp.counts.kaantas > 0) {
+                    parts.push(`${usageDisp.counts.kaantas} kaanta${usageDisp.counts.kaantas !== 1 ? 's' : ''}`);
                   }
                   return (
-                    <span className="text-xs text-amber-600 dark:text-amber-400">
-                      Used in {parts.join(', ')}
-                    </span>
+                    <div className="min-w-0 flex-1 space-y-1 text-xs text-amber-600 dark:text-amber-400">
+                      <div className="flex flex-wrap items-center justify-between gap-1.5">
+                        <span>Used in {parts.join(', ')}</span>
+                        <button
+                          type="button"
+                          onClick={() => setUsageDetailSaudaId(s.id)}
+                          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-amber-500/35 bg-amber-500/5 text-amber-800 hover:bg-amber-500/15 dark:text-amber-200"
+                          title="Full usage (payment advices, ISPs, kaanta IDs)"
+                          aria-label="Full usage details"
+                        >
+                          <List className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      {usageDisp.paymentAdviceLabels.map((label, i) => (
+                        <div
+                          key={`m-pa-${i}-${label}`}
+                          className="font-mono text-[10px] text-amber-700/90 dark:text-amber-300/85 break-all"
+                          title={label}
+                        >
+                          PA: {label}
+                        </div>
+                      ))}
+                      {usageDisp.ispRows.map((isp) => (
+                        <div
+                          key={isp.id}
+                          className="text-[10px] text-amber-700/90 dark:text-amber-300/85 break-all"
+                        >
+                          ISP: {isp.slipNumber}
+                        </div>
+                      ))}
+                      {usageDisp.kaantaRows.map((k, idx) => (
+                        <div
+                          key={k.rowId}
+                          className="text-[10px] text-amber-700/90 dark:text-amber-300/85"
+                        >
+                          {usageDisp.kaantaRows.length > 1 ? `Kaanta ${idx + 1}` : 'Kaanta'}
+                        </div>
+                      ))}
+                    </div>
                   );
-                })()}
-                <div className="flex items-center justify-end gap-1">
+                })() : <div className="flex-1" />}
+                <div className="flex shrink-0 items-center justify-end gap-1">
                 <button
                   onClick={() => {
                     setPreviewSauda(s);
@@ -878,6 +971,167 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
         </div>
         </>
       )}
+
+      <Dialog.Root
+        open={usageDetailSaudaId != null}
+        onOpenChange={(open) => {
+          if (!open) setUsageDetailSaudaId(null);
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-[70] flex max-h-[min(85vh,40rem)] w-[min(92vw,28rem)] flex-col -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-background p-4 shadow-2xl">
+            <div className="flex items-start justify-between gap-2 border-b border-border pb-3">
+              <div className="min-w-0 pr-2">
+                <Dialog.Title className="text-base font-semibold">Linked usage</Dialog.Title>
+                <Dialog.Description className="mt-1 text-xs text-muted-foreground">
+                  Full payment advice and kaanta identifiers. ISP slip numbers only (no ISP UUIDs).
+                </Dialog.Description>
+                {usageDetailSaudaId && (() => {
+                  const sd = saudas.find((x) => x.id === usageDetailSaudaId);
+                  const label = sd ? getSaudaDisplayName(sd) : usageDetailSaudaId;
+                  return (
+                    <p className="mt-2 truncate text-sm font-medium" title={label}>
+                      {label}
+                    </p>
+                  );
+                })()}
+              </div>
+              <Dialog.Close asChild>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-lg p-1.5 text-muted-foreground hover:bg-muted"
+                  aria-label="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </Dialog.Close>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto py-4">
+              {usageDetailSaudaId &&
+                (() => {
+                  const u = getSaudaUsageDisplay(usageDetailSaudaId);
+                  const sid = usageDetailSaudaId;
+                  return (
+                    <div className="space-y-6 text-sm">
+                      {u.paymentAdviceLabels.length > 0 && (
+                        <section>
+                          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Payment advices
+                          </h3>
+                          <ul className="space-y-2">
+                            {u.paymentAdviceLabels.map((label, i) => (
+                              <li
+                                key={`d-pa-${sid}-${i}-${label}`}
+                                className="flex items-start justify-between gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1.5 font-mono text-xs break-all"
+                              >
+                                <span>{label}</span>
+                                <button
+                                  type="button"
+                                  className="shrink-0 rounded p-1 text-primary hover:bg-primary/10"
+                                  aria-label="Copy"
+                                  onClick={() => void copyUsageSnippet(`${sid}-pa-${i}`, label)}
+                                >
+                                  {copiedUsageToken === `${sid}-pa-${i}` ? (
+                                    <Check className="h-3.5 w-3.5 text-green-600" />
+                                  ) : (
+                                    <Copy className="h-3.5 w-3.5" />
+                                  )}
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        </section>
+                      )}
+                      {u.ispRows.length > 0 && (
+                        <section>
+                          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Inward slip passes
+                          </h3>
+                          <ul className="space-y-1.5">
+                            {u.ispRows.map((isp) => (
+                              <li
+                                key={isp.id}
+                                className="rounded-md border border-border/60 bg-muted/20 px-2 py-1.5 text-sm"
+                              >
+                                {isp.slipNumber}
+                              </li>
+                            ))}
+                          </ul>
+                        </section>
+                      )}
+                      {u.kaantaRows.length > 0 && (
+                        <section>
+                          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Kaantas
+                          </h3>
+                          <ul className="space-y-3">
+                            {u.kaantaRows.map((k, idx) => (
+                              <li
+                                key={k.rowId}
+                                className="space-y-2 rounded-md border border-border/60 bg-muted/20 p-2.5"
+                              >
+                                <div className="text-[10px] font-medium text-muted-foreground">
+                                  {u.kaantaRows.length > 1 ? `Kaanta ${idx + 1}` : 'Kaanta'}
+                                </div>
+                                <div className="flex items-start justify-between gap-2 font-mono text-[11px] leading-relaxed break-all">
+                                  <span>
+                                    <span className="text-muted-foreground">Kaanta ID: </span>
+                                    {k.kaantaId}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="shrink-0 rounded p-1 text-primary hover:bg-primary/10"
+                                    aria-label="Copy kaanta ID"
+                                    onClick={() => void copyUsageSnippet(`${sid}-kid-${k.rowId}`, k.kaantaId)}
+                                  >
+                                    {copiedUsageToken === `${sid}-kid-${k.rowId}` ? (
+                                      <Check className="h-3.5 w-3.5 text-green-600" />
+                                    ) : (
+                                      <Copy className="h-3.5 w-3.5" />
+                                    )}
+                                  </button>
+                                </div>
+                                <div className="flex items-start justify-between gap-2 font-mono text-[11px] leading-relaxed break-all">
+                                  <span>
+                                    <span className="text-muted-foreground">Row ID: </span>
+                                    {k.rowId}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="shrink-0 rounded p-1 text-primary hover:bg-primary/10"
+                                    aria-label="Copy row UUID"
+                                    onClick={() => void copyUsageSnippet(`${sid}-rid-${k.rowId}`, k.rowId)}
+                                  >
+                                    {copiedUsageToken === `${sid}-rid-${k.rowId}` ? (
+                                      <Check className="h-3.5 w-3.5 text-green-600" />
+                                    ) : (
+                                      <Copy className="h-3.5 w-3.5" />
+                                    )}
+                                  </button>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </section>
+                      )}
+                    </div>
+                  );
+                })()}
+            </div>
+            <div className="border-t border-border pt-3">
+              <Dialog.Close asChild>
+                <button
+                  type="button"
+                  className="w-full rounded-lg border border-border py-2 text-sm font-medium hover:bg-muted"
+                >
+                  Close
+                </button>
+              </Dialog.Close>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
 
       <ConfirmDialog
         open={cancelDialogOpen}

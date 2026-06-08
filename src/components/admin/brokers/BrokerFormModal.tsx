@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState, useEffect } from 'react';
-import { X, Search, Plus } from 'lucide-react';
+import { X, Search, Plus, ShieldCheck } from 'lucide-react';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { brokersAPI } from '../../../services/brokers.api';
@@ -9,7 +9,18 @@ import { validateEmail, validatePAN, validateAadhaar, validatePhone, validateGST
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { BrokerPreviewDialog } from './BrokerPreviewDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
-import type { CreateBrokerRequest, BrokerBankDetails, Broker, UpdateBrokerRequest } from '../../../types/entities';
+import { EmailVerifyButton } from '../../shared/EmailVerifyButton';
+import { KycVerificationDetailsPanel } from '../../shared/KycVerificationDetailsPanel';
+import type { CreateBrokerRequest, BrokerBankDetails, Broker, UpdateBrokerRequest, EntityKycVerificationDetails } from '../../../types/entities';
+import {
+  buildEntitySavePayload,
+  buildSurepassSnapshot,
+  brokerPersist,
+  collectEntityKycEntries,
+  mergeEntityKycSnapshot,
+  persistGstLookupSnapshot,
+  persistPanLookupSnapshot,
+} from '../../../utils/kycVerification';
 import {
   BROKER_CREATE_LENIENT_BANK_MESSAGE,
   BROKER_UPDATE_LENIENT_BANK_MESSAGE,
@@ -180,15 +191,6 @@ function brokerEntityToForm(b: Broker): CreateBrokerRequest {
   };
 }
 
-/** Backend `verify_bank` requires complete bank fields for its verify schema — align with account + IFSC + holder (create + update). */
-function shouldVerifyBank(bd: BrokerBankDetails | undefined | null): boolean {
-  if (!bd) return false;
-  const accountNumber = bd.account_number?.trim();
-  const ifsc = bd.ifsc_code?.trim().toUpperCase();
-  const holder = bd.account_holder_name?.trim();
-  return Boolean(accountNumber && holder && ifsc && ifsc.length === 11);
-}
-
 function getBrokerSaveAlert(
   isEdit: boolean,
   message: string,
@@ -256,12 +258,21 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
   const [ifscLoading, setIfscLoading] = useState(false);
+  const [aadhaarValidated, setAadhaarValidated] = useState(false);
+  const [kycVerificationDetails, setKycVerificationDetails] = useState<EntityKycVerificationDetails>({});
+  const brokerPersistContext = brokerPersist(brokerId);
   const [gstAutoFilledFields, setGstAutoFilledFields] = useState<Set<string>>(new Set());
   /** Snapshot from server — in edit, GST/PAN cannot be changed (same pattern as VendorFormModal). */
   const [originalGstNumber, setOriginalGstNumber] = useState('');
   const [originalPanNumber, setOriginalPanNumber] = useState('');
   /** Name field read-only when filled from PAN / Aadhaar lookup (per contact row index). */
   const [contactPersonNameFromGovApi, setContactPersonNameFromGovApi] = useState<boolean[]>([false]);
+
+  useEffect(() => {
+    if (!open) {
+      setPreviewOpen(false);
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -273,6 +284,8 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
       setOriginalGstNumber('');
       setOriginalPanNumber('');
       setContactPersonNameFromGovApi([false]);
+      setAadhaarValidated(false);
+      setKycVerificationDetails({});
       return;
     }
     let cancelled = false;
@@ -282,6 +295,7 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
       .then((b) => {
         if (cancelled) return;
         setFormData(brokerEntityToForm(b));
+        setKycVerificationDetails(b.kyc_verification_details ?? {});
         const gst = (b.business_details?.gst_number ?? '').trim();
         const pan = (b.business_details?.pan_number ?? '').trim();
         setOriginalGstNumber(gst);
@@ -468,7 +482,10 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
     setErrors({ ...errors, pan_number: '' });
     
     try {
-      const response = await brokersAPI.lookupPAN(formData.business_details.pan_number);
+      const response = await brokersAPI.lookupPAN(
+        formData.business_details.pan_number,
+        brokerPersistContext,
+      );
       
       // The API service returns response.data, which is { pan_data: {...}, mapped_data: {...} }
       const mapped = response.mapped_data;
@@ -565,6 +582,8 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
       setContactPersonNameFromGovApi(nextLocks);
       
       setGstAutoFilledFields(autoFilledFields);
+
+      setKycVerificationDetails((prev) => persistPanLookupSnapshot(prev, response));
       
       // Clear any previous errors
       setErrors({ ...errors, pan_number: '' });
@@ -591,7 +610,10 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
     setErrors({ ...errors, gst_number: '' });
     
     try {
-      const response = await brokersAPI.lookupGST(formData.business_details.gst_number);
+      const response = await brokersAPI.lookupGST(
+        formData.business_details.gst_number,
+        brokerPersistContext,
+      );
       
       const mapped = response.mapped_data;
       
@@ -672,8 +694,9 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
       
       // Set the auto-filled fields
       setGstAutoFilledFields(autoFilledFields);
+
+      setKycVerificationDetails((prev) => persistGstLookupSnapshot(prev, response));
       
-      // Clear any previous errors
       setErrors({ ...errors, gst_number: '' });
     } catch (error: any) {
       console.error('GST lookup error:', error);
@@ -696,78 +719,39 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
 
     setLookupLoading(true);
     setErrors({ ...errors, aadhaar_number: '' });
+    setAadhaarValidated(false);
     
     try {
-      const response = await brokersAPI.lookupAadhaar(formData.business_details.aadhaar_number);
-      
-      // Aadhaar lookup might return different structure - check if it has mapped_data
-      // For now, we'll handle it similar to PAN if the structure is similar
-      // If the API only returns validation, we'll just clear the error
-      if (response && typeof response === 'object' && 'mapped_data' in response) {
-        const mapped = (response as any).mapped_data;
-        const aadhaarData = (response as any).aadhaar_data;
-        
-        // Populate business name if available (convert to title case)
-        const businessName = toTitleCase(mapped?.business_name) || formData.business_name;
-        
-        // If Aadhaar data has a name, add to contact_persons if not already present
-        let contactPersons = [...(formData.contact_persons || [])];
-        let nextLocks = [...contactPersonNameFromGovApi];
-        while (nextLocks.length < contactPersons.length) nextLocks.push(false);
-        if (nextLocks.length > contactPersons.length) {
-          nextLocks = nextLocks.slice(0, contactPersons.length);
-        }
-        const aadhaarName = toTitleCase(aadhaarData?.name || mapped?.contact_person);
-        if (aadhaarName?.trim()) {
-          const trimmed = aadhaarName.trim();
-          const existingContact = contactPersons.find(
-            (cp) => cp.name && cp.name.trim() === trimmed
-          );
-          if (!existingContact) {
-            const emptyContactIndex = contactPersons.findIndex(
-              (cp) => !cp.name || cp.name.trim() === ''
-            );
-            if (emptyContactIndex >= 0) {
-              contactPersons[emptyContactIndex] = {
-                name: aadhaarName,
-                phones: [''],
-                emails: [''],
-              };
-              nextLocks[emptyContactIndex] = true;
-            } else {
-              contactPersons = [
-                ...contactPersons,
-                { name: aadhaarName, phones: [''], emails: [''] },
-              ];
-              nextLocks.push(true);
-            }
-          }
-        }
-        
-        // Populate address fields (only fill non-empty values, convert to title case)
-        const addressUpdate: any = { ...formData.address };
-        if (mapped?.address) {
-          if (mapped.address.street) addressUpdate.street = toTitleCase(mapped.address.street);
-          if (mapped.address.city) addressUpdate.city = toTitleCase(mapped.address.city);
-          if (mapped.address.state) addressUpdate.state = toTitleCase(mapped.address.state);
-          if (mapped.address.pincode) addressUpdate.pincode = mapped.address.pincode;
-          if (mapped.address.country) addressUpdate.country = toTitleCase(mapped.address.country);
-        }
-        
-        setFormData({
-          ...formData,
-          business_name: businessName,
-          contact_persons: contactPersons,
-          address: addressUpdate,
+      const response = await brokersAPI.lookupAadhaar(
+        formData.business_details.aadhaar_number,
+        brokerId ?? undefined,
+      );
+
+      if (response.already_exists) {
+        setErrors({
+          ...errors,
+          aadhaar_number:
+            response.message || 'Aadhaar number is valid but already exists in the system',
         });
-        setContactPersonNameFromGovApi(nextLocks);
+        return;
       }
-      
-      // Clear any previous errors
-      setErrors({ ...errors, aadhaar_number: '' });
+
+      if (response.is_valid) {
+        setAadhaarValidated(true);
+        setErrors({ ...errors, aadhaar_number: '' });
+        if (response.surepass_response) {
+          setKycVerificationDetails((prev) =>
+            mergeEntityKycSnapshot(
+              prev,
+              'aadhaar',
+              buildSurepassSnapshot(response.surepass_response, response.aadhaar_data),
+            ),
+          );
+        }
+      }
     } catch (error: any) {
       console.error('Aadhaar lookup error:', error);
-      setErrors({ ...errors, aadhaar_number: error?.message || 'Failed to lookup Aadhaar details' });
+      setErrors({ ...errors, aadhaar_number: error?.message || 'Failed to validate Aadhaar number' });
     } finally {
       setLookupLoading(false);
     }
@@ -782,10 +766,10 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
       setLoading(true);
       try {
         const cleanedFormData = cleanBrokerFormPayload(formData);
-        const updatePayload: UpdateBrokerRequest = {
-          ...cleanedFormData,
-          ...(shouldVerifyBank(cleanedFormData.bank_details) ? { verify_bank: true } : {}),
-        };
+        const updatePayload = buildEntitySavePayload(cleanedFormData, {
+          kycVerificationDetails,
+          bankVerifiedInSession: false,
+        });
         const { message, verification_error, verification_message } = await updateBroker(
           brokerId,
           updatePayload
@@ -809,8 +793,7 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
       return;
     }
 
-    // Create: close form and open review dialog
-    onOpenChange(false);
+    // Create: open review dialog (form hides via open && !previewOpen)
     setPreviewOpen(true);
   };
 
@@ -869,10 +852,10 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
     try {
       const cleanedFormData = cleanBrokerFormPayload(data);
 
-      const createPayload: CreateBrokerRequest = {
-        ...cleanedFormData,
-        ...(shouldVerifyBank(cleanedFormData.bank_details) ? { verify_bank: true } : {}),
-      };
+      const createPayload = buildEntitySavePayload(cleanedFormData, {
+        kycVerificationDetails,
+        bankVerifiedInSession: false,
+      });
 
       const { message, verification_error, verification_message } = await createBroker(createPayload);
       setPreviewOpen(false);
@@ -896,7 +879,14 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
   };
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <>
+    <Dialog.Root
+      open={open && !previewOpen}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && previewOpen) return;
+        onOpenChange(nextOpen);
+      }}
+    >
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
         <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-full max-w-3xl translate-x-[-50%] translate-y-[-50%]">
@@ -949,6 +939,12 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
               {/* Step 1: Basic Info */}
               {step === 1 && (
                 <div className="space-y-4">
+                  {isEdit && (
+                    <KycVerificationDetailsPanel
+                      entries={collectEntityKycEntries(kycVerificationDetails)}
+                      emptyMessage="No Surepass snapshots saved yet. Lookups and verify actions persist full responses when editing an existing broker."
+                    />
+                  )}
                   {/* Business Type Selector */}
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Business Type *</label>
@@ -1058,6 +1054,7 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
                             // Remove spaces from Aadhaar number (API contract: spaces removed automatically)
                             const value = e.target.value.replace(/\s/g, '').replace(/\D/g, '').slice(0, 12);
                             setFormData({ ...formData, business_details: { ...formData.business_details, aadhaar_number: value } });
+                            setAadhaarValidated(false);
                           }}
                           className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                           placeholder="234567890123"
@@ -1068,6 +1065,11 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
                         </button>
                       </div>
                       {errors.aadhaar_number && <p className="mt-1 text-xs text-red-600">{errors.aadhaar_number}</p>}
+                      {aadhaarValidated && !errors.aadhaar_number && (
+                        <p className="mt-1 text-xs text-emerald-600 flex items-center gap-1">
+                          <ShieldCheck className="h-3 w-3 shrink-0" /> Aadhaar validated via Surepass
+                        </p>
+                      )}
                     </div>
                   )}
 
@@ -1224,6 +1226,33 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
                                     }
                                   }}
                                   className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                                />
+                                <EmailVerifyButton
+                                  email={email}
+                                  persist={brokerPersistContext}
+                                  onError={(message) => {
+                                    setErrors({
+                                      ...errors,
+                                      [`contact_person_${index}_email_${emailIndex}`]: message,
+                                    });
+                                  }}
+                                  onVerified={() => {
+                                    const errorKey = `contact_person_${index}_email_${emailIndex}`;
+                                    const nextErrors = { ...errors };
+                                    delete nextErrors[errorKey];
+                                    setErrors(nextErrors);
+                                  }}
+                                  onSnapshotSaved={(result) => {
+                                    if (!result.surepass_response) return;
+                                    setKycVerificationDetails((prev) =>
+                                      mergeEntityKycSnapshot(
+                                        prev,
+                                        'emails',
+                                        buildSurepassSnapshot(result.surepass_response, result),
+                                        email,
+                                      ),
+                                    );
+                                  }}
                                 />
                                 {errors[`contact_person_${index}_email_${emailIndex}`] && (
                                   <p className="text-xs text-red-600 mt-0.5">{errors[`contact_person_${index}_email_${emailIndex}`]}</p>
@@ -1532,23 +1561,16 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
           </div>
         </Dialog.Content>
       </Dialog.Portal>
-      
-      {/* Preview Dialog */}
+    </Dialog.Root>
+
       <BrokerPreviewDialog
         open={previewOpen}
-        onOpenChange={(open) => {
-          setPreviewOpen(open);
-          if (!open) {
-            // If preview is closed without confirming, optionally reopen the form
-            // For now, we'll just close it
-          }
-        }}
+        onOpenChange={setPreviewOpen}
         formData={formData}
         onConfirm={handlePreviewConfirm}
         mode="create"
       />
 
-      {/* Alert Dialog for API Response */}
       <AlertDialog
         open={alertOpen}
         onOpenChange={setAlertOpen}
@@ -1557,6 +1579,6 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
         message={alertMessage}
         buttonText="OK"
       />
-    </Dialog.Root>
+    </>
   );
 }

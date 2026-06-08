@@ -1,5 +1,6 @@
 import { apiService } from './api';
-import type { Vendor, CreateVendorRequest, UpdateVendorRequest, GSTLookupResponseData, PANLookupResponseData, VendorCheckResponse } from '../types/entities';
+import type { Vendor, CreateVendorRequest, UpdateVendorRequest, VendorCheckResponse, KycPersistContext } from '../types/entities';
+import { kycAPI } from './kyc.api';
 
 /** Matches backend lenient create — vendor persisted, bank verification did not complete. */
 export const VENDOR_CREATE_LENIENT_BANK_MESSAGE =
@@ -70,15 +71,13 @@ export const vendorsAPI = {
     return apiService.post<{ success: boolean; message: string }>(`/vendors/deleteVendor/${id}`);
   },
 
-  // Lookup GST
-  lookupGST: (gstNumber: string) => {
-    return apiService.get<GSTLookupResponseData>(`/vendors/lookupGST?gst_number=${gstNumber}`);
-  },
+  // Lookup GST (Surepass GSTIN Advanced — snapshots persisted on save via kyc_verification_details)
+  lookupGST: (gstNumber: string, persist?: KycPersistContext) =>
+    kycAPI.lookupGSTAdvanced(gstNumber, persist),
 
-  // Lookup PAN
-  lookupPAN: (panNumber: string) => {
-    return apiService.get<PANLookupResponseData>(`/vendors/lookupPAN?pan_number=${panNumber}`);
-  },
+  // Lookup PAN (Surepass PAN Comprehensive — snapshots persisted on save via kyc_verification_details)
+  lookupPAN: (panNumber: string, persist?: KycPersistContext) =>
+    kycAPI.lookupPANComprehensive(panNumber, persist),
 
   // Quick create from GST
   quickCreateFromGST: (data: any) => {
@@ -98,9 +97,9 @@ export const vendorsAPI = {
     return apiService.get<VendorCheckResponse>(`/vendors/checkExists?${queryParams.toString()}`);
   },
 
-  // Verify bank account
-  verifyBankAccount: (accountNumber: string, ifscCode: string) => {
-    return apiService.get<any>(`/vendors/verifyBankAccount?id_number=${accountNumber}&ifsc=${ifscCode.toUpperCase()}`);
+  // Verify bank account (Surepass via /kyc/bank/verify)
+  verifyBankAccount: (accountNumber: string, ifscCode: string, persist?: KycPersistContext) => {
+    return kycAPI.verifyBank(accountNumber, ifscCode, persist);
   },
 
   // Get default payment advice recipient

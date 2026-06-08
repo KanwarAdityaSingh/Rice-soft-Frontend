@@ -6,7 +6,10 @@ import type {
   CreateBrokerRequest,
   UpdateBrokerRequest,
   PANLookupResponseData,
+  AadhaarLookupResponse,
+  KycPersistContext,
 } from '../types/entities';
+import { kycAPI } from './kyc.api';
 
 /** Matches backend lenient bank-verify message — broker persisted, bank verification did not complete. */
 export const BROKER_CREATE_LENIENT_BANK_MESSAGE =
@@ -93,14 +96,16 @@ export const brokersAPI = {
     return apiService.post<Broker>(`/brokers/confirm-bank-verification/${id}`, {});
   },
 
-  // Lookup PAN
-  lookupPAN: (panNumber: string) => {
-    return apiService.get<PANLookupResponseData>(`/brokers/lookupPAN?pan_number=${panNumber}`);
-  },
+  // Lookup PAN (Surepass PAN Comprehensive — snapshots persisted on save via kyc_verification_details)
+  lookupPAN: (panNumber: string, persist?: KycPersistContext) =>
+    kycAPI.lookupPANComprehensive(panNumber, persist),
 
-  // Lookup Aadhaar
-  lookupAadhaar: (aadhaarNumber: string) => {
-    return apiService.get<{ is_valid: boolean; already_exists: boolean }>(`/brokers/lookupAadhaar?aadhaar_number=${aadhaarNumber}`);
+  // Lookup Aadhaar (Surepass; pass brokerId in edit mode to persist snapshot)
+  lookupAadhaar: (aadhaarNumber: string, brokerId?: string) => {
+    const cleaned = aadhaarNumber.replace(/\s/g, '');
+    const params = new URLSearchParams({ aadhaar_number: cleaned });
+    if (brokerId) params.set('broker_id', brokerId);
+    return apiService.get<AadhaarLookupResponse>(`/brokers/lookupAadhaar?${params.toString()}`);
   },
 
   // Quick create from PAN
@@ -119,10 +124,9 @@ export const brokersAPI = {
     };
   },
 
-  // Lookup GST
-  lookupGST: (gstNumber: string) => {
-    return apiService.get<{ gst_data: any; mapped_data: any }>(`/brokers/lookupGST?gst_number=${gstNumber}`);
-  },
+  // Lookup GST (Surepass GSTIN Advanced — snapshots persisted on save via kyc_verification_details)
+  lookupGST: (gstNumber: string, persist?: KycPersistContext) =>
+    kycAPI.lookupGSTAdvanced(gstNumber, persist),
 
   // Quick create from GST
   quickCreateFromGST: async (data: any): Promise<{
@@ -140,8 +144,8 @@ export const brokersAPI = {
     };
   },
 
-  // Verify bank account
-  verifyBankAccount: (accountNumber: string, ifscCode: string) => {
-    return apiService.get<any>(`/brokers/verifyBankAccount?id_number=${accountNumber}&ifsc=${ifscCode.toUpperCase()}`);
+  // Verify bank account (Surepass via /kyc/bank/verify)
+  verifyBankAccount: (accountNumber: string, ifscCode: string, persist?: KycPersistContext) => {
+    return kycAPI.verifyBank(accountNumber, ifscCode, persist);
   },
 };

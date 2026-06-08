@@ -3,6 +3,7 @@ import { Store, Package, Box, PackageCheck, Building2, Hash, Layers, Weight, Spr
 import type { FlowNodeData } from '../../../types/inventoryFlow';
 import { useInventory } from '../../../hooks/useInventory';
 import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
+import { formatKg } from '../../../utils/numbers';
 
 interface InventoryTableProps {
   selectedNode: FlowNodeData | null;
@@ -269,8 +270,8 @@ export function InventoryTable({ selectedNode }: InventoryTableProps) {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-sm">{fg.packets.toLocaleString()}</td>
-                      <td className="px-4 py-3 text-sm">{fg.weight.toFixed(2)} kg</td>
-                      <td className="px-4 py-3 text-sm">{fg.quantity.toFixed(2)} kg</td>
+                      <td className="px-4 py-3 text-sm">{formatKg(fg.weight)}</td>
+                      <td className="px-4 py-3 text-sm">{formatKg(fg.quantity)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -307,11 +308,11 @@ export function InventoryTable({ selectedNode }: InventoryTableProps) {
                   </div>
                   <div className="p-4 rounded-lg bg-card border border-border">
                     <div className="text-sm text-muted-foreground mb-1">Weight</div>
-                    <div className="text-2xl font-bold">{fg.weight.toFixed(2)} kg</div>
+                    <div className="text-2xl font-bold">{formatKg(fg.weight)}</div>
                   </div>
                   <div className="p-4 rounded-lg bg-card border border-border">
                     <div className="text-sm text-muted-foreground mb-1">Quantity</div>
-                    <div className="text-2xl font-bold">{fg.quantity.toFixed(2)} kg</div>
+                    <div className="text-2xl font-bold">{formatKg(fg.quantity)}</div>
                   </div>
                   <div className="p-4 rounded-lg bg-card border border-border">
                     <div className="text-sm text-muted-foreground mb-1">Product</div>

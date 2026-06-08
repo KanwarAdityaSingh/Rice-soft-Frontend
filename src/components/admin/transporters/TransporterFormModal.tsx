@@ -7,7 +7,13 @@ import { validateGST, validatePAN, validateAadhaar } from '../../../utils/valida
 import { CustomSelect } from '../../shared/CustomSelect';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
-import type { ContactPerson, CreateTransporterRequest, UpdateTransporterRequest } from '../../../types/entities';
+import type { ContactPerson, CreateTransporterRequest, UpdateTransporterRequest, EntityKycVerificationDetails } from '../../../types/entities';
+import {
+  buildEntitySavePayload,
+  persistGstLookupSnapshot,
+  persistPanLookupSnapshot,
+  transporterPersist,
+} from '../../../utils/kycVerification';
 
 function isContactPersonRowEmpty(cp: ContactPerson): boolean {
   const name = (cp.name || '').trim();
@@ -55,6 +61,8 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+  const [kycVerificationDetails, setKycVerificationDetails] = useState<EntityKycVerificationDetails>({});
+  const transporterPersistContext = transporterPersist(transporterId);
 
   useEffect(() => {
     if (open && transporterId && isEditMode) {
@@ -93,6 +101,7 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
         bank_details: transporter.bank_details || {},
         is_active: transporter.is_active,
       });
+      setKycVerificationDetails(transporter.kyc_verification_details ?? {});
       setErrors({});
     } catch (error: any) {
       setAlertType('error');
@@ -127,6 +136,7 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
     setOriginalGstNumber('');
     setOriginalPanNumber('');
     setStep(1);
+    setKycVerificationDetails({});
   };
 
   // Helper function to convert ALL CAPS text to Title Case
@@ -158,7 +168,7 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
     setErrors({ ...errors, gst_number: '' });
     
     try {
-      const response = await transportersAPI.lookupGST(formData.gst_number);
+      const response = await transportersAPI.lookupGST(formData.gst_number, transporterPersistContext);
       
       const mapped = response.mapped_data;
       
@@ -211,6 +221,8 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
       
       // Set the auto-filled fields
       setGstAutoFilledFields(autoFilledFields);
+
+      setKycVerificationDetails((prev) => persistGstLookupSnapshot(prev, response));
       
       // Clear any previous errors
       setErrors({ ...errors, gst_number: '' });
@@ -237,7 +249,7 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
     setErrors({ ...errors, pan_number: '' });
     
     try {
-      const response = await transportersAPI.lookupPAN(formData.pan_number);
+      const response = await transportersAPI.lookupPAN(formData.pan_number, transporterPersistContext);
       
       const mapped = response.mapped_data;
       const panData = response.pan_data;
@@ -280,6 +292,8 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
       
       // Set the auto-filled fields
       setGstAutoFilledFields(autoFilledFields);
+
+      setKycVerificationDetails((prev) => persistPanLookupSnapshot(prev, response));
       
       // Clear any previous errors
       setErrors({ ...errors, pan_number: '' });
@@ -359,10 +373,13 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
     try {
       // Remove vehicle_ids from payload - relationship is managed from vehicle side
       const { vehicle_ids, ...rest } = formData;
-      const submitData = {
-        ...rest,
-        contact_persons: (formData.contact_persons || []).filter((cp) => !isContactPersonRowEmpty(cp)),
-      };
+      const submitData = buildEntitySavePayload(
+        {
+          ...rest,
+          contact_persons: (formData.contact_persons || []).filter((cp) => !isContactPersonRowEmpty(cp)),
+        },
+        { kycVerificationDetails, bankVerifiedInSession: false },
+      );
 
       if (isEditMode && transporterId) {
         await updateTransporter(transporterId, submitData as UpdateTransporterRequest);

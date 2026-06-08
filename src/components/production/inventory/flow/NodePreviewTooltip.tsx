@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import type { FlowNodeData } from '../../../../types/inventoryFlow';
 import { formatPacketTypeLabel } from '../../../../constants/bagAndPacketTypes';
+import { formatKg } from '../../../../utils/numbers';
 import { Store, Package, Box, PackageCheck } from 'lucide-react';
 
 interface NodePreviewTooltipProps {
@@ -78,7 +79,7 @@ export const NodePreviewTooltip = memo(({ data, x, y }: NodePreviewTooltipProps)
               <span className="font-semibold">Batch {data.batchNumber}</span>
             </div>
             <div className="text-xs text-muted-foreground">
-              {data.packets} Packets • {data.weight.toFixed(2)} kg
+              {data.packets} Packets • {formatKg(data.weight)}
             </div>
           </div>
         );

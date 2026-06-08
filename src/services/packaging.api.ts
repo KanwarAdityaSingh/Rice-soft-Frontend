@@ -59,7 +59,7 @@ export const packagingAPI = {
       formData.append('bill_date', billDate);
     }
     const token = localStorage.getItem('auth:token');
-    const response = await fetch(`${API_BASE_URL}/v1/packaging/${id}/upload-packaging-bill`, {
+    const response = await fetch(`${API_BASE_URL}/packaging/${id}/upload-packaging-bill`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,

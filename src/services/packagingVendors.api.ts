@@ -1,5 +1,6 @@
 import { apiService } from './api';
-import type { PackagingVendor, CreatePackagingVendorRequest, UpdatePackagingVendorRequest, GSTLookupResponseData } from '../types/entities';
+import type { PackagingVendor, CreatePackagingVendorRequest, UpdatePackagingVendorRequest } from '../types/entities';
+import { kycAPI } from './kyc.api';
 
 export const packagingVendorsAPI = {
   // Get all packaging vendors
@@ -27,11 +28,7 @@ export const packagingVendorsAPI = {
     return apiService.delete<{ success: boolean; message: string }>(`/packaging-vendors/${id}`);
   },
 
-  /** Same response shape as vendors/godowns. Legacy `GET .../gst/lookup` still exists on the API. */
-  lookupGST: (gstNumber: string) => {
-    return apiService.get<GSTLookupResponseData>(
-      `/packaging-vendors/lookupGST?gst_number=${encodeURIComponent(gstNumber)}`,
-    );
-  },
+  /** Surepass GSTIN Advanced via /kyc/gstin/advanced */
+  lookupGST: (gstNumber: string) => kycAPI.lookupGSTAdvanced(gstNumber),
 };
 

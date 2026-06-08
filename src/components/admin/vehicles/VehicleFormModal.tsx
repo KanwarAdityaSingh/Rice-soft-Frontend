@@ -1,12 +1,27 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState, useEffect, useRef } from 'react';
-import { X, Car, Shield, Loader2, Check, RefreshCw, Plus, ChevronDown, Search, ExternalLink } from 'lucide-react';
+import { X, Car, Loader2, Check, RefreshCw, Plus, ChevronDown, Search, ExternalLink, AlertTriangle } from 'lucide-react';
 import { vehiclesAPI } from '../../../services/vehicles.api';
 import { useTransporters } from '../../../hooks/useTransporters';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
-import type { CreateVehicleRequest, Vehicle, VehicleVerificationResponse } from '../../../types/entities';
+import type { CreateVehicleRequest, RcChallanItem, VehicleVerificationDetails } from '../../../types/entities';
+import { KycVerificationDetailsPanel } from '../../shared/KycVerificationDetailsPanel';
+import {
+  buildSurepassSnapshot,
+  collectVehicleKycEntries,
+  vehiclePersist,
+} from '../../../utils/kycVerification';
 import { getDirectoryTransportersPagePath } from '../../../utils/appRoutes';
+
+const DEFAULT_STATE_PORTALS = ['DL', 'TS', 'KA', 'GJ'];
+
+function formatChallanDate(value: string): string {
+  if (!value) return '-';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
 
 interface VehicleFormModalProps {
   open: boolean;
@@ -39,7 +54,14 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [loadingVehicle, setLoadingVehicle] = useState(false);
-  const [verifying, setVerifying] = useState(false);
+  const [fetchingChallans, setFetchingChallans] = useState(false);
+  const [chassisNumber, setChassisNumber] = useState('');
+  const [engineNumber, setEngineNumber] = useState('');
+  const [stateOnly, setStateOnly] = useState(false);
+  const [statePortalInput, setStatePortalInput] = useState(DEFAULT_STATE_PORTALS.join(', '));
+  const [challanBlacklist, setChallanBlacklist] = useState<unknown[]>([]);
+  const [verificationDetails, setVerificationDetails] = useState<VehicleVerificationDetails>({});
+  const vehiclePersistContext = vehiclePersist(vehicleId);
   const [verifiedFields, setVerifiedFields] = useState<Set<string>>(new Set());
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
@@ -76,6 +98,7 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
         verified_at: vehicle.verified_at,
         is_active: vehicle.is_active,
       });
+      setVerificationDetails(vehicle.verification_details ?? {});
       // If vehicle was verified, mark those fields as read-only
       if (vehicle.is_verified) {
         const verifiedFieldsSet = new Set<string>();
@@ -121,50 +144,83 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
     });
     setErrors({});
     setVerifiedFields(new Set());
+    setChassisNumber('');
+    setEngineNumber('');
+    setStateOnly(false);
+    setStatePortalInput(DEFAULT_STATE_PORTALS.join(', '));
+    setChallanBlacklist([]);
+    setVerificationDetails({});
   };
 
-  const handleVerify = async () => {
-    if (!formData.vehicle_number.trim()) {
-      setErrors({ vehicle_number: 'Enter vehicle number first' });
+  const handleFetchChallans = async () => {
+    const rcNumber = (formData.rc_number || formData.vehicle_number).trim().toUpperCase();
+    const chassis = chassisNumber.trim().toUpperCase();
+    const engine = engineNumber.trim().toUpperCase();
+
+    const nextErrors: Record<string, string> = {};
+    if (!rcNumber) nextErrors.rc_number = 'RC number is required for challan lookup';
+    if (!chassis) nextErrors.chassis_number = 'Chassis number is required';
+    if (!engine) nextErrors.engine_number = 'Engine number is required';
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors((prev) => ({ ...prev, ...nextErrors }));
       return;
     }
 
-    setVerifying(true);
+    const statePortal = statePortalInput
+      .split(/[,\s]+/)
+      .map((s) => s.trim().toUpperCase())
+      .filter((s) => s.length === 2);
+
+    setFetchingChallans(true);
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next.rc_number;
+      delete next.chassis_number;
+      delete next.engine_number;
+      delete next.challan_fetch;
+      return next;
+    });
+
     try {
-      const result = await vehiclesAPI.verifyVehicle(formData.vehicle_number.trim());
-      const verifiedFieldsSet = new Set<string>();
-      
-      // Track which fields were verified
-      if (result.owner_name) verifiedFieldsSet.add('owner_name');
-      if (result.maker_model) verifiedFieldsSet.add('maker_model');
-      if (result.vehicle_class) verifiedFieldsSet.add('vehicle_class');
-      if (result.fuel_type) verifiedFieldsSet.add('fuel_type');
-      if (result.rc_number) verifiedFieldsSet.add('rc_number');
-      if (result.registration_date) verifiedFieldsSet.add('registration_date');
-      if (result.insurance_validity) verifiedFieldsSet.add('insurance_validity');
-      if (result.fitness_validity) verifiedFieldsSet.add('fitness_validity');
-      if (result.permit_validity) verifiedFieldsSet.add('permit_validity');
-      
-      setFormData(prev => ({
+      const result = await vehiclesAPI.fetchRcChallanDetails(
+        {
+          rc_number: rcNumber,
+          chassis_number: chassis,
+          engine_number: engine,
+          state_only: stateOnly,
+          ...(statePortal.length > 0 ? { state_portal: statePortal } : {}),
+        },
+        vehiclePersistContext,
+      );
+
+      const challans = result.challan_details?.challans ?? [];
+      setFormData((prev) => ({
         ...prev,
-        ...result,
-        vehicle_number: result.vehicle_number || prev.vehicle_number,
-        is_verified: true,
-        verified_at: new Date().toISOString(),
+        rc_number: rcNumber,
+        challan_details: challans,
       }));
-      setVerifiedFields(verifiedFieldsSet);
+      setChallanBlacklist(result.challan_details?.blacklist ?? []);
+      if (result.surepass_response) {
+        setVerificationDetails((prev) => ({
+          ...prev,
+          rc_challan: buildSurepassSnapshot(result.surepass_response, result),
+        }));
+      }
       setAlertType('success');
-      setAlertTitle('Vehicle Verified');
-      setAlertMessage(`Owner: ${result.owner_name || 'N/A'}, Model: ${result.maker_model || 'N/A'}`);
+      setAlertTitle('Challan details fetched');
+      setAlertMessage(
+        challans.length > 0
+          ? `Found ${challans.length} challan(s) via Surepass`
+          : 'No pending challans found for this vehicle',
+      );
       setAlertOpen(true);
     } catch (error: any) {
-      setAlertType('error');
-      setAlertTitle('Verification Failed');
-      setAlertMessage(error.message || 'Could not verify vehicle. You can still add it manually.');
-      setAlertOpen(true);
-      // Don't set verified fields on error - allow manual entry
+      setErrors((prev) => ({
+        ...prev,
+        challan_fetch: error?.message || 'Failed to fetch challan details',
+      }));
     } finally {
-      setVerifying(false);
+      setFetchingChallans(false);
     }
   };
 
@@ -261,32 +317,27 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                 <div className="flex justify-center py-10"><LoadingSpinner /></div>
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  {/* Vehicle Number + Verify */}
+                  {(isEditMode || collectVehicleKycEntries(verificationDetails).length > 0) && (
+                    <KycVerificationDetailsPanel
+                      entries={collectVehicleKycEntries(verificationDetails)}
+                      title="Stored Surepass verifications"
+                      emptyMessage="RC verify and challan fetch persist full Surepass responses when the vehicle record already exists (edit mode) or is matched by number."
+                    />
+                  )}
+
+                  {/* Vehicle Number */}
                   <div>
                     <label className="block text-sm font-medium mb-1">
                       Vehicle Number <span className="text-red-500">*</span>
                     </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={formData.vehicle_number}
-                        onChange={(e) => setFormData({ ...formData, vehicle_number: e.target.value.toUpperCase() })}
-                        disabled={isEditMode}
-                        className={`flex-1 px-3 py-2 border rounded-lg bg-background uppercase ${errors.vehicle_number ? 'border-red-500' : 'border-border'} ${isEditMode ? 'opacity-60' : ''}`}
-                        placeholder="MH01AB1234"
-                      />
-                      {!isEditMode && (
-                        <button
-                          type="button"
-                          onClick={handleVerify}
-                          disabled={verifying || !formData.vehicle_number.trim()}
-                          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2"
-                        >
-                          {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Shield className="h-4 w-4" />}
-                          Verify
-                        </button>
-                      )}
-                    </div>
+                    <input
+                      type="text"
+                      value={formData.vehicle_number}
+                      onChange={(e) => setFormData({ ...formData, vehicle_number: e.target.value.toUpperCase() })}
+                      disabled={isEditMode}
+                      className={`w-full px-3 py-2 border rounded-lg bg-background uppercase ${errors.vehicle_number ? 'border-red-500' : 'border-border'} ${isEditMode ? 'opacity-60' : ''}`}
+                      placeholder="MH01AB1234"
+                    />
                     {errors.vehicle_number && <p className="text-xs text-red-500 mt-1">{errors.vehicle_number}</p>}
                     {formData.is_verified && (
                       <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
@@ -393,6 +444,136 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                         readOnly={verifiedFields.has('permit_validity')}
                       />
                     </div>
+                  </div>
+
+                  {/* RC challan lookup (Surepass) */}
+                  <div className="rounded-lg border border-border p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                      <h3 className="text-sm font-semibold">RC challan details</h3>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Requires RC, chassis, and engine numbers. Fetched via Surepass and saved with the vehicle.
+                    </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium mb-1">RC number</label>
+                        <input
+                          type="text"
+                          value={formData.rc_number || formData.vehicle_number || ''}
+                          onChange={(e) =>
+                            setFormData({ ...formData, rc_number: e.target.value.toUpperCase() || null })
+                          }
+                          className="w-full px-3 py-2 border border-border rounded-lg bg-background uppercase text-sm"
+                          placeholder="HR55AP0244"
+                        />
+                        {errors.rc_number && <p className="text-xs text-red-500 mt-1">{errors.rc_number}</p>}
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1">Chassis number</label>
+                        <input
+                          type="text"
+                          value={chassisNumber}
+                          onChange={(e) => setChassisNumber(e.target.value.toUpperCase())}
+                          className="w-full px-3 py-2 border border-border rounded-lg bg-background uppercase text-sm"
+                          placeholder="MA3JMTB1SPB851591"
+                        />
+                        {errors.chassis_number && (
+                          <p className="text-xs text-red-500 mt-1">{errors.chassis_number}</p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1">Engine number</label>
+                        <input
+                          type="text"
+                          value={engineNumber}
+                          onChange={(e) => setEngineNumber(e.target.value.toUpperCase())}
+                          className="w-full px-3 py-2 border border-border rounded-lg bg-background uppercase text-sm"
+                          placeholder="K10CNC265773"
+                        />
+                        {errors.engine_number && (
+                          <p className="text-xs text-red-500 mt-1">{errors.engine_number}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <label className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={stateOnly}
+                          onChange={(e) => setStateOnly(e.target.checked)}
+                        />
+                        State portals only
+                      </label>
+                      <div>
+                        <label className="block text-xs font-medium mb-1">State portals (optional)</label>
+                        <input
+                          type="text"
+                          value={statePortalInput}
+                          onChange={(e) => setStatePortalInput(e.target.value.toUpperCase())}
+                          className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm uppercase"
+                          placeholder="DL, TS, KA, GJ"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleFetchChallans()}
+                      disabled={fetchingChallans}
+                      className="w-full sm:w-auto px-4 py-2 btn-secondary flex items-center justify-center gap-2"
+                    >
+                      {fetchingChallans ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Search className="h-4 w-4" />
+                      )}
+                      Fetch challan details
+                    </button>
+                    {errors.challan_fetch && (
+                      <p className="text-xs text-red-500">{errors.challan_fetch}</p>
+                    )}
+
+                    {(formData.challan_details?.length ?? 0) > 0 && (
+                      <div className="overflow-x-auto rounded-lg border border-border">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b border-border bg-muted/40">
+                              <th className="text-left py-2 px-2 font-medium">Challan</th>
+                              <th className="text-left py-2 px-2 font-medium">Offense</th>
+                              <th className="text-left py-2 px-2 font-medium">Date</th>
+                              <th className="text-left py-2 px-2 font-medium">State</th>
+                              <th className="text-right py-2 px-2 font-medium">Amount</th>
+                              <th className="text-left py-2 px-2 font-medium">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(formData.challan_details as RcChallanItem[]).map((challan) => (
+                              <tr key={`${challan.challan_number}-${challan.number}`} className="border-b border-border/60">
+                                <td className="py-2 px-2 whitespace-nowrap">{challan.challan_number}</td>
+                                <td className="py-2 px-2 max-w-[200px] truncate" title={challan.offense_details}>
+                                  {challan.offense_details || '-'}
+                                </td>
+                                <td className="py-2 px-2 whitespace-nowrap">{formatChallanDate(challan.challan_date)}</td>
+                                <td className="py-2 px-2">{challan.state || '-'}</td>
+                                <td className="py-2 px-2 text-right whitespace-nowrap">
+                                  {typeof challan.amount === 'number' ? `₹${challan.amount.toLocaleString('en-IN')}` : '-'}
+                                </td>
+                                <td className="py-2 px-2">{challan.challan_status || '-'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {challanBlacklist.length > 0 && (
+                      <p className="text-xs text-amber-700">
+                        Blacklist entries: {challanBlacklist.length} (see Surepass response on save)
+                      </p>
+                    )}
                   </div>
 
                   {/* Transporters */}

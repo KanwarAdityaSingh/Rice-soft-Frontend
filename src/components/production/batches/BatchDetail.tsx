@@ -21,6 +21,7 @@ import type {
 import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
 import { parametersAPI } from '../../../services/parameters.api';
 import { qualityParameterDisplayRows } from '../../../utils/qualityParameters';
+import { coerceNumber, formatKg } from '../../../utils/numbers';
 
 function formatBatchProductCostRupee(value: unknown): string | null {
   if (value == null || value === '') return null;
@@ -187,7 +188,7 @@ export function BatchDetail() {
             </div>
             <div className="text-right">
               <div className="text-sm text-muted-foreground">Total Quantity</div>
-              <div className="text-2xl font-bold mt-1">{batch.quantity.toFixed(2)} kg</div>
+              <div className="text-2xl font-bold mt-1">{formatKg(batch.quantity)}</div>
             </div>
           </div>
         </div>
@@ -280,7 +281,8 @@ export function BatchDetail() {
                 const product = products.find(p => p.id === bpkg.product_id);
                 const pkg = packaging.find((p) => p.id === bpkg.packaging_id);
                 const cap = pkg ? packagingCapacityKg(pkg.holding_capacity) : 0;
-                const packetsNeeded = cap > 0 ? Math.ceil(bpkg.quantity / cap) : 0;
+                const quantityKg = coerceNumber(bpkg.quantity);
+                const packetsNeeded = cap > 0 ? Math.ceil(quantityKg / cap) : 0;
                 return (
                   <div key={bpkg.id} className="p-3 rounded-lg bg-muted/30 border border-border">
                     <div className="flex items-center justify-between">
@@ -298,7 +300,7 @@ export function BatchDetail() {
                         </div>
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        {bpkg.quantity.toFixed(2)} kg ({packetsNeeded} packets)
+                        {formatKg(quantityKg)} ({packetsNeeded} packets)
                       </div>
                     </div>
                   </div>

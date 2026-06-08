@@ -5,6 +5,7 @@ import { calculateInventorySummary } from '../../../utils/inventoryTransform';
 import type { ExtendedInventoryFilters } from '../../../utils/inventoryTransform';
 import type { FlowNodeData } from '../../../types/inventoryFlow';
 import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
+import { formatKg } from '../../../utils/numbers';
 
 interface InventorySummaryPanelProps {
   hierarchical: HierarchicalInventory[];
@@ -197,7 +198,7 @@ export function InventorySummaryPanel({ hierarchical, filters, selectedNode }: I
     },
     {
       label: 'Total Weight',
-      value: `${summary.total_weight.toFixed(2)} kg`,
+      value: formatKg(summary.total_weight),
       icon: Weight,
       color: 'from-emerald-500 to-teal-600',
       bgColor: 'bg-emerald-500/10',
@@ -300,7 +301,7 @@ export function InventorySummaryPanel({ hierarchical, filters, selectedNode }: I
                     <p className="text-xs text-muted-foreground">packets</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold text-foreground">{brand.weight.toFixed(2)} kg</p>
+                    <p className="font-semibold text-foreground">{formatKg(brand.weight)}</p>
                     <p className="text-xs text-muted-foreground">weight</p>
                   </div>
                 </div>
@@ -338,7 +339,7 @@ export function InventorySummaryPanel({ hierarchical, filters, selectedNode }: I
                     <p className="text-xs text-muted-foreground">packets</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold text-foreground">{product.weight.toFixed(2)} kg</p>
+                    <p className="font-semibold text-foreground">{formatKg(product.weight)}</p>
                     <p className="text-xs text-muted-foreground">weight</p>
                   </div>
                 </div>

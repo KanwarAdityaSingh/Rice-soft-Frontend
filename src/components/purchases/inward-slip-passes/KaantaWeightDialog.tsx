@@ -7,6 +7,7 @@ import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
+import { UploadedDocumentPreview } from '../../shared/UploadedDocumentPreview';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { getRiceTypeLabel } from '../../../utils/riceType';
 import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay, calculateRemainingWeight } from '../../../utils/saudaCompletion';
@@ -950,6 +951,30 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                   )}
                                 </div>
                               </div>
+                              {(kaanta.khaali_kaanta_parchi_url || kaanta.bhara_kaanta_parchi_url) && (
+                                <div className="px-3 pb-2.5 pt-0 flex flex-wrap gap-2">
+                                  {kaanta.khaali_kaanta_parchi_url && (
+                                    <div className="min-w-[7rem] flex-1 space-y-0.5">
+                                      <p className="text-[10px] font-medium text-muted-foreground">Khaali preview</p>
+                                      <UploadedDocumentPreview
+                                        url={kaanta.khaali_kaanta_parchi_url}
+                                        compact
+                                        alt="Khaali kaanta parchi"
+                                      />
+                                    </div>
+                                  )}
+                                  {kaanta.bhara_kaanta_parchi_url && (
+                                    <div className="min-w-[7rem] flex-1 space-y-0.5">
+                                      <p className="text-[10px] font-medium text-muted-foreground">Bhara preview</p>
+                                      <UploadedDocumentPreview
+                                        url={kaanta.bhara_kaanta_parchi_url}
+                                        compact
+                                        alt="Bhara kaanta parchi"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </li>
                           );
                         })}

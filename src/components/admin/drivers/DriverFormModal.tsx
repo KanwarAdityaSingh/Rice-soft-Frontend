@@ -4,7 +4,9 @@ import { X, IdCard, Shield, Loader2, Check } from 'lucide-react';
 import { driversAPI } from '../../../services/drivers.api';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
-import type { CreateDriverRequest, Driver, DriverVerificationResponse } from '../../../types/entities';
+import type { CreateDriverRequest, Driver, DriverVerificationResponse, SurepassVerificationSnapshot } from '../../../types/entities';
+import { KycVerificationDetailsPanel } from '../../shared/KycVerificationDetailsPanel';
+import { buildSurepassSnapshot, collectDriverKycEntries } from '../../../utils/kycVerification';
 
 function normalizeLicenseInput(value: string): string {
   return value.replace(/\s+/g, ' ').trim().toUpperCase();
@@ -42,6 +44,7 @@ export function DriverFormModal({ open, onOpenChange, driverId }: DriverFormModa
   const [loadingDriver, setLoadingDriver] = useState(false);
   const [loadedDriver, setLoadedDriver] = useState<Driver | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const [verifyDob, setVerifyDob] = useState('');
   const [verifiedFields, setVerifiedFields] = useState<Set<string>>(new Set());
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
@@ -105,6 +108,7 @@ export function DriverFormModal({ open, onOpenChange, driverId }: DriverFormModa
     });
     setErrors({});
     setVerifiedFields(new Set());
+    setVerifyDob('');
   };
 
   const validateForm = (): boolean => {
@@ -120,14 +124,31 @@ export function DriverFormModal({ open, onOpenChange, driverId }: DriverFormModa
     return Object.keys(newErrors).length === 0;
   };
 
-  const buildVerificationDetailsFromResponse = (r: DriverVerificationResponse): Record<string, unknown> => ({
-    source: 'surepass_dl_verify',
-    full_name: r.full_name,
-    date_of_birth: r.date_of_birth,
-    date_of_expiry: r.date_of_expiry,
-    age: r.age,
-    address: r.address,
-  });
+  const buildVerificationDetailsFromResponse = (
+    r: DriverVerificationResponse,
+  ): SurepassVerificationSnapshot =>
+    r.surepass_response
+      ? buildSurepassSnapshot(r.surepass_response, {
+          license_number: r.license_number,
+          full_name: r.full_name,
+          date_of_birth: r.date_of_birth,
+          date_of_expiry: r.date_of_expiry,
+          age: r.age,
+          address: r.address,
+        })
+      : {
+          provider: 'surepass',
+          verified_at: new Date().toISOString(),
+          raw: { success: true, status_code: 200, message: null },
+          mapped: {
+            license_number: r.license_number,
+            full_name: r.full_name,
+            date_of_birth: r.date_of_birth,
+            date_of_expiry: r.date_of_expiry,
+            age: r.age,
+            address: r.address,
+          },
+        };
 
   const handleVerify = async () => {
     const lic = normalizeLicenseInput(formData.license_number);
@@ -138,7 +159,7 @@ export function DriverFormModal({ open, onOpenChange, driverId }: DriverFormModa
 
     setVerifying(true);
     try {
-      const result = await driversAPI.verifyDriver(lic);
+      const result = await driversAPI.verifyDriver(lic, verifyDob || undefined, driverId ?? undefined);
       const nextVerified = new Set<string>();
       if (result.license_number) nextVerified.add('license_number');
       if (result.full_name) nextVerified.add('name');
@@ -276,6 +297,14 @@ export function DriverFormModal({ open, onOpenChange, driverId }: DriverFormModa
                     </div>
                   )}
 
+                  {isEditMode && (
+                    <KycVerificationDetailsPanel
+                      entries={collectDriverKycEntries(loadedDriver?.verification_details ?? formData.verification_details)}
+                      title="Stored Surepass verification"
+                      emptyMessage="No full Surepass snapshot saved yet. Verify in edit mode (or after the driver record exists) to persist the raw API response."
+                    />
+                  )}
+
                   <div>
                     <label className="block text-sm font-medium mb-1">Licence number</label>
                     <div className="flex gap-2">
@@ -305,6 +334,23 @@ export function DriverFormModal({ open, onOpenChange, driverId }: DriverFormModa
                     </div>
                     {errors.license_number && (
                       <p className="mt-1 text-xs text-red-600">{errors.license_number}</p>
+                    )}
+                    {!isEditMode && (
+                      <div className="mt-2">
+                        <label className="block text-xs font-medium mb-1 text-muted-foreground">
+                          Date of birth (for Surepass verify)
+                        </label>
+                        <input
+                          type="date"
+                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                          value={verifyDob}
+                          onChange={(e) => setVerifyDob(e.target.value)}
+                          max={new Date().toISOString().slice(0, 10)}
+                        />
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          YYYY-MM-DD — required by Surepass for some licences
+                        </p>
+                      </div>
                     )}
                     {formData.is_verified && (
                       <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">

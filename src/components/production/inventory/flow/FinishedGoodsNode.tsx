@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { Handle, Position } from 'reactflow';
 import { PackageCheck, Hash } from 'lucide-react';
 import type { FinishedGoodsNodeData } from '../../../../types/inventoryFlow';
+import { formatKg } from '../../../../utils/numbers';
 
 interface FinishedGoodsNodeProps {
   data: FinishedGoodsNodeData;
@@ -44,11 +45,11 @@ export const FinishedGoodsNode = memo(({ data, selected }: FinishedGoodsNodeProp
       <div className="mt-1.5 pt-1.5 border-t border-border/50 text-xs">
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">Qty:</span>
-          <span className="font-medium text-foreground">{data.quantity.toFixed(2)} kg</span>
+          <span className="font-medium text-foreground">{formatKg(data.quantity)}</span>
         </div>
         <div className="flex items-center justify-between mt-0.5">
           <span className="text-muted-foreground">Weight:</span>
-          <span className="font-medium text-foreground">{data.weight.toFixed(2)} kg</span>
+          <span className="font-medium text-foreground">{formatKg(data.weight)}</span>
         </div>
       </div>
       <Handle type="target" position={Position.Top} className="w-1.5 h-1.5 bg-emerald-500" />

@@ -66,6 +66,46 @@ export interface ContactPerson {
   emails?: string[];
 }
 
+export interface SurepassApiResponse<TData = unknown> {
+  data?: TData;
+  status_code: number;
+  success: boolean;
+  message: string | null;
+  message_code?: string;
+}
+
+export interface SurepassVerificationSnapshot {
+  provider: 'surepass';
+  verified_at: string;
+  raw: SurepassApiResponse;
+  mapped?: unknown;
+}
+
+export type PersistableEntityType = 'vendor' | 'broker' | 'transporter' | 'driver' | 'vehicle';
+
+export interface KycPersistContext {
+  entity_type: PersistableEntityType;
+  entity_id: string;
+}
+
+/** Stored on vendors, brokers, transporters (JSONB column). */
+export interface EntityKycVerificationDetails {
+  pan?: SurepassVerificationSnapshot;
+  pan_comprehensive?: SurepassVerificationSnapshot;
+  gst?: SurepassVerificationSnapshot;
+  gst_advanced?: SurepassVerificationSnapshot;
+  aadhaar?: SurepassVerificationSnapshot;
+  bank?: SurepassVerificationSnapshot;
+  driving_license?: SurepassVerificationSnapshot;
+  emails?: Record<string, SurepassVerificationSnapshot>;
+}
+
+/** Stored on vehicles (JSONB column). */
+export interface VehicleVerificationDetails {
+  rc?: SurepassVerificationSnapshot;
+  rc_challan?: SurepassVerificationSnapshot;
+}
+
 export interface Vendor {
   id: string;
   business_name: string;
@@ -87,6 +127,8 @@ export interface Vendor {
   bank_details_verified_by?: string | null;
   /** Persisted when bank verification failed (lenient create/update); cleared on successful verification or bank update */
   bank_verification_error?: string | null;
+  /** Full Surepass snapshots keyed by verification type */
+  kyc_verification_details?: EntityKycVerificationDetails;
 }
 
 export interface CreateVendorRequest {
@@ -97,6 +139,8 @@ export interface CreateVendorRequest {
   bank_details?: VendorBankDetails;
   /** When true, backend runs bank verification on create (Surepass); failures still return 201 with a lenient message. */
   verify_bank?: boolean;
+  /** Surepass snapshots collected during the form session — merged into JSONB on save. */
+  kyc_verification_details?: EntityKycVerificationDetails;
   type: 'purchaser' | 'seller' | 'both';
   is_active?: boolean;
   google_location_link?: string | null;
@@ -190,6 +234,7 @@ export interface Transporter {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  kyc_verification_details?: EntityKycVerificationDetails;
 }
 
 // Vehicle Types - For vehicle management with Surepass integration
@@ -205,10 +250,11 @@ export interface Vehicle {
   insurance_validity: string | null;
   fitness_validity: string | null;
   permit_validity: string | null;
-  challan_details: any[] | null;
+  challan_details: RcChallanItem[] | null;
   transporter_ids: string[];
   is_verified: boolean;
   verified_at: string | null;
+  verification_details?: VehicleVerificationDetails | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -225,7 +271,7 @@ export interface CreateVehicleRequest {
   insurance_validity?: string | null;
   fitness_validity?: string | null;
   permit_validity?: string | null;
-  challan_details?: any[] | null;
+  challan_details?: RcChallanItem[] | null;
   transporter_ids?: string[];
   is_verified?: boolean;
   verified_at?: string | null;
@@ -245,7 +291,47 @@ export interface VehicleVerificationResponse {
   insurance_validity: string | null;
   fitness_validity: string | null;
   permit_validity: string | null;
-  challan_details: any[] | null;
+  challan_details: RcChallanItem[] | null;
+  surepass_response?: SurepassApiResponse;
+}
+
+export interface RcChallanDetailsRequest {
+  rc_number: string;
+  chassis_number: string;
+  engine_number: string;
+  state_only?: boolean;
+  state_portal?: string[];
+}
+
+export interface RcChallanItem {
+  number: number;
+  challan_number: string;
+  offense_details: string;
+  challan_place: string | null;
+  challan_date: string;
+  state: string;
+  rto: string | null;
+  upstream_code: string;
+  accused_name: string;
+  amount: number;
+  challan_status: string | null;
+  court_challan: boolean | null;
+}
+
+export interface RcChallanDetailsResult {
+  client_id: string;
+  challan_details: {
+    challans: RcChallanItem[];
+    blacklist: unknown[];
+  };
+}
+
+export interface SurepassVehicleVerificationEnvelope {
+  mapped: VehicleVerificationResponse;
+  raw?: {
+    data?: Record<string, unknown>;
+    [key: string]: unknown;
+  };
 }
 
 /** Driver (driving licence) master — normalized licence + phone; after Surepass DL verify, mapped snapshot (DOB, expiry, age, address, etc.) stored in verification_details */
@@ -256,7 +342,7 @@ export interface Driver {
   name: string | null;
   is_verified: boolean;
   verified_at: string | null;
-  verification_details: Record<string, unknown> | null;
+  verification_details: SurepassVerificationSnapshot | Record<string, unknown> | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -268,7 +354,7 @@ export interface CreateDriverRequest {
   name?: string | null;
   is_verified?: boolean;
   verified_at?: string | null;
-  verification_details?: Record<string, unknown> | null;
+  verification_details?: SurepassVerificationSnapshot | Record<string, unknown> | null;
   is_active?: boolean;
 }
 
@@ -283,6 +369,7 @@ export interface DriverVerificationResponse {
   /** Gateway may coerce from Surepass JSON */
   age: number | string | null;
   address: string | null;
+  surepass_response?: SurepassApiResponse;
 }
 
 export interface CreateTransporterRequest {
@@ -297,6 +384,8 @@ export interface CreateTransporterRequest {
   vehicle_ids?: string[]; // NEW: Array of vehicle UUIDs to link
   bank_details?: TransporterBankDetails;
   is_active?: boolean;
+  /** Surepass snapshots collected during the form session — merged into JSONB on save. */
+  kyc_verification_details?: EntityKycVerificationDetails;
 }
 
 export interface UpdateTransporterRequest extends Partial<CreateTransporterRequest> {}
@@ -403,6 +492,7 @@ export interface Broker {
   bank_details_verified_by?: string | null;
   /** Persisted when bank verification failed (lenient create); cleared on successful verification or bank update */
   bank_verification_error?: string | null;
+  kyc_verification_details?: EntityKycVerificationDetails;
 }
 
 export interface CreateBrokerRequest {
@@ -416,6 +506,8 @@ export interface CreateBrokerRequest {
   is_active?: boolean;
   /** When true, backend runs bank verification on create (Surepass); failures still return 201 with a lenient message. */
   verify_bank?: boolean;
+  /** Surepass snapshots collected during the form session — merged into JSONB on save. */
+  kyc_verification_details?: EntityKycVerificationDetails;
 }
 
 export interface UpdateBrokerRequest extends Partial<CreateBrokerRequest> {}
@@ -492,40 +584,50 @@ export interface GSTLookupResponse {
   };
 }
 
-export interface GSTLookupResponseData {
-  gst_data: {
-    gstin: string;
-    legalName: string;
-    tradeName: string;
-    registrationDate: string;
-    constitutionOfBusiness: string;
-    taxpayerType: string;
-    gstinStatus: string;
-    lastUpdateDate: string;
-    principalPlaceOfBusiness: {
-      buildingName?: string;
-      buildingNumber?: string;
-      floorNumber?: string;
-      street: string;
-      location: string;
-      district: string;
-      city: string;
-      state: string;
-      pincode: string;
-      latitude?: string;
-      longitude?: string;
+export interface GSTLookupMappedData {
+  business_name: string;
+  legal_name?: string;
+  address: VendorAddress;
+  business_details: Partial<VendorBusinessDetails>;
+  registration_date?: string;
+  status?: string;
+}
+
+/** Surepass GSTIN Advanced raw payload (via /kyc/gstin/advanced) */
+export interface GSTINAdvancedData {
+  client_id?: string;
+  gstin: string;
+  pan_number?: string;
+  business_name?: string;
+  legal_name?: string;
+  center_jurisdiction?: string;
+  state_jurisdiction?: string;
+  date_of_registration?: string;
+  constitution_of_business?: string;
+  taxpayer_type?: string;
+  gstin_status?: string;
+  date_of_cancellation?: string;
+  nature_bus_activities?: string[];
+  promoters?: string[];
+  annual_turnover?: string;
+  annual_turnover_fy?: string;
+  einvoice_status?: boolean;
+  contact_details?: {
+    principal?: {
+      address?: string;
+      email?: string;
+      mobile?: string;
+      nature_of_business?: string;
     };
-    additionalPlacesOfBusiness?: any[];
-    filingStatus?: any[];
+    additional?: unknown[];
   };
-  mapped_data: {
-    business_name: string;
-    legal_name?: string;
-    address: VendorAddress;
-    business_details: Partial<VendorBusinessDetails>;
-    registration_date?: string;
-    status?: string;
-  };
+  [key: string]: unknown;
+}
+
+export interface GSTLookupResponseData {
+  gst_data: GSTINAdvancedData;
+  mapped_data: GSTLookupMappedData;
+  surepass_response?: SurepassApiResponse;
 }
 
 export interface PANLookupResponse {
@@ -554,6 +656,77 @@ export interface PANLookupResponseData {
     business_details: Partial<VendorBusinessDetails>;
     status?: string;
   };
+  surepass_response?: SurepassApiResponse;
+}
+
+/** Surepass Aadhaar validation (via /kyc/aadhaar/validate or broker lookupAadhaar) */
+export interface AadhaarValidationResult {
+  client_id?: string;
+  aadhaar_number: string;
+  age_range?: string;
+  state?: string;
+  gender?: string;
+  last_digits?: string;
+  is_mobile?: boolean;
+  remarks?: string;
+  less_info?: boolean;
+}
+
+export interface AadhaarLookupResponse {
+  aadhaar_data: AadhaarValidationResult;
+  is_valid: boolean;
+  already_exists: boolean;
+  message?: string;
+  surepass_response?: SurepassApiResponse;
+}
+
+export interface SurepassBankIfscDetails {
+  ifsc?: string;
+  bank_name?: string;
+  branch?: string;
+  address?: string;
+  city?: string;
+  district?: string;
+  state?: string;
+  contact?: string;
+  micr?: string;
+  rtgs?: boolean;
+  neft?: boolean;
+  imps?: boolean;
+  upi?: boolean;
+}
+
+/** Surepass bank account verification (via /kyc/bank/verify) */
+export interface BankVerificationResult {
+  account_exists: boolean;
+  account_holder_name: string;
+  account_number: string;
+  ifsc_code: string;
+  bank_name?: string;
+  branch?: string;
+  upi_id?: string | null;
+  imps_ref_no?: string;
+  ifsc_details?: SurepassBankIfscDetails;
+}
+
+/** Surepass email check (via /kyc/email/verify) */
+export interface EmailVerificationResult {
+  client_id?: string;
+  email: string;
+  status: string;
+  valid: boolean;
+  valid_syntax: boolean;
+  accepts_mail: boolean;
+  smtp_connected: boolean;
+  domain: string;
+  username: string;
+  is_temporary: boolean;
+  is_catch_all: boolean;
+  disabled: boolean;
+  mx_records: string[];
+  domain_age?: string | null;
+  domain_registrar?: string | null;
+  organization?: string | null;
 }
 
 // Lead Types

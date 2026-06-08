@@ -323,6 +323,15 @@ export function VehiclesTable() {
                         {vehicle.is_verified && (
                           <Shield className="h-3.5 w-3.5 text-emerald-500" title="Verified via Surepass" />
                         )}
+                        {(vehicle.challan_details?.length ?? 0) > 0 && (
+                          <span
+                            className="inline-flex items-center gap-0.5 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"
+                            title={`${vehicle.challan_details!.length} challan(s) on record`}
+                          >
+                            <AlertTriangle className="h-2.5 w-2.5" />
+                            {vehicle.challan_details!.length}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="py-3 px-4 text-sm">{vehicle.owner_name || 'N/A'}</td>

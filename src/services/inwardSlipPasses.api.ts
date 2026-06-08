@@ -38,7 +38,7 @@ export const inwardSlipPassesAPI = {
     formData.append('file', file);
     const token = localStorage.getItem('auth:token');
     const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3000/api';
-    const response = await fetch(`${API_BASE_URL}/v1/inward-slip-passes/${id}/upload-other-bill`, {
+    const response = await fetch(`${API_BASE_URL}/inward-slip-passes/${id}/upload-other-bill`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -56,7 +56,7 @@ export const inwardSlipPassesAPI = {
   deleteOtherBill: async (id: string, billUrl: string) => {
     const token = localStorage.getItem('auth:token');
     const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3000/api';
-    const response = await fetch(`${API_BASE_URL}/v1/inward-slip-passes/${id}/delete-other-bill`, {
+    const response = await fetch(`${API_BASE_URL}/inward-slip-passes/${id}/delete-other-bill`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
@@ -83,7 +83,7 @@ export const inwardSlipPassesAPI = {
     }
     const token = localStorage.getItem('auth:token');
     const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3000/api';
-    const response = await fetch(`${API_BASE_URL}/v1/inward-slip-passes/${id}/upload-purchase-bill`, {
+    const response = await fetch(`${API_BASE_URL}/inward-slip-passes/${id}/upload-purchase-bill`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,

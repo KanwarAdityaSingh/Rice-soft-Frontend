@@ -13,6 +13,7 @@ import { PACKAGING_PACKET_TYPE_OPTIONS } from '../../../constants/bagAndPacketTy
 import { getPackagingVendorsNewWindowUrl } from '../../../utils/appRoutes';
 import { computeEmptyBagReceiptSnapshot, packagingHasAnyEmptyBagSnapshot } from '../../../utils/empty-bag-cost';
 import { EmptyBagSnapshotDisplay } from './EmptyBagSnapshotDisplay';
+import { UploadedDocumentPreview } from '../../shared/UploadedDocumentPreview';
 
 interface PackagingFormModalProps {
   open: boolean;
@@ -92,10 +93,13 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
   const [billNumber, setBillNumber] = useState('');
   const [billDate, setBillDate] = useState('');
   const [packagingBillFile, setPackagingBillFile] = useState<File | null>(null);
+  /** Populated after bill upload on create so preview shows before the modal closes. */
+  const [justUploadedPackagingBillUrl, setJustUploadedPackagingBillUrl] = useState<string | null>(null);
   useEffect(() => {
     if (packagingId && open) {
       const pkg = packaging.find((p) => p.id === packagingId);
       if (pkg) {
+        setJustUploadedPackagingBillUrl(null);
         setBillNumber(pkg.bill_number?.trim() ?? '');
         setBillDate(pkg.bill_date ? pkg.bill_date.slice(0, 10) : '');
         setPackagingBillFile(null);
@@ -118,6 +122,7 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
         });
       }
     } else if (open) {
+      setJustUploadedPackagingBillUrl(null);
       setBillNumber('');
       setBillDate('');
       setPackagingBillFile(null);
@@ -146,6 +151,9 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
   }, [open, refetchPackagingVendors]);
 
   const editingPackaging = packagingId ? packaging.find((p) => p.id === packagingId) : undefined;
+
+  const packagingBillPreviewUrl =
+    editingPackaging?.packaging_bill_url?.trim() || justUploadedPackagingBillUrl?.trim() || null;
 
   const emptyBagPreview = useMemo(() => {
     if (packagingId) return null;
@@ -245,12 +253,14 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
         updatePayload.empty_bag_gst_percent = EMPTY_BAG_GST_PERCENT;
         await updatePackaging(packagingId, updatePayload);
         if (packagingBillFile) {
-          await uploadPackagingBill(
+          const billRes = await uploadPackagingBill(
             packagingId,
             packagingBillFile,
             billNumber.trim() || undefined,
             billDate || undefined
           );
+          const u = billRes.url?.trim() || billRes.packaging?.packaging_bill_url?.trim();
+          if (u) setJustUploadedPackagingBillUrl(u);
           setPackagingBillFile(null);
         }
         setAlertType('success');
@@ -274,12 +284,14 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
         if (billDate) createData.bill_date = billDate;
         const created = await createPackaging(createData);
         if (packagingBillFile) {
-          await uploadPackagingBill(
+          const billRes = await uploadPackagingBill(
             created.id,
             packagingBillFile,
             billNumber.trim() || undefined,
             billDate || undefined
           );
+          const u = billRes.url?.trim() || billRes.packaging?.packaging_bill_url?.trim();
+          if (u) setJustUploadedPackagingBillUrl(u);
           setPackagingBillFile(null);
         }
         setAlertType('success');
@@ -674,16 +686,24 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
                         />
                       </div>
                     </div>
-                    {packagingId && editingPackaging?.packaging_bill_url && (
-                      <a
-                        href={editingPackaging.packaging_bill_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-                        View current bill
-                      </a>
+                    {packagingBillPreviewUrl && (
+                      <>
+                        <a
+                          href={packagingBillPreviewUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                          {packagingId ? 'View current bill' : 'Open uploaded bill'}
+                        </a>
+                        <UploadedDocumentPreview
+                          url={packagingBillPreviewUrl}
+                          compact
+                          alt="Packaging bill"
+                          className="mt-3"
+                        />
+                      </>
                     )}
                     <div>
                       <label className="mb-1.5 block text-sm font-medium text-foreground">

@@ -11,6 +11,7 @@ import { validateEmail, validateGST, validatePAN, validateGoogleLocationLink } f
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { SalesPartyPreviewDialog } from './SalesPartyPreviewDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
+import { EmailVerifyButton } from '../../shared/EmailVerifyButton';
 import type { CreateSalesPartyRequest, UpdateSalesPartyRequest, Lead, VendorBankDetails, ContactPerson } from '../../../types/entities';
 
 interface SalesPartyFormModalProps {
@@ -97,6 +98,12 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
       resetForm();
     }
   }, [open, salesPartyId]);
+
+  useEffect(() => {
+    if (!open) {
+      setPreviewOpen(false);
+    }
+  }, [open]);
 
   // Load lead data when sales party has lead_id
   useEffect(() => {
@@ -559,7 +566,15 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       // Navigate to step with errors
-      if (newErrors.business_name || newErrors.contact_person || newErrors.email || newErrors.phone || newErrors.gst_number || newErrors.pan_number) {
+      const hasStep1Errors = Object.keys(newErrors).some(
+        (key) =>
+          key === 'business_name' ||
+          key === 'contact_persons' ||
+          key.startsWith('contact_person_') ||
+          key === 'gst_number' ||
+          key === 'pan_number',
+      );
+      if (hasStep1Errors) {
         setStep(1);
       } else if (newErrors.street || newErrors.city || newErrors.state || newErrors.pincode) {
         setStep(2);
@@ -601,8 +616,7 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
         setLoading(false);
       }
     } else {
-      // In create mode, show preview dialog
-      onOpenChange(false);
+      // In create mode, open review dialog (form hides via open && !previewOpen)
       setPreviewOpen(true);
     }
   };
@@ -665,7 +679,14 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
   };
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <>
+    <Dialog.Root
+      open={open && !previewOpen}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && previewOpen) return;
+        onOpenChange(nextOpen);
+      }}
+    >
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
         <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-full max-w-3xl translate-x-[-50%] translate-y-[-50%]">
@@ -901,6 +922,21 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
                                   onChange={(e) => updateEmail(personIdx, emailIdx, e.target.value)}
                                   className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                                   placeholder="Email address"
+                                />
+                                <EmailVerifyButton
+                                  email={email}
+                                  onError={(message) => {
+                                    setErrors({
+                                      ...errors,
+                                      [`contact_person_${personIdx}_email_${emailIdx}`]: message,
+                                    });
+                                  }}
+                                  onVerified={() => {
+                                    const errorKey = `contact_person_${personIdx}_email_${emailIdx}`;
+                                    const nextErrors = { ...errors };
+                                    delete nextErrors[errorKey];
+                                    setErrors(nextErrors);
+                                  }}
                                 />
                                 <button
                                   type="button"
@@ -1180,18 +1216,15 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
           </div>
         </Dialog.Content>
       </Dialog.Portal>
-      
-      {/* Preview Dialog */}
+    </Dialog.Root>
+
       <SalesPartyPreviewDialog
         open={previewOpen}
-        onOpenChange={(open) => {
-          setPreviewOpen(open);
-        }}
+        onOpenChange={setPreviewOpen}
         formData={formData}
         onConfirm={handlePreviewConfirm}
       />
 
-      {/* Alert Dialog for API Response */}
       <AlertDialog
         open={alertOpen}
         onOpenChange={setAlertOpen}
@@ -1200,7 +1233,7 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
         message={alertMessage}
         buttonText="OK"
       />
-    </Dialog.Root>
+    </>
   );
 }
 

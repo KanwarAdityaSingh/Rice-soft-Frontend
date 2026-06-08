@@ -1,9 +1,12 @@
 import { apiService } from './api';
-import type { 
-  Vehicle, 
-  CreateVehicleRequest, 
+import { kycAPI } from './kyc.api';
+import type {
+  Vehicle,
+  CreateVehicleRequest,
   UpdateVehicleRequest,
-  VehicleVerificationResponse 
+  RcChallanDetailsRequest,
+  VehicleVerificationResponse,
+  KycPersistContext,
 } from '../types/entities';
 
 export const vehiclesAPI = {
@@ -27,10 +30,20 @@ export const vehiclesAPI = {
     return apiService.get<Vehicle>(`/vehicles/byNumber/${encodeURIComponent(vehicleNumber)}`);
   },
 
-  // Verify vehicle via Surepass (does NOT create record)
-  verifyVehicle: (vehicleNumber: string) => {
-    return apiService.post<VehicleVerificationResponse>('/vehicles/verify', { vehicle_number: vehicleNumber });
+  // Verify vehicle via Surepass (persists snapshot when vehicle_id is sent or record exists)
+  verifyVehicle: (vehicleNumber: string, vehicleId?: string) => {
+    return apiService.post<VehicleVerificationResponse & { surepass_response?: unknown }>(
+      '/vehicles/verify',
+      {
+        vehicle_number: vehicleNumber,
+        ...(vehicleId ? { vehicle_id: vehicleId } : {}),
+      },
+    );
   },
+
+  /** Fetch RC challan details via Surepass (/kyc/rc/challan-details) */
+  fetchRcChallanDetails: (payload: RcChallanDetailsRequest, persist?: KycPersistContext) =>
+    kycAPI.lookupRcChallanDetails(payload, persist),
 
   // Create vehicle
   createVehicle: (data: CreateVehicleRequest) => {

@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { X, Store, Package, Box, PackageCheck, Building2, Hash, TrendingUp, Weight, Layers } from 'lucide-react';
 import type { FlowNodeData } from '../../types/inventoryFlow';
 import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
+import { formatKg } from '../../../utils/numbers';
 
 interface InventoryDetailPanelProps {
   selectedNode: FlowNodeData | null;
@@ -182,7 +183,7 @@ export const InventoryDetailPanel = memo(({ selectedNode, onClose }: InventoryDe
               <Weight className="h-4 w-4" />
               Total Weight
             </div>
-            <div className="text-2xl font-bold">{totalWeight.toFixed(2)} kg</div>
+            <div className="text-2xl font-bold">{formatKg(totalWeight)}</div>
           </div>
         </div>
 
@@ -273,7 +274,7 @@ export const InventoryDetailPanel = memo(({ selectedNode, onClose }: InventoryDe
               <Weight className="h-4 w-4" />
               Total Weight
             </div>
-            <div className="text-2xl font-bold">{totalWeight.toFixed(2)} kg</div>
+            <div className="text-2xl font-bold">{formatKg(totalWeight)}</div>
           </div>
         </div>
 
@@ -304,7 +305,7 @@ export const InventoryDetailPanel = memo(({ selectedNode, onClose }: InventoryDe
                   </div>
                   <div className="text-right text-sm">
                     <div className="font-medium">{fg.packets.toLocaleString()} Packets</div>
-                    <div className="text-muted-foreground">{fg.weight.toFixed(2)} kg</div>
+                    <div className="text-muted-foreground">{formatKg(fg.weight)}</div>
                   </div>
                 </div>
               </div>
@@ -344,14 +345,14 @@ export const InventoryDetailPanel = memo(({ selectedNode, onClose }: InventoryDe
               <Weight className="h-4 w-4" />
               Weight
             </div>
-            <div className="text-2xl font-bold">{data.weight.toFixed(2)} kg</div>
+            <div className="text-2xl font-bold">{formatKg(data.weight)}</div>
           </div>
           <div className="p-4 rounded-lg bg-card border border-border">
             <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
               <TrendingUp className="h-4 w-4" />
               Quantity
             </div>
-            <div className="text-2xl font-bold">{data.quantity.toFixed(2)} kg</div>
+            <div className="text-2xl font-bold">{formatKg(data.quantity)}</div>
           </div>
         </div>
 

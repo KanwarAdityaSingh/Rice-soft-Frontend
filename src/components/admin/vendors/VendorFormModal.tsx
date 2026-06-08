@@ -16,7 +16,18 @@ import { validateEmail, validateGST, validatePAN, validateGoogleLocationLink } f
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { VendorPreviewDialog } from './VendorPreviewDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
-import type { CreateVendorRequest, UpdateVendorRequest, Lead, VendorBankDetails, ContactPerson } from '../../../types/entities';
+import { EmailVerifyButton } from '../../shared/EmailVerifyButton';
+import { KycVerificationDetailsPanel } from '../../shared/KycVerificationDetailsPanel';
+import type { CreateVendorRequest, UpdateVendorRequest, Lead, VendorBankDetails, ContactPerson, EntityKycVerificationDetails } from '../../../types/entities';
+import {
+  buildEntitySavePayload,
+  buildSurepassSnapshot,
+  collectEntityKycEntries,
+  mergeEntityKycSnapshot,
+  persistGstLookupSnapshot,
+  persistPanLookupSnapshot,
+  vendorPersist,
+} from '../../../utils/kycVerification';
 
 interface VendorFormModalProps {
   open: boolean;
@@ -24,15 +35,6 @@ interface VendorFormModalProps {
   vendorId?: string | null;
   defaultType?: 'purchaser' | 'seller' | 'both';
   lockType?: boolean;
-}
-
-/** Backend `verify_bank` requires complete bank fields for its verify schema — align with account + IFSC + holder (create + update). */
-function shouldVerifyBank(bd: VendorBankDetails | undefined): boolean {
-  if (!bd) return false;
-  const accountNumber = bd.account_number?.trim();
-  const ifsc = bd.ifsc_code?.trim().toUpperCase();
-  const holder = bd.account_holder_name?.trim();
-  return Boolean(accountNumber && holder && ifsc && ifsc.length === 11);
 }
 
 function getVendorSaveAlert(
@@ -136,6 +138,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
   const [originalPanNumber, setOriginalPanNumber] = useState<string>('');
   const [leadData, setLeadData] = useState<Lead | null>(null);
   const [gstAutoFilledFields, setGstAutoFilledFields] = useState<Set<string>>(new Set());
+  const [kycVerificationDetails, setKycVerificationDetails] = useState<EntityKycVerificationDetails>({});
+  const vendorPersistContext = vendorPersist(vendorId);
 
   // Load vendor data when in edit mode
   useEffect(() => {
@@ -146,6 +150,12 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       resetForm();
     }
   }, [open, vendorId]);
+
+  useEffect(() => {
+    if (!open) {
+      setPreviewOpen(false);
+    }
+  }, [open]);
 
   // Load lead data when vendor has lead_id
   useEffect(() => {
@@ -207,6 +217,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
         is_active: vendor.is_active ?? true,
         google_location_link: vendor.google_location_link || null,
       });
+      setKycVerificationDetails(vendor.kyc_verification_details ?? {});
       setStep(1);
       setErrors({});
     } catch (error: any) {
@@ -268,6 +279,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
     setOriginalPanNumber('');
     setBankDetailsLockedFromIfsc(false);
     setGstAutoFilledFields(new Set());
+    setKycVerificationDetails({});
   };
 
   // Contact persons management functions
@@ -362,7 +374,10 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
     setErrors({ ...errors, gst_number: '' });
     
     try {
-      const response = await vendorsAPI.lookupGST(formData.business_details.gst_number);
+      const response = await vendorsAPI.lookupGST(
+        formData.business_details.gst_number,
+        vendorPersistContext,
+      );
       
       // The API service returns response.data, which is { gst_data: {...}, mapped_data: {...} }
       const mapped = response.mapped_data;
@@ -438,6 +453,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       
       // Set the auto-filled fields
       setGstAutoFilledFields(autoFilledFields);
+
+      setKycVerificationDetails((prev) => persistGstLookupSnapshot(prev, response));
       
       // Clear any previous errors
       setErrors({ ...errors, gst_number: '' });
@@ -464,7 +481,10 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
     setErrors({ ...errors, pan_number: '' });
     
     try {
-      const response = await vendorsAPI.lookupPAN(formData.business_details.pan_number);
+      const response = await vendorsAPI.lookupPAN(
+        formData.business_details.pan_number,
+        vendorPersistContext,
+      );
       
       // The API service returns response.data, which is { pan_data: {...}, mapped_data: {...} }
       const mapped = response.mapped_data;
@@ -529,6 +549,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       });
       
       setGstAutoFilledFields(autoFilledFields);
+
+      setKycVerificationDetails((prev) => persistPanLookupSnapshot(prev, response));
       
       // Clear any previous errors
       setErrors({ ...errors, pan_number: '' });
@@ -667,7 +689,15 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       // Navigate to step with errors
-      if (newErrors.business_name || newErrors.contact_person || newErrors.email || newErrors.phone || newErrors.gst_number || newErrors.pan_number) {
+      const hasStep1Errors = Object.keys(newErrors).some(
+        (key) =>
+          key === 'business_name' ||
+          key === 'contact_persons' ||
+          key.startsWith('contact_person_') ||
+          key === 'gst_number' ||
+          key === 'pan_number',
+      );
+      if (hasStep1Errors) {
         setStep(1);
       } else if (newErrors.street || newErrors.city || newErrors.state || newErrors.pincode) {
         setStep(2);
@@ -690,10 +720,10 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
     if (isEditMode && vendorId) {
       setLoading(true);
       try {
-        const updatePayload: UpdateVendorRequest = {
-          ...(formData as UpdateVendorRequest),
-          ...(shouldVerifyBank(formData.bank_details) ? { verify_bank: true } : {}),
-        };
+        const updatePayload = buildEntitySavePayload(
+          formData as UpdateVendorRequest,
+          { kycVerificationDetails, bankVerifiedInSession: false },
+        );
         const { message, verification_error, verification_message } = await updateVendor(
           vendorId,
           updatePayload
@@ -718,8 +748,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
         setLoading(false);
       }
     } else {
-      // In create mode, show preview dialog
-      onOpenChange(false);
+      // In create mode, open review dialog (form hides via open && !previewOpen)
       setPreviewOpen(true);
     }
   };
@@ -728,10 +757,10 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
     setLoading(true);
     try {
       if (isEditMode && vendorId) {
-        const updatePayload: UpdateVendorRequest = {
-          ...(data as UpdateVendorRequest),
-          ...(shouldVerifyBank((data as CreateVendorRequest).bank_details) ? { verify_bank: true } : {}),
-        };
+        const updatePayload = buildEntitySavePayload(
+          data as UpdateVendorRequest,
+          { kycVerificationDetails, bankVerifiedInSession: false },
+        );
         const { message, verification_error, verification_message } = await updateVendor(
           vendorId,
           updatePayload
@@ -741,11 +770,10 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
         setAlertTitle(a.alertTitle);
         setAlertMessage(a.alertMessage);
       } else {
-        const base = data as CreateVendorRequest;
-        const createPayload: CreateVendorRequest = {
-          ...base,
-          ...(shouldVerifyBank(base.bank_details) ? { verify_bank: true } : {}),
-        };
+        const createPayload = buildEntitySavePayload(data as CreateVendorRequest, {
+          kycVerificationDetails,
+          bankVerifiedInSession: false,
+        });
         const { message, verification_error, verification_message } = await createVendor(createPayload);
         resetForm();
         const a = getVendorSaveAlert(false, message, verification_error, verification_message);
@@ -798,8 +826,17 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
     }
   };
 
+  const kycEntries = collectEntityKycEntries(kycVerificationDetails);
+
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <>
+    <Dialog.Root
+      open={open && !previewOpen}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && previewOpen) return;
+        onOpenChange(nextOpen);
+      }}
+    >
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
         <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-full max-w-3xl translate-x-[-50%] translate-y-[-50%]">
@@ -866,6 +903,13 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
             <form onSubmit={(e) => { e.preventDefault(); handleSubmit(e); }} className="space-y-4">
               {step === 1 && (
                 <div className="space-y-4">
+                  {kycEntries.length > 0 && (
+                    <KycVerificationDetailsPanel
+                      entries={kycEntries}
+                      title={isEditMode ? 'Stored Surepass verifications' : 'Surepass verifications this session'}
+                      emptyMessage="No Surepass snapshots yet."
+                    />
+                  )}
                   <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 mb-2">
                     <p className="text-sm text-primary/90">
                       <span className="font-medium">Note:</span> One of the fields (either GST Number or PAN Number) is mandatory.
@@ -1045,6 +1089,33 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                                   className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                                   placeholder="Email address"
                                 />
+                                <EmailVerifyButton
+                                  email={email}
+                                  persist={vendorPersistContext}
+                                  onError={(message) => {
+                                    setErrors({
+                                      ...errors,
+                                      [`contact_person_${personIdx}_email_${emailIdx}`]: message,
+                                    });
+                                  }}
+                                  onVerified={() => {
+                                    const errorKey = `contact_person_${personIdx}_email_${emailIdx}`;
+                                    const nextErrors = { ...errors };
+                                    delete nextErrors[errorKey];
+                                    setErrors(nextErrors);
+                                  }}
+                                  onSnapshotSaved={(result) => {
+                                    if (!result.surepass_response) return;
+                                    setKycVerificationDetails((prev) =>
+                                      mergeEntityKycSnapshot(
+                                        prev,
+                                        'emails',
+                                        buildSurepassSnapshot(result.surepass_response, result),
+                                        email,
+                                      ),
+                                    );
+                                  }}
+                                />
                                 <button
                                   type="button"
                                   onClick={() => removeEmail(personIdx, emailIdx)}
@@ -1223,6 +1294,13 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
 
               {step === 3 && (
                 <div className="space-y-4">
+                  {kycEntries.some((e) => e.key === 'bank') && (
+                    <KycVerificationDetailsPanel
+                      entries={kycEntries.filter((e) => e.key === 'bank')}
+                      title="Bank verification (Surepass)"
+                      emptyMessage="Verify bank account to see the Surepass response."
+                    />
+                  )}
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Account Holder Name</label>
                     <input
@@ -1498,22 +1576,15 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
           </div>
         </Dialog.Content>
       </Dialog.Portal>
-      
-      {/* Preview Dialog */}
+    </Dialog.Root>
+
       <VendorPreviewDialog
         open={previewOpen}
-        onOpenChange={(open) => {
-          setPreviewOpen(open);
-          if (!open) {
-            // If preview is closed without confirming, optionally reopen the form
-            // For now, we'll just close it
-          }
-        }}
+        onOpenChange={setPreviewOpen}
         formData={formData}
         onConfirm={handlePreviewConfirm}
       />
 
-      {/* Alert Dialog for API Response */}
       <AlertDialog
         open={alertOpen}
         onOpenChange={setAlertOpen}
@@ -1522,7 +1593,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
         message={alertMessage}
         buttonText="OK"
       />
-    </Dialog.Root>
+    </>
   );
 }
 

@@ -20,10 +20,12 @@ export const driversAPI = {
 
   createDriver: (data: CreateDriverRequest) => apiService.post<Driver>('/drivers', data),
 
-  /** Verify licence via Surepass (does NOT persist driver record) */
-  verifyDriver: (licenseNumber: string) =>
+  /** Verify licence via Surepass (does NOT persist driver record unless driver_id is sent) */
+  verifyDriver: (licenseNumber: string, dob?: string, driverId?: string) =>
     apiService.post<DriverVerificationResponse>('/drivers/verify', {
       license_number: licenseNumber,
+      ...(dob?.trim() ? { dob: dob.trim() } : {}),
+      ...(driverId ? { driver_id: driverId } : {}),
     }),
 
   updateDriver: (id: string, data: UpdateDriverRequest) =>

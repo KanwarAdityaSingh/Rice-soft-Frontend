@@ -13,6 +13,7 @@ import { isAdmin } from '../../../utils/permissions';
 import { BatchFormModal } from './BatchFormModal';
 import { GodownFilterSelect } from '../../shared/GodownFilterSelect';
 import { useGodowns } from '../../../hooks/useGodowns';
+import { formatKg } from '../../../utils/numbers';
 
 export function BatchesTable() {
   const navigate = useNavigate();
@@ -126,7 +127,7 @@ export function BatchesTable() {
 
                 <div className="mt-3 space-y-1 text-xs text-muted-foreground">
                   <div>Godown: {godownName(batch.godown_id)}</div>
-                  <div>Quantity: {batch.quantity.toFixed(2)} kg</div>
+                  <div>Quantity: {formatKg(batch.quantity)}</div>
                 </div>
 
                 <div className="mt-4 flex items-center justify-between">
