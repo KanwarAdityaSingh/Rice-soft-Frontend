@@ -6,7 +6,6 @@ import type {
   CreateBrokerRequest,
   UpdateBrokerRequest,
   PANLookupResponseData,
-  AadhaarLookupResponse,
   KycPersistContext,
 } from '../types/entities';
 import { kycAPI } from './kyc.api';
@@ -100,13 +99,9 @@ export const brokersAPI = {
   lookupPAN: (panNumber: string, persist?: KycPersistContext) =>
     kycAPI.lookupPANComprehensive(panNumber, persist),
 
-  // Lookup Aadhaar (Surepass; pass brokerId in edit mode to persist snapshot)
-  lookupAadhaar: (aadhaarNumber: string, brokerId?: string) => {
-    const cleaned = aadhaarNumber.replace(/\s/g, '');
-    const params = new URLSearchParams({ aadhaar_number: cleaned });
-    if (brokerId) params.set('broker_id', brokerId);
-    return apiService.get<AadhaarLookupResponse>(`/brokers/lookupAadhaar?${params.toString()}`);
-  },
+  // Lookup Aadhaar (Surepass via /kyc/aadhaar/validate)
+  lookupAadhaar: (aadhaarNumber: string, persist?: KycPersistContext) =>
+    kycAPI.validateAadhaar(aadhaarNumber, persist),
 
   // Quick create from PAN
   quickCreateFromPAN: async (data: any): Promise<{

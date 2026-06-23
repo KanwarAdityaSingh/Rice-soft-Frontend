@@ -4,29 +4,42 @@ export const validateEmail = (email: string): boolean => {
   return emailRegex.test(email);
 };
 
-// GST validation (15 characters: 2 digits + 10 PAN + 2 check digits + 1 'Z' + 1 digit)
-export const validateGST = (gst: string): boolean => {
-  const gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
-  return gstRegex.test(gst.toUpperCase());
-};
+export {
+  sanitizePanInput,
+  sanitizeGstInput,
+  validatePAN,
+  validateGST,
+  extractPanFromGst,
+  getPanValidationError,
+  getGstValidationError,
+  getGstPanMismatchError,
+  PAN_EXAMPLE,
+  GST_EXAMPLE,
+  PAN_FORMAT_HINT,
+  GST_FORMAT_HINT,
+  PAN_MAX_LENGTH,
+  GST_MAX_LENGTH,
+  PAN_HOLDER_TYPE_CHARS,
+} from './panGstValidation';
 
-// PAN validation (10 characters: 5 letters + 4 digits + 1 letter)
-export const validatePAN = (pan: string): boolean => {
-  const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
-  return panRegex.test(pan.toUpperCase());
-};
+export {
+  sanitizePhoneInput,
+  formatPhoneDisplay,
+  validatePhone,
+  getPhoneValidationError,
+  sanitizePhoneList,
+  formatPhonesForDisplay,
+  PHONE_DIGIT_LENGTH,
+  PHONE_FORMATTED_MAX_LENGTH,
+  PHONE_PLACEHOLDER,
+  PHONE_FORMAT_HINT,
+} from './phoneFormatting';
 
 // Aadhaar validation (12 digits, cannot start with 0 or 1)
 export const validateAadhaar = (aadhaar: string): boolean => {
   const cleaned = aadhaar.replace(/\s/g, ''); // Remove spaces
   const aadhaarRegex = /^[2-9]{1}[0-9]{11}$/;
   return aadhaarRegex.test(cleaned);
-};
-
-// Phone validation (10 digits)
-export const validatePhone = (phone: string): boolean => {
-  const phoneRegex = /^[0-9]{10}$/;
-  return phoneRegex.test(phone);
 };
 
 // Password validation (minimum 6 characters)
@@ -72,19 +85,42 @@ export const validateIFSC = (ifsc: string): boolean => {
   return ifscRegex.test(ifsc.toUpperCase());
 };
 
-// Validation error messages
+import { getVehicleNumberValidationError } from './vehicleNumberValidation';
+import { getGstValidationError, getPanValidationError } from './panGstValidation';
+import { getPhoneValidationError } from './phoneFormatting';
+import { getDrivingLicenseValidationError } from './drivingLicenseValidation';
+
+export {
+  sanitizeVehicleNumberInput,
+  validateVehicleNumber,
+  getVehicleNumberValidationError,
+  VEHICLE_NUMBER_FORMAT_HINT,
+  VEHICLE_NUMBER_FORMATS,
+  VEHICLE_NUMBER_MAX_LENGTH,
+} from './vehicleNumberValidation';
+
+export {
+  sanitizeDrivingLicenseInput,
+  validateDrivingLicense,
+  getDrivingLicenseValidationError,
+  DRIVING_LICENSE_EXAMPLE,
+  DRIVING_LICENSE_DISPLAY_EXAMPLE,
+  DRIVING_LICENSE_FORMAT_HINT,
+  DRIVING_LICENSE_MAX_LENGTH,
+} from './drivingLicenseValidation';
+
 export const getValidationError = (field: string, value: string): string | null => {
   switch (field) {
     case 'email':
       return validateEmail(value) ? null : 'Invalid email format';
     case 'gst_number':
-      return validateGST(value) ? null : 'Invalid GST format (e.g., 27ABCDE1234F1Z5)';
+      return getGstValidationError(value) ?? null;
     case 'pan_number':
-      return validatePAN(value) ? null : 'Invalid PAN format (e.g., ABCDE1234F)';
+      return getPanValidationError(value) ?? null;
     case 'aadhaar_number':
       return validateAadhaar(value) ? null : 'Invalid Aadhaar format (12 digits, cannot start with 0 or 1)';
     case 'phone':
-      return validatePhone(value) ? null : 'Phone must be 10 digits';
+      return getPhoneValidationError(value) ?? null;
     case 'password':
       return validatePassword(value) ? null : 'Password must be at least 6 characters';
     case 'username':
@@ -93,6 +129,10 @@ export const getValidationError = (field: string, value: string): string | null 
       return validatePincode(value) ? null : 'Pincode must be 6 digits';
     case 'ifsc_code':
       return validateIFSC(value) ? null : 'Invalid IFSC format (e.g., ABCD0123456)';
+    case 'vehicle_number':
+      return getVehicleNumberValidationError(value);
+    case 'license_number':
+      return getDrivingLicenseValidationError(value);
     case 'google_location_link':
       return validateGoogleLocationLink(value) ? null : 'Invalid Google Maps link format';
     default:

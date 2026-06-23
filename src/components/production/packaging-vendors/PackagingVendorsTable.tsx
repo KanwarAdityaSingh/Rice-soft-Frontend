@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Plus, Store, Mail, Phone, MapPin, FileText } from 'lucide-react';
+import { formatPhoneDisplay } from '../../../utils/validation';
 import { SearchBar } from '../../admin/shared/SearchBar';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { EmptyState } from '../../admin/shared/EmptyState';
@@ -126,7 +127,7 @@ export function PackagingVendorsTable() {
                                     phone && (
                                       <div key={phoneIdx} className="flex items-center gap-2 text-sm text-muted-foreground">
                                         <Phone className="h-3.5 w-3.5" />
-                                        <span>{phone}</span>
+                                        <span>{formatPhoneDisplay(phone)}</span>
                                       </div>
                                     )
                                   ))}

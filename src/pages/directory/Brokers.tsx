@@ -15,6 +15,7 @@ import { vendorsAPI } from '../../services/vendors.api'
 import { riceCodesAPI } from '../../services/riceCodes.api'
 import { getRiceTypeLabel } from '../../utils/riceType'
 import type { Sauda } from '../../types/entities'
+import { formatPhoneDisplay } from '../../utils/validation'
 
 export default function BrokersPage() {
   const { brokers, loading, deleteBroker, refetch } = useBrokers()
@@ -300,7 +301,7 @@ export default function BrokersPage() {
                     {b.contact_persons[0].phones?.[0] && (
                       <div className="inline-flex items-center gap-2">
                         <Phone className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span>{b.contact_persons[0].phones[0].trim()}</span>
+                        <span>{formatPhoneDisplay(b.contact_persons[0].phones[0])}</span>
                       </div>
                     )}
                   </>

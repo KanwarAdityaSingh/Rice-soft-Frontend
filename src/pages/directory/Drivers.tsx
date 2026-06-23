@@ -11,7 +11,7 @@ export default function DriversPage() {
             <span className="text-gradient">Drivers</span>
           </h1>
           <p className="mt-1 sm:mt-2 text-sm sm:text-base text-muted-foreground">
-            Driving licences and contact details — verification via Surepass can be wired later
+            Driving licences and contact details — verify via Surepass to fill profile and mark drivers verified
           </p>
         </div>
       </header>

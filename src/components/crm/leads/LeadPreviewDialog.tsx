@@ -8,6 +8,7 @@ import { brokersAPI } from '../../../services/brokers.api';
 import { salesmenAPI } from '../../../services/salesmen.api';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import type { Broker, Salesman, RiceCode, RiceType } from '../../../types/entities';
+import { formatPhonesForDisplay } from '../../../utils/validation';
 
 interface LeadPreviewDialogProps {
   open: boolean;
@@ -181,7 +182,7 @@ export function LeadPreviewDialog({ open, onOpenChange, formData, onConfirm }: L
                           <div className="font-semibold">{cp.name}</div>
                           {cp.phones && cp.phones.length > 0 && cp.phones.filter(p => p && p.trim()).length > 0 && (
                             <div className="text-xs text-muted-foreground mt-0.5">
-                              Phones: {cp.phones.filter(p => p && p.trim()).join(', ')}
+                              Phones: {formatPhonesForDisplay(cp.phones.filter(p => p && p.trim()))}
                             </div>
                           )}
                           {cp.emails && cp.emails.length > 0 && cp.emails.filter(e => e && e.trim()).length > 0 && (

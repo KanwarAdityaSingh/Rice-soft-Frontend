@@ -15,6 +15,7 @@ import { leadsAPI } from '../../services/leads.api';
 import { salesSaudasAPI } from '../../services/salesSaudas.api';
 import { isAdmin } from '../../utils/permissions';
 import type { Lead } from '../../types/entities';
+import { formatPhoneDisplay } from '../../utils/validation';
 
 export default function SalesPartiesPage() {
   const { salesParties, loading, deleteSalesParty, refetch } = useSalesParties();
@@ -174,7 +175,7 @@ export default function SalesPartiesPage() {
                     {s.contact_persons[0].phones?.[0] && (
                       <div className="inline-flex items-center gap-2">
                         <Phone className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span>{s.contact_persons[0].phones[0].trim()}</span>
+                        <span>{formatPhoneDisplay(s.contact_persons[0].phones[0])}</span>
                       </div>
                     )}
                   </>

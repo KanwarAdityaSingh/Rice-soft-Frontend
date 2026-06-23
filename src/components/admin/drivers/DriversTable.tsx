@@ -11,16 +11,18 @@ import { useDrivers } from '../../../hooks/useDrivers';
 import { driversAPI } from '../../../services/drivers.api';
 import { DriverFormModal } from './DriverFormModal';
 import type { Driver } from '../../../types/entities';
-
-type ListScope = 'active' | 'inactive' | 'all';
+import { formatPhoneDisplay } from '../../../utils/validation';
+import { formatDriverVerifiedAt } from '../../../utils/driverVerification';
+import { driverProfileImageSrc } from '../../../utils/driverProfile';
+import { DriverVehicleClassBadges } from './DriverVehicleClassBadges';
 
 export function DriversTable() {
-  const [listScope, setListScope] = useState<ListScope>('active');
-  const includeInactive = listScope !== 'active';
-
-  const { drivers, loading, refetch } = useDrivers(includeInactive);
-  const [searchQuery, setSearchQuery] = useState('');
   const [verificationFilter, setVerificationFilter] = useState<string | undefined>();
+  const isVerifiedParam =
+    verificationFilter === 'verified' ? true : verificationFilter === 'unverified' ? false : undefined;
+
+  const { drivers, loading, refetch } = useDrivers({ isVerified: isVerifiedParam });
+  const [searchQuery, setSearchQuery] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -38,20 +40,12 @@ export function DriversTable() {
       const matchesSearch =
         d.license_number.toLowerCase().includes(q) ||
         d.phone.includes(searchQuery.replace(/\D/g, '')) ||
+        formatPhoneDisplay(d.phone).includes(searchQuery) ||
         (d.name?.toLowerCase().includes(q) ?? false);
 
-      const matchesScope =
-        listScope === 'all' ? true : listScope === 'active' ? d.is_active : !d.is_active;
-
-      const matchesVerification = verificationFilter
-        ? verificationFilter === 'verified'
-          ? d.is_verified
-          : !d.is_verified
-        : true;
-
-      return matchesSearch && matchesScope && matchesVerification;
+      return matchesSearch;
     });
-  }, [drivers, searchQuery, listScope, verificationFilter]);
+  }, [drivers, searchQuery]);
 
   const handleDelete = async () => {
     if (!selectedDriver) return;
@@ -72,17 +66,6 @@ export function DriversTable() {
     }
   };
 
-  const formatDate = (date: string | null): string => {
-    if (!date) return '—';
-    return new Date(date).toLocaleString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
   return (
     <div>
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
@@ -94,18 +77,6 @@ export function DriversTable() {
           />
         </div>
         <div className="flex gap-2 flex-wrap items-center">
-          <label className="inline-flex items-center gap-2 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm">
-            <span className="text-muted-foreground">Status</span>
-            <select
-              className="bg-transparent text-sm outline-none cursor-pointer"
-              value={listScope}
-              onChange={(e) => setListScope(e.target.value as ListScope)}
-            >
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="all">All</option>
-            </select>
-          </label>
           <FilterDropdown
             label="Verified"
             options={[
@@ -144,7 +115,6 @@ export function DriversTable() {
                 <th className="text-left py-3 px-4 text-sm font-semibold">Name</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold">Phone</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold">Verified</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold">Status</th>
                 <th className="text-right py-3 px-4 text-sm font-semibold">Actions</th>
               </tr>
             </thead>
@@ -164,21 +134,27 @@ export function DriversTable() {
                       )}
                     </div>
                   </td>
-                  <td className="py-3 px-4 text-sm">{driver.name || '—'}</td>
-                  <td className="py-3 px-4 text-sm">{driver.phone}</td>
-                  <td className="py-3 px-4 text-sm text-muted-foreground">
-                    {driver.is_verified ? formatDate(driver.verified_at) : '—'}
+                  <td className="py-3 px-4 text-sm">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {(() => {
+                        const avatarSrc = driverProfileImageSrc(driver.profile_image);
+                        return avatarSrc ? (
+                          <img
+                            src={avatarSrc}
+                            alt=""
+                            className="h-8 w-8 rounded-full object-cover border border-border shrink-0"
+                          />
+                        ) : null;
+                      })()}
+                      <div className="min-w-0">
+                        <div className="truncate">{driver.name || '—'}</div>
+                        <DriverVehicleClassBadges classes={driver.vehicle_classes} className="mt-0.5" />
+                      </div>
+                    </div>
                   </td>
-                  <td className="py-3 px-4">
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded-md ${
-                        driver.is_active
-                          ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
-                          : 'bg-muted text-muted-foreground'
-                      }`}
-                    >
-                      {driver.is_active ? 'Active' : 'Inactive'}
-                    </span>
+                  <td className="py-3 px-4 text-sm">{formatPhoneDisplay(driver.phone)}</td>
+                  <td className="py-3 px-4 text-sm text-muted-foreground">
+                    {driver.is_verified ? formatDriverVerifiedAt(driver.verified_at) : '—'}
                   </td>
                   <td className="py-3 px-4 text-right">
                     <ActionButtons
@@ -187,6 +163,15 @@ export function DriversTable() {
                         setEditModalOpen(true);
                       }}
                       onDelete={() => {
+                        if (driver.is_verified) {
+                          setAlertType('warning');
+                          setAlertTitle('Cannot delete driver');
+                          setAlertMessage(
+                            `Driver with licence "${driver.license_number}" is verified and cannot be deleted.`,
+                          );
+                          setAlertOpen(true);
+                          return;
+                        }
                         setSelectedDriver(driver);
                         setDeleteDialogOpen(true);
                       }}
@@ -223,9 +208,21 @@ export function DriversTable() {
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
         title="Delete driver"
-        description={`Deactivate driver with licence “${selectedDriver?.license_number}”? You can include inactive rows later to restore.`}
+        description={`Delete driver with licence “${selectedDriver?.license_number}”? This cannot be undone.`}
         confirmText={deleting ? 'Deleting…' : 'Delete'}
-        onConfirm={handleDelete}
+        onConfirm={() => {
+          if (selectedDriver?.is_verified) {
+            setAlertType('warning');
+            setAlertTitle('Cannot delete driver');
+            setAlertMessage(
+              `Driver with licence "${selectedDriver.license_number}" is verified and cannot be deleted.`,
+            );
+            setAlertOpen(true);
+            setDeleteDialogOpen(false);
+            return;
+          }
+          void handleDelete();
+        }}
         variant="danger"
       />
 

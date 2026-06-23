@@ -1,25 +1,36 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { X, CreditCard, Download, Image as ImageIcon, FileText } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { vendorsAPI } from '../../../services/vendors.api';
 import { vehiclesAPI } from '../../../services/vehicles.api';
-import { purchaseSummaryAPI } from '../../../services/purchaseSummary.api';
+import { paymentAdvicesAPI } from '../../../services/paymentAdvices.api';
 import { useSaudas } from '../../../hooks/useSaudas';
 import { useInwardSlipPasses } from '../../../hooks/useInwardSlipPasses';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { getRiceTypeLabel, getRiceLengthLabel } from '../../../utils/riceType';
 import { formatWeightDisplay } from '../../../utils/saudaCompletion';
-import { ispSaudaVendorAmountAfterCommission } from '../../../utils/ispSaudaVendorAmount';
+import {
+  computePaymentAdviceTotalCharges,
+  paymentAdviceSaudaVendorAmount,
+} from '../../../utils/paymentAdvice';
 import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
-import type { PaymentAdvice, RiceCode, RiceType, Sauda, InwardSlipPass, Vehicle, ISPPurchaseSummary, SaudaPurchaseSummary } from '../../../types/entities';
+import { PaymentAdviceStoredMismatchPanel } from './PaymentAdviceStoredMismatchPanel';
+import type {
+  PaymentAdvice,
+  PaymentAdvicePreviewResponse,
+  RiceCode,
+  RiceType,
+  Sauda,
+  InwardSlipPass,
+  Vehicle,
+} from '../../../types/entities';
 
 interface DefaultRecipient {
   name: string;
   address: string;
   llpin: string;
 }
-
 
 interface PaymentAdvicePreviewDialogProps {
   open: boolean;
@@ -32,96 +43,143 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
   const [riceLengths, setRiceLengths] = useState<RiceType[]>([]);
-  const [summary, setSummary] = useState<SaudaPurchaseSummary | ISPPurchaseSummary | null>(null);
+  const [preview, setPreview] = useState<PaymentAdvicePreviewResponse | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const { saudas } = useSaudas();
   const { inwardSlipPasses } = useInwardSlipPasses();
   const { brokers } = useBrokers();
   const previewRef = useRef<HTMLDivElement>(null);
-  
-  // Document viewer state
+
   const [documentViewerOpen, setDocumentViewerOpen] = useState(false);
   const [viewerDocument, setViewerDocument] = useState<DocumentInfo | null>(null);
 
+  const totalCharges = useMemo(
+    () => computePaymentAdviceTotalCharges(paymentAdvice?.charges ?? [], paymentAdvice?.amount ?? 0),
+    [paymentAdvice?.charges, paymentAdvice?.amount]
+  );
+
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchReferenceData = async () => {
       try {
         const [recipient, codes, types, lengths] = await Promise.all([
           vendorsAPI.getDefaultRecipient(),
           riceCodesAPI.getAllRiceCodes(),
           riceCodesAPI.getRiceTypes(),
-          riceCodesAPI.getRiceLengths()
+          riceCodesAPI.getRiceLengths(),
         ]);
         setDefaultRecipient(recipient);
         setRiceCodes(codes);
         setRiceTypes(types);
         setRiceLengths(lengths);
-
-        // Fetch summary
-        if (paymentAdvice?.sauda_id) {
-          const summaryData = await purchaseSummaryAPI.getSaudaSummary(paymentAdvice.sauda_id);
-          setSummary(summaryData);
-        } else if (paymentAdvice?.inward_slip_pass_id) {
-          const summaryData = await purchaseSummaryAPI.getISPSummary(paymentAdvice.inward_slip_pass_id);
-          setSummary(summaryData);
-        }
-
-        // Fetch vehicle if ISP is linked
-        if (paymentAdvice?.inward_slip_pass_id) {
-          const isp = inwardSlipPasses.find(i => i.id === paymentAdvice.inward_slip_pass_id);
-          if (isp?.vehicle_id) {
-            try {
-              const vehicleData = await vehiclesAPI.getVehicleById(isp.vehicle_id);
-              setVehicle(vehicleData);
-            } catch (err) {
-              console.error('Failed to fetch vehicle:', err);
-            }
-          }
-        }
       } catch (error) {
-        console.error('Failed to fetch data:', error);
+        console.error('Failed to fetch reference data:', error);
       }
     };
+
+    if (open) {
+      fetchReferenceData();
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !paymentAdvice) {
+      setPreview(null);
+      return;
+    }
+
+    if (!paymentAdvice.sauda_id && !paymentAdvice.inward_slip_pass_id) {
+      setPreview(null);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingPreview(true);
+
+    paymentAdvicesAPI
+      .fetchPaymentAdvicePreview({
+        sauda_id: paymentAdvice.sauda_id ?? undefined,
+        inward_slip_pass_id: paymentAdvice.inward_slip_pass_id ?? undefined,
+        total_charges: totalCharges,
+      })
+      .then((data) => {
+        if (!cancelled) setPreview(data);
+      })
+      .catch((error) => {
+        console.error('Failed to fetch payment advice preview:', error);
+        if (!cancelled) setPreview(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingPreview(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, paymentAdvice, totalCharges]);
+
+  useEffect(() => {
+    const fetchVehicle = async () => {
+      if (!paymentAdvice?.inward_slip_pass_id) {
+        setVehicle(null);
+        return;
+      }
+      const isp = inwardSlipPasses.find((i) => i.id === paymentAdvice.inward_slip_pass_id);
+      if (!isp?.vehicle_id) {
+        setVehicle(null);
+        return;
+      }
+      try {
+        const vehicleData = await vehiclesAPI.getVehicleById(isp.vehicle_id);
+        setVehicle(vehicleData);
+      } catch (err) {
+        console.error('Failed to fetch vehicle:', err);
+        setVehicle(null);
+      }
+    };
+
     if (open && paymentAdvice) {
-      fetchData();
+      fetchVehicle();
     }
   }, [open, paymentAdvice, inwardSlipPasses]);
 
   const getSauda = (): Sauda | undefined => {
     if (!paymentAdvice?.sauda_id) return undefined;
-    return saudas.find(s => s.id === paymentAdvice.sauda_id);
+    return saudas.find((s) => s.id === paymentAdvice.sauda_id);
   };
 
   const getISP = (): InwardSlipPass | undefined => {
     if (!paymentAdvice?.inward_slip_pass_id) return undefined;
-    return inwardSlipPasses.find(isp => isp.id === paymentAdvice.inward_slip_pass_id);
+    return inwardSlipPasses.find((isp) => isp.id === paymentAdvice.inward_slip_pass_id);
   };
 
   const getRiceCodeName = (riceCodeId: string | null | undefined): string => {
     if (!riceCodeId) return '';
-    const riceCode = riceCodes.find(rc => rc.rice_code_id === riceCodeId);
+    const riceCode = riceCodes.find((rc) => rc.rice_code_id === riceCodeId);
     return riceCode ? riceCode.rice_code_name : '';
   };
 
   const getBrokerName = (brokerId: string | null | undefined): string => {
     if (!brokerId) return '-';
-    const broker = brokers.find(b => b.id === brokerId);
+    const broker = brokers.find((b) => b.id === brokerId);
     return broker?.business_name ?? '-';
   };
 
   const getPaymentSlipUrl = (): string | null => {
     if (!paymentAdvice) return null;
-    return (paymentAdvice as any).payment_slip_image_url || paymentAdvice.payment_slip_url || null;
+    return (paymentAdvice as PaymentAdvice & { payment_slip_image_url?: string }).payment_slip_image_url
+      || paymentAdvice.payment_slip_url
+      || null;
   };
 
   const handleViewPaymentSlip = () => {
     const slipUrl = getPaymentSlipUrl();
     if (slipUrl) {
       const isPdf = slipUrl.toLowerCase().includes('.pdf');
-      setViewerDocument({ 
-        url: slipUrl, 
-        label: 'Payment Slip', 
-        type: isPdf ? 'pdf' : 'image' 
+      setViewerDocument({
+        url: slipUrl,
+        label: 'Payment Slip',
+        type: isPdf ? 'pdf' : 'image',
       });
       setDocumentViewerOpen(true);
     }
@@ -129,7 +187,7 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
 
   const handleDownloadPDF = () => {
     if (!previewRef.current) return;
-    
+
     try {
       const printContent = previewRef.current.innerHTML;
       const printWindow = window.open('', '_blank');
@@ -226,23 +284,19 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                   }
                 }
                 
-                // Use onafterprint event if available (more reliable)
                 if (printWindow.matchMedia) {
                   var mediaQueryList = printWindow.matchMedia('print');
                   mediaQueryList.addEventListener('change', function(mql) {
                     if (!mql.matches) {
-                      // Print dialog was closed
                       setTimeout(closeWindow, 100);
                     }
                   });
                 }
                 
-                // Fallback: use onafterprint event
                 printWindow.onafterprint = function() {
                   setTimeout(closeWindow, 100);
                 };
                 
-                // Trigger print after a short delay
                 setTimeout(function() {
                   printWindow.print();
                 }, 250);
@@ -262,6 +316,12 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
 
   const sauda = getSauda();
   const isp = getISP();
+  const summary = preview?.summary ?? null;
+  const billWeight = preview?.bill_weight ?? paymentAdvice.bill_weight ?? null;
+  const kaantaWeight = preview?.kanta_weight ?? paymentAdvice.kanta_weight ?? null;
+  const danaDeduction = preview?.dana_deduction ?? paymentAdvice.dana_deduction ?? null;
+  const finalWeight = preview?.final_weight ?? paymentAdvice.final_weight ?? null;
+  const netPayable = preview?.net_payable ?? paymentAdvice.net_payable ?? 0;
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -290,7 +350,17 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
               </div>
             </div>
 
+            {loadingPreview ? (
+              <div className="flex justify-center py-12 text-muted-foreground text-sm">Loading preview...</div>
+            ) : (
+            <>
+              <PaymentAdviceStoredMismatchPanel
+                stored={paymentAdvice}
+                preview={preview}
+                variant="view"
+              />
             <div ref={previewRef} className="border-2 border-border rounded-lg p-4 bg-background font-mono text-xs">
+
               {/* Header */}
               <div className="text-center border-b-2 border-dashed border-border pb-3 mb-4">
                 <h2 className="font-bold text-lg">{defaultRecipient?.name || 'Loading...'}</h2>
@@ -348,7 +418,7 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                       <span className="text-muted-foreground">ISP:</span>
                       <span className="font-semibold">{isp.slip_number} - {vehicle?.vehicle_number || '-'}</span>
                     </div>
-                    {summary && 'saudas' in summary && summary.saudas && summary.saudas.length > 0 && (
+                    {summary?.saudas && summary.saudas.length > 0 && (
                       <div className="mt-2 space-y-1">
                         {summary.saudas.map((saudaItem) => (
                           <div key={saudaItem.sauda_id} className="text-xs">
@@ -373,15 +443,14 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
               {summary && (
                 <div className="mb-3">
                   <div className="font-bold border-b border-border pb-1 mb-2">Calculation Breakdown</div>
-                  
-                  {/* ISP: Show per-sauda breakdown first */}
-                  {isp && 'saudas' in summary && summary.saudas && summary.saudas.length > 0 && (
+
+                  {isp && summary.saudas && summary.saudas.length > 0 && (
                     <div className="mb-3 space-y-2">
                       <div className="text-xs font-semibold text-muted-foreground">Per Sauda Breakdown:</div>
                       {summary.saudas.map((saudaItem, idx) => {
-                        const sauda = saudas.find(s => s.id === saudaItem.sauda_id);
-                        const isDanaRequired = sauda?.is_dana_required ?? true;
-                        
+                        const linkedSauda = saudas.find((s) => s.id === saudaItem.sauda_id);
+                        const isDanaRequired = linkedSauda?.is_dana_required ?? true;
+
                         return (
                         <div key={saudaItem.sauda_id} className="border border-border/50 rounded p-2 bg-muted/20">
                           <div className="flex items-center justify-between mb-1">
@@ -414,6 +483,18 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                               <span className="text-muted-foreground">Base Amount:</span>
                               <span>₹{saudaItem.base_amount.toFixed(2)}</span>
                             </div>
+                            {(saudaItem.dana_deduction_kg ?? 0) > 0 && (
+                              <div className="flex justify-between text-red-600">
+                                <span className="text-muted-foreground">Less: Dana (300gm per Qtl):</span>
+                                <span>-{(saudaItem.dana_deduction_kg ?? 0).toFixed(2)} kg</span>
+                              </div>
+                            )}
+                            {(saudaItem.dana_deduction_amount ?? 0) > 0 && (
+                              <div className="flex justify-between text-red-600">
+                                <span className="text-muted-foreground">Less: Dana (amount):</span>
+                                <span>-₹{(saudaItem.dana_deduction_amount ?? 0).toFixed(2)}</span>
+                              </div>
+                            )}
                             {saudaItem.cash_discount_amount > 0 && (
                               <div className="flex justify-between text-emerald-600">
                                 <span>- Cash Discount:</span>
@@ -428,7 +509,7 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                             )}
                             <div className="flex justify-between font-semibold border-t border-border/30 pt-0.5 mt-0.5">
                               <span>Sauda Total (vendor):</span>
-                              <span>₹{ispSaudaVendorAmountAfterCommission(saudaItem).toFixed(2)}</span>
+                              <span>₹{paymentAdviceSaudaVendorAmount(saudaItem).toFixed(2)}</span>
                             </div>
                           </div>
                         </div>
@@ -437,27 +518,26 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                       <div className="text-xs font-semibold text-muted-foreground pt-1 border-t border-border">Total Summary:</div>
                     </div>
                   )}
-                  
-                  {/* Weight Calculation Flow */}
-                  {(paymentAdvice.bill_weight || paymentAdvice.kanta_weight || paymentAdvice.dana_deduction || paymentAdvice.final_weight) && (
+
+                  {(billWeight != null || kaantaWeight != null || danaDeduction != null || finalWeight != null) && (
                     <div className="mb-3 space-y-1 border-b border-dotted border-border pb-2">
                       <div className="text-xs font-semibold text-muted-foreground mb-1">Weight Calculation:</div>
-                      {paymentAdvice.bill_weight && (
+                      {billWeight != null && (
                         <div className="flex justify-between text-[10px]">
                           <span className="text-muted-foreground">Bill Weight:</span>
-                          <span>{paymentAdvice.bill_weight.toFixed(2)} kg</span>
+                          <span>{billWeight.toFixed(2)} kg</span>
                         </div>
                       )}
-                      {paymentAdvice.kanta_weight && (
+                      {kaantaWeight != null && (
                         <div className="flex justify-between text-[10px]">
                           <span className="text-muted-foreground">Kaanta Weight:</span>
-                          <span>{paymentAdvice.kanta_weight.toFixed(2)} kg</span>
+                          <span>{kaantaWeight.toFixed(2)} kg</span>
                         </div>
                       )}
-                      {paymentAdvice.dana_deduction && paymentAdvice.dana_deduction > 0 ? (
+                      {danaDeduction != null && danaDeduction > 0 ? (
                         <div className="flex justify-between text-[10px] text-red-600">
                           <span className="text-muted-foreground">Less: Dana (300gm per Qtl):</span>
-                          <span>-{paymentAdvice.dana_deduction.toFixed(2)} kg</span>
+                          <span>-{danaDeduction.toFixed(2)} kg</span>
                         </div>
                       ) : (
                         sauda && !(sauda.is_dana_required ?? true) && (
@@ -467,20 +547,19 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                           </div>
                         )
                       )}
-                      {paymentAdvice.final_weight && (
+                      {finalWeight != null && (
                         <div className="flex justify-between text-[10px] font-semibold border-t border-border/30 pt-0.5 mt-0.5">
                           <span className="text-muted-foreground">Final Weight:</span>
-                          <span>{paymentAdvice.final_weight.toFixed(2)} kg</span>
+                          <span>{finalWeight.toFixed(2)} kg</span>
                         </div>
                       )}
                     </div>
                   )}
 
-                  {/* Overall Summary */}
                   <div className="space-y-1">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Total Weight:</span>
-                      <span className="font-semibold">{(paymentAdvice.final_weight ?? summary.total_weight)?.toFixed(2) || '-'} kg</span>
+                      <span className="font-semibold">{(finalWeight ?? summary.total_weight)?.toFixed(2) || '-'} kg</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Total Bags:</span>
@@ -490,6 +569,12 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                       <span className="text-muted-foreground">Base Amount:</span>
                       <span className="font-semibold">₹{summary.base_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 }) || '-'}</span>
                     </div>
+                    {(summary.dana_deduction_amount ?? 0) > 0 && (
+                      <div className="flex justify-between text-red-600">
+                        <span>- Dana:</span>
+                        <span>₹{summary.dana_deduction_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
                     {summary.cash_discount_amount > 0 && (
                       <div className="flex justify-between text-emerald-600">
                         <span>- Cash Discount:</span>
@@ -512,7 +597,6 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                 </div>
               )}
 
-              {/* Charges */}
               {paymentAdvice.charges && paymentAdvice.charges.length > 0 && (
                 <div className="mb-3 border-t border-dotted border-border pt-2">
                   <div className="font-bold mb-2">Deductions</div>
@@ -525,19 +609,16 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                 </div>
               )}
 
-              {/* Final Amount */}
               <div className="bg-primary/10 rounded-lg p-3 mt-4 border-2 border-primary/30">
                 <p className="text-xs font-semibold text-foreground mb-0.5">Net Payable</p>
                 <p className="text-[11px] text-muted-foreground mb-2 leading-snug">
                   Final net payable after charges and deductions.
                 </p>
                 <p className="text-2xl font-bold text-primary text-center tabular-nums">
-                  ₹{(paymentAdvice.net_payable || paymentAdvice.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ₹{netPayable.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               </div>
 
-
-              {/* Payment Slip */}
               {getPaymentSlipUrl() && (
                 <div className="mt-4 pt-4 border-t border-dashed border-border">
                   <div className="font-bold mb-2">Payment Slip</div>
@@ -555,12 +636,13 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
                 </div>
               )}
 
-              {/* Footer */}
               <div className="text-center border-t-2 border-dashed border-border pt-3 mt-4">
                 <p className="text-[9px] text-muted-foreground">Generated on {new Date().toLocaleString('en-IN')}</p>
                 <p className="text-[9px] text-muted-foreground">This is a computer-generated document</p>
               </div>
             </div>
+            </>
+            )}
           </div>
         </Dialog.Content>
       </Dialog.Portal>
@@ -573,4 +655,3 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
     </Dialog.Root>
   );
 }
-

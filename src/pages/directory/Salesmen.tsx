@@ -8,6 +8,7 @@ import { ActionButtons } from '../../components/admin/shared/ActionButtons'
 import { ConfirmDialog } from '../../components/admin/shared/ConfirmDialog'
 import { useSalesmen } from '../../hooks/useSalesmen'
 import { SalesmanFormModal } from '../../components/admin/salesmen/SalesmanFormModal'
+import { formatPhoneDisplay } from '../../utils/validation'
 import type { Salesman } from '../../types/entities'
 
 export default function SalesmenPage() {
@@ -25,7 +26,8 @@ export default function SalesmenPage() {
       const matchesSearch =
         s.name.toLowerCase().includes(q) ||
         s.email.toLowerCase().includes(q) ||
-        s.phone.includes(searchQuery)
+        s.phone.includes(searchQuery) ||
+        formatPhoneDisplay(s.phone).includes(searchQuery)
 
       const matchesStatus = statusFilter ? (statusFilter === 'active' ? s.is_active : !s.is_active) : true
 
@@ -100,7 +102,7 @@ export default function SalesmenPage() {
                 <span className={`whitespace-nowrap px-2 py-1 rounded-md text-[10px] ${s.is_active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground'}`}>{s.is_active ? 'Active' : 'Inactive'}</span>
               </div>
               <div className="mt-3 grid gap-1.5 text-xs">
-                <div className="inline-flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><span>{s.phone.trim()}</span></div>
+                <div className="inline-flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><span>{formatPhoneDisplay(s.phone)}</span></div>
               </div>
               <div className="mt-3 flex items-center justify-end">
                 <ActionButtons

@@ -4,7 +4,17 @@ import { X, Plus, Search } from 'lucide-react';
 import { godownsAPI } from '../../../services/godowns.api';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
-import { validateGST } from '../../../utils/validation';
+import { EmailVerifyButton } from '../../shared/EmailVerifyButton';
+import { PhoneInput } from '../../shared/PhoneInput';
+import { getGstValidationError, GST_EXAMPLE, GST_MAX_LENGTH } from '../../../utils/validation';
+import { applyAutofillAddress } from '../../../utils/panLookupEnrichment';
+import {
+  buildEnrichedGstLookupAutofill,
+  mergeGstContactPersons,
+  runEnrichedGstLookup,
+} from '../../../utils/gstLookupAutofill';
+import { verifyAutofilledEmails } from '../../../utils/emailVerification';
+import { sanitizePhoneList } from '../../../utils/phoneFormatting';
 
 function isValidGoogleMapsLink(value: string | null | undefined): boolean {
   const t = (value ?? '').trim();
@@ -18,19 +28,6 @@ function isValidGoogleMapsLink(value: string | null | undefined): boolean {
   }
 }
 import type { ContactPerson, CreateGodownRequest, Godown, GodownAddress, UpdateGodownRequest } from '../../../types/entities';
-
-const toTitleCase = (str: string): string => {
-  if (!str) return '';
-  return str
-    .toLowerCase()
-    .split(' ')
-    .map((word) => {
-      if (word.length === 0) return '';
-      if (word.length === 1) return word.toUpperCase();
-      return word.charAt(0).toUpperCase() + word.slice(1);
-    })
-    .join(' ');
-};
 
 const emptyAddress = (): GodownAddress => ({
   street: '',
@@ -58,7 +55,7 @@ function normalizeContactPersonsForApi(cps: ContactPerson[]): ContactPerson[] {
   return cps
     .map((cp) => ({
       name: cp.name.trim(),
-      phones: (cp.phones ?? []).map((p) => String(p).trim()).filter(Boolean),
+      phones: sanitizePhoneList(cp.phones ?? []),
       emails: (cp.emails ?? []).map((e) => String(e).trim()).filter(Boolean),
     }))
     .filter((cp) => cp.name.length >= 2 && cp.phones.length > 0);
@@ -134,8 +131,9 @@ export function GodownFormModal({ open, onOpenChange, godownId }: GodownFormModa
       setErrors((prev) => ({ ...prev, gst_number: 'Please enter a GST number' }));
       return;
     }
-    if (!validateGST(gstRaw)) {
-      setErrors((prev) => ({ ...prev, gst_number: 'Invalid GST format' }));
+    const gstError = getGstValidationError(gstRaw);
+    if (gstError) {
+      setErrors((prev) => ({ ...prev, gst_number: gstError }));
       return;
     }
 
@@ -147,39 +145,27 @@ export function GodownFormModal({ open, onOpenChange, godownId }: GodownFormModa
     });
 
     try {
-      const response = await godownsAPI.lookupGST(gstRaw);
-      const mapped = response.mapped_data;
-
-      let name = form.name;
-      if (mapped?.business_name) {
-        name = toTitleCase(mapped.business_name);
-      }
-
-      const addressUpdate: GodownAddress = { ...(form.address ?? emptyAddress()) };
-      if (mapped?.address) {
-        if (mapped.address.street) addressUpdate.street = toTitleCase(mapped.address.street);
-        if (mapped.address.city) addressUpdate.city = toTitleCase(mapped.address.city);
-        if (mapped.address.state) addressUpdate.state = toTitleCase(mapped.address.state);
-        if (mapped.address.pincode) addressUpdate.pincode = String(mapped.address.pincode);
-        if (mapped.address.country) addressUpdate.country = toTitleCase(mapped.address.country);
-      }
-
-      let gstNumber: string | null = gstRaw;
-      if (mapped?.business_details?.gst_number) {
-        gstNumber = String(mapped.business_details.gst_number).trim().toUpperCase() || gstRaw;
-      }
+      const result = await runEnrichedGstLookup(gstRaw);
+      const autofill = buildEnrichedGstLookupAutofill(result);
+      const updatedContactPersons = mergeGstContactPersons(form.contact_persons, autofill);
+      const emailVerification = await verifyAutofilledEmails(
+        autofill.emails,
+        updatedContactPersons,
+        undefined,
+      );
 
       setForm((prev) => ({
         ...prev,
-        name,
-        gst_number: gstNumber,
-        address: addressUpdate,
+        name: autofill.businessName ?? prev.name,
+        gst_number: autofill.gstNumber ?? gstRaw,
+        address: applyAutofillAddress(prev.address ?? emptyAddress(), autofill.address),
+        contact_persons: updatedContactPersons,
       }));
-      setErrors((prev) => {
-        const next = { ...prev };
-        delete next.gst_number;
-        return next;
-      });
+      setErrors((prev) => ({
+        ...prev,
+        gst_number: '',
+        ...emailVerification.fieldErrors,
+      }));
     } catch (e: any) {
       console.error('GST lookup error:', e);
       setErrors((prev) => ({
@@ -328,7 +314,8 @@ export function GodownFormModal({ open, onOpenChange, godownId }: GodownFormModa
                           gst_number: e.target.value ? e.target.value.toUpperCase() : null,
                         }))
                       }
-                      placeholder="27ABCDE1234F1Z5"
+                      placeholder={GST_EXAMPLE}
+                      maxLength={GST_MAX_LENGTH}
                     />
                     <button
                       type="button"
@@ -389,14 +376,12 @@ export function GodownFormModal({ open, onOpenChange, godownId }: GodownFormModa
                           <label className="text-xs text-muted-foreground">Phone *</label>
                           {(contact.phones || ['']).map((phone, phoneIndex) => (
                             <div key={phoneIndex} className="flex gap-2">
-                              <input
-                                type="tel"
-                                placeholder="Phone"
+                              <PhoneInput
                                 value={phone}
-                                onChange={(e) => {
+                                onChange={(value) => {
                                   const updated = [...form.contact_persons];
                                   const phones = [...(updated[index].phones || [''])];
-                                  phones[phoneIndex] = e.target.value;
+                                  phones[phoneIndex] = value;
                                   updated[index] = { ...updated[index], phones };
                                   setForm((p) => ({ ...p, contact_persons: updated }));
                                 }}
@@ -457,6 +442,21 @@ export function GodownFormModal({ open, onOpenChange, godownId }: GodownFormModa
                                     setForm((p) => ({ ...p, contact_persons: updated }));
                                   }}
                                   className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                                />
+                                <EmailVerifyButton
+                                  email={email}
+                                  onError={(message) => {
+                                    setErrors({
+                                      ...errors,
+                                      [`contact_person_${index}_email_${emailIndex}`]: message,
+                                    });
+                                  }}
+                                  onVerified={() => {
+                                    const errorKey = `contact_person_${index}_email_${emailIndex}`;
+                                    const nextErrors = { ...errors };
+                                    delete nextErrors[errorKey];
+                                    setErrors(nextErrors);
+                                  }}
                                 />
                                 {(contact.emails || ['']).length > 1 && (
                                   <button

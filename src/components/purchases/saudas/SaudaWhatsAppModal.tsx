@@ -3,7 +3,8 @@ import { useState, useEffect, useRef } from 'react';
 import { X, MessageCircle, Send, Loader2, Plus, Trash2, AlertCircle } from 'lucide-react';
 import { useToast } from '../../shared/Toast';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
-import { saudasAPI } from '../../../services/saudas.api';
+import { PhoneInput } from '../../shared/PhoneInput';
+import { sanitizePhoneList } from '../../../utils/validation';
 
 interface SaudaWhatsAppModalProps {
   open: boolean;
@@ -95,9 +96,9 @@ export function SaudaWhatsAppModal({
   const handleSendWhatsApp = async () => {
     if (!token || !saudaId) return;
 
-    const validNumbers = whatsappNumbers
-      .filter((n) => n.trim())
-      .map((n) => n.replace(/\D/g, '')); // Remove non-digits
+    const validNumbers = sanitizePhoneList(
+      whatsappNumbers.filter((n) => n.trim())
+    );
 
     if (validNumbers.length === 0) {
       showError('Validation Error', 'Please enter at least one valid phone number');
@@ -187,15 +188,13 @@ export function SaudaWhatsAppModal({
                     <div className="space-y-2">
                       {whatsappNumbers.map((number, index) => (
                         <div key={index} className="flex gap-2">
-                          <input
-                            type="tel"
+                          <PhoneInput
                             value={number}
-                            onChange={(e) => {
+                            onChange={(value) => {
                               const updated = [...whatsappNumbers];
-                              updated[index] = e.target.value;
+                              updated[index] = value;
                               setWhatsappNumbers(updated);
                             }}
-                            placeholder="9876543210"
                             className="flex-1 px-4 py-2.5 border border-border rounded-lg bg-background focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                           />
                           {whatsappNumbers.length > 1 && (

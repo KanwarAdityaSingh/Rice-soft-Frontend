@@ -6,7 +6,16 @@ import { AlertDialog } from '../../shared/AlertDialog';
 import { usePackagingVendors } from '../../../hooks/usePackagingVendors';
 import { pincodeAPI } from '../../../services/pincode.api';
 import { packagingVendorsAPI } from '../../../services/packagingVendors.api';
-import { validateEmail, validateGST } from '../../../utils/validation';
+import { validateEmail, getGstValidationError, GST_EXAMPLE, GST_MAX_LENGTH } from '../../../utils/validation';
+import { applyAutofillAddress } from '../../../utils/panLookupEnrichment';
+import {
+  buildEnrichedGstLookupAutofill,
+  mergeGstContactPersons,
+  runEnrichedGstLookup,
+} from '../../../utils/gstLookupAutofill';
+import { verifyAutofilledEmails } from '../../../utils/emailVerification';
+import { EmailVerifyButton } from '../../shared/EmailVerifyButton';
+import { PhoneInput } from '../../shared/PhoneInput';
 import type {
   CreatePackagingVendorRequest,
   UpdatePackagingVendorRequest,
@@ -214,8 +223,9 @@ export function PackagingVendorFormModal({ open, onOpenChange, vendorId, onVendo
       return;
     }
 
-    if (!validateGST(gstRaw)) {
-      setErrors((prev) => ({ ...prev, gst_number: 'Invalid GST format' }));
+    const gstError = getGstValidationError(gstRaw);
+    if (gstError) {
+      setErrors((prev) => ({ ...prev, gst_number: gstError }));
       return;
     }
 
@@ -227,41 +237,40 @@ export function PackagingVendorFormModal({ open, onOpenChange, vendorId, onVendo
     });
 
     try {
-      const response = await packagingVendorsAPI.lookupGST(gstRaw);
-      const mapped = response.mapped_data;
-
-      let vendorName = formData.name;
-      if (mapped?.business_name) {
-        vendorName = toTitleCase(mapped.business_name);
-      }
-
-      const addressUpdate: Record<string, string> = { ...formData.address };
-      if (mapped?.address) {
-        if (mapped.address.street) addressUpdate.street = toTitleCase(mapped.address.street);
-        if (mapped.address.city) addressUpdate.city = toTitleCase(mapped.address.city);
-        if (mapped.address.state) addressUpdate.state = toTitleCase(mapped.address.state);
-        if (mapped.address.pincode) addressUpdate.pincode = String(mapped.address.pincode);
-        if (mapped.address.country) addressUpdate.country = toTitleCase(mapped.address.country);
-      }
-
-      let gstNumber: string | null = gstRaw;
-      if (mapped?.business_details?.gst_number) {
-        const g = String(mapped.business_details.gst_number).trim().toUpperCase();
-        gstNumber = g || gstRaw;
-      }
+      const result = await runEnrichedGstLookup(gstRaw);
+      const autofill = buildEnrichedGstLookupAutofill(result);
+      const updatedContactPersons = mergeGstContactPersons(formData.contact_persons, autofill);
+      const emailVerification = await verifyAutofilledEmails(
+        autofill.emails,
+        updatedContactPersons,
+        undefined,
+      );
 
       setFormData((prev) => ({
         ...prev,
-        name: vendorName,
-        address: { ...prev.address, ...addressUpdate },
-        gst_number: gstNumber,
+        name: autofill.businessName ?? prev.name,
+        gst_number: autofill.gstNumber ?? gstRaw,
+        address: {
+          ...prev.address,
+          ...applyAutofillAddress(
+            {
+              street: prev.address.street ?? '',
+              city: prev.address.city ?? '',
+              state: prev.address.state ?? '',
+              pincode: prev.address.pincode ?? '',
+              country: prev.address.country ?? 'India',
+            },
+            autofill.address,
+          ),
+        },
+        contact_persons: updatedContactPersons,
       }));
 
-      setErrors((prev) => {
-        const next = { ...prev };
-        delete next.gst_number;
-        return next;
-      });
+      setErrors((prev) => ({
+        ...prev,
+        gst_number: '',
+        ...emailVerification.fieldErrors,
+      }));
     } catch (error: any) {
       console.error('GST lookup error:', error);
       setErrors((prev) => ({
@@ -510,12 +519,10 @@ export function PackagingVendorFormModal({ open, onOpenChange, vendorId, onVendo
                             <div key={phoneIndex} className="flex gap-2 mb-2">
                               <div className="flex-1 flex items-center gap-2">
                                 <Phone className="h-4 w-4 text-muted-foreground" />
-                                <input
-                                  type="tel"
+                                <PhoneInput
                                   value={phone}
-                                  onChange={(e) => updatePhone(cpIndex, phoneIndex, e.target.value)}
+                                  onChange={(value) => updatePhone(cpIndex, phoneIndex, value)}
                                   className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary"
-                                  placeholder="Phone number"
                                 />
                               </div>
                               {cp.phones && cp.phones.length > 1 && (
@@ -557,6 +564,21 @@ export function PackagingVendorFormModal({ open, onOpenChange, vendorId, onVendo
                                   onChange={(e) => updateEmail(cpIndex, emailIndex, e.target.value)}
                                   className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary"
                                   placeholder="Email address"
+                                />
+                                <EmailVerifyButton
+                                  email={email}
+                                  onError={(message) => {
+                                    setErrors({
+                                      ...errors,
+                                      [`contact_person_${cpIndex}_email_${emailIndex}`]: message,
+                                    });
+                                  }}
+                                  onVerified={() => {
+                                    const errorKey = `contact_person_${cpIndex}_email_${emailIndex}`;
+                                    const nextErrors = { ...errors };
+                                    delete nextErrors[errorKey];
+                                    setErrors(nextErrors);
+                                  }}
                                 />
                               </div>
                               {cp.emails && cp.emails.length > 1 && (

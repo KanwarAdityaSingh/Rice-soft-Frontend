@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { brokersAPI } from '../../../services/brokers.api';
 import type { Lead, RiceCode, RiceType, Broker } from '../../../types/entities';
+import { formatPhoneDisplay, formatPhonesForDisplay } from '../../../utils/validation';
 
 interface LeadInfoCardsProps {
   lead: Lead;
@@ -91,7 +92,7 @@ export function LeadInfoCards({ lead }: LeadInfoCardsProps) {
                       <div className="font-medium">{cp.name}</div>
                       {cp.phones && cp.phones.length > 0 && cp.phones.filter(p => p && p.trim()).length > 0 && (
                         <div className="text-xs text-muted-foreground mt-0.5">
-                          Phones: {cp.phones.filter(p => p && p.trim()).join(', ')}
+                          Phones: {formatPhonesForDisplay(cp.phones.filter(p => p && p.trim()))}
                         </div>
                       )}
                       {cp.emails && cp.emails.length > 0 && cp.emails.filter(e => e && e.trim()).length > 0 && (
@@ -224,7 +225,7 @@ export function LeadInfoCards({ lead }: LeadInfoCardsProps) {
               <span className="text-muted-foreground">Email:</span> {broker.contact_persons?.[0]?.emails?.[0] || 'N/A'}
             </div>
             <div>
-              <span className="text-muted-foreground">Phone:</span> {broker.contact_persons?.[0]?.phones?.[0] || 'N/A'}
+              <span className="text-muted-foreground">Phone:</span> {formatPhoneDisplay(broker.contact_persons?.[0]?.phones?.[0]) || 'N/A'}
             </div>
             {broker.broker_details?.commission_rate && (
               <div>

@@ -92,6 +92,8 @@ export interface KycPersistContext {
 export interface EntityKycVerificationDetails {
   pan?: SurepassVerificationSnapshot;
   pan_comprehensive?: SurepassVerificationSnapshot;
+  gstin_by_pan?: SurepassVerificationSnapshot;
+  pan_contact?: SurepassVerificationSnapshot;
   gst?: SurepassVerificationSnapshot;
   gst_advanced?: SurepassVerificationSnapshot;
   aadhaar?: SurepassVerificationSnapshot;
@@ -103,6 +105,7 @@ export interface EntityKycVerificationDetails {
 /** Stored on vehicles (JSONB column). */
 export interface VehicleVerificationDetails {
   rc?: SurepassVerificationSnapshot;
+  rc_full?: SurepassVerificationSnapshot;
   rc_challan?: SurepassVerificationSnapshot;
 }
 
@@ -232,6 +235,8 @@ export interface Transporter {
   vehicle_ids: string[]; // NEW: Array of vehicle UUIDs
   bank_details?: TransporterBankDetails;
   is_active: boolean;
+  is_verified: boolean;
+  verified_at: string | null;
   created_at: string;
   updated_at: string;
   kyc_verification_details?: EntityKycVerificationDetails;
@@ -276,6 +281,7 @@ export interface CreateVehicleRequest {
   is_verified?: boolean;
   verified_at?: string | null;
   is_active?: boolean;
+  verification_details?: VehicleVerificationDetails;
 }
 
 export interface UpdateVehicleRequest extends Partial<CreateVehicleRequest> {}
@@ -324,6 +330,49 @@ export interface RcChallanDetailsResult {
     challans: RcChallanItem[];
     blacklist: unknown[];
   };
+  surepass_response?: SurepassApiResponse;
+}
+
+/** Surepass RC Full raw payload (via /kyc/rc/full) */
+export interface RcFullData {
+  client_id?: string;
+  rc_number: string;
+  registration_date?: string;
+  owner_name?: string;
+  father_name?: string;
+  present_address?: string;
+  permanent_address?: string;
+  mobile_number?: string;
+  vehicle_category?: string;
+  vehicle_category_description?: string;
+  vehicle_chasi_number?: string;
+  vehicle_engine_number?: string;
+  maker_description?: string;
+  maker_model?: string;
+  body_type?: string;
+  fuel_type?: string;
+  color?: string;
+  fit_up_to?: string;
+  insurance_upto?: string;
+  permit_valid_upto?: string;
+  challan_details?: unknown;
+  [key: string]: unknown;
+}
+
+/** Response from POST /kyc/rc/full — mapped RC fields + raw Surepass envelope */
+export interface RcFullLookupResult {
+  data?: RcFullData;
+  surepass_response?: SurepassApiResponse;
+  /** Some backends flatten mapped fields at the top level */
+  rc_number?: string;
+  owner_name?: string;
+  vehicle_class?: string | null;
+  fuel_type?: string | null;
+  maker_model?: string | null;
+  registration_date?: string | null;
+  insurance_validity?: string | null;
+  fitness_validity?: string | null;
+  permit_validity?: string | null;
 }
 
 export interface SurepassVehicleVerificationEnvelope {
@@ -334,12 +383,21 @@ export interface SurepassVehicleVerificationEnvelope {
   };
 }
 
-/** Driver (driving licence) master — normalized licence + phone; after Surepass DL verify, mapped snapshot (DOB, expiry, age, address, etc.) stored in verification_details */
+/** Driver (driving licence) master — DL profile fields filled from Surepass on verify */
 export interface Driver {
   id: string;
   license_number: string;
   phone: string;
   name: string | null;
+  address?: string | null;
+  pincode?: string | null;
+  gender?: string | null;
+  date_of_birth?: string | null;
+  license_expires_at?: string | null;
+  /** Alias for license_expires_at in API responses */
+  doe?: string | null;
+  profile_image?: string | null;
+  vehicle_classes?: string[] | null;
   is_verified: boolean;
   verified_at: string | null;
   verification_details: SurepassVerificationSnapshot | Record<string, unknown> | null;
@@ -352,6 +410,13 @@ export interface CreateDriverRequest {
   license_number: string;
   phone: string;
   name?: string | null;
+  address?: string | null;
+  pincode?: string | null;
+  gender?: string | null;
+  date_of_birth?: string | null;
+  license_expires_at?: string | null;
+  profile_image?: string | null;
+  vehicle_classes?: string[] | null;
   is_verified?: boolean;
   verified_at?: string | null;
   verification_details?: SurepassVerificationSnapshot | Record<string, unknown> | null;
@@ -360,16 +425,29 @@ export interface CreateDriverRequest {
 
 export interface UpdateDriverRequest extends Partial<CreateDriverRequest> {}
 
-/** Surepass DL verify (does NOT create/update driver record) — mapped fields from gateway */
+/** Surepass DL verify — mapped fields from gateway; `driver` populated when record exists or after persist */
 export interface DriverVerificationResponse {
   license_number: string;
+  /** Mapped from Surepass `name` */
   full_name: string | null;
+  name?: string | null;
   date_of_birth: string | null;
   date_of_expiry: string | null;
+  /** Alias for date_of_expiry / license_expires_at */
+  doe?: string | null;
   /** Gateway may coerce from Surepass JSON */
   age: number | string | null;
   address: string | null;
+  pincode?: string | null;
+  state?: string | null;
+  gender?: string | null;
+  blood_group?: string | null;
+  vehicle_classes?: string[] | null;
+  father_or_husband_name?: string | null;
+  profile_image?: string | null;
   surepass_response?: SurepassApiResponse;
+  /** Updated driver when verify persists to an existing record */
+  driver?: Driver | null;
 }
 
 export interface CreateTransporterRequest {
@@ -384,6 +462,8 @@ export interface CreateTransporterRequest {
   vehicle_ids?: string[]; // NEW: Array of vehicle UUIDs to link
   bank_details?: TransporterBankDetails;
   is_active?: boolean;
+  is_verified?: boolean;
+  verified_at?: string | null;
   /** Surepass snapshots collected during the form session — merged into JSONB on save. */
   kyc_verification_details?: EntityKycVerificationDetails;
 }
@@ -656,6 +736,31 @@ export interface PANLookupResponseData {
     business_details: Partial<VendorBusinessDetails>;
     status?: string;
   };
+  surepass_response?: SurepassApiResponse;
+}
+
+export interface GstinByPanEntry {
+  gstin: string;
+  state?: string;
+  state_code?: string;
+  active_status?: string;
+}
+
+/** Surepass GSTIN-by-PAN lookup (via /kyc/gstin/by-pan) */
+export interface GstinByPanResponse {
+  pan_number: string;
+  client_id?: string;
+  gstin_list: GstinByPanEntry[];
+  active_gstins: string[];
+  primary_gstin?: string | null;
+  surepass_response?: SurepassApiResponse;
+}
+
+/** Surepass PAN contact lookup (via /kyc/pan/contact) */
+export interface PanContactResponse {
+  pan_number: string;
+  email_ids: string[];
+  mobile_numbers: string[];
   surepass_response?: SurepassApiResponse;
 }
 
@@ -1552,6 +1657,15 @@ export interface PaymentAdvice {
   updated_at: string;
 }
 
+export interface AddChargeRequest {
+  charge_name: string;
+  charge_value: number;
+  charge_type: 'fixed' | 'percentage';
+}
+
+/** Charge row sent on POST/PUT (no id). PUT replaces all charges when this field is present. */
+export type PaymentAdviceSubmitCharge = AddChargeRequest;
+
 export interface CreatePaymentAdviceRequest {
   // One of sauda_id or inward_slip_pass_id is required
   sauda_id?: string | null;
@@ -1564,11 +1678,7 @@ export interface CreatePaymentAdviceRequest {
   status?: 'pending' | 'completed' | 'failed';
   transaction_id?: string | null;
   bill_number?: string | null; // Purchase bill number from ISP
-  charges?: Array<{
-    charge_name: string;
-    charge_value: number;
-    charge_type: 'fixed' | 'percentage';
-  }>;
+  charges?: PaymentAdviceSubmitCharge[];
 }
 
 export interface UpdatePaymentAdviceRequest {
@@ -1581,16 +1691,70 @@ export interface UpdatePaymentAdviceRequest {
   status?: 'pending' | 'completed' | 'failed';
   transaction_id?: string | null;
   bill_number?: string | null; // Purchase bill number from ISP
-}
-
-export interface AddChargeRequest {
-  charge_name: string;
-  charge_value: number;
-  charge_type: 'fixed' | 'percentage';
+  /** Full replace when present: omit = unchanged, [] = clear all, [...] = new list */
+  charges?: PaymentAdviceSubmitCharge[];
 }
 
 export interface NetPayableResponse {
   net_payable: number;
+}
+
+/** Per-sauda line in PA preview summary (ISP mode). */
+export interface PaymentAdvicePreviewSaudaLine {
+  sauda_id: string;
+  sauda_details: PurchaseSummarySaudaDetail;
+  total_lots: number;
+  total_bags: number;
+  total_weight: number;
+  base_amount: number;
+  dana_deduction_kg?: number | null;
+  dana_deduction_amount?: number | null;
+  amount_after_dana?: number | null;
+  cash_discount_amount: number;
+  amount_after_discount?: number;
+  broker_commission_amount: number;
+  amount_after_commission?: number;
+  final_total_amount: number;
+  lot_details?: PurchaseSummaryLotDetail[];
+}
+
+/** Commercial breakdown returned by GET /payment-advices/preview. */
+export interface PaymentAdvicePreviewSummary {
+  sauda_id?: string;
+  inward_slip_pass_id?: string;
+  total_lots: number;
+  total_bags: number;
+  total_weight: number;
+  base_amount: number;
+  dana_deduction_kg?: number | null;
+  dana_deduction_amount?: number | null;
+  amount_after_dana?: number | null;
+  cash_discount_amount: number;
+  amount_after_discount: number;
+  broker_commission_amount: number;
+  amount_after_commission: number;
+  transportation_cost: number;
+  amount_after_transportation: number;
+  igst_amount: number;
+  final_total_amount: number;
+  net_payable: number;
+  sauda_details?: PurchaseSummarySaudaDetail;
+  isp_details?: PurchaseSummaryISPDetail | PurchaseSummaryISPDetail[];
+  lot_details?: PurchaseSummaryLotDetail[];
+  saudas?: PaymentAdvicePreviewSaudaLine[];
+}
+
+/** Document preview from GET /payment-advices/preview (create/edit mode). */
+export interface PaymentAdvicePreviewResponse {
+  bill_weight: number | null;
+  kanta_weight: number | null;
+  dana_deduction: number | null;
+  final_weight: number | null;
+  total_bags: number | null;
+  amount: number;
+  total_charges?: number;
+  net_payable: number;
+  summary: PaymentAdvicePreviewSummary;
 }
 
 // ============================================================================

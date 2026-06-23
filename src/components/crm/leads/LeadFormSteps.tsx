@@ -5,11 +5,24 @@ import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { DateInputWithSteppers } from '../../shared/DateInputWithSteppers';
 import { salesmenAPI } from '../../../services/salesmen.api';
-import { vendorsAPI } from '../../../services/vendors.api';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { pincodeAPI } from '../../../services/pincode.api';
-import { validateGST, validatePAN, validatePhone, validateGoogleLocationLink } from '../../../utils/validation';
+import { validatePhone, validateGoogleLocationLink, getGstValidationError, getPanValidationError, getPhoneValidationError, GST_EXAMPLE, PAN_EXAMPLE, GST_MAX_LENGTH, PAN_MAX_LENGTH } from '../../../utils/validation';
+import { EmailVerifyButton } from '../../shared/EmailVerifyButton';
+import { PhoneInput } from '../../shared/PhoneInput';
+import { verifyAutofilledEmails } from '../../../utils/emailVerification';
+import {
+  applyAutofillAddress,
+  buildPanLookupAutofill,
+  mergePanContactIntoContactPersons,
+  runEnrichedPanLookup,
+} from '../../../utils/panLookupEnrichment';
+import {
+  buildEnrichedGstLookupAutofill,
+  mergeGstContactPersons,
+  runEnrichedGstLookup,
+} from '../../../utils/gstLookupAutofill';
 import type { CreateLeadRequest, Salesman, RiceCode, RiceType } from '../../../types/entities';
 
 // Utility function to convert string to title case
@@ -61,6 +74,7 @@ export function LeadFormSteps({
   const [lookupLoading, setLookupLoading] = useState(false);
   const [pincodeLoading, setPincodeLoading] = useState(false);
   const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set());
+  const [verifiedAutofillEmails, setVerifiedAutofillEmails] = useState<Set<string>>(new Set());
   
   // Filter to only active brokers for dropdown
   const brokers = allBrokers.filter(b => b.is_active);
@@ -155,8 +169,9 @@ export function LeadFormSteps({
       return;
     }
     
-    if (!validateGST(gstNumber)) {
-      setErrors({ ...errors, gst_number: 'Invalid GST format' });
+    const gstError = getGstValidationError(gstNumber);
+    if (gstError) {
+      setErrors({ ...errors, gst_number: gstError });
       return;
     }
 
@@ -164,77 +179,42 @@ export function LeadFormSteps({
     setErrors({ ...errors, gst_number: '' });
     
     try {
-      const response = await vendorsAPI.lookupGST(gstNumber);
-      
-      // The API service returns response.data, which is { gst_data: {...}, mapped_data: {...} }
-      const mapped = response.mapped_data;
-      
-      // Track which fields are being auto-filled
+      const result = await runEnrichedGstLookup(gstNumber);
+      const autofill = buildEnrichedGstLookupAutofill(result);
       const autoFilledFieldsSet = new Set<string>();
-      
-      // Populate business name if available (convert to title case)
-      let companyName = formData.company_name;
-      if (mapped?.business_name) {
-        companyName = toTitleCase(mapped.business_name);
-        autoFilledFieldsSet.add('company_name');
-      }
-      
-      // Populate address fields (only fill non-empty values, convert to title case)
-      // Note: Address fields are NOT added to autoFilledFieldsSet, so they remain editable
-      const addressUpdate: any = { ...(formData.address || {}) };
-      if (mapped?.address) {
-        if (mapped.address.street) {
-          addressUpdate.street = toTitleCase(mapped.address.street);
-        }
-        if (mapped.address.city) {
-          addressUpdate.city = toTitleCase(mapped.address.city);
-        }
-        if (mapped.address.state) {
-          addressUpdate.state = toTitleCase(mapped.address.state);
-        }
-        if (mapped.address.pincode) {
-          addressUpdate.pincode = mapped.address.pincode;
-        }
-        if (mapped.address.country) {
-          addressUpdate.country = toTitleCase(mapped.address.country);
-        }
-      }
 
-      // Update business details
-      const businessDetailsUpdate: any = {
-        ...(formData.business_details || {}),
-      };
-      
-      // Set GST number if available
-      if (mapped?.business_details?.gst_number) {
-        businessDetailsUpdate.gst_number = mapped.business_details.gst_number;
-        autoFilledFieldsSet.add('gst_number');
-      }
-      
-      // Set PAN number if available
-      if (mapped?.business_details?.pan_number) {
-        businessDetailsUpdate.pan_number = mapped.business_details.pan_number;
-        autoFilledFieldsSet.add('pan_number');
-      }
-      
-      // Set business type if available
-      if (mapped?.business_details?.business_type) {
-        businessDetailsUpdate.business_type = mapped.business_details.business_type;
-      }
+      if (autofill.businessName) autoFilledFieldsSet.add('company_name');
+      if (autofill.gstNumber) autoFilledFieldsSet.add('gst_number');
+      if (autofill.panNumber) autoFilledFieldsSet.add('pan_number');
 
-      // Update form data
+      const updatedContactPersons = mergeGstContactPersons(formData.contact_persons || [], autofill);
+      const emailVerification = await verifyAutofilledEmails(
+        autofill.emails,
+        updatedContactPersons,
+        undefined,
+      );
+
       setFormData({
         ...formData,
-        company_name: companyName,
-        address: addressUpdate,
-        business_details: businessDetailsUpdate,
+        company_name: autofill.businessName ?? formData.company_name,
+        contact_persons: updatedContactPersons,
+        address: applyAutofillAddress(formData.address || {
+          street: '',
+          city: '',
+          state: '',
+          pincode: '',
+          country: 'India',
+        }, autofill.address),
+        business_details: {
+          ...(formData.business_details || {}),
+          ...(autofill.panNumber ? { pan_number: autofill.panNumber } : {}),
+          ...(autofill.gstNumber ? { gst_number: autofill.gstNumber } : {}),
+          ...(autofill.businessType ? { business_type: autofill.businessType } : {}),
+        },
       });
-      
-      // Set the auto-filled fields
+
       setAutoFilledFields(autoFilledFieldsSet);
-      
-      // Clear any previous errors
-      setErrors({ ...errors, gst_number: '' });
+      setErrors({ ...errors, gst_number: '', ...emailVerification.fieldErrors });
     } catch (error: any) {
       console.error('GST lookup error:', error);
       setErrors({ ...errors, gst_number: error?.message || 'Failed to lookup GST details' });
@@ -250,8 +230,9 @@ export function LeadFormSteps({
       return;
     }
     
-    if (!validatePAN(panNumber)) {
-      setErrors({ ...errors, pan_number: 'Invalid PAN format' });
+    const panError = getPanValidationError(panNumber);
+    if (panError) {
+      setErrors({ ...errors, pan_number: panError });
       return;
     }
 
@@ -259,82 +240,46 @@ export function LeadFormSteps({
     setErrors({ ...errors, pan_number: '' });
     
     try {
-      const response = await vendorsAPI.lookupPAN(panNumber);
-      
-      // The API service returns response.data, which is { pan_data: {...}, mapped_data: {...} }
-      const mapped = response.mapped_data;
-      const panData = response.pan_data;
-      
-      // Track which fields are being auto-filled
+      const result = await runEnrichedPanLookup(panNumber);
+      const autofill = buildPanLookupAutofill(result);
       const autoFilledFieldsSet = new Set<string>();
-      
-      // Populate business name if available (convert to title case)
-      let companyName = formData.company_name;
-      if (mapped?.business_name) {
-        companyName = toTitleCase(mapped.business_name);
-        autoFilledFieldsSet.add('company_name');
-      }
-      
-      // Populate contact person if PAN is for a person (individual)
-      let updatedContactPersons = [...(formData.contact_persons || [])];
-      if (panData?.category === 'person' && panData?.name) {
-        const existingContact = updatedContactPersons.find(cp => cp.name === panData.name);
-        if (!existingContact) {
-          updatedContactPersons[0] = { ...updatedContactPersons[0], name: toTitleCase(panData.name) };
+      autofill.lockedFields.forEach((field) => {
+        if (field === 'business_name') {
+          autoFilledFieldsSet.add('company_name');
+        } else {
+          autoFilledFieldsSet.add(field);
         }
-      }
-      
-      // Populate address fields (only fill non-empty values, convert to title case)
-      // Note: Address fields are NOT added to autoFilledFieldsSet, so they remain editable
-      const addressUpdate: any = { ...(formData.address || {}) };
-      if (mapped?.address) {
-        if (mapped.address.street) {
-          addressUpdate.street = toTitleCase(mapped.address.street);
-        }
-        if (mapped.address.city) {
-          addressUpdate.city = toTitleCase(mapped.address.city);
-        }
-        if (mapped.address.state) {
-          addressUpdate.state = toTitleCase(mapped.address.state);
-        }
-        if (mapped.address.pincode) {
-          addressUpdate.pincode = mapped.address.pincode;
-        }
-        if (mapped.address.country) {
-          addressUpdate.country = toTitleCase(mapped.address.country);
-        }
-      }
+      });
 
-      // Update business details
-      const businessDetailsUpdate: any = {
-        ...(formData.business_details || {}),
-      };
-      
-      // Ensure PAN number is set
-      if (mapped?.business_details?.pan_number) {
-        businessDetailsUpdate.pan_number = mapped.business_details.pan_number;
-        autoFilledFieldsSet.add('pan_number');
-      }
-      
-      // Set business type if available
-      if (mapped?.business_details?.business_type) {
-        businessDetailsUpdate.business_type = mapped.business_details.business_type;
-      }
+      const updatedContactPersons = mergePanContactIntoContactPersons(formData.contact_persons || [], autofill);
+      const emailVerification = await verifyAutofilledEmails(
+        autofill.emails,
+        updatedContactPersons,
+        undefined,
+      );
 
-      // Update form data
       setFormData({
         ...formData,
-        company_name: companyName,
+        company_name: autofill.businessName ?? formData.company_name,
         contact_persons: updatedContactPersons,
-        address: addressUpdate,
-        business_details: businessDetailsUpdate,
+        address: applyAutofillAddress(formData.address || {
+          street: '',
+          city: '',
+          state: '',
+          pincode: '',
+          country: 'India',
+        }, autofill.address),
+        business_details: {
+          ...(formData.business_details || {}),
+          ...(autofill.panNumber ? { pan_number: autofill.panNumber } : {}),
+          ...(autofill.gstNumber ? { gst_number: autofill.gstNumber } : {}),
+          ...(autofill.businessType ? { business_type: autofill.businessType } : {}),
+        },
       });
-      
-      // Set the auto-filled fields
+
       setAutoFilledFields(autoFilledFieldsSet);
-      
-      // Clear any previous errors
-      setErrors({ ...errors, pan_number: '' });
+      setVerifiedAutofillEmails(new Set(emailVerification.verifiedEmails));
+      setErrors({ ...errors, pan_number: '', ...emailVerification.fieldErrors });
     } catch (error: any) {
       console.error('PAN lookup error:', error);
       setErrors({ ...errors, pan_number: error?.message || 'Failed to lookup PAN details' });
@@ -412,7 +357,8 @@ export function LeadFormSteps({
                 className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
                   autoFilledFields.has('gst_number') ? 'read-only:cursor-not-allowed opacity-75' : ''
                 }`}
-                placeholder="27ABCDE1234F1Z5"
+                placeholder={GST_EXAMPLE}
+                maxLength={GST_MAX_LENGTH}
               />
               <button type="button" onClick={handleGSTLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
                 {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
@@ -432,7 +378,8 @@ export function LeadFormSteps({
                 className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
                   autoFilledFields.has('pan_number') ? 'read-only:cursor-not-allowed opacity-75' : ''
                 }`}
-                placeholder="ABCDE1234F"
+                placeholder={PAN_EXAMPLE}
+                maxLength={PAN_MAX_LENGTH}
               />
               <button type="button" onClick={handlePANLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
                 {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
@@ -491,41 +438,25 @@ export function LeadFormSteps({
                     {(contact.phones || ['']).map((phone, phoneIndex) => (
                       <div key={phoneIndex} className="space-y-1">
                         <div className="flex gap-2 items-center">
-                          <input
-                            type="tel"
-                            placeholder="Phone (10 digits)"
+                          <PhoneInput
                             value={phone}
-                            onChange={(e) => {
-                              // Only allow digits and limit to 10 digits
-                              const value = e.target.value.replace(/\D/g, '').slice(0, 10);
+                            onChange={(value) => {
                               const updated = [...(formData.contact_persons || [])];
                               const updatedPhones = [...(updated[index].phones || [''])];
                               updatedPhones[phoneIndex] = value;
                               updated[index] = { ...updated[index], phones: updatedPhones };
                               setFormData({ ...formData, contact_persons: updated });
-                              // Validate and set error immediately
                               const errorKey = `contact_person_${index}_phone_${phoneIndex}`;
-                              if (value.length > 0 && value.length < 10) {
-                                setErrors({ ...errors, [errorKey]: 'Phone must be exactly 10 digits' });
-                              } else if (value.length === 10 && !validatePhone(value)) {
-                                setErrors({ ...errors, [errorKey]: 'Invalid phone number format' });
+                              const phoneError = value ? getPhoneValidationError(value) : null;
+                              if (phoneError) {
+                                setErrors({ ...errors, [errorKey]: phoneError });
                               } else {
                                 const newErrors = { ...errors };
                                 delete newErrors[errorKey];
                                 setErrors(newErrors);
                               }
                             }}
-                            onBlur={(e) => {
-                              const value = e.target.value.trim();
-                              const errorKey = `contact_person_${index}_phone_${phoneIndex}`;
-                              if (value.length > 0 && value.length < 10) {
-                                setErrors({ ...errors, [errorKey]: 'Phone must be exactly 10 digits' });
-                              } else if (value.length === 10 && !validatePhone(value)) {
-                                setErrors({ ...errors, [errorKey]: 'Invalid phone number format' });
-                              }
-                            }}
                             className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                            maxLength={10}
                           />
                           {(contact.phones || ['']).length > 1 && (
                             <button
@@ -595,6 +526,22 @@ export function LeadFormSteps({
                               }
                             }}
                             className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                          />
+                          <EmailVerifyButton
+                            email={email}
+                            verifiedFromSnapshot={verifiedAutofillEmails.has(email.trim().toLowerCase())}
+                            onError={(message) => {
+                              setErrors({
+                                ...errors,
+                                [`contact_person_${index}_email_${emailIndex}`]: message,
+                              });
+                            }}
+                            onVerified={() => {
+                              const errorKey = `contact_person_${index}_email_${emailIndex}`;
+                              const nextErrors = { ...errors };
+                              delete nextErrors[errorKey];
+                              setErrors(nextErrors);
+                            }}
                           />
                           {(contact.emails || ['']).length > 1 && (
                             <button
@@ -936,7 +883,8 @@ export function LeadFormSteps({
                 className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
                   autoFilledFields.has('gst_number') ? 'read-only:cursor-not-allowed opacity-75' : ''
                 }`}
-                placeholder="27ABCDE1234F1Z5"
+                placeholder={GST_EXAMPLE}
+                maxLength={GST_MAX_LENGTH}
               />
               <button type="button" onClick={handleGSTLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
                 {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
@@ -956,7 +904,8 @@ export function LeadFormSteps({
                 className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
                   autoFilledFields.has('pan_number') ? 'read-only:cursor-not-allowed opacity-75' : ''
                 }`}
-                placeholder="ABCDE1234F"
+                placeholder={PAN_EXAMPLE}
+                maxLength={PAN_MAX_LENGTH}
               />
               <button type="button" onClick={handlePANLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
                 {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
@@ -1015,41 +964,25 @@ export function LeadFormSteps({
                     {(contact.phones || ['']).map((phone, phoneIndex) => (
                       <div key={phoneIndex} className="space-y-1">
                         <div className="flex gap-2 items-center">
-                          <input
-                            type="tel"
-                            placeholder="Phone (10 digits)"
+                          <PhoneInput
                             value={phone}
-                            onChange={(e) => {
-                              // Only allow digits and limit to 10 digits
-                              const value = e.target.value.replace(/\D/g, '').slice(0, 10);
+                            onChange={(value) => {
                               const updated = [...(formData.contact_persons || [])];
                               const updatedPhones = [...(updated[index].phones || [''])];
                               updatedPhones[phoneIndex] = value;
                               updated[index] = { ...updated[index], phones: updatedPhones };
                               setFormData({ ...formData, contact_persons: updated });
-                              // Validate and set error immediately
                               const errorKey = `contact_person_${index}_phone_${phoneIndex}`;
-                              if (value.length > 0 && value.length < 10) {
-                                setErrors({ ...errors, [errorKey]: 'Phone must be exactly 10 digits' });
-                              } else if (value.length === 10 && !validatePhone(value)) {
-                                setErrors({ ...errors, [errorKey]: 'Invalid phone number format' });
+                              const phoneError = value ? getPhoneValidationError(value) : null;
+                              if (phoneError) {
+                                setErrors({ ...errors, [errorKey]: phoneError });
                               } else {
                                 const newErrors = { ...errors };
                                 delete newErrors[errorKey];
                                 setErrors(newErrors);
                               }
                             }}
-                            onBlur={(e) => {
-                              const value = e.target.value.trim();
-                              const errorKey = `contact_person_${index}_phone_${phoneIndex}`;
-                              if (value.length > 0 && value.length < 10) {
-                                setErrors({ ...errors, [errorKey]: 'Phone must be exactly 10 digits' });
-                              } else if (value.length === 10 && !validatePhone(value)) {
-                                setErrors({ ...errors, [errorKey]: 'Invalid phone number format' });
-                              }
-                            }}
                             className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                            maxLength={10}
                           />
                           {(contact.phones || ['']).length > 1 && (
                             <button
@@ -1119,6 +1052,22 @@ export function LeadFormSteps({
                               }
                             }}
                             className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                          />
+                          <EmailVerifyButton
+                            email={email}
+                            verifiedFromSnapshot={verifiedAutofillEmails.has(email.trim().toLowerCase())}
+                            onError={(message) => {
+                              setErrors({
+                                ...errors,
+                                [`contact_person_${index}_email_${emailIndex}`]: message,
+                              });
+                            }}
+                            onVerified={() => {
+                              const errorKey = `contact_person_${index}_email_${emailIndex}`;
+                              const nextErrors = { ...errors };
+                              delete nextErrors[errorKey];
+                              setErrors(nextErrors);
+                            }}
                           />
                           {(contact.emails || ['']).length > 1 && (
                             <button

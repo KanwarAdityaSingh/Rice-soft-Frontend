@@ -5,11 +5,24 @@ import { CustomSelect } from '../../shared/CustomSelect';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { brokersAPI } from '../../../services/brokers.api';
 import { bankAPI } from '../../../services/bank.api';
-import { validateEmail, validatePAN, validateAadhaar, validatePhone, validateGST } from '../../../utils/validation';
+import {
+  validateEmail,
+  validateAadhaar,
+  validatePhone,
+  getGstValidationError,
+  getPanValidationError,
+  getGstPanMismatchError,
+  getPhoneValidationError,
+  GST_EXAMPLE,
+  PAN_EXAMPLE,
+  GST_MAX_LENGTH,
+  PAN_MAX_LENGTH,
+} from '../../../utils/validation';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { BrokerPreviewDialog } from './BrokerPreviewDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { EmailVerifyButton } from '../../shared/EmailVerifyButton';
+import { PhoneInput } from '../../shared/PhoneInput';
 import { KycVerificationDetailsPanel } from '../../shared/KycVerificationDetailsPanel';
 import type { CreateBrokerRequest, BrokerBankDetails, Broker, UpdateBrokerRequest, EntityKycVerificationDetails } from '../../../types/entities';
 import {
@@ -17,10 +30,29 @@ import {
   buildSurepassSnapshot,
   brokerPersist,
   collectEntityKycEntries,
+  isEmailVerifiedInKyc,
   mergeEntityKycSnapshot,
-  persistGstLookupSnapshot,
-  persistPanLookupSnapshot,
+  persistAadhaarValidationSnapshot,
 } from '../../../utils/kycVerification';
+import {
+  applyAadhaarStateToAddress,
+  buildAadhaarValidationAutofill,
+  formatAadhaarValidationSummary,
+} from '../../../utils/aadhaarValidationAutofill';
+import {
+  applyAutofillAddress,
+  buildPanLookupAutofill,
+  mergePanContactIntoContactPersons,
+  persistEnrichedPanLookupSnapshots,
+  runEnrichedPanLookup,
+} from '../../../utils/panLookupEnrichment';
+import {
+  buildEnrichedGstLookupAutofill,
+  mergeGstContactPersons,
+  persistEnrichedGstLookupSnapshots,
+  runEnrichedGstLookup,
+} from '../../../utils/gstLookupAutofill';
+import { verifyAutofilledEmails } from '../../../utils/emailVerification';
 import {
   BROKER_CREATE_LENIENT_BANK_MESSAGE,
   BROKER_UPDATE_LENIENT_BANK_MESSAGE,
@@ -259,6 +291,7 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
   const [alertMessage, setAlertMessage] = useState('');
   const [ifscLoading, setIfscLoading] = useState(false);
   const [aadhaarValidated, setAadhaarValidated] = useState(false);
+  const [aadhaarValidationSummary, setAadhaarValidationSummary] = useState<string | null>(null);
   const [kycVerificationDetails, setKycVerificationDetails] = useState<EntityKycVerificationDetails>({});
   const brokerPersistContext = brokerPersist(brokerId);
   const [gstAutoFilledFields, setGstAutoFilledFields] = useState<Set<string>>(new Set());
@@ -285,6 +318,7 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
       setOriginalPanNumber('');
       setContactPersonNameFromGovApi([false]);
       setAadhaarValidated(false);
+      setAadhaarValidationSummary(null);
       setKycVerificationDetails({});
       return;
     }
@@ -408,9 +442,9 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
       }
     }
 
-    // Validate PAN format if provided
-    if (formData.business_details.pan_number && !validatePAN(formData.business_details.pan_number)) {
-      newErrors.pan_number = 'Invalid PAN format (e.g., ABCDE1234F)';
+    if (formData.business_details.pan_number) {
+      const panError = getPanValidationError(formData.business_details.pan_number);
+      if (panError) newErrors.pan_number = panError;
     }
 
     // Validate Aadhaar format if provided
@@ -418,9 +452,17 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
       newErrors.aadhaar_number = 'Invalid Aadhaar format (12 digits, cannot start with 0 or 1)';
     }
 
-    // Validate GST format if provided (API contract: exactly 15 characters, uppercase)
-    if (formData.business_details.gst_number && !validateGST(formData.business_details.gst_number)) {
-      newErrors.gst_number = 'Invalid GST format (exactly 15 characters, e.g., 27ABCDE1234F1Z5)';
+    if (formData.business_details.gst_number) {
+      const gstError = getGstValidationError(formData.business_details.gst_number);
+      if (gstError) newErrors.gst_number = gstError;
+    }
+
+    if (formData.business_details.gst_number && formData.business_details.pan_number) {
+      const mismatchError = getGstPanMismatchError(
+        formData.business_details.gst_number,
+        formData.business_details.pan_number,
+      );
+      if (mismatchError) newErrors.pan_number = mismatchError;
     }
 
     // Validate address (API contract: street, city, state, country are REQUIRED)
@@ -473,8 +515,9 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
       return;
     }
     
-    if (!validatePAN(formData.business_details.pan_number)) {
-      setErrors({ ...errors, pan_number: 'Invalid PAN format' });
+    const panError = getPanValidationError(formData.business_details.pan_number);
+    if (panError) {
+      setErrors({ ...errors, pan_number: panError });
       return;
     }
 
@@ -482,111 +525,84 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
     setErrors({ ...errors, pan_number: '' });
     
     try {
-      const response = await brokersAPI.lookupPAN(
+      const result = await runEnrichedPanLookup(
         formData.business_details.pan_number,
         brokerPersistContext,
       );
-      
-      // The API service returns response.data, which is { pan_data: {...}, mapped_data: {...} }
-      const mapped = response.mapped_data;
-      const panData = response.pan_data;
-      
-      // Track which fields are being auto-filled (merge so GST-locked fields e.g. account_holder_name stay)
+      const autofill = buildPanLookupAutofill(result);
       const autoFilledFields = new Set(gstAutoFilledFields);
-      
-      // Populate business name if available (convert to title case)
-      let businessName = formData.business_name;
-      if (mapped?.business_name) {
-        businessName = toTitleCase(mapped.business_name);
-        autoFilledFields.add('business_name');
-      }
-      
-      // If PAN data is for a person, add to contact_persons if not already present
-      let contactPersons = [...(formData.contact_persons || [])];
+      autofill.lockedFields.forEach((field) => autoFilledFields.add(field));
+
+      const businessName = autofill.businessName ?? formData.business_name;
+
+      let contactPersons = mergePanContactIntoContactPersons(formData.contact_persons || [], autofill);
       let nextLocks = [...contactPersonNameFromGovApi];
       while (nextLocks.length < contactPersons.length) nextLocks.push(false);
       if (nextLocks.length > contactPersons.length) {
         nextLocks = nextLocks.slice(0, contactPersons.length);
       }
-      if (panData?.category === 'person' && panData?.name) {
-        const panName = toTitleCase(panData.name);
-        const existingContact = contactPersons.find(cp => cp.name && cp.name.trim() === panName.trim());
-        
-        if (!existingContact) {
-          // Check if there's an empty contact person to replace
-          const emptyContactIndex = contactPersons.findIndex(cp => !cp.name || cp.name.trim() === '');
-          
+
+      if (autofill.contactPersonName) {
+        const panName = autofill.contactPersonName;
+        const existingIndex = contactPersons.findIndex(
+          (cp) => cp.name && cp.name.trim() === panName.trim(),
+        );
+
+        if (existingIndex >= 0) {
+          nextLocks[existingIndex] = true;
+        } else {
+          const emptyContactIndex = contactPersons.findIndex((cp) => !cp.name || cp.name.trim() === '');
           if (emptyContactIndex >= 0) {
-            // Replace the empty contact person
-            contactPersons[emptyContactIndex] = { name: panName, phones: [''], emails: [''] };
+            contactPersons[emptyContactIndex] = {
+              ...contactPersons[emptyContactIndex],
+              name: panName,
+            };
             nextLocks[emptyContactIndex] = true;
           } else {
-            // No empty contact person, add a new one
-            contactPersons = [
-              ...contactPersons,
-              { name: panName, phones: [''], emails: [''] }
-            ];
+            contactPersons = [...contactPersons, { name: panName, phones: [''], emails: [''] }];
             nextLocks.push(true);
           }
         }
       }
-      
-      // Populate address fields (only fill non-empty values, convert to title case)
-      // Note: Address fields are NOT added to autoFilledFields, so they remain editable
-      const addressUpdate: any = { ...formData.address };
-      if (mapped?.address) {
-        if (mapped.address.street) addressUpdate.street = toTitleCase(mapped.address.street);
-        if (mapped.address.city) addressUpdate.city = toTitleCase(mapped.address.city);
-        if (mapped.address.state) addressUpdate.state = toTitleCase(mapped.address.state);
-        if (mapped.address.pincode) addressUpdate.pincode = mapped.address.pincode;
-        if (mapped.address.country) addressUpdate.country = toTitleCase(mapped.address.country);
-      }
-      
-      // Update business details
-      const businessDetailsUpdate: any = {
+
+      const businessDetailsUpdate = {
         ...formData.business_details,
+        ...(autofill.panNumber ? { pan_number: autofill.panNumber } : {}),
+        ...(autofill.gstNumber ? { gst_number: autofill.gstNumber } : {}),
+        ...(autofill.businessType
+          ? { business_type: normalizeBrokerBusinessType(autofill.businessType) }
+          : {}),
       };
-      
-      // Ensure PAN number is set
-      if (mapped?.business_details?.pan_number) {
-        businessDetailsUpdate.pan_number = mapped.business_details.pan_number;
-        autoFilledFields.add('pan_number');
-      }
-      
-      // Set business type if available (map to API enum individual | company)
-      if (
-        mapped?.business_details?.business_type != null &&
-        String(mapped.business_details.business_type).trim() !== ''
-      ) {
-        businessDetailsUpdate.business_type = normalizeBrokerBusinessType(
-          mapped.business_details.business_type
-        );
+
+      if (autofill.businessType) {
         autoFilledFields.add('business_type');
       }
-      
-      // Auto-fill account holder from PAN-derived business name — lock field like GST path
-      const bankDetailsUpdate = {
-        ...formData.bank_details,
-        account_holder_name: businessName,
-      };
       autoFilledFields.add('account_holder_name');
+
+      let nextKycDetails = persistEnrichedPanLookupSnapshots(kycVerificationDetails, result);
+      const emailVerification = await verifyAutofilledEmails(
+        autofill.emails,
+        contactPersons,
+        nextKycDetails,
+        brokerPersistContext,
+      );
+      nextKycDetails = emailVerification.kycDetails;
 
       setFormData({
         ...formData,
         business_name: businessName,
         contact_persons: contactPersons,
-        address: addressUpdate,
+        address: applyAutofillAddress(formData.address, autofill.address),
         business_details: businessDetailsUpdate,
-        bank_details: bankDetailsUpdate,
+        bank_details: {
+          ...formData.bank_details,
+          account_holder_name: businessName,
+        },
       });
       setContactPersonNameFromGovApi(nextLocks);
-      
       setGstAutoFilledFields(autoFilledFields);
-
-      setKycVerificationDetails((prev) => persistPanLookupSnapshot(prev, response));
-      
-      // Clear any previous errors
-      setErrors({ ...errors, pan_number: '' });
+      setKycVerificationDetails(nextKycDetails);
+      setErrors({ ...errors, pan_number: '', ...emailVerification.fieldErrors });
     } catch (error: any) {
       console.error('PAN lookup error:', error);
       setErrors({ ...errors, pan_number: error?.message || 'Failed to lookup PAN details' });
@@ -601,8 +617,9 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
       return;
     }
     
-    if (!validateGST(formData.business_details.gst_number)) {
-      setErrors({ ...errors, gst_number: 'Invalid GST format' });
+    const gstError = getGstValidationError(formData.business_details.gst_number);
+    if (gstError) {
+      setErrors({ ...errors, gst_number: gstError });
       return;
     }
 
@@ -610,94 +627,53 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
     setErrors({ ...errors, gst_number: '' });
     
     try {
-      const response = await brokersAPI.lookupGST(
+      const result = await runEnrichedGstLookup(
         formData.business_details.gst_number,
         brokerPersistContext,
       );
-      
-      const mapped = response.mapped_data;
-      
-      // Track which fields are being auto-filled (merge so prior PAN/GST locks are preserved)
+      const autofill = buildEnrichedGstLookupAutofill(result);
       const autoFilledFields = new Set(gstAutoFilledFields);
-      
-      // Populate business name if available (convert to title case)
-      let businessName = formData.business_name;
-      if (mapped?.business_name) {
-        businessName = toTitleCase(mapped.business_name);
-        autoFilledFields.add('business_name');
-      }
-      
-      // Populate address fields (only fill non-empty values, convert to title case)
-      // Note: Address fields are NOT added to autoFilledFields, so they remain editable
-      const addressUpdate: any = { ...formData.address };
-      if (mapped?.address) {
-        if (mapped.address.street) {
-          addressUpdate.street = toTitleCase(mapped.address.street);
-        }
-        if (mapped.address.city) {
-          addressUpdate.city = toTitleCase(mapped.address.city);
-        }
-        if (mapped.address.state) {
-          addressUpdate.state = toTitleCase(mapped.address.state);
-        }
-        if (mapped.address.pincode) {
-          addressUpdate.pincode = mapped.address.pincode;
-        }
-        if (mapped.address.country) {
-          addressUpdate.country = toTitleCase(mapped.address.country);
-        }
-      }
-      
-      // Update business details - extract PAN from GST (characters 3-12)
-      const businessDetailsUpdate: any = {
-        ...formData.business_details,
-      };
-      
-      if (mapped?.business_details?.gst_number) {
-        businessDetailsUpdate.gst_number = mapped.business_details.gst_number;
-        autoFilledFields.add('gst_number');
-      }
-      
-      if (mapped?.business_details?.pan_number) {
-        businessDetailsUpdate.pan_number = mapped.business_details.pan_number;
-        autoFilledFields.add('pan_number');
-      } else if (formData.business_details.gst_number && formData.business_details.gst_number.length >= 12) {
-        // Extract PAN from GST (characters 3-12, 0-indexed: 2-11)
-        businessDetailsUpdate.pan_number = formData.business_details.gst_number.slice(2, 12);
-        autoFilledFields.add('pan_number');
-      }
-      
-      if (
-        mapped?.business_details?.business_type != null &&
-        String(mapped.business_details.business_type).trim() !== ''
-      ) {
-        businessDetailsUpdate.business_type = normalizeBrokerBusinessType(
-          mapped.business_details.business_type
-        );
-        autoFilledFields.add('business_type');
-      }
-      
-      // Auto-fill account holder name with business name (locked after GST lookup)
+
+      if (autofill.businessName) autoFilledFields.add('business_name');
+      if (autofill.gstNumber) autoFilledFields.add('gst_number');
+      if (autofill.panNumber) autoFilledFields.add('pan_number');
+      if (autofill.businessType) autoFilledFields.add('business_type');
       autoFilledFields.add('account_holder_name');
-      const bankDetailsUpdate = {
-        ...formData.bank_details,
-        account_holder_name: businessName,
-      };
-      
+
+      const businessName = autofill.businessName ?? formData.business_name;
+      const updatedContactPersons = mergeGstContactPersons(formData.contact_persons, autofill);
+
+      let nextKycDetails = persistEnrichedGstLookupSnapshots(kycVerificationDetails, result);
+      const emailVerification = await verifyAutofilledEmails(
+        autofill.emails,
+        updatedContactPersons,
+        nextKycDetails,
+        brokerPersistContext,
+      );
+      nextKycDetails = emailVerification.kycDetails;
+
       setFormData({
         ...formData,
         business_name: businessName,
-        address: addressUpdate,
-        business_details: businessDetailsUpdate,
-        bank_details: bankDetailsUpdate,
+        contact_persons: updatedContactPersons,
+        address: applyAutofillAddress(formData.address, autofill.address),
+        business_details: {
+          ...formData.business_details,
+          ...(autofill.panNumber ? { pan_number: autofill.panNumber } : {}),
+          ...(autofill.gstNumber ? { gst_number: autofill.gstNumber } : {}),
+          ...(autofill.businessType
+            ? { business_type: normalizeBrokerBusinessType(autofill.businessType) }
+            : {}),
+        },
+        bank_details: {
+          ...formData.bank_details,
+          account_holder_name: businessName,
+        },
       });
-      
-      // Set the auto-filled fields
-      setGstAutoFilledFields(autoFilledFields);
 
-      setKycVerificationDetails((prev) => persistGstLookupSnapshot(prev, response));
-      
-      setErrors({ ...errors, gst_number: '' });
+      setGstAutoFilledFields(autoFilledFields);
+      setKycVerificationDetails(nextKycDetails);
+      setErrors({ ...errors, gst_number: '', ...emailVerification.fieldErrors });
     } catch (error: any) {
       console.error('GST lookup error:', error);
       setErrors({ ...errors, gst_number: error?.message || 'Failed to lookup GST details' });
@@ -720,35 +696,29 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
     setLookupLoading(true);
     setErrors({ ...errors, aadhaar_number: '' });
     setAadhaarValidated(false);
+    setAadhaarValidationSummary(null);
     
     try {
       const response = await brokersAPI.lookupAadhaar(
         formData.business_details.aadhaar_number,
-        brokerId ?? undefined,
+        brokerPersistContext,
       );
+      const autofill = buildAadhaarValidationAutofill(response);
+      const summary = formatAadhaarValidationSummary(autofill);
 
-      if (response.already_exists) {
-        setErrors({
-          ...errors,
-          aadhaar_number:
-            response.message || 'Aadhaar number is valid but already exists in the system',
-        });
-        return;
-      }
+      setFormData({
+        ...formData,
+        business_details: {
+          ...formData.business_details,
+          aadhaar_number: autofill.aadhaarNumber,
+        },
+        address: applyAadhaarStateToAddress(formData.address, autofill),
+      });
 
-      if (response.is_valid) {
-        setAadhaarValidated(true);
-        setErrors({ ...errors, aadhaar_number: '' });
-        if (response.surepass_response) {
-          setKycVerificationDetails((prev) =>
-            mergeEntityKycSnapshot(
-              prev,
-              'aadhaar',
-              buildSurepassSnapshot(response.surepass_response, response.aadhaar_data),
-            ),
-          );
-        }
-      }
+      setKycVerificationDetails((prev) => persistAadhaarValidationSnapshot(prev, response));
+      setAadhaarValidated(true);
+      setAadhaarValidationSummary(summary);
+      setErrors({ ...errors, aadhaar_number: '' });
     } catch (error: any) {
       console.error('Aadhaar lookup error:', error);
       setErrors({ ...errors, aadhaar_number: error?.message || 'Failed to validate Aadhaar number' });
@@ -999,7 +969,8 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
                               })
                             }
                             className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                            placeholder="27ABCDE1234F1Z5"
+                            placeholder={GST_EXAMPLE}
+                            maxLength={GST_MAX_LENGTH}
                           />
                           <button type="button" onClick={handleGSTLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
                             {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
@@ -1031,7 +1002,8 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
                             })
                           }
                           className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
-                          placeholder="ABCDE1234F"
+                          placeholder={PAN_EXAMPLE}
+                          maxLength={PAN_MAX_LENGTH}
                           readOnly={gstAutoFilledFields.has('pan_number')}
                         />
                         <button type="button" onClick={handlePANLookup} disabled={lookupLoading} className="btn-secondary flex items-center gap-2">
@@ -1055,6 +1027,7 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
                             const value = e.target.value.replace(/\s/g, '').replace(/\D/g, '').slice(0, 12);
                             setFormData({ ...formData, business_details: { ...formData.business_details, aadhaar_number: value } });
                             setAadhaarValidated(false);
+                            setAadhaarValidationSummary(null);
                           }}
                           className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                           placeholder="234567890123"
@@ -1067,7 +1040,7 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
                       {errors.aadhaar_number && <p className="mt-1 text-xs text-red-600">{errors.aadhaar_number}</p>}
                       {aadhaarValidated && !errors.aadhaar_number && (
                         <p className="mt-1 text-xs text-emerald-600 flex items-center gap-1">
-                          <ShieldCheck className="h-3 w-3 shrink-0" /> Aadhaar validated via Surepass
+                          <ShieldCheck className="h-3 w-3 shrink-0" /> {aadhaarValidationSummary ?? 'Aadhaar validated via Surepass'}
                         </p>
                       )}
                     </div>
@@ -1124,41 +1097,25 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
                             <label className="text-xs text-muted-foreground">Phone Numbers *</label>
                             {(contact.phones || ['']).map((phone, phoneIndex) => (
                               <div key={phoneIndex} className="flex gap-2 items-center">
-                                <input
-                                  type="tel"
-                                  placeholder="Phone (10 digits)"
+                                <PhoneInput
                                   value={phone}
-                                  onChange={(e) => {
-                                    // Only allow digits and limit to 10 digits
-                                    const value = e.target.value.replace(/\D/g, '').slice(0, 10);
+                                  onChange={(value) => {
                                     const updated = [...(formData.contact_persons || [])];
                                     const updatedPhones = [...(updated[index].phones || [''])];
                                     updatedPhones[phoneIndex] = value;
                                     updated[index] = { ...updated[index], phones: updatedPhones };
                                     setFormData({ ...formData, contact_persons: updated });
-                                    // Validate and set error immediately
                                     const errorKey = `contact_person_${index}_phone_${phoneIndex}`;
-                                    if (value.length > 0 && value.length < 10) {
-                                      setErrors({ ...errors, [errorKey]: 'Phone must be exactly 10 digits' });
-                                    } else if (value.length === 10 && !validatePhone(value)) {
-                                      setErrors({ ...errors, [errorKey]: 'Invalid phone number format' });
+                                    const phoneError = value ? getPhoneValidationError(value) : null;
+                                    if (phoneError) {
+                                      setErrors({ ...errors, [errorKey]: phoneError });
                                     } else {
                                       const newErrors = { ...errors };
                                       delete newErrors[errorKey];
                                       setErrors(newErrors);
                                     }
                                   }}
-                                  onBlur={(e) => {
-                                    const value = e.target.value.trim();
-                                    const errorKey = `contact_person_${index}_phone_${phoneIndex}`;
-                                    if (value.length > 0 && value.length < 10) {
-                                      setErrors({ ...errors, [errorKey]: 'Phone must be exactly 10 digits' });
-                                    } else if (value.length === 10 && !validatePhone(value)) {
-                                      setErrors({ ...errors, [errorKey]: 'Invalid phone number format' });
-                                    }
-                                  }}
                                   className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                                  maxLength={10}
                                 />
                                 {errors[`contact_person_${index}_phone_${phoneIndex}`] && (
                                   <p className="text-xs text-red-600 mt-0.5">{errors[`contact_person_${index}_phone_${phoneIndex}`]}</p>
@@ -1230,6 +1187,7 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
                                 <EmailVerifyButton
                                   email={email}
                                   persist={brokerPersistContext}
+                                  verifiedFromSnapshot={isEmailVerifiedInKyc(kycVerificationDetails, email)}
                                   onError={(message) => {
                                     setErrors({
                                       ...errors,

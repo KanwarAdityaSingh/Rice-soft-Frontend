@@ -1,10 +1,11 @@
-import { Edit2, Trash2, MoreVertical, Key, ToggleLeft, ToggleRight, MapPin, MapPinned } from 'lucide-react';
+import { Edit2, Trash2, MoreVertical, Key, ToggleLeft, ToggleRight, MapPin, MapPinned, Eye, Truck, Car, CreditCard, BookOpen } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { StatusBadge } from './StatusBadge';
 import type { PermissionsEntityKey } from '../../../types/entities';
 import { canDelete, canUpdate, isAdmin, isCustomUser } from '../../../utils/permissions';
 
 interface ActionButtonsProps {
+  onView?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
   onToggleStatus?: () => void;
@@ -14,9 +15,15 @@ interface ActionButtonsProps {
   /** Extra locations (vendor / sales party sites) */
   onAddSite?: () => void;
   onViewSites?: () => void;
+  /** Vehicle ↔ transporter linking */
+  onAddLinkedTransporter?: () => void;
+  onAddLinkedVehicle?: () => void;
+  onAddBankDetails?: () => void;
+  onShowLedger?: () => void;
 }
 
 export function ActionButtons({
+  onView,
   onEdit,
   onDelete,
   onToggleStatus,
@@ -25,6 +32,10 @@ export function ActionButtons({
   onPermissions,
   onAddSite,
   onViewSites,
+  onAddLinkedTransporter,
+  onAddLinkedVehicle,
+  onAddBankDetails,
+  onShowLedger,
 }: ActionButtonsProps) {
   const allowEdit = (() => {
     if (!onEdit) return false;
@@ -55,6 +66,14 @@ export function ActionButtons({
             sideOffset={8}
             align="end"
           >
+            {onView && (
+              <DropdownMenu.Item
+                className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+                onSelect={onView}
+              >
+                <Eye className="h-4 w-4" /> View
+              </DropdownMenu.Item>
+            )}
             {onPermissions && (
               <DropdownMenu.Item
                 className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
@@ -77,6 +96,38 @@ export function ActionButtons({
                 onSelect={onViewSites}
               >
                 <MapPinned className="h-4 w-4" /> View sites
+              </DropdownMenu.Item>
+            )}
+            {allowEdit && onAddLinkedTransporter && (
+              <DropdownMenu.Item
+                className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+                onSelect={onAddLinkedTransporter}
+              >
+                <Truck className="h-4 w-4" /> Add linked transporter
+              </DropdownMenu.Item>
+            )}
+            {allowEdit && onAddLinkedVehicle && (
+              <DropdownMenu.Item
+                className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+                onSelect={onAddLinkedVehicle}
+              >
+                <Car className="h-4 w-4" /> Add linked vehicle
+              </DropdownMenu.Item>
+            )}
+            {allowEdit && onAddBankDetails && (
+              <DropdownMenu.Item
+                className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+                onSelect={onAddBankDetails}
+              >
+                <CreditCard className="h-4 w-4" /> Add bank details
+              </DropdownMenu.Item>
+            )}
+            {onShowLedger && (
+              <DropdownMenu.Item
+                className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+                onSelect={onShowLedger}
+              >
+                <BookOpen className="h-4 w-4" /> Show ledger
               </DropdownMenu.Item>
             )}
             {allowEdit && (

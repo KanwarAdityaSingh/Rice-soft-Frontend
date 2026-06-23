@@ -1,25 +1,85 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Search } from 'lucide-react';
+import { X, Plus, Search, ShieldCheck, Check, Shield } from 'lucide-react';
 import { useTransporters } from '../../../hooks/useTransporters';
 import { transportersAPI } from '../../../services/transporters.api';
-import { validateGST, validatePAN, validateAadhaar } from '../../../utils/validation';
+import {
+  validateAadhaar,
+  getGstValidationError,
+  getPanValidationError,
+  getGstPanMismatchError,
+  GST_EXAMPLE,
+  PAN_EXAMPLE,
+  GST_MAX_LENGTH,
+  PAN_MAX_LENGTH,
+} from '../../../utils/validation';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import type { ContactPerson, CreateTransporterRequest, UpdateTransporterRequest, EntityKycVerificationDetails } from '../../../types/entities';
 import {
   buildEntitySavePayload,
-  persistGstLookupSnapshot,
-  persistPanLookupSnapshot,
+  persistAadhaarValidationSnapshot,
   transporterPersist,
+  buildSurepassSnapshot,
+  isEmailVerifiedInKyc,
+  mergeEntityKycSnapshot,
 } from '../../../utils/kycVerification';
+import { verifyAutofilledEmails } from '../../../utils/emailVerification';
+import { EmailVerifyButton } from '../../shared/EmailVerifyButton';
+import { PhoneInput } from '../../shared/PhoneInput';
+import {
+  applyAadhaarStateToAddress,
+  buildAadhaarValidationAutofill,
+  formatAadhaarValidationSummary,
+} from '../../../utils/aadhaarValidationAutofill';
+import {
+  persistEnrichedPanLookupSnapshots,
+  runEnrichedPanLookup,
+} from '../../../utils/panLookupEnrichment';
+import { persistEnrichedGstLookupSnapshots, runEnrichedGstLookup } from '../../../utils/gstLookupAutofill';
+import {
+  applyTransporterKycAutofill,
+  buildTransporterGstAutofill,
+  buildTransporterPanAutofill,
+} from '../../../utils/transporterKycAutofill';
+import {
+  collectAadhaarAutofillLocks,
+  collectLockedFieldsFromSavedKyc,
+  collectTransporterAutofillLocks,
+  collectVerifiedEmailFieldLocksFromList,
+  contactRowHasLockedField,
+  isTransporterFieldLocked,
+  mergeFieldLocks,
+  TRANSPORTER_LOCKED_INPUT_CLASS,
+} from '../../../utils/transporterAutofillLocks';
+import {
+  computeTransporterVerifiedFromKyc,
+  formatTransporterVerifiedAt,
+} from '../../../utils/transporterVerification';
 
 function isContactPersonRowEmpty(cp: ContactPerson): boolean {
   const name = (cp.name || '').trim();
   const hasPhone = (cp.phones || []).some((p) => p?.trim());
   const hasEmail = (cp.emails || []).some((e) => e?.trim());
   return !name && !hasPhone && !hasEmail;
+}
+
+function isStep1ErrorKey(key: string): boolean {
+  return (
+    key === 'business_name' ||
+    key === 'gst_number' ||
+    key === 'pan_number' ||
+    key === 'aadhar_number' ||
+    key.startsWith('contact_person_')
+  );
+}
+
+function summarizeValidationErrors(errors: Record<string, string>): string {
+  const messages = Object.values(errors).filter(Boolean);
+  if (messages.length === 0) return 'Please fix the highlighted fields.';
+  if (messages.length === 1) return messages[0];
+  return `${messages.slice(0, 3).join(' · ')}${messages.length > 3 ? ` (+${messages.length - 3} more)` : ''}`;
 }
 
 interface TransporterFormModalProps {
@@ -54,7 +114,7 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
   const [loadingTransporter, setLoadingTransporter] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [step, setStep] = useState(1);
-  const [gstAutoFilledFields, setGstAutoFilledFields] = useState<Set<string>>(new Set());
+  const [apiLockedFields, setApiLockedFields] = useState<Set<string>>(new Set());
   const [originalGstNumber, setOriginalGstNumber] = useState<string>('');
   const [originalPanNumber, setOriginalPanNumber] = useState<string>('');
   const [alertOpen, setAlertOpen] = useState(false);
@@ -62,7 +122,43 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
   const [kycVerificationDetails, setKycVerificationDetails] = useState<EntityKycVerificationDetails>({});
+  const [panLookupNotice, setPanLookupNotice] = useState<string | null>(null);
+  const [aadhaarValidated, setAadhaarValidated] = useState(false);
+  const [aadhaarValidationSummary, setAadhaarValidationSummary] = useState<string | null>(null);
+  const [isVerified, setIsVerified] = useState(false);
+  const [verifiedAt, setVerifiedAt] = useState<string | null>(null);
   const transporterPersistContext = transporterPersist(transporterId);
+  const isFieldLocked = (key: string) => isTransporterFieldLocked(apiLockedFields, key);
+  const lockedClass = (key: string) => (isFieldLocked(key) ? TRANSPORTER_LOCKED_INPUT_CLASS : '');
+
+  const syncVerifiedFromKyc = (
+    transportType: 'registered' | 'unregistered',
+    kyc: EntityKycVerificationDetails,
+    serverVerified?: { is_verified: boolean; verified_at: string | null },
+  ) => {
+    if (serverVerified) {
+      setIsVerified(serverVerified.is_verified);
+      setVerifiedAt(serverVerified.verified_at);
+      return;
+    }
+    const computed = computeTransporterVerifiedFromKyc(transportType, kyc);
+    setIsVerified(computed);
+    setVerifiedAt(computed ? new Date().toISOString() : null);
+  };
+
+  const refreshVerifiedFromServer = async () => {
+    if (!transporterId) return;
+    try {
+      const transporter = await transportersAPI.getTransporterById(transporterId);
+      setIsVerified(transporter.is_verified);
+      setVerifiedAt(transporter.verified_at);
+      if (transporter.kyc_verification_details) {
+        setKycVerificationDetails(transporter.kyc_verification_details);
+      }
+    } catch {
+      // Non-blocking — local KYC state still reflects the lookup
+    }
+  };
 
   useEffect(() => {
     if (open && transporterId && isEditMode) {
@@ -101,7 +197,18 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
         bank_details: transporter.bank_details || {},
         is_active: transporter.is_active,
       });
+      const loadedForm = {
+        business_name: transporter.business_name,
+        gst_number: transporter.gst_number || null,
+        pan_number: transporter.pan_number || null,
+        aadhar_number: transporter.aadhar_number || null,
+        address: transporter.address,
+        contact_persons: transporter.contact_persons ?? [],
+      };
       setKycVerificationDetails(transporter.kyc_verification_details ?? {});
+      setIsVerified(transporter.is_verified);
+      setVerifiedAt(transporter.verified_at);
+      setApiLockedFields(collectLockedFieldsFromSavedKyc(transporter.kyc_verification_details, loadedForm));
       setErrors({});
     } catch (error: any) {
       setAlertType('error');
@@ -132,25 +239,16 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
       is_active: true,
     });
     setErrors({});
-    setGstAutoFilledFields(new Set());
+    setApiLockedFields(new Set());
     setOriginalGstNumber('');
     setOriginalPanNumber('');
     setStep(1);
     setKycVerificationDetails({});
-  };
-
-  // Helper function to convert ALL CAPS text to Title Case
-  const toTitleCase = (str: string): string => {
-    if (!str) return '';
-    return str
-      .toLowerCase()
-      .split(' ')
-      .map(word => {
-        if (word.length === 0) return '';
-        if (word.length === 1) return word.toUpperCase();
-        return word.charAt(0).toUpperCase() + word.slice(1);
-      })
-      .join(' ');
+    setPanLookupNotice(null);
+    setAadhaarValidated(false);
+    setAadhaarValidationSummary(null);
+    setIsVerified(false);
+    setVerifiedAt(null);
   };
 
   const handleGSTLookup = async () => {
@@ -159,73 +257,50 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
       return;
     }
     
-    if (!validateGST(formData.gst_number)) {
-      setErrors({ ...errors, gst_number: 'Invalid GST format' });
+    const gstError = getGstValidationError(formData.gst_number);
+    if (gstError) {
+      setErrors({ ...errors, gst_number: gstError });
       return;
     }
 
     setLookupLoading(true);
     setErrors({ ...errors, gst_number: '' });
+    setPanLookupNotice(null);
     
     try {
-      const response = await transportersAPI.lookupGST(formData.gst_number, transporterPersistContext);
-      
-      const mapped = response.mapped_data;
-      
-      // Track which fields are being auto-filled
-      const autoFilledFields = new Set<string>();
-      
-      // Populate business name if available (convert to title case)
-      let businessName = formData.business_name;
-      if (mapped?.business_name) {
-        businessName = toTitleCase(mapped.business_name);
-        autoFilledFields.add('business_name');
-      }
-      
-      // Populate address fields (only fill non-empty values, convert to title case)
-      const addressUpdate: any = { ...formData.address };
-      if (mapped?.address) {
-        if (mapped.address.street) {
-          addressUpdate.street = toTitleCase(mapped.address.street);
-        }
-        if (mapped.address.city) {
-          addressUpdate.city = toTitleCase(mapped.address.city);
-        }
-        if (mapped.address.state) {
-          addressUpdate.state = toTitleCase(mapped.address.state);
-        }
-        if (mapped.address.pincode) {
-          addressUpdate.pincode = mapped.address.pincode;
-        }
-        if (mapped.address.country) {
-          addressUpdate.country = toTitleCase(mapped.address.country);
-        }
-      }
-      
-      // Extract PAN from GST or use mapped PAN
-      let panNumber = formData.pan_number;
-      if (mapped?.business_details?.pan_number) {
-        panNumber = mapped.business_details.pan_number;
-        autoFilledFields.add('pan_number');
-      } else if (formData.gst_number && formData.gst_number.length >= 12) {
-        panNumber = formData.gst_number.slice(2, 12);
-        autoFilledFields.add('pan_number');
-      }
-      
-      setFormData({
+      const result = await runEnrichedGstLookup(formData.gst_number, transporterPersistContext);
+      const autofill = buildTransporterGstAutofill(result);
+      const updatedForm = {
         ...formData,
-        business_name: businessName,
-        address: addressUpdate,
-        pan_number: panNumber,
-      });
-      
-      // Set the auto-filled fields
-      setGstAutoFilledFields(autoFilledFields);
+        ...applyTransporterKycAutofill(formData, autofill),
+      };
+      const autofillLocks = collectTransporterAutofillLocks(autofill, updatedForm.contact_persons ?? []);
 
-      setKycVerificationDetails((prev) => persistGstLookupSnapshot(prev, response));
-      
-      // Clear any previous errors
-      setErrors({ ...errors, gst_number: '' });
+      let nextKycDetails = persistEnrichedGstLookupSnapshots(kycVerificationDetails, result);
+      const emailVerification = await verifyAutofilledEmails(
+        autofill.emails,
+        updatedForm.contact_persons ?? [],
+        nextKycDetails,
+        transporterPersistContext,
+      );
+      nextKycDetails = emailVerification.kycDetails;
+      const verifiedEmailLocks = collectVerifiedEmailFieldLocksFromList(
+        updatedForm.contact_persons ?? [],
+        emailVerification.verifiedEmails,
+      );
+
+      setFormData(updatedForm);
+
+      setApiLockedFields((prev) =>
+        mergeFieldLocks(prev, mergeFieldLocks(autofillLocks, verifiedEmailLocks)),
+      );
+      setKycVerificationDetails(nextKycDetails);
+      setErrors({ ...errors, gst_number: '', ...emailVerification.fieldErrors });
+      if (transporterId) {
+        await refreshVerifiedFromServer();
+      } else {
+        syncVerifiedFromKyc(updatedForm.transport_type, nextKycDetails);
+      }
     } catch (error: any) {
       console.error('GST lookup error:', error);
       setErrors({ ...errors, gst_number: error?.message || 'Failed to lookup GST details' });
@@ -240,63 +315,67 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
       return;
     }
     
-    if (!validatePAN(formData.pan_number)) {
-      setErrors({ ...errors, pan_number: 'Invalid PAN format' });
+    const panError = getPanValidationError(formData.pan_number);
+    if (panError) {
+      setErrors({ ...errors, pan_number: panError });
       return;
     }
 
     setLookupLoading(true);
     setErrors({ ...errors, pan_number: '' });
+    setPanLookupNotice(null);
     
     try {
-      const response = await transportersAPI.lookupPAN(formData.pan_number, transporterPersistContext);
-      
-      const mapped = response.mapped_data;
-      const panData = response.pan_data;
-      
-      // Track which fields are being auto-filled
-      const autoFilledFields = new Set<string>();
-      
-      // Populate business name if available (convert to title case)
-      let businessName = formData.business_name;
-      if (mapped?.business_name) {
-        businessName = toTitleCase(mapped.business_name);
-        autoFilledFields.add('business_name');
-      }
-      
-      // Populate contact person if PAN is for a person (individual)
-      let updatedContactPersons = [...formData.contact_persons];
-      if (panData?.category === 'person' && panData?.name) {
-        updatedContactPersons[0] = { ...updatedContactPersons[0], name: toTitleCase(panData.name) };
-      }
-      
-      // Populate address fields (only fill non-empty values, convert to title case)
-      const addressUpdate: any = { ...formData.address };
-      if (mapped?.address) {
-        if (mapped.address.street) addressUpdate.street = toTitleCase(mapped.address.street);
-        if (mapped.address.city) addressUpdate.city = toTitleCase(mapped.address.city);
-        if (mapped.address.state) addressUpdate.state = toTitleCase(mapped.address.state);
-        if (mapped.address.pincode) addressUpdate.pincode = mapped.address.pincode;
-        if (mapped.address.country) addressUpdate.country = toTitleCase(mapped.address.country);
-      }
-      
-      // Mark PAN number as auto-filled
-      autoFilledFields.add('pan_number');
-      
-      setFormData({
+      const result = await runEnrichedPanLookup(formData.pan_number, transporterPersistContext);
+      const autofill = buildTransporterPanAutofill(result);
+      const updatedForm = {
         ...formData,
-        business_name: businessName,
-        contact_persons: updatedContactPersons,
-        address: addressUpdate,
-      });
-      
-      // Set the auto-filled fields
-      setGstAutoFilledFields(autoFilledFields);
+        ...applyTransporterKycAutofill(formData, autofill),
+      };
+      const autofillLocks = collectTransporterAutofillLocks(autofill, updatedForm.contact_persons ?? []);
 
-      setKycVerificationDetails((prev) => persistPanLookupSnapshot(prev, response));
-      
-      // Clear any previous errors
-      setErrors({ ...errors, pan_number: '' });
+      let nextKycDetails = persistEnrichedPanLookupSnapshots(kycVerificationDetails, result);
+      const emailVerification = await verifyAutofilledEmails(
+        autofill.emails,
+        updatedForm.contact_persons ?? [],
+        nextKycDetails,
+        transporterPersistContext,
+      );
+      nextKycDetails = emailVerification.kycDetails;
+      const verifiedEmailLocks = collectVerifiedEmailFieldLocksFromList(
+        updatedForm.contact_persons ?? [],
+        emailVerification.verifiedEmails,
+      );
+
+      setFormData(updatedForm);
+
+      setApiLockedFields((prev) =>
+        mergeFieldLocks(prev, mergeFieldLocks(autofillLocks, verifiedEmailLocks)),
+      );
+      setKycVerificationDetails(nextKycDetails);
+      setPanLookupNotice(autofill.lookupMessage ?? null);
+
+      if (autofill.gstFound) {
+        setAlertType('success');
+        setAlertTitle('PAN lookup complete');
+        setAlertMessage(autofill.lookupMessage ?? 'GST details found and filled.');
+        setAlertOpen(true);
+      } else {
+        setAlertType('info');
+        setAlertTitle('PAN lookup complete');
+        setAlertMessage(
+          autofill.lookupMessage ??
+            'No GSTIN found for this PAN. PAN and contact details were filled.',
+        );
+        setAlertOpen(true);
+      }
+
+      setErrors({ ...errors, pan_number: '', ...emailVerification.fieldErrors });
+      if (transporterId) {
+        await refreshVerifiedFromServer();
+      } else {
+        syncVerifiedFromKyc(updatedForm.transport_type, nextKycDetails);
+      }
     } catch (error: any) {
       console.error('PAN lookup error:', error);
       setErrors({ ...errors, pan_number: error?.message || 'Failed to lookup PAN details' });
@@ -305,31 +384,134 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
     }
   };
 
-  const validateForm = (): boolean => {
+  const handleAadhaarLookup = async () => {
+    if (!formData.aadhar_number?.trim()) {
+      setErrors({ ...errors, aadhar_number: 'Please enter an Aadhaar number' });
+      return;
+    }
+
+    if (!validateAadhaar(formData.aadhar_number)) {
+      setErrors({ ...errors, aadhar_number: 'Invalid Aadhaar format (12 digits, cannot start with 0 or 1)' });
+      return;
+    }
+
+    setLookupLoading(true);
+    setErrors({ ...errors, aadhar_number: '' });
+    setAadhaarValidated(false);
+    setAadhaarValidationSummary(null);
+
+    try {
+      const response = await transportersAPI.lookupAadhaar(
+        formData.aadhar_number,
+        transporterPersistContext,
+      );
+      const autofill = buildAadhaarValidationAutofill(response);
+      const summary = formatAadhaarValidationSummary(autofill);
+      const nextAddress = applyAadhaarStateToAddress(formData.address, autofill);
+
+      setFormData({
+        ...formData,
+        aadhar_number: autofill.aadhaarNumber,
+        address: nextAddress,
+      });
+
+      setApiLockedFields((prev) =>
+        mergeFieldLocks(prev, collectAadhaarAutofillLocks(autofill, nextAddress)),
+      );
+
+      const nextKyc = persistAadhaarValidationSnapshot(kycVerificationDetails, response);
+      setKycVerificationDetails(nextKyc);
+      setAadhaarValidated(true);
+      setAadhaarValidationSummary(summary);
+      setAlertType('success');
+      setAlertTitle('Aadhaar validated');
+      setAlertMessage(summary);
+      setAlertOpen(true);
+      setErrors({ ...errors, aadhar_number: '' });
+      if (transporterId) {
+        await refreshVerifiedFromServer();
+      } else {
+        syncVerifiedFromKyc('unregistered', nextKyc);
+      }
+    } catch (error: any) {
+      console.error('Aadhaar lookup error:', error);
+      setErrors({ ...errors, aadhar_number: error?.message || 'Failed to validate Aadhaar number' });
+    } finally {
+      setLookupLoading(false);
+    }
+  };
+
+  const renderPanNumberField = () => (
+    <div>
+      <label className="block text-sm font-medium mb-1">PAN Number</label>
+      {isFieldLocked('pan_number') ? (
+        <div className={`w-full rounded-lg border border-border px-3 py-2 text-sm ${TRANSPORTER_LOCKED_INPUT_CLASS}`}>
+          {formData.pan_number || originalPanNumber}
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={formData.pan_number || ''}
+            onChange={(e) => setFormData({ ...formData, pan_number: e.target.value.toUpperCase() || null })}
+            className="flex-1 px-3 py-2 border border-border rounded-lg bg-background"
+            placeholder={PAN_EXAMPLE}
+            maxLength={PAN_MAX_LENGTH}
+          />
+          <button
+            type="button"
+            onClick={handlePANLookup}
+            disabled={lookupLoading}
+            className="btn-secondary flex items-center gap-2 px-3"
+            title="Lookup PAN details"
+          >
+            {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+          </button>
+        </div>
+      )}
+      {errors.pan_number && (
+        <p className="text-xs text-red-500 mt-1">{errors.pan_number}</p>
+      )}
+      {panLookupNotice && (
+        <p className="text-xs text-amber-600 mt-1">{panLookupNotice}</p>
+      )}
+    </div>
+  );
+
+  const buildFormErrors = (): Record<string, string> => {
     const newErrors: Record<string, string> = {};
 
     if (!formData.business_name.trim()) {
       newErrors.business_name = 'Business name is required';
     }
-    
-    // Validate based on transport type
+
     if (formData.transport_type === 'registered') {
-      // GST is mandatory for registered transporters
       if (!formData.gst_number) {
         newErrors.gst_number = 'GST number is required for registered transporters';
-      } else if (!validateGST(formData.gst_number)) {
-        newErrors.gst_number = 'Invalid GST format';
+      } else {
+        const gstError = getGstValidationError(formData.gst_number);
+        if (gstError) newErrors.gst_number = gstError;
       }
-      
-      // Validate PAN if provided
-      if (formData.pan_number && !validatePAN(formData.pan_number)) {
-        newErrors.pan_number = 'Invalid PAN format';
+
+      if (formData.pan_number) {
+        const panError = getPanValidationError(formData.pan_number);
+        if (panError) newErrors.pan_number = panError;
       }
-    } else if (formData.aadhar_number?.trim() && !validateAadhaar(formData.aadhar_number)) {
-      newErrors.aadhar_number = 'Invalid Aadhaar format (12 digits, cannot start with 0 or 1)';
+
+      if (formData.gst_number && formData.pan_number) {
+        const mismatchError = getGstPanMismatchError(formData.gst_number, formData.pan_number);
+        if (mismatchError) newErrors.pan_number = mismatchError;
+      }
+    } else {
+      if (formData.pan_number) {
+        const panError = getPanValidationError(formData.pan_number);
+        if (panError) newErrors.pan_number = panError;
+      }
+      if (formData.aadhar_number?.trim() && !validateAadhaar(formData.aadhar_number)) {
+        newErrors.aadhar_number = 'Invalid Aadhaar format (12 digits, cannot start with 0 or 1)';
+      }
     }
-    
-    // Contact persons optional; validate only rows that have any data (name, phone, or email)
+
     (formData.contact_persons || []).forEach((cp, idx) => {
       if (isContactPersonRowEmpty(cp)) return;
       if (!cp.name || cp.name.trim().length < 2) {
@@ -344,7 +526,7 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
         }
       });
     });
-    
+
     if (!formData.address.street.trim()) {
       newErrors['address.street'] = 'Street is required';
     }
@@ -361,13 +543,53 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
       newErrors['address.country'] = 'Country is required';
     }
 
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return newErrors;
+  };
+
+  const buildStep1Errors = (): Record<string, string> => {
+    const all = buildFormErrors();
+    return Object.fromEntries(Object.entries(all).filter(([key]) => isStep1ErrorKey(key)));
+  };
+
+  const buildStep2Errors = (): Record<string, string> => {
+    const all = buildFormErrors();
+    return Object.fromEntries(Object.entries(all).filter(([key]) => key.startsWith('address.')));
+  };
+
+  const handleNextStep = () => {
+    const step1Errors = buildStep1Errors();
+    setErrors(step1Errors);
+    if (Object.keys(step1Errors).length > 0) {
+      setAlertType('warning');
+      setAlertTitle('Complete required fields');
+      setAlertMessage(summarizeValidationErrors(step1Errors));
+      setAlertOpen(true);
+      return;
+    }
+    setErrors({});
+    setStep(2);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateForm()) return;
+    const formErrors = buildFormErrors();
+    setErrors(formErrors);
+
+    if (Object.keys(formErrors).length > 0) {
+      const step1Errors = buildStep1Errors();
+      if (Object.keys(step1Errors).length > 0) {
+        setStep(1);
+      }
+      setAlertType('warning');
+      setAlertTitle('Cannot save transporter');
+      setAlertMessage(
+        Object.keys(step1Errors).length > 0
+          ? `Fix the highlighted fields on the details step. ${summarizeValidationErrors(formErrors)}`
+          : summarizeValidationErrors(formErrors),
+      );
+      setAlertOpen(true);
+      return;
+    }
 
     setLoading(true);
     try {
@@ -382,12 +604,16 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
       );
 
       if (isEditMode && transporterId) {
-        await updateTransporter(transporterId, submitData as UpdateTransporterRequest);
+        const saved = await updateTransporter(transporterId, submitData as UpdateTransporterRequest);
+        setIsVerified(saved.is_verified);
+        setVerifiedAt(saved.verified_at);
         setAlertType('success');
         setAlertTitle('Success');
         setAlertMessage('Transporter updated successfully');
       } else {
-        await createTransporter(submitData);
+        const saved = await createTransporter(submitData);
+        setIsVerified(saved.is_verified);
+        setVerifiedAt(saved.verified_at);
         setAlertType('success');
         setAlertTitle('Success');
         setAlertMessage('Transporter created successfully');
@@ -416,9 +642,20 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
           <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-[95vw] sm:w-[90vw] md:w-full max-w-3xl translate-x-[-50%] translate-y-[-50%]">
             <div className="glass rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 shadow-2xl max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
-                <Dialog.Title className="text-xl sm:text-2xl font-semibold">
-                  {isEditMode ? 'Edit Transporter' : 'Create Transporter'}
-                </Dialog.Title>
+                <div className="flex items-center gap-3 min-w-0">
+                  <Dialog.Title className="text-xl sm:text-2xl font-semibold">
+                    {isEditMode ? 'Edit Transporter' : 'Create Transporter'}
+                  </Dialog.Title>
+                  {isVerified && (
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400 shrink-0"
+                      title={verifiedAt ? `Verified ${formatTransporterVerifiedAt(verifiedAt)}` : 'Verified'}
+                    >
+                      <Shield className="h-3.5 w-3.5" />
+                      Verified
+                    </span>
+                  )}
+                </div>
                 <button
                   onClick={() => onOpenChange(false)}
                   className="p-2 hover:bg-muted rounded-lg transition-colors"
@@ -456,12 +693,23 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                       </div>
 
                       {/* Note about requirements */}
-                      <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2">
+                      <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 space-y-1">
                         <p className="text-sm text-primary/90">
                           <span className="font-medium">Note:</span> {formData.transport_type === 'registered' 
-                            ? 'For registered transporters, GST number is mandatory.' 
-                            : 'For unregistered transporters, Aadhaar is optional.'}
+                            ? 'For registered transporters, GST number is mandatory. Verified when GST or PAN Surepass lookup succeeds.' 
+                            : 'For unregistered transporters, PAN lookup and Aadhaar are optional. Verified when Aadhaar Surepass validation succeeds.'}
                         </p>
+                        {!isVerified && isEditMode && transporterPersistContext && (
+                          <p className="text-xs text-amber-700 dark:text-amber-400">
+                            Unverified — run GST/PAN or Aadhaar lookup to verify via Surepass.
+                          </p>
+                        )}
+                        {isVerified && verifiedAt && (
+                          <p className="text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                            <Check className="h-3 w-3 shrink-0" />
+                            Verified {formatTransporterVerifiedAt(verifiedAt)}
+                          </p>
+                        )}
                       </div>
 
                       {/* Conditional fields based on transport type */}
@@ -472,9 +720,9 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                             <label className="block text-sm font-medium mb-1">
                               GST Number <span className="text-red-500">*</span>
                             </label>
-                            {isEditMode && originalGstNumber && originalGstNumber.trim().length > 0 ? (
-                              <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm pointer-events-none select-none">
-                                {originalGstNumber}
+                            {isFieldLocked('gst_number') ? (
+                              <div className={`w-full rounded-lg border border-border px-3 py-2 text-sm ${TRANSPORTER_LOCKED_INPUT_CLASS}`}>
+                                {formData.gst_number || originalGstNumber}
                               </div>
                             ) : (
                               <div className="flex gap-2">
@@ -483,7 +731,8 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                                   value={formData.gst_number || ''}
                                   onChange={(e) => setFormData({ ...formData, gst_number: e.target.value.toUpperCase() || null })}
                                   className="flex-1 px-3 py-2 border border-border rounded-lg bg-background"
-                                  placeholder="27ABCDE1234F1Z5"
+                                  placeholder={GST_EXAMPLE}
+                                  maxLength={GST_MAX_LENGTH}
                                 />
                                 <button 
                                   type="button" 
@@ -501,52 +750,52 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                           </div>
 
                           {/* PAN Number below GST (full width) */}
+                          {renderPanNumberField()}
+                        </>
+                      ) : (
+                        <>
+                          {renderPanNumberField()}
+
+                          {/* Aadhaar Number for unregistered (full width) */}
                           <div>
-                            <label className="block text-sm font-medium mb-1">PAN Number</label>
-                            {isEditMode && originalPanNumber && originalPanNumber.trim().length > 0 ? (
-                              <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm pointer-events-none select-none">
-                                {originalPanNumber}
+                            <label className="block text-sm font-medium mb-1">Aadhaar Number</label>
+                            {isFieldLocked('aadhar_number') ? (
+                              <div className={`w-full rounded-lg border border-border px-3 py-2 text-sm ${TRANSPORTER_LOCKED_INPUT_CLASS}`}>
+                                {formData.aadhar_number}
                               </div>
                             ) : (
                               <div className="flex gap-2">
                                 <input
                                   type="text"
-                                  value={formData.pan_number || ''}
-                                  onChange={(e) => setFormData({ ...formData, pan_number: e.target.value.toUpperCase() || null })}
-                                  className="flex-1 px-3 py-2 border border-border rounded-lg bg-background read-only:cursor-not-allowed"
-                                  placeholder="ABCDE1234F"
-                                  readOnly={gstAutoFilledFields.has('pan_number')}
+                                  value={formData.aadhar_number || ''}
+                                  onChange={(e) => {
+                                    setFormData({ ...formData, aadhar_number: e.target.value || null });
+                                    setAadhaarValidated(false);
+                                    setAadhaarValidationSummary(null);
+                                  }}
+                                  className="flex-1 px-3 py-2 border border-border rounded-lg bg-background"
+                                  placeholder="234567890123"
+                                  maxLength={14}
                                 />
-                                <button 
-                                  type="button" 
-                                  onClick={handlePANLookup} 
-                                  disabled={lookupLoading} 
+                                <button
+                                  type="button"
+                                  onClick={handleAadhaarLookup}
+                                  disabled={lookupLoading}
                                   className="btn-secondary flex items-center gap-2 px-3"
+                                  title="Validate Aadhaar"
                                 >
                                   {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
                                 </button>
                               </div>
                             )}
-                            {errors.pan_number && (
-                              <p className="text-xs text-red-500 mt-1">{errors.pan_number}</p>
-                            )}
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          {/* Aadhaar Number for unregistered (full width) */}
-                          <div>
-                            <label className="block text-sm font-medium mb-1">Aadhaar Number</label>
-                            <input
-                              type="text"
-                              value={formData.aadhar_number || ''}
-                              onChange={(e) => setFormData({ ...formData, aadhar_number: e.target.value || null })}
-                              className="w-full px-3 py-2 border border-border rounded-lg bg-background"
-                              placeholder="234567890123"
-                              maxLength={12}
-                            />
                             {errors.aadhar_number && (
                               <p className="text-xs text-red-500 mt-1">{errors.aadhar_number}</p>
+                            )}
+                            {aadhaarValidated && !errors.aadhar_number && (
+                              <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
+                                <ShieldCheck className="h-3 w-3 shrink-0" />
+                                {aadhaarValidationSummary ?? 'Aadhaar validated via Surepass'}
+                              </p>
                             )}
                           </div>
                         </>
@@ -562,14 +811,19 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                             type="text"
                             value={formData.business_name}
                             onChange={(e) => setFormData({ ...formData, business_name: e.target.value })}
-                            className={`w-full px-3 py-2 border rounded-lg bg-background read-only:cursor-not-allowed ${
+                            readOnly={isFieldLocked('business_name')}
+                            className={`w-full px-3 py-2 border rounded-lg bg-background ${
                               errors.business_name ? 'border-red-500' : 'border-border'
-                            }`}
+                            } ${lockedClass('business_name')}`}
                             placeholder="ABC Transport Services"
-                            readOnly={gstAutoFilledFields.has('business_name')}
                           />
                           {errors.business_name && (
                             <p className="text-xs text-red-500 mt-1">{errors.business_name}</p>
+                          )}
+                          {formData.transport_type === 'unregistered' && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Enter the business or trade name manually. Contact and address are filled from PAN lookup.
+                            </p>
                           )}
                         </div>
                       </div>
@@ -596,9 +850,10 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                                       updated[index] = { ...updated[index], name: e.target.value };
                                       setFormData({ ...formData, contact_persons: updated });
                                     }}
-                                    className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                                    readOnly={isFieldLocked(`contact_person_${index}_name`)}
+                                    className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${lockedClass(`contact_person_${index}_name`)}`}
                                   />
-                                  {(formData.contact_persons || []).length > 1 && (
+                                  {(formData.contact_persons || []).length > 1 && !contactRowHasLockedField(apiLockedFields, index) && (
                                     <button
                                       type="button"
                                       onClick={() => {
@@ -621,20 +876,19 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                                   <label className="text-xs font-medium text-muted-foreground">Phone Numbers</label>
                                   {(contact.phones || ['']).map((phone, phoneIndex) => (
                                     <div key={phoneIndex} className="flex gap-2">
-                                      <input
-                                        type="tel"
-                                        placeholder="Phone (10 digits)"
+                                      <PhoneInput
                                         value={phone}
-                                        onChange={(e) => {
+                                        onChange={(value) => {
                                           const updated = [...(formData.contact_persons || [])];
                                           const updatedPhones = [...(updated[index].phones || [''])];
-                                          updatedPhones[phoneIndex] = e.target.value;
+                                          updatedPhones[phoneIndex] = value;
                                           updated[index] = { ...updated[index], phones: updatedPhones };
                                           setFormData({ ...formData, contact_persons: updated });
                                         }}
-                                        className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                                        readOnly={isFieldLocked(`contact_person_${index}_phone_${phoneIndex}`)}
+                                        className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${lockedClass(`contact_person_${index}_phone_${phoneIndex}`)}`}
                                       />
-                                      {(contact.phones || ['']).length > 1 && (
+                                      {(contact.phones || ['']).length > 1 && !isFieldLocked(`contact_person_${index}_phone_${phoneIndex}`) && (
                                         <button
                                           type="button"
                                           onClick={() => {
@@ -685,9 +939,59 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                                             updated[index] = { ...updated[index], emails: updatedEmails };
                                             setFormData({ ...formData, contact_persons: updated });
                                           }}
-                                          className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                                          readOnly={isFieldLocked(`contact_person_${index}_email_${emailIndex}`)}
+                                          className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${lockedClass(`contact_person_${index}_email_${emailIndex}`)}`}
                                         />
-                                        {(contact.emails || ['']).length > 1 && (
+                                        {isFieldLocked(`contact_person_${index}_email_${emailIndex}`) ? (
+                                          <span
+                                            className="shrink-0 rounded-lg border border-border px-2 py-2 text-emerald-600"
+                                            title="Email verified"
+                                          >
+                                            <Check className="h-4 w-4" />
+                                          </span>
+                                        ) : (
+                                          <EmailVerifyButton
+                                          email={email}
+                                          persist={transporterPersistContext}
+                                          verifiedFromSnapshot={isEmailVerifiedInKyc(kycVerificationDetails, email)}
+                                          onError={(message) => {
+                                            setErrors({
+                                              ...errors,
+                                              [`contact_person_${index}_email_${emailIndex}`]: message,
+                                            });
+                                          }}
+                                          onVerified={() => {
+                                            const errorKey = `contact_person_${index}_email_${emailIndex}`;
+                                            const nextErrors = { ...errors };
+                                            delete nextErrors[errorKey];
+                                            setErrors(nextErrors);
+                                            setApiLockedFields((prev) =>
+                                              mergeFieldLocks(
+                                                prev,
+                                                new Set([`contact_person_${index}_email_${emailIndex}`]),
+                                              ),
+                                            );
+                                          }}
+                                          onSnapshotSaved={(result) => {
+                                            if (!result.surepass_response) return;
+                                            setKycVerificationDetails((prev) =>
+                                              mergeEntityKycSnapshot(
+                                                prev,
+                                                'emails',
+                                                buildSurepassSnapshot(result.surepass_response, result),
+                                                email,
+                                              ),
+                                            );
+                                            setApiLockedFields((prev) =>
+                                              mergeFieldLocks(
+                                                prev,
+                                                new Set([`contact_person_${index}_email_${emailIndex}`]),
+                                              ),
+                                            );
+                                          }}
+                                        />
+                                        )}
+                                        {(contact.emails || ['']).length > 1 && !isFieldLocked(`contact_person_${index}_email_${emailIndex}`) && (
                                           <button
                                             type="button"
                                             onClick={() => {
@@ -745,7 +1049,7 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                       <div className="flex justify-end pt-4">
                         <button
                           type="button"
-                          onClick={() => setStep(2)}
+                          onClick={handleNextStep}
                           className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
                         >
                           Next: Address
@@ -757,6 +1061,11 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                   {/* Step 2: Address & Vehicles */}
                   {step === 2 && (
                     <>
+                      {Object.keys(errors).some(isStep1ErrorKey) && (
+                        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800">
+                          Some details from step 1 still need fixing. Click Back to review contact or business fields.
+                        </div>
+                      )}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="sm:col-span-2">
                           <label className="block text-sm font-medium mb-1">
@@ -769,9 +1078,10 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                               ...formData,
                               address: { ...formData.address, street: e.target.value },
                             })}
+                            readOnly={isFieldLocked('address.street')}
                             className={`w-full px-3 py-2 border rounded-lg bg-background ${
                               errors['address.street'] ? 'border-red-500' : 'border-border'
-                            }`}
+                            } ${lockedClass('address.street')}`}
                             placeholder="123 Main Street"
                           />
                           {errors['address.street'] && (
@@ -790,9 +1100,10 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                               ...formData,
                               address: { ...formData.address, city: e.target.value },
                             })}
+                            readOnly={isFieldLocked('address.city')}
                             className={`w-full px-3 py-2 border rounded-lg bg-background ${
                               errors['address.city'] ? 'border-red-500' : 'border-border'
-                            }`}
+                            } ${lockedClass('address.city')}`}
                             placeholder="Mumbai"
                           />
                           {errors['address.city'] && (
@@ -811,9 +1122,10 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                               ...formData,
                               address: { ...formData.address, state: e.target.value },
                             })}
+                            readOnly={isFieldLocked('address.state')}
                             className={`w-full px-3 py-2 border rounded-lg bg-background ${
                               errors['address.state'] ? 'border-red-500' : 'border-border'
-                            }`}
+                            } ${lockedClass('address.state')}`}
                             placeholder="Maharashtra"
                           />
                           {errors['address.state'] && (
@@ -832,9 +1144,10 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                               ...formData,
                               address: { ...formData.address, pincode: e.target.value },
                             })}
+                            readOnly={isFieldLocked('address.pincode')}
                             className={`w-full px-3 py-2 border rounded-lg bg-background ${
                               errors['address.pincode'] ? 'border-red-500' : 'border-border'
-                            }`}
+                            } ${lockedClass('address.pincode')}`}
                             placeholder="400001"
                           />
                           {errors['address.pincode'] && (
@@ -853,9 +1166,10 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                               ...formData,
                               address: { ...formData.address, country: e.target.value },
                             })}
+                            readOnly={isFieldLocked('address.country')}
                             className={`w-full px-3 py-2 border rounded-lg bg-background ${
                               errors['address.country'] ? 'border-red-500' : 'border-border'
-                            }`}
+                            } ${lockedClass('address.country')}`}
                             placeholder="India"
                           />
                           {errors['address.country'] && (

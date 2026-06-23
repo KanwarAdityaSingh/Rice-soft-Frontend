@@ -4,6 +4,8 @@ import { X, Mail, MessageCircle, Send, Loader2, Plus, Trash2, Eye, EyeOff, FileT
 import { useToast } from './Toast';
 import { LoadingSpinner } from '../admin/shared/LoadingSpinner';
 import { floorNetPayable } from '../../utils/money';
+import { PhoneInput } from './PhoneInput';
+import { sanitizePhoneList } from '../../utils/validation';
 
 const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
@@ -208,9 +210,9 @@ export function NotificationModal({
   const handleSendWhatsApp = async () => {
     if (!token) return;
 
-    const validNumbers = whatsappNumbers
-      .filter((n) => n.trim())
-      .map((n) => n.replace(/\D/g, '')); // Remove non-digits
+    const validNumbers = sanitizePhoneList(
+      whatsappNumbers.filter((n) => n.trim())
+    );
 
     if (validNumbers.length === 0) {
       showError('Validation Error', 'Please enter at least one valid phone number');
@@ -449,15 +451,13 @@ export function NotificationModal({
                       <div className="space-y-2">
                         {whatsappNumbers.map((number, index) => (
                           <div key={index} className="flex gap-2">
-                            <input
-                              type="tel"
+                            <PhoneInput
                               value={number}
-                              onChange={(e) => {
+                              onChange={(value) => {
                                 const updated = [...whatsappNumbers];
-                                updated[index] = e.target.value;
+                                updated[index] = value;
                                 setWhatsappNumbers(updated);
                               }}
-                              placeholder="9876543210"
                               className="flex-1 px-3 py-2 border border-border rounded-lg bg-background"
                             />
                             {whatsappNumbers.length > 1 && (

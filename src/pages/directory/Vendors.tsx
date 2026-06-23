@@ -19,6 +19,7 @@ import { riceCodesAPI } from '../../services/riceCodes.api'
 import { getRiceTypeLabel } from '../../utils/riceType'
 import { isAdmin } from '../../utils/permissions'
 import type { Lead } from '../../types/entities'
+import { formatPhoneDisplay } from '../../utils/validation'
 
 export default function VendorsPage() {
   const [statusFilter, setStatusFilter] = useState<string | undefined>('active')
@@ -298,7 +299,7 @@ export default function VendorsPage() {
                     {v.contact_persons[0].phones?.[0] && (
                       <div className="flex items-start gap-2 min-w-0">
                         <Phone className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
-                        <span className="min-w-0 break-words">{v.contact_persons[0].phones[0].trim()}</span>
+                        <span className="min-w-0 break-words">{formatPhoneDisplay(v.contact_persons[0].phones[0])}</span>
                       </div>
                     )}
                   </>

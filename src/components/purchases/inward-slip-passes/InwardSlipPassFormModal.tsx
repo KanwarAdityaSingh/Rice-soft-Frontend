@@ -15,6 +15,19 @@ import { getRiceTypeLabel } from '../../../utils/riceType';
 import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
 import { getSaudaSerialNumber } from '../../../utils/saudaSerial';
 import { getDirectoryTransportersPagePath, getDirectoryVehiclesPagePath } from '../../../utils/appRoutes';
+import { getUserFacingApiErrorMessage } from '../../../utils/errorHandler';
+import {
+  getVehicleNumberValidationError,
+  sanitizeVehicleNumberInput,
+  VEHICLE_NUMBER_MAX_LENGTH,
+  getGstValidationError,
+  getPanValidationError,
+  getGstPanMismatchError,
+  GST_EXAMPLE,
+  PAN_EXAMPLE,
+  GST_MAX_LENGTH,
+  PAN_MAX_LENGTH,
+} from '../../../utils/validation';
 import { useGodowns } from '../../../hooks/useGodowns';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { DateInputWithSteppers } from '../../shared/DateInputWithSteppers';
@@ -60,7 +73,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   const { saudas } = useSaudas();
   const { vendors } = useVendors();
   const { transporters, refetch: refetchTransporters, loading: loadingTransporters } = useTransporters();
-  const { vehicles, refetch: refetchVehicles } = useVehicles(undefined, true);
+  const { vehicles, refetch: refetchVehicles } = useVehicles();
   const { godowns } = useGodowns(false);
   const isEditMode = !!ispId;
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
@@ -356,14 +369,19 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
       newErrors.party_name = 'Party name must be at most 255 characters';
     }
     
-    // party_gst_number is optional, but if provided must be exactly 15 chars (API contract)
-    if (formData.party_gst_number && formData.party_gst_number.trim().length !== 15) {
-      newErrors.party_gst_number = 'GST number must be exactly 15 characters';
+    if (formData.party_gst_number?.trim()) {
+      const gstError = getGstValidationError(formData.party_gst_number);
+      if (gstError) newErrors.party_gst_number = gstError;
     }
-    
-    // party_pan_number is optional, but if provided must be exactly 10 chars (API contract)
-    if (formData.party_pan_number && formData.party_pan_number.trim().length !== 10) {
-      newErrors.party_pan_number = 'PAN number must be exactly 10 characters';
+
+    if (formData.party_pan_number?.trim()) {
+      const panError = getPanValidationError(formData.party_pan_number);
+      if (panError) newErrors.party_pan_number = panError;
+    }
+
+    if (formData.party_gst_number?.trim() && formData.party_pan_number?.trim()) {
+      const mismatchError = getGstPanMismatchError(formData.party_gst_number, formData.party_pan_number);
+      if (mismatchError) newErrors.party_pan_number = mismatchError;
     }
     
     // transportation_cost is optional, but if provided must be >= 0 with 2 decimal places (API contract)
@@ -874,12 +892,19 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
 
   // Create vehicle from manual entry (number only; use directory for full RC details)
   const handleCreateVehicle = async () => {
-    if (!vehicleNumberInput.trim()) return;
+    const normalizedNumber = sanitizeVehicleNumberInput(vehicleNumberInput);
+    if (!normalizedNumber) return;
+
+    const formatError = getVehicleNumberValidationError(normalizedNumber);
+    if (formatError) {
+      setErrors((prev) => ({ ...prev, vehicle_id: formatError }));
+      return;
+    }
 
     setCreatingVehicle(true);
     try {
       try {
-        const existingVehicle = await vehiclesAPI.getVehicleByNumber(vehicleNumberInput.trim().toUpperCase());
+        const existingVehicle = await vehiclesAPI.getVehicleByNumber(normalizedNumber);
         if (existingVehicle) {
           selectVehicle(existingVehicle);
           setAlertType('info');
@@ -893,7 +918,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
       }
 
       const vehicleData = {
-        vehicle_number: vehicleNumberInput.trim().toUpperCase(),
+        vehicle_number: normalizedNumber,
         transporter_ids: formData.transporter_id ? [formData.transporter_id] : [],
         is_verified: false,
         verified_at: null,
@@ -910,7 +935,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     } catch (error: any) {
       setAlertType('error');
       setAlertTitle('Error');
-      setAlertMessage(error.message || 'Failed to create vehicle.');
+      setAlertMessage(getUserFacingApiErrorMessage(error, 'Failed to create vehicle.'));
       setAlertOpen(true);
     } finally {
       setCreatingVehicle(false);
@@ -1231,9 +1256,9 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                           value={formData.party_gst_number || ''} 
                           onChange={(e) => setFormData({ ...formData, party_gst_number: e.target.value.toUpperCase() || null })}
                           className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background read-only:cursor-not-allowed ${errors.party_gst_number ? 'border-red-500' : 'border-border'}`} 
-                          placeholder="27ABCDE1234F1Z5"
+                          placeholder={GST_EXAMPLE}
                           readOnly={formData.sauda_ids && formData.sauda_ids.length > 0}
-                          maxLength={15}
+                          maxLength={GST_MAX_LENGTH}
                         />
                         {errors.party_gst_number && <p className="mt-0.5 text-xs text-red-500">{errors.party_gst_number}</p>}
                       </div>
@@ -1244,9 +1269,9 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                           value={formData.party_pan_number || ''} 
                           onChange={(e) => setFormData({ ...formData, party_pan_number: e.target.value.toUpperCase() || null })}
                           className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background read-only:cursor-not-allowed ${errors.party_pan_number ? 'border-red-500' : 'border-border'}`} 
-                          placeholder="ABCDE1234F"
+                          placeholder={PAN_EXAMPLE}
                           readOnly={formData.sauda_ids && formData.sauda_ids.length > 0}
-                          maxLength={10}
+                          maxLength={PAN_MAX_LENGTH}
                         />
                         {errors.party_pan_number && <p className="mt-0.5 text-xs text-red-500">{errors.party_pan_number}</p>}
                       </div>
@@ -1314,7 +1339,11 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                           }}
                           className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md bg-background">
                           <option value="">Select</option>
-                          {transporters.filter(t => t.is_active).map((t) => (<option key={t.id} value={t.id}>{t.business_name}</option>))}
+                          {transporters.filter(t => t.is_active).map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.business_name}{t.is_verified ? '' : ' (unverified)'}
+                            </option>
+                          ))}
                         </select>
                         <button type="button" onClick={() => refetchTransporters()} disabled={loadingTransporters} className="flex-shrink-0 p-1.5 border border-border rounded-md bg-background hover:bg-muted disabled:opacity-50" title="Refresh list">
                           <RefreshCw className={`h-3.5 w-3.5 ${loadingTransporters ? 'animate-spin' : ''}`} />
@@ -1356,9 +1385,17 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                             <input 
                               type="text" 
                               value={vehicleNumberInput} 
-                              onChange={(e) => setVehicleNumberInput(e.target.value.toUpperCase())}
+                              onChange={(e) => {
+                                setVehicleNumberInput(sanitizeVehicleNumberInput(e.target.value));
+                                setErrors((prev) => {
+                                  const next = { ...prev };
+                                  delete next.vehicle_id;
+                                  return next;
+                                });
+                              }}
                               onFocus={() => setVehicleDropdownOpen(true)}
-                              placeholder="Enter or select vehicle number"
+                              maxLength={VEHICLE_NUMBER_MAX_LENGTH}
+                              placeholder="MH01AB1234"
                               className={`flex-1 min-w-[140px] px-2 py-1.5 text-sm border rounded-md bg-background uppercase ${errors.vehicle_id ? 'border-red-500' : 'border-border'}`}
                             />
                             <button
@@ -1803,7 +1840,14 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                         <div className="border-t border-dotted border-border pt-2 mt-2">
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Transporter:</span>
-                            <span className="font-semibold">{getTransporterName(formData.transporter_id)}</span>
+                            <span className="font-semibold inline-flex items-center gap-1">
+                              {getTransporterName(formData.transporter_id)}
+                              {transporters.find((t) => t.id === formData.transporter_id)?.is_verified && (
+                                <span title="Verified">
+                                  <Shield className="h-3 w-3 text-emerald-600" />
+                                </span>
+                              )}
+                            </span>
                           </div>
                         </div>
                       )}

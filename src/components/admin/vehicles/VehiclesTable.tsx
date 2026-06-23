@@ -9,25 +9,41 @@ import { AlertDialog } from '../../shared/AlertDialog';
 import { Car, Shield, AlertTriangle, Truck, ExternalLink } from 'lucide-react';
 import { useVehicles } from '../../../hooks/useVehicles';
 import { useTransporters } from '../../../hooks/useTransporters';
+import { useVehicleIspReferenceData } from '../../../hooks/useVehicleIspReferenceData';
 import { vehiclesAPI } from '../../../services/vehicles.api';
-import { inwardSlipPassesAPI } from '../../../services/inwardSlipPasses.api';
 import { VehicleFormModal } from './VehicleFormModal';
+import { VehicleDetailDialog } from './VehicleDetailDialog';
+import { VehicleLinkedIspsList } from './VehicleLinkedIspsList';
+import { VehicleLinkTransportersDialog } from './VehicleLinkTransportersDialog';
+import { formatVehicleLinkedIspLine, getVehicleLinkedIsps } from '../../../utils/vehicleIspLinks';
+import { getVehicleDeleteErrorMessage } from '../../../utils/errorHandler';
 import { Link, useSearchParams } from 'react-router-dom';
-import type { Vehicle, InwardSlipPass } from '../../../types/entities';
+import type { Vehicle } from '../../../types/entities';
 
 export function VehiclesTable() {
-  const { vehicles, loading, refetch } = useVehicles(undefined, undefined);
+  const { vehicles, loading, refetch } = useVehicles(undefined, {
+    excludeVerificationDetails: true,
+  });
   const { transporters } = useTransporters();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const {
+    inwardSlipPasses,
+    saudas,
+    riceCodes,
+    riceTypes,
+    loading: ispReferenceLoading,
+    loaded: ispReferenceLoaded,
+  } = useVehicleIspReferenceData({ enabled: !loading });
   const [searchQuery, setSearchQuery] = useState('');
   const [verificationFilter, setVerificationFilter] = useState<string | undefined>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [linkTransportersCtx, setLinkTransportersCtx] = useState<{ id: string; number: string } | null>(null);
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [inwardSlipPasses, setInwardSlipPasses] = useState<InwardSlipPass[]>([]);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('error');
   const [alertTitle, setAlertTitle] = useState('');
@@ -47,112 +63,30 @@ export function VehiclesTable() {
     );
   }, [searchParams, setSearchParams]);
 
-  // Fetch inward slip passes to check vehicle usage
-  useEffect(() => {
-    const fetchISPs = async () => {
-      try {
-        const data = await inwardSlipPassesAPI.getAllInwardSlipPasses();
-        setInwardSlipPasses(data);
-      } catch (error) {
-        console.error('Failed to fetch inward slip passes:', error);
-      }
-    };
-    fetchISPs();
-  }, []);
+  const getLinkedIspsForVehicle = (vehicleId: string) =>
+    getVehicleLinkedIsps(vehicleId, inwardSlipPasses, saudas, riceCodes, riceTypes);
 
   // Check if a vehicle is used in any inward slip pass
   const isVehicleInUse = (vehicleId: string): boolean => {
     return inwardSlipPasses.some(isp => isp.vehicle_id === vehicleId);
   };
 
-  // Get count of ISPs using a vehicle
-  const getISPCountForVehicle = (vehicleId: string): number => {
-    return inwardSlipPasses.filter(isp => isp.vehicle_id === vehicleId).length;
-  };
+  const getVehicleIspAlertLines = (vehicleId: string): string[] =>
+    getLinkedIspsForVehicle(vehicleId).map(
+      (isp, index) => `${index + 1}. ${formatVehicleLinkedIspLine(isp)}`,
+    );
 
-  // Get ISP names for a vehicle (for display in warning messages)
-  const getISPNamesForVehicle = async (vehicleId: string): Promise<string[]> => {
-    const ispsUsingVehicle = inwardSlipPasses.filter(isp => isp.vehicle_id === vehicleId);
-    
-    if (ispsUsingVehicle.length === 0) return [];
-    
-    // Build ISP display names (Slip Number - Vehicle Number - Party Name)
-    const ispNames = ispsUsingVehicle.map(isp => {
-      const parts: string[] = [];
-      
-      // Get slip number
-      if (isp.slip_number) parts.push(`ISP-${isp.slip_number}`);
-      
-      // Get vehicle number (should be the vehicle we're checking)
-      const vehicle = vehicles.find(v => v.id === vehicleId);
-      if (vehicle?.vehicle_number) parts.push(vehicle.vehicle_number);
-      
-      // Get party name
-      if (isp.party_name) parts.push(isp.party_name);
-      
-      return parts.join(' - ') || `ISP-${isp.slip_number || isp.id}`;
-    });
-    
-    return ispNames;
-  };
-
-  // Parse error message to detect foreign key constraint errors and fetch related entities
-  const parseVehicleForeignKeyError = async (error: any, vehicleId: string): Promise<string | null> => {
-    const errorMessage = error?.data?.error || error?.error || error?.message || '';
-    
-    if (!errorMessage) return null;
-    
-    // Check for foreign key constraint violation
-    if (errorMessage.includes('violates foreign key constraint')) {
-      const errorParts: string[] = [];
-      
-      // Check for inward slip passes constraint (vehicle_id in ISPs)
-      if (errorMessage.includes('inward_slip_pass') && errorMessage.includes('vehicle_id')) {
-        try {
-          const allISPs = await inwardSlipPassesAPI.getAllInwardSlipPasses();
-          const ispsUsingVehicle = allISPs.filter(isp => isp.vehicle_id === vehicleId);
-          
-          if (ispsUsingVehicle.length > 0) {
-            // Get vehicle number
-            const vehicle = vehicles.find(v => v.id === vehicleId);
-            const vehicleNumber = vehicle?.vehicle_number || 'Unknown';
-            
-            // Build ISP display names (Slip Number - Vehicle Number - Party Name)
-            const ispNames = ispsUsingVehicle.map(isp => {
-              const parts: string[] = [];
-              
-              // Get slip number
-              if (isp.slip_number) parts.push(`ISP-${isp.slip_number}`);
-              
-              // Get vehicle number
-              parts.push(vehicleNumber);
-              
-              // Get party name
-              if (isp.party_name) parts.push(isp.party_name);
-              
-              return parts.join(' - ') || `ISP-${isp.slip_number || isp.id}`;
-            });
-            
-            const ispCount = ispsUsingVehicle.length;
-            const ispText = ispCount === 1 ? 'inward slip pass' : 'inward slip passes';
-            // Format ISPs as a list
-            const ispList = ispNames.map((name, index) => `${index + 1}. ${name}`).join('\n');
-            errorParts.push(`${ispCount} ${ispText}:\n${ispList}`);
-          }
-        } catch (fetchError) {
-          // If fetching ISPs fails, continue
-        }
-      }
-      
-      if (errorParts.length > 0) {
-        return `This vehicle cannot be deleted because it is being used in:\n\n${errorParts.join('\n\n')}\n\nPlease remove the vehicle from all references before deleting it.`;
-      }
-      
-      // Generic foreign key error
-      return 'This vehicle cannot be deleted because it is being used by other records. Please remove all references to this vehicle before deleting it.';
-    }
-    
-    return null;
+  const showVehicleDeleteError = (vehicleId: string, error: unknown) => {
+    const linkedIspLines = getVehicleIspAlertLines(vehicleId);
+    setAlertType(linkedIspLines.length > 0 ? 'warning' : 'error');
+    setAlertTitle('Cannot Delete Vehicle');
+    setAlertMessage(
+      getVehicleDeleteErrorMessage(error, {
+        linkedIspLines,
+        fallback: 'Failed to delete vehicle. Please try again.',
+      }),
+    );
+    setAlertOpen(true);
   };
 
   const getTransporterNames = (transporterIds: string[]): string[] => {
@@ -217,27 +151,8 @@ export function VehiclesTable() {
       refetch();
       setDeleteDialogOpen(false);
       setSelectedVehicle(null);
-    } catch (error: any) {
-      // Parse foreign key constraint errors and fetch related ISPs
-      const friendlyMessage = await parseVehicleForeignKeyError(error, selectedVehicle.id);
-      
-      if (friendlyMessage) {
-        setAlertType('error');
-        setAlertTitle('Cannot Delete Vehicle');
-        setAlertMessage(friendlyMessage);
-        setAlertOpen(true);
-      } else {
-        // Generic error handling
-        setAlertType('error');
-        setAlertTitle('Failed to Delete Vehicle');
-        setAlertMessage(
-          error?.message || 
-          error?.data?.message || 
-          error?.error || 
-          'An error occurred while deleting the vehicle. Please try again.'
-        );
-        setAlertOpen(true);
-      }
+    } catch (error: unknown) {
+      showVehicleDeleteError(selectedVehicle.id, error);
       setDeleteDialogOpen(false);
     } finally {
       setDeleting(false);
@@ -295,6 +210,7 @@ export function VehiclesTable() {
                 <th className="text-left py-3 px-4 text-sm font-semibold">Class</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold">Validity</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold">Transporters</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold">Linked ISPs</th>
                 <th className="text-right py-3 px-4 text-sm font-semibold">Actions</th>
               </tr>
             </thead>
@@ -322,15 +238,6 @@ export function VehiclesTable() {
                         <span className="text-sm font-medium">{vehicle.vehicle_number}</span>
                         {vehicle.is_verified && (
                           <Shield className="h-3.5 w-3.5 text-emerald-500" title="Verified via Surepass" />
-                        )}
-                        {(vehicle.challan_details?.length ?? 0) > 0 && (
-                          <span
-                            className="inline-flex items-center gap-0.5 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"
-                            title={`${vehicle.challan_details!.length} challan(s) on record`}
-                          >
-                            <AlertTriangle className="h-2.5 w-2.5" />
-                            {vehicle.challan_details!.length}
-                          </span>
                         )}
                       </div>
                     </td>
@@ -399,29 +306,40 @@ export function VehiclesTable() {
                         </div>
                       )}
                     </td>
+                    <td className="py-3 px-4 align-top">
+                      {ispReferenceLoading && !ispReferenceLoaded ? (
+                        <span className="text-xs text-muted-foreground">…</span>
+                      ) : (
+                        <VehicleLinkedIspsList
+                          vehicleId={vehicle.id}
+                          vehicleNumber={vehicle.vehicle_number}
+                          inwardSlipPasses={inwardSlipPasses}
+                          saudas={saudas}
+                          riceCodes={riceCodes}
+                          riceTypes={riceTypes}
+                        />
+                      )}
+                    </td>
                     <td className="py-3 px-4">
                       <div className="flex items-center justify-end gap-2">
-                        {isVehicleInUse(vehicle.id) && (
-                          <span className="text-xs text-amber-600 dark:text-amber-400">
-                            Used in {getISPCountForVehicle(vehicle.id)} ISP(s)
-                          </span>
-                        )}
                         <ActionButtons
+                          onView={() => {
+                            setSelectedVehicleId(vehicle.id);
+                            setViewModalOpen(true);
+                          }}
+                          onAddLinkedTransporter={() =>
+                            setLinkTransportersCtx({
+                              id: vehicle.id,
+                              number: vehicle.vehicle_number,
+                            })
+                          }
                           onEdit={() => {
                             setSelectedVehicleId(vehicle.id);
                             setEditModalOpen(true);
                           }}
                           onDelete={async () => {
                             if (isVehicleInUse(vehicle.id)) {
-                              const ispNames = await getISPNamesForVehicle(vehicle.id);
-                              const ispCount = ispNames.length;
-                              const ispText = ispCount === 1 ? 'inward slip pass' : 'inward slip passes';
-                              const ispList = ispNames.map((name, index) => `${index + 1}. ${name}`).join('\n');
-                              
-                              setAlertType('warning');
-                              setAlertTitle('Cannot Delete Vehicle');
-                              setAlertMessage(`This vehicle is currently used in ${ispCount} ${ispText}:\n\n${ispList}\n\nPlease remove it from all inward slip passes before deleting.`);
-                              setAlertOpen(true);
+                              showVehicleDeleteError(vehicle.id, new Error('Vehicle is linked to inward slip passes'));
                               return;
                             }
                             setSelectedVehicle(vehicle);
@@ -456,6 +374,29 @@ export function VehiclesTable() {
           }
         }}
         vehicleId={selectedVehicleId}
+      />
+
+      <VehicleDetailDialog
+        open={viewModalOpen}
+        onOpenChange={(open) => {
+          setViewModalOpen(open);
+          if (!open) setSelectedVehicleId(null);
+        }}
+        vehicleId={viewModalOpen ? selectedVehicleId : null}
+        inwardSlipPasses={inwardSlipPasses}
+        saudas={saudas}
+        riceCodes={riceCodes}
+        riceTypes={riceTypes}
+      />
+
+      <VehicleLinkTransportersDialog
+        open={linkTransportersCtx !== null}
+        onOpenChange={(open) => {
+          if (!open) setLinkTransportersCtx(null);
+        }}
+        vehicleId={linkTransportersCtx?.id ?? ''}
+        vehicleNumber={linkTransportersCtx?.number}
+        onSaved={() => refetch()}
       />
 
       <ConfirmDialog

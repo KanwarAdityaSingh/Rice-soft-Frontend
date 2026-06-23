@@ -2,47 +2,64 @@ import { apiService } from './api';
 import type { Transporter, CreateTransporterRequest, UpdateTransporterRequest, KycPersistContext } from '../types/entities';
 import { kycAPI } from './kyc.api';
 
+export interface GetAllTransportersOptions {
+  /** When true, returns active + inactive. Default list is active only. */
+  includeInactive?: boolean;
+  /** Filter by identity verification status (GST/PAN or Aadhaar KYC). */
+  isVerified?: boolean;
+}
+
+function normalizeGetAllOptions(options?: boolean | GetAllTransportersOptions): GetAllTransportersOptions {
+  if (typeof options === 'boolean') {
+    return { includeInactive: options };
+  }
+  return options ?? {};
+}
+
 export const transportersAPI = {
-  // Get all transporters
-  getAllTransporters: (includeInactive: boolean = false) => {
-    let url = '/transporters';
-    if (includeInactive) {
-      url += '?include_inactive=true';
-    }
+  getAllTransporters: (options?: boolean | GetAllTransportersOptions) => {
+    const { includeInactive, isVerified } = normalizeGetAllOptions(options);
+    const params = new URLSearchParams();
+    if (includeInactive) params.set('include_inactive', 'true');
+    if (isVerified === true) params.set('is_verified', 'true');
+    if (isVerified === false) params.set('is_verified', 'false');
+    const query = params.toString();
+    const url = query ? `/transporters?${query}` : '/transporters';
     return apiService.get<Transporter[]>(url);
   },
 
-  // Get transporter by ID
   getTransporterById: (id: string) => {
     return apiService.get<Transporter>(`/transporters/${id}`);
   },
 
-  // Create transporter
   createTransporter: (data: CreateTransporterRequest) => {
     return apiService.post<Transporter>('/transporters', data);
   },
 
-  // Update transporter
   updateTransporter: (id: string, data: UpdateTransporterRequest) => {
     return apiService.put<Transporter>(`/transporters/${id}`, data);
   },
 
-  // Delete transporter
-  deleteTransporter: (id: string) => {
-    return apiService.delete<{ success: boolean; message: string }>(`/transporters/${id}`);
+  deactivateTransporter: (id: string) => {
+    return apiService.put<Transporter>(`/transporters/${id}`, { is_active: false });
   },
 
-  // GST Lookup (Surepass GSTIN Advanced — snapshots persisted on save via kyc_verification_details)
   lookupGST: (gstNumber: string, persist?: KycPersistContext) =>
     kycAPI.lookupGSTAdvanced(gstNumber, persist),
 
-  // PAN Lookup (Surepass PAN Comprehensive — snapshots persisted on save via kyc_verification_details)
   lookupPAN: (panNumber: string, persist?: KycPersistContext) =>
     kycAPI.lookupPANComprehensive(panNumber, persist),
 
-  // Verify bank account (Surepass via /kyc/bank/verify)
-  verifyBankAccount: (accountNumber: string, ifscCode: string) => {
-    return kycAPI.verifyBank(accountNumber, ifscCode);
+  lookupAadhaar: (aadhaarNumber: string, persist?: KycPersistContext) =>
+    kycAPI.validateAadhaar(aadhaarNumber, persist),
+
+  /** Bank verify + persist on transporter (does not change identity verified status). */
+  verifyBankAccount: (accountNumber: string, ifscCode: string, transporterId?: string) => {
+    const params = new URLSearchParams({
+      id_number: accountNumber.trim(),
+      ifsc: ifscCode.trim().toUpperCase(),
+    });
+    if (transporterId) params.set('transporter_id', transporterId);
+    return apiService.get(`/transporters/verifyBankAccount?${params.toString()}`);
   },
 };
-

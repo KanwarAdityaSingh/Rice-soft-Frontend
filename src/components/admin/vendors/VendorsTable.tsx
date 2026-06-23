@@ -10,6 +10,7 @@ import { useVendors } from '../../../hooks/useVendors';
 import { VendorFormModal } from './VendorFormModal';
 import { PartySiteFormModal } from '../shared/PartySiteFormModal';
 import { PartySitesDialog } from '../shared/PartySitesDialog';
+import { formatPhoneDisplay } from '../../../utils/validation';
 
 export function VendorsTable() {
   const [statusFilter, setStatusFilter] = useState<string | undefined>('active');
@@ -117,7 +118,7 @@ export function VendorsTable() {
                     <td className="py-3 px-4 text-sm font-medium">{vendor.business_name}</td>
                     <td className="py-3 px-4 text-sm">{vendor.contact_persons?.[0]?.name || 'N/A'}</td>
                     <td className="py-3 px-4 text-sm">{vendor.contact_persons?.[0]?.emails?.[0] || 'N/A'}</td>
-                    <td className="py-3 px-4 text-sm">{vendor.contact_persons?.[0]?.phones?.[0] || 'N/A'}</td>
+                    <td className="py-3 px-4 text-sm">{formatPhoneDisplay(vendor.contact_persons?.[0]?.phones?.[0]) || 'N/A'}</td>
                     <td className="py-3 px-4 text-sm">{getTypeLabel(vendor.type)}</td>
                     <td className="py-3 px-4 text-sm max-w-[14rem]">
                       {vendor.bank_details_verified_at ? (

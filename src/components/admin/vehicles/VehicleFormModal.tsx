@@ -1,27 +1,25 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState, useEffect, useRef } from 'react';
-import { X, Car, Loader2, Check, RefreshCw, Plus, ChevronDown, Search, ExternalLink, AlertTriangle } from 'lucide-react';
+import { X, Car, Loader2, Check, RefreshCw, Plus, ChevronDown, Search, ExternalLink } from 'lucide-react';
 import { vehiclesAPI } from '../../../services/vehicles.api';
 import { useTransporters } from '../../../hooks/useTransporters';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
-import type { CreateVehicleRequest, RcChallanItem, VehicleVerificationDetails } from '../../../types/entities';
-import { KycVerificationDetailsPanel } from '../../shared/KycVerificationDetailsPanel';
+import type { CreateVehicleRequest, VehicleVerificationDetails } from '../../../types/entities';
 import {
-  buildSurepassSnapshot,
-  collectVehicleKycEntries,
+  buildVehicleSavePayload,
+  persistRcFullSnapshot,
   vehiclePersist,
 } from '../../../utils/kycVerification';
+import { mapRcFullToVehicleForm } from '../../../utils/rcFullMapping';
+import { getUserFacingApiErrorMessage } from '../../../utils/errorHandler';
 import { getDirectoryTransportersPagePath } from '../../../utils/appRoutes';
-
-const DEFAULT_STATE_PORTALS = ['DL', 'TS', 'KA', 'GJ'];
-
-function formatChallanDate(value: string): string {
-  if (!value) return '-';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-}
+import {
+  getVehicleNumberValidationError,
+  sanitizeVehicleNumberInput,
+  VEHICLE_NUMBER_FORMATS,
+  VEHICLE_NUMBER_MAX_LENGTH,
+} from '../../../utils/validation';
 
 interface VehicleFormModalProps {
   open: boolean;
@@ -54,15 +52,9 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [loadingVehicle, setLoadingVehicle] = useState(false);
-  const [fetchingChallans, setFetchingChallans] = useState(false);
-  const [chassisNumber, setChassisNumber] = useState('');
-  const [engineNumber, setEngineNumber] = useState('');
-  const [stateOnly, setStateOnly] = useState(false);
-  const [statePortalInput, setStatePortalInput] = useState(DEFAULT_STATE_PORTALS.join(', '));
-  const [challanBlacklist, setChallanBlacklist] = useState<unknown[]>([]);
+  const [fetchingRc, setFetchingRc] = useState(false);
   const [verificationDetails, setVerificationDetails] = useState<VehicleVerificationDetails>({});
   const vehiclePersistContext = vehiclePersist(vehicleId);
-  const [verifiedFields, setVerifiedFields] = useState<Set<string>>(new Set());
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
@@ -82,7 +74,7 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
     try {
       const vehicle = await vehiclesAPI.getVehicleById(vehicleId);
       setFormData({
-        vehicle_number: vehicle.vehicle_number,
+        vehicle_number: sanitizeVehicleNumberInput(vehicle.vehicle_number),
         rc_number: vehicle.rc_number,
         owner_name: vehicle.owner_name,
         vehicle_class: vehicle.vehicle_class,
@@ -99,20 +91,6 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
         is_active: vehicle.is_active,
       });
       setVerificationDetails(vehicle.verification_details ?? {});
-      // If vehicle was verified, mark those fields as read-only
-      if (vehicle.is_verified) {
-        const verifiedFieldsSet = new Set<string>();
-        if (vehicle.owner_name) verifiedFieldsSet.add('owner_name');
-        if (vehicle.maker_model) verifiedFieldsSet.add('maker_model');
-        if (vehicle.vehicle_class) verifiedFieldsSet.add('vehicle_class');
-        if (vehicle.fuel_type) verifiedFieldsSet.add('fuel_type');
-        if (vehicle.rc_number) verifiedFieldsSet.add('rc_number');
-        if (vehicle.registration_date) verifiedFieldsSet.add('registration_date');
-        if (vehicle.insurance_validity) verifiedFieldsSet.add('insurance_validity');
-        if (vehicle.fitness_validity) verifiedFieldsSet.add('fitness_validity');
-        if (vehicle.permit_validity) verifiedFieldsSet.add('permit_validity');
-        setVerifiedFields(verifiedFieldsSet);
-      }
       setErrors({});
     } catch (error: any) {
       setAlertType('error');
@@ -143,95 +121,117 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
       is_active: true,
     });
     setErrors({});
-    setVerifiedFields(new Set());
-    setChassisNumber('');
-    setEngineNumber('');
-    setStateOnly(false);
-    setStatePortalInput(DEFAULT_STATE_PORTALS.join(', '));
-    setChallanBlacklist([]);
     setVerificationDetails({});
   };
 
-  const handleFetchChallans = async () => {
-    const rcNumber = (formData.rc_number || formData.vehicle_number).trim().toUpperCase();
-    const chassis = chassisNumber.trim().toUpperCase();
-    const engine = engineNumber.trim().toUpperCase();
+  const clearRcFetchedFields = (): Partial<CreateVehicleRequest> => ({
+    rc_number: null,
+    owner_name: null,
+    vehicle_class: null,
+    fuel_type: null,
+    maker_model: null,
+    registration_date: null,
+    insurance_validity: null,
+    fitness_validity: null,
+    permit_validity: null,
+    challan_details: null,
+    is_verified: false,
+    verified_at: null,
+  });
 
-    const nextErrors: Record<string, string> = {};
-    if (!rcNumber) nextErrors.rc_number = 'RC number is required for challan lookup';
-    if (!chassis) nextErrors.chassis_number = 'Chassis number is required';
-    if (!engine) nextErrors.engine_number = 'Engine number is required';
-    if (Object.keys(nextErrors).length > 0) {
-      setErrors((prev) => ({ ...prev, ...nextErrors }));
+  const handleVehicleNumberChange = (value: string) => {
+    const nextNumber = sanitizeVehicleNumberInput(value);
+    const numberChanged = formData.vehicle_number.trim() !== nextNumber.trim();
+
+    setFormData((prev) => ({
+      ...prev,
+      vehicle_number: nextNumber,
+      ...(numberChanged ? clearRcFetchedFields() : {}),
+    }));
+
+    if (numberChanged) {
+      setVerificationDetails({});
+    }
+
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next.vehicle_number;
+      delete next.rc_fetch;
+      return next;
+    });
+  };
+
+  const handleFetchRcFull = async () => {
+    const idNumber = sanitizeVehicleNumberInput(formData.vehicle_number);
+    if (!idNumber) {
+      setErrors((prev) => ({ ...prev, vehicle_number: 'Enter vehicle number first' }));
+      return;
+    }
+    const formatError = getVehicleNumberValidationError(idNumber);
+    if (formatError) {
+      setErrors((prev) => ({ ...prev, vehicle_number: formatError }));
       return;
     }
 
-    const statePortal = statePortalInput
-      .split(/[,\s]+/)
-      .map((s) => s.trim().toUpperCase())
-      .filter((s) => s.length === 2);
-
-    setFetchingChallans(true);
+    setFetchingRc(true);
     setErrors((prev) => {
       const next = { ...prev };
-      delete next.rc_number;
-      delete next.chassis_number;
-      delete next.engine_number;
-      delete next.challan_fetch;
+      delete next.rc_fetch;
+      delete next.vehicle_number;
       return next;
     });
 
     try {
-      const result = await vehiclesAPI.fetchRcChallanDetails(
-        {
-          rc_number: rcNumber,
-          chassis_number: chassis,
-          engine_number: engine,
-          state_only: stateOnly,
-          ...(statePortal.length > 0 ? { state_portal: statePortal } : {}),
-        },
-        vehiclePersistContext,
-      );
+      const result = await vehiclesAPI.lookupRcFull(idNumber, vehiclePersistContext);
+      const mapped = mapRcFullToVehicleForm(result);
+      if (!mapped) {
+        throw new Error('Could not parse RC full response');
+      }
 
-      const challans = result.challan_details?.challans ?? [];
       setFormData((prev) => ({
         ...prev,
-        rc_number: rcNumber,
-        challan_details: challans,
+        ...mapped.form,
+        vehicle_number: mapped.form.vehicle_number || prev.vehicle_number,
+        transporter_ids: prev.transporter_ids,
       }));
-      setChallanBlacklist(result.challan_details?.blacklist ?? []);
-      if (result.surepass_response) {
-        setVerificationDetails((prev) => ({
-          ...prev,
-          rc_challan: buildSurepassSnapshot(result.surepass_response, result),
-        }));
+      setVerificationDetails((prev) => persistRcFullSnapshot(prev, result));
+
+      if (mapped.form.is_verified) {
+        setAlertType('success');
+        setAlertTitle('RC details fetched');
+        setAlertMessage(
+          `Owner: ${mapped.form.owner_name || 'N/A'}, Model: ${mapped.form.maker_model || 'N/A'}`,
+        );
+      } else {
+        setAlertType('warning');
+        setAlertTitle('RC lookup returned NA data');
+        setAlertMessage(
+          'Surepass returned NA or empty fields for this vehicle. It remains unverified until usable RC data is available.',
+        );
       }
-      setAlertType('success');
-      setAlertTitle('Challan details fetched');
-      setAlertMessage(
-        challans.length > 0
-          ? `Found ${challans.length} challan(s) via Surepass`
-          : 'No pending challans found for this vehicle',
-      );
       setAlertOpen(true);
-    } catch (error: any) {
-      setErrors((prev) => ({
-        ...prev,
-        challan_fetch: error?.message || 'Failed to fetch challan details',
-      }));
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'RC lookup failed';
+      setErrors((prev) => ({ ...prev, rc_fetch: message }));
     } finally {
-      setFetchingChallans(false);
+      setFetchingRc(false);
     }
   };
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
-    if (!formData.vehicle_number.trim()) {
-      newErrors.vehicle_number = 'Vehicle number is required';
+    const vehicleNumberError = getVehicleNumberValidationError(formData.vehicle_number);
+    if (vehicleNumberError) {
+      newErrors.vehicle_number = vehicleNumberError;
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
+
+  const hasRcLookupSnapshot = Boolean(verificationDetails.rc_full);
+  const hasRcFetchedData = Boolean(formData.is_verified);
+  const rcFieldClassName =
+    'w-full px-3 py-2 border border-border rounded-lg bg-muted/40 text-sm read-only:cursor-not-allowed opacity-80';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -239,16 +239,19 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
 
     setLoading(true);
     try {
+      const basePayload: CreateVehicleRequest = {
+        ...formData,
+        vehicle_number: sanitizeVehicleNumberInput(formData.vehicle_number),
+      };
+      const payload = buildVehicleSavePayload(basePayload, verificationDetails);
+
       if (isEditMode && vehicleId) {
-        await vehiclesAPI.updateVehicle(vehicleId, formData);
+        await vehiclesAPI.updateVehicle(vehicleId, payload);
         setAlertType('success');
         setAlertTitle('Success');
         setAlertMessage('Vehicle updated successfully');
       } else {
-        await vehiclesAPI.createVehicle({
-          ...formData,
-          vehicle_number: formData.vehicle_number.toUpperCase(),
-        });
+        await vehiclesAPI.createVehicle(payload);
         setAlertType('success');
         setAlertTitle('Success');
         setAlertMessage('Vehicle created successfully');
@@ -259,9 +262,18 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
         resetForm();
       }, 1500);
     } catch (error: any) {
+      const errorMessage = getUserFacingApiErrorMessage(
+        error,
+        isEditMode ? 'Failed to update vehicle' : 'Failed to create vehicle',
+      );
+
+      if (/vehicle number already exists/i.test(errorMessage)) {
+        setErrors({ vehicle_number: errorMessage });
+      }
+
       setAlertType('error');
-      setAlertTitle('Error');
-      setAlertMessage(error.message || 'Failed to save vehicle');
+      setAlertTitle(isEditMode ? 'Cannot Update Vehicle' : 'Cannot Create Vehicle');
+      setAlertMessage(errorMessage);
       setAlertOpen(true);
     } finally {
       setLoading(false);
@@ -317,31 +329,67 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                 <div className="flex justify-center py-10"><LoadingSpinner /></div>
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  {(isEditMode || collectVehicleKycEntries(verificationDetails).length > 0) && (
-                    <KycVerificationDetailsPanel
-                      entries={collectVehicleKycEntries(verificationDetails)}
-                      title="Stored Surepass verifications"
-                      emptyMessage="RC verify and challan fetch persist full Surepass responses when the vehicle record already exists (edit mode) or is matched by number."
-                    />
-                  )}
-
                   {/* Vehicle Number */}
                   <div>
                     <label className="block text-sm font-medium mb-1">
                       Vehicle Number <span className="text-red-500">*</span>
                     </label>
-                    <input
-                      type="text"
-                      value={formData.vehicle_number}
-                      onChange={(e) => setFormData({ ...formData, vehicle_number: e.target.value.toUpperCase() })}
-                      disabled={isEditMode}
-                      className={`w-full px-3 py-2 border rounded-lg bg-background uppercase ${errors.vehicle_number ? 'border-red-500' : 'border-border'} ${isEditMode ? 'opacity-60' : ''}`}
-                      placeholder="MH01AB1234"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={formData.vehicle_number}
+                        onChange={(e) => handleVehicleNumberChange(e.target.value)}
+                        maxLength={VEHICLE_NUMBER_MAX_LENGTH}
+                        className={`flex-1 px-3 py-2 border rounded-lg bg-background uppercase ${errors.vehicle_number ? 'border-red-500' : 'border-border'}`}
+                        placeholder="MH01AB1234"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void handleFetchRcFull()}
+                        disabled={fetchingRc || !formData.vehicle_number.trim()}
+                        className="px-4 py-2 btn-secondary flex items-center gap-2 shrink-0 disabled:opacity-50"
+                      >
+                        {fetchingRc ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Search className="h-4 w-4" />
+                        )}
+                        Fetch RC
+                      </button>
+                    </div>
                     {errors.vehicle_number && <p className="text-xs text-red-500 mt-1">{errors.vehicle_number}</p>}
+                    {!errors.vehicle_number && (
+                      <details className="mt-1 text-xs text-muted-foreground">
+                        <summary className="cursor-pointer hover:text-foreground">Accepted formats</summary>
+                        <ul className="mt-1 space-y-0.5 pl-4 list-disc">
+                          {VEHICLE_NUMBER_FORMATS.map((format) => (
+                            <li key={format.id}>
+                              <span className="font-mono">{format.example}</span>
+                              <span className="text-muted-foreground/80"> — {format.label}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                    {errors.rc_fetch && <p className="text-xs text-red-500 mt-1">{errors.rc_fetch}</p>}
                     {formData.is_verified && (
                       <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
                         <Check className="h-3 w-3" /> Verified via Surepass
+                      </p>
+                    )}
+                    {!hasRcFetchedData && !hasRcLookupSnapshot && (
+                      <p className="text-xs text-amber-600 mt-1">
+                        Unverified — only the vehicle number is required to save. Click Fetch RC to load registration details from Surepass.
+                      </p>
+                    )}
+                    {!hasRcFetchedData && hasRcLookupSnapshot && (
+                      <p className="text-xs text-amber-600 mt-1">
+                        RC lookup returned NA or insufficient data — this vehicle remains unverified.
+                      </p>
+                    )}
+                    {hasRcFetchedData && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        RC details below are read-only. You can change the vehicle number; click Fetch RC again to refresh details.
                       </p>
                     )}
                   </div>
@@ -353,10 +401,10 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                       <input
                         type="text"
                         value={formData.owner_name || ''}
-                        onChange={(e) => setFormData({ ...formData, owner_name: e.target.value || null })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-background read-only:cursor-not-allowed"
-                        placeholder="Owner name"
-                        readOnly={verifiedFields.has('owner_name')}
+                        readOnly
+                        tabIndex={-1}
+                        className={rcFieldClassName}
+                        placeholder="Fetched from RC"
                       />
                     </div>
                     <div>
@@ -364,10 +412,10 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                       <input
                         type="text"
                         value={formData.maker_model || ''}
-                        onChange={(e) => setFormData({ ...formData, maker_model: e.target.value || null })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-background read-only:cursor-not-allowed"
-                        placeholder="TATA ACE"
-                        readOnly={verifiedFields.has('maker_model')}
+                        readOnly
+                        tabIndex={-1}
+                        className={rcFieldClassName}
+                        placeholder="Fetched from RC"
                       />
                     </div>
                   </div>
@@ -379,21 +427,20 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                       <input
                         type="text"
                         value={formData.vehicle_class || ''}
-                        onChange={(e) => setFormData({ ...formData, vehicle_class: e.target.value || null })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-background read-only:cursor-not-allowed"
-                        placeholder="LMV, HMV"
-                        readOnly={verifiedFields.has('vehicle_class')}
+                        readOnly
+                        tabIndex={-1}
+                        className={rcFieldClassName}
+                        placeholder="Fetched from RC"
                       />
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">Fuel Type</label>
                       <select
                         value={formData.fuel_type || ''}
-                        onChange={(e) => setFormData({ ...formData, fuel_type: e.target.value || null })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-background"
-                        disabled={verifiedFields.has('fuel_type')}
+                        disabled
+                        className={`${rcFieldClassName} disabled:cursor-not-allowed`}
                       >
-                        <option value="">Select</option>
+                        <option value="">Not fetched</option>
                         <option value="Diesel">Diesel</option>
                         <option value="Petrol">Petrol</option>
                         <option value="CNG">CNG</option>
@@ -409,9 +456,9 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                       <input
                         type="date"
                         value={formData.registration_date || ''}
-                        onChange={(e) => setFormData({ ...formData, registration_date: e.target.value || null })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm read-only:cursor-not-allowed"
-                        readOnly={verifiedFields.has('registration_date')}
+                        readOnly
+                        tabIndex={-1}
+                        className={rcFieldClassName}
                       />
                     </div>
                     <div>
@@ -419,9 +466,9 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                       <input
                         type="date"
                         value={formData.insurance_validity || ''}
-                        onChange={(e) => setFormData({ ...formData, insurance_validity: e.target.value || null })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm read-only:cursor-not-allowed"
-                        readOnly={verifiedFields.has('insurance_validity')}
+                        readOnly
+                        tabIndex={-1}
+                        className={rcFieldClassName}
                       />
                     </div>
                     <div>
@@ -429,9 +476,9 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                       <input
                         type="date"
                         value={formData.fitness_validity || ''}
-                        onChange={(e) => setFormData({ ...formData, fitness_validity: e.target.value || null })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm read-only:cursor-not-allowed"
-                        readOnly={verifiedFields.has('fitness_validity')}
+                        readOnly
+                        tabIndex={-1}
+                        className={rcFieldClassName}
                       />
                     </div>
                     <div>
@@ -439,155 +486,37 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                       <input
                         type="date"
                         value={formData.permit_validity || ''}
-                        onChange={(e) => setFormData({ ...formData, permit_validity: e.target.value || null })}
-                        className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm read-only:cursor-not-allowed"
-                        readOnly={verifiedFields.has('permit_validity')}
+                        readOnly
+                        tabIndex={-1}
+                        className={rcFieldClassName}
                       />
                     </div>
                   </div>
 
-                  {/* RC challan lookup (Surepass) */}
-                  <div className="rounded-lg border border-border p-4 space-y-3">
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-                      <h3 className="text-sm font-semibold">RC challan details</h3>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Requires RC, chassis, and engine numbers. Fetched via Surepass and saved with the vehicle.
-                    </p>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium mb-1">RC number</label>
-                        <input
-                          type="text"
-                          value={formData.rc_number || formData.vehicle_number || ''}
-                          onChange={(e) =>
-                            setFormData({ ...formData, rc_number: e.target.value.toUpperCase() || null })
-                          }
-                          className="w-full px-3 py-2 border border-border rounded-lg bg-background uppercase text-sm"
-                          placeholder="HR55AP0244"
-                        />
-                        {errors.rc_number && <p className="text-xs text-red-500 mt-1">{errors.rc_number}</p>}
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium mb-1">Chassis number</label>
-                        <input
-                          type="text"
-                          value={chassisNumber}
-                          onChange={(e) => setChassisNumber(e.target.value.toUpperCase())}
-                          className="w-full px-3 py-2 border border-border rounded-lg bg-background uppercase text-sm"
-                          placeholder="MA3JMTB1SPB851591"
-                        />
-                        {errors.chassis_number && (
-                          <p className="text-xs text-red-500 mt-1">{errors.chassis_number}</p>
-                        )}
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium mb-1">Engine number</label>
-                        <input
-                          type="text"
-                          value={engineNumber}
-                          onChange={(e) => setEngineNumber(e.target.value.toUpperCase())}
-                          className="w-full px-3 py-2 border border-border rounded-lg bg-background uppercase text-sm"
-                          placeholder="K10CNC265773"
-                        />
-                        {errors.engine_number && (
-                          <p className="text-xs text-red-500 mt-1">{errors.engine_number}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <label className="flex items-center gap-2 text-sm cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={stateOnly}
-                          onChange={(e) => setStateOnly(e.target.checked)}
-                        />
-                        State portals only
-                      </label>
-                      <div>
-                        <label className="block text-xs font-medium mb-1">State portals (optional)</label>
-                        <input
-                          type="text"
-                          value={statePortalInput}
-                          onChange={(e) => setStatePortalInput(e.target.value.toUpperCase())}
-                          className="w-full px-3 py-2 border border-border rounded-lg bg-background text-sm uppercase"
-                          placeholder="DL, TS, KA, GJ"
-                        />
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => void handleFetchChallans()}
-                      disabled={fetchingChallans}
-                      className="w-full sm:w-auto px-4 py-2 btn-secondary flex items-center justify-center gap-2"
-                    >
-                      {fetchingChallans ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Search className="h-4 w-4" />
-                      )}
-                      Fetch challan details
-                    </button>
-                    {errors.challan_fetch && (
-                      <p className="text-xs text-red-500">{errors.challan_fetch}</p>
-                    )}
-
-                    {(formData.challan_details?.length ?? 0) > 0 && (
-                      <div className="overflow-x-auto rounded-lg border border-border">
-                        <table className="w-full text-xs">
-                          <thead>
-                            <tr className="border-b border-border bg-muted/40">
-                              <th className="text-left py-2 px-2 font-medium">Challan</th>
-                              <th className="text-left py-2 px-2 font-medium">Offense</th>
-                              <th className="text-left py-2 px-2 font-medium">Date</th>
-                              <th className="text-left py-2 px-2 font-medium">State</th>
-                              <th className="text-right py-2 px-2 font-medium">Amount</th>
-                              <th className="text-left py-2 px-2 font-medium">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(formData.challan_details as RcChallanItem[]).map((challan) => (
-                              <tr key={`${challan.challan_number}-${challan.number}`} className="border-b border-border/60">
-                                <td className="py-2 px-2 whitespace-nowrap">{challan.challan_number}</td>
-                                <td className="py-2 px-2 max-w-[200px] truncate" title={challan.offense_details}>
-                                  {challan.offense_details || '-'}
-                                </td>
-                                <td className="py-2 px-2 whitespace-nowrap">{formatChallanDate(challan.challan_date)}</td>
-                                <td className="py-2 px-2">{challan.state || '-'}</td>
-                                <td className="py-2 px-2 text-right whitespace-nowrap">
-                                  {typeof challan.amount === 'number' ? `₹${challan.amount.toLocaleString('en-IN')}` : '-'}
-                                </td>
-                                <td className="py-2 px-2">{challan.challan_status || '-'}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-
-                    {challanBlacklist.length > 0 && (
-                      <p className="text-xs text-amber-700">
-                        Blacklist entries: {challanBlacklist.length} (see Surepass response on save)
-                      </p>
-                    )}
-                  </div>
-
                   {/* Transporters */}
                   <div>
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center justify-between gap-2 mb-2">
                       <label className="block text-sm font-medium">Linked Transporters</label>
-                      <button
-                        type="button"
-                        onClick={() => refetchTransporters()}
-                        disabled={loadingTransporters}
-                        className="p-1 hover:bg-muted rounded"
-                      >
-                        <RefreshCw className={`h-3.5 w-3.5 ${loadingTransporters ? 'animate-spin' : ''}`} />
-                      </button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            window.open(getDirectoryTransportersPagePath({ create: true }), '_blank', 'noopener,noreferrer')
+                          }
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/30 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted/50 transition-colors"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                          Add Transporter
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => refetchTransporters()}
+                          disabled={loadingTransporters}
+                          className="p-1 hover:bg-muted rounded"
+                        >
+                          <RefreshCw className={`h-3.5 w-3.5 ${loadingTransporters ? 'animate-spin' : ''}`} />
+                        </button>
+                      </div>
                     </div>
                     <div ref={transporterDropdownRef} className="relative">
                       <button
@@ -626,16 +555,6 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                         </div>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        window.open(getDirectoryTransportersPagePath({ create: true }), '_blank', 'noopener,noreferrer')
-                      }
-                      className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-                      Add Transporter
-                    </button>
                     {formData.transporter_ids && formData.transporter_ids.length > 0 && (
                       <div className="flex flex-wrap gap-2 mt-2">
                         {formData.transporter_ids.map((id) => {

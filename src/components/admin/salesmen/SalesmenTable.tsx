@@ -9,6 +9,7 @@ import { Briefcase } from 'lucide-react';
 import { useSalesmen } from '../../../hooks/useSalesmen';
 import { SalesmanFormModal } from './SalesmanFormModal';
 import type { Salesman } from '../../../types/entities';
+import { formatPhoneDisplay } from '../../../utils/validation';
 
 export function SalesmenTable() {
   const { salesmen, loading, deleteSalesman, refetch } = useSalesmen();
@@ -23,7 +24,8 @@ export function SalesmenTable() {
     const matchesSearch = 
       salesman.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       salesman.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      salesman.phone.includes(searchQuery);
+      salesman.phone.includes(searchQuery) ||
+      formatPhoneDisplay(salesman.phone).includes(searchQuery);
     
     const matchesStatus = statusFilter ? (statusFilter === 'active' ? salesman.is_active : !salesman.is_active) : true;
 
@@ -74,7 +76,7 @@ export function SalesmenTable() {
                   <tr key={salesman.id} className="border-b border-border/60 hover:bg-muted/30 transition-colors">
                     <td className="py-3 px-4 text-sm">{salesman.name}</td>
                     <td className="py-3 px-4 text-sm">{salesman.email}</td>
-                    <td className="py-3 px-4 text-sm">{salesman.phone}</td>
+                    <td className="py-3 px-4 text-sm">{formatPhoneDisplay(salesman.phone)}</td>
                     <td className="py-3 px-4 text-right">
                       <ActionButtons
                         isActive={salesman.is_active}
@@ -124,7 +126,7 @@ export function SalesmenTable() {
                   </div>
                   <div>
                     <span className="text-muted-foreground text-xs">Phone</span>
-                    <p className="truncate">{salesman.phone}</p>
+                    <p className="truncate">{formatPhoneDisplay(salesman.phone)}</p>
                   </div>
                 </div>
 

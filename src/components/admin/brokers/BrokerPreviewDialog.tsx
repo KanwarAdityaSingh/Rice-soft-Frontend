@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { X, CheckCircle2, Building2, MapPin, Briefcase } from 'lucide-react';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import type { CreateBrokerRequest } from '../../../types/entities';
+import { formatPhonesForDisplay } from '../../../utils/validation';
 
 interface BrokerPreviewDialogProps {
   open: boolean;
@@ -149,7 +150,7 @@ export function BrokerPreviewDialog({ open, onOpenChange, formData, onConfirm, m
                           <div className="font-medium text-foreground">{cp.name}</div>
                           {cp.phones && cp.phones.filter(p => p?.trim()).length > 0 && (
                             <div className="text-xs text-muted-foreground mt-1">
-                              📞 {cp.phones.filter(p => p?.trim()).join(', ')}
+                              📞 {formatPhonesForDisplay(cp.phones.filter(p => p?.trim()))}
                             </div>
                           )}
                           {cp.emails && cp.emails.filter(e => e?.trim()).length > 0 && (

@@ -3,8 +3,6 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { X, Plus, Trash2, FileText, Edit2, Download, Mail, MessageCircle } from 'lucide-react';
 import { usePaymentAdvices } from '../../../hooks/usePaymentAdvices';
 import { paymentAdvicesAPI } from '../../../services/paymentAdvices.api';
-import { purchaseSummaryAPI } from '../../../services/purchaseSummary.api';
-import { kaantasAPI } from '../../../services/kaantas.api';
 import { vendorsAPI } from '../../../services/vendors.api';
 import { vehiclesAPI } from '../../../services/vehicles.api';
 import { inwardSlipPassesAPI } from '../../../services/inwardSlipPasses.api';
@@ -19,24 +17,29 @@ import {
   getCompletionStatus,
   formatCompletionPercentage,
   formatWeightDisplay,
-  danaDeductionKgFromSaidSent,
 } from '../../../utils/saudaCompletion';
-import { ispSaudaVendorAmountAfterCommission } from '../../../utils/ispSaudaVendorAmount';
+import {
+  buildPaymentAdviceSavePayload,
+  computePaymentAdviceTotalCharges,
+  DEFAULT_RTGS_CHARGE,
+  mapStoredChargesToFormCharges,
+  paymentAdviceSaudaVendorAmount,
+  syncFormChargesFromPaymentAdvice,
+} from '../../../utils/paymentAdvice';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { DateInputWithSteppers } from '../../shared/DateInputWithSteppers';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { NotificationModal } from '../../shared/NotificationModal';
+import { PaymentAdviceStoredMismatchPanel } from './PaymentAdviceStoredMismatchPanel';
 import type { 
   CreatePaymentAdviceRequest, 
   UpdatePaymentAdviceRequest, 
   AddChargeRequest,
-  SaudaPurchaseSummary,
-  ISPPurchaseSummary,
+  PaymentAdvicePreviewResponse,
   RiceCode,
   RiceType,
   Sauda,
   Transporter,
-  Kaanta,
   Vehicle,
   PaymentAdvice
 } from '../../../types/entities';
@@ -78,7 +81,6 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
   const [riceLengths, setRiceLengths] = useState<RiceType[]>([]);
   const [transporters, setTransporters] = useState<Transporter[]>([]);
-  const [kaantas, setKaantas] = useState<Kaanta[]>([]);
   const [defaultRecipient, setDefaultRecipient] = useState<DefaultRecipient | null>(null);
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   
@@ -95,22 +97,15 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
     date_of_payment: new Date().toISOString().split('T')[0],
     transaction_id: null,
     bill_number: null, // Purchase bill number from ISP
-    charges: [
-      // Default RTGS Charge
-      {
-        charge_name: 'RTGS Charge',
-        charge_value: 0,
-        charge_type: 'fixed',
-      },
-    ],
+    charges: [{ ...DEFAULT_RTGS_CHARGE }],
   });
   
   const [invoiceNo, setInvoiceNo] = useState<string>('');
   const [dueDate, setDueDate] = useState<string>('');
   
-  // Summary preview
-  const [summary, setSummary] = useState<SaudaPurchaseSummary | ISPPurchaseSummary | null>(null);
-  const [loadingSummary, setLoadingSummary] = useState(false);
+  // Document preview from GET /payment-advices/preview
+  const [preview, setPreview] = useState<PaymentAdvicePreviewResponse | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
   
   // UI state
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -164,51 +159,63 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
     }
   }, [open, paymentAdviceId]);
 
-  // Fetch summary when selection changes
+  const totalCharges = useMemo(
+    () => computePaymentAdviceTotalCharges(formData.charges ?? [], preview?.amount ?? 0),
+    [formData.charges, preview?.amount]
+  );
+
+  // Fetch document preview when sauda/ISP or charges change
   useEffect(() => {
-    const fetchSummary = async () => {
-      if (linkType === 'sauda' && formData.sauda_id) {
-        setLoadingSummary(true);
-        try {
-          const [data, kaantaData] = await Promise.all([
-            purchaseSummaryAPI.getSaudaSummary(formData.sauda_id),
-            kaantasAPI.getAllKaantas(formData.sauda_id)
-          ]);
-          setSummary(data);
-          setKaantas(kaantaData);
-        } catch (error) {
-          console.error('Failed to fetch sauda summary:', error);
-          setSummary(null);
-        } finally {
-          setLoadingSummary(false);
-        }
-      } else if (linkType === 'isp' && formData.inward_slip_pass_id) {
-        setLoadingSummary(true);
-        try {
-          const [data, kaantaData, ispData] = await Promise.all([
-            purchaseSummaryAPI.getISPSummary(formData.inward_slip_pass_id),
-            kaantasAPI.getAllKaantas(undefined, formData.inward_slip_pass_id),
-            inwardSlipPassesAPI.getInwardSlipPassById(formData.inward_slip_pass_id)
-          ]);
-          setSummary(data);
-          setKaantas(kaantaData);
-          // Auto-populate bill_number from ISP if available
-          if (ispData.bill_number && !formData.bill_number) {
-            setFormData(prev => ({ ...prev, bill_number: ispData.bill_number || null }));
-          }
-        } catch (error) {
-          console.error('Failed to fetch ISP summary:', error);
-          setSummary(null);
-        } finally {
-          setLoadingSummary(false);
-        }
-      } else {
-        setSummary(null);
-        setKaantas([]);
-      }
+    const saudaId = linkType === 'sauda' ? formData.sauda_id : null;
+    const ispId = linkType === 'isp' ? formData.inward_slip_pass_id : null;
+
+    if (!saudaId && !ispId) {
+      setPreview(null);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingPreview(true);
+
+    paymentAdvicesAPI
+      .fetchPaymentAdvicePreview({
+        sauda_id: saudaId ?? undefined,
+        inward_slip_pass_id: ispId ?? undefined,
+        total_charges: totalCharges,
+      })
+      .then((data) => {
+        if (!cancelled) setPreview(data);
+      })
+      .catch((error) => {
+        console.error('Failed to fetch payment advice preview:', error);
+        if (!cancelled) setPreview(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingPreview(false);
+      });
+
+    return () => {
+      cancelled = true;
     };
-    fetchSummary();
-  }, [linkType, formData.sauda_id, formData.inward_slip_pass_id]);
+  }, [linkType, formData.sauda_id, formData.inward_slip_pass_id, totalCharges]);
+
+  // Auto-populate bill_number from ISP
+  useEffect(() => {
+    if (linkType !== 'isp' || !formData.inward_slip_pass_id) return;
+
+    inwardSlipPassesAPI
+      .getInwardSlipPassById(formData.inward_slip_pass_id)
+      .then((ispData) => {
+        if (ispData.bill_number) {
+          setFormData((prev) =>
+            prev.bill_number ? prev : { ...prev, bill_number: ispData.bill_number || null }
+          );
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to fetch ISP for bill number:', error);
+      });
+  }, [linkType, formData.inward_slip_pass_id]);
 
   const loadPAData = async () => {
     if (!paymentAdviceId) return;
@@ -226,22 +233,11 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
         inward_slip_pass_id: pa.inward_slip_pass_id || null,
         payer_id: '', // Not used anymore but kept for type compatibility
         recipient_id: pa.recipient_id, // Keep recipient_id from loaded payment advice
-        amount: pa.amount,
+        amount: undefined, // amount comes from preview API on save
         date_of_payment: pa.date_of_payment,
         transaction_id: pa.transaction_id || null,
         bill_number: pa.bill_number || null, // Load bill_number from payment advice
-        charges: pa.charges && pa.charges.length > 0 ? pa.charges.map(c => ({
-          charge_name: c.charge_name,
-          charge_value: c.charge_value,
-          charge_type: c.charge_type,
-        })) : [
-          // Default RTGS Charge if no charges exist
-          {
-            charge_name: 'RTGS Charge',
-            charge_value: 0,
-            charge_type: 'fixed',
-          },
-        ],
+        charges: mapStoredChargesToFormCharges(pa.charges),
       });
       setInvoiceNo(pa.transaction_id || '');
       setErrors({});
@@ -266,22 +262,14 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
       date_of_payment: new Date().toISOString().split('T')[0],
       transaction_id: null,
       bill_number: null, // Reset bill_number
-      charges: [
-        // Default RTGS Charge
-        {
-          charge_name: 'RTGS Charge',
-          charge_value: 0,
-          charge_type: 'fixed',
-        },
-      ],
+      charges: [{ ...DEFAULT_RTGS_CHARGE }],
     });
     setInvoiceNo(generateInvoiceNumber());
     // Set due date to 10 days from now
     const due = new Date();
     due.setDate(due.getDate() + 10);
     setDueDate(due.toISOString().split('T')[0]);
-    setSummary(null);
-    setKaantas([]);
+    setPreview(null);
     setErrors({});
     setNewCharge({
       charge_name: '',
@@ -403,29 +391,47 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
     e.preventDefault();
     if (!validateForm()) return;
 
+    const hasLink = !!(linkType === 'sauda' ? formData.sauda_id : formData.inward_slip_pass_id);
+    if (hasLink && !preview) {
+      setAlertType('error');
+      setAlertTitle('Preview unavailable');
+      setAlertMessage('Could not load payment advice preview. Please try again.');
+      setAlertOpen(true);
+      return;
+    }
+
     setLoading(true);
     try {
-      const submitData: CreatePaymentAdviceRequest = {
+      const savePayload = buildPaymentAdviceSavePayload({
         sauda_id: linkType === 'sauda' ? formData.sauda_id : null,
         inward_slip_pass_id: linkType === 'isp' ? formData.inward_slip_pass_id : null,
-        payer_id: '', // Not used anymore, kept for type compatibility
-        recipient_id: formData.recipient_id, // Keep recipient_id as it's still needed
-        amount: formData.amount,
+        recipient_id: formData.recipient_id,
+        amount: preview?.amount,
         date_of_payment: formData.date_of_payment,
         transaction_id: invoiceNo || null,
-        bill_number: formData.bill_number || null, // Include bill_number if provided
-        charges: formData.charges?.filter(c => c.charge_name && c.charge_value > 0) || [], // Filter out empty charges
+        bill_number: formData.bill_number,
+        charges: formData.charges ?? [],
+      });
+
+      const applySavedResponse = (pa: PaymentAdvice) => {
+        setCreatedPaymentAdvice(pa);
+        setLoadedPaymentAdvice(pa);
+        setFormData((prev) => ({
+          ...prev,
+          amount: pa.amount,
+          charges: syncFormChargesFromPaymentAdvice(pa),
+        }));
       };
 
       if (isEditMode && paymentAdviceId) {
-        const updated = await updatePaymentAdvice(paymentAdviceId, submitData as UpdatePaymentAdviceRequest);
-        setCreatedPaymentAdvice(updated);
+        const updated = await updatePaymentAdvice(paymentAdviceId, savePayload);
+        applySavedResponse(updated);
         setAlertType('success');
         setAlertTitle('Success');
         setAlertMessage('Payment advice updated successfully');
       } else {
-        const created = await createPaymentAdvice(submitData);
-        setCreatedPaymentAdvice(created);
+        const created = await createPaymentAdvice(savePayload);
+        applySavedResponse(created);
         setAlertType('success');
         setAlertTitle('Success');
         setAlertMessage('Payment advice created successfully');
@@ -468,23 +474,6 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
     });
   };
 
-  /** Amount before RTGS/other charges: purchase summary net payable (broker excluded from vendor payment). Falls back to final total if API omits net_payable. */
-  const summaryPayableBase =
-    summary != null ? (summary.net_payable ?? summary.final_total_amount) : 0;
-
-  const calculateNetPayable = () => {
-    const baseAmount = formData.amount ?? summaryPayableBase;
-    let net = baseAmount;
-    (formData.charges || []).forEach(charge => {
-      if (charge.charge_type === 'fixed') {
-        net -= charge.charge_value;
-      } else {
-        net -= (baseAmount * charge.charge_value / 100);
-      }
-    });
-    return Math.max(0, net);
-  };
-
   const handleLinkTypeChange = (type: LinkType) => {
     setLinkType(type);
     setFormData({
@@ -492,58 +481,77 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
       sauda_id: null,
       inward_slip_pass_id: null,
     });
-    setSummary(null);
-    setKaantas([]);
+    setPreview(null);
   };
 
-  const previewAmount = formData.amount ?? summaryPayableBase;
-  const activeSaudas = saudas.filter(s => s.status === 'active' || s.status === 'completed' || s.status === 'draft');
+  const summary = preview?.summary ?? null;
 
-  // Calculate bill weight (sauda quantity), kaanta weight, final weight
-  // Use payment advice fields if available, otherwise calculate from kaantas
-  const totalSaidSentWeight = kaantas.reduce((sum, k) => sum + (k.said_sent_weight || 0), 0);
-  const totalKaantaWeight = kaantas.reduce((sum, k) => sum + k.kaanta_weight, 0);
-  
-  // Calculate dana deduction based on is_dana_required flag
-  // For single sauda: check selectedSauda.is_dana_required
-  // For ISP: calculate separately per sauda and sum
-  let calculatedDanaDeduction = 0;
-  
-  if (linkType === 'sauda' && selectedSauda) {
-    // Single sauda: only calculate if is_dana_required is true
-    const isDanaRequired = selectedSauda.is_dana_required ?? true; // Default to true
-    if (isDanaRequired && totalSaidSentWeight > 0) {
-      calculatedDanaDeduction = danaDeductionKgFromSaidSent(totalSaidSentWeight);
-    }
-  } else if (linkType === 'isp' && kaantas.length > 0) {
-    // ISP: calculate separately per sauda
-    const kaantasBySauda = new Map<string, typeof kaantas>();
-    kaantas.forEach(kaanta => {
-      if (!kaantasBySauda.has(kaanta.sauda_id)) {
-        kaantasBySauda.set(kaanta.sauda_id, []);
-      }
-      kaantasBySauda.get(kaanta.sauda_id)!.push(kaanta);
-    });
-    
-    // Calculate dana deduction for each sauda group
-    for (const [saudaId, saudaKaantas] of kaantasBySauda.entries()) {
-      const sauda = saudas.find(s => s.id === saudaId);
-      const isDanaRequired = sauda?.is_dana_required ?? true; // Default to true
-      
-      if (isDanaRequired) {
-        const saudaSaidSentWeight = saudaKaantas.reduce((sum, k) => sum + (k.said_sent_weight || 0), 0);
-        if (saudaSaidSentWeight > 0) {
-          calculatedDanaDeduction += danaDeductionKgFromSaidSent(saudaSaidSentWeight);
-        }
-      }
-    }
-  }
-  
-  const billWeight = createdPaymentAdvice?.bill_weight ?? loadedPaymentAdvice?.bill_weight ?? totalSaidSentWeight;
-  const kaantaWeight = createdPaymentAdvice?.kanta_weight ?? loadedPaymentAdvice?.kanta_weight ?? totalKaantaWeight;
-  const danaDeduction = createdPaymentAdvice?.dana_deduction ?? loadedPaymentAdvice?.dana_deduction ?? calculatedDanaDeduction;
-  const finalWeight = createdPaymentAdvice?.final_weight ?? loadedPaymentAdvice?.final_weight ?? (kaantaWeight - danaDeduction);
-  const totalBags = summary?.total_bags ?? kaantas.reduce((sum, k) => sum + k.no_of_bags, 0);
+  /** Edit mode: document panel shows saved DB record until Update; create uses preview. */
+  const showStoredDocument =
+    isEditMode && !!loadedPaymentAdvice && !createdPaymentAdvice;
+
+  const documentAmount = showStoredDocument
+    ? (loadedPaymentAdvice!.amount ?? 0)
+    : (createdPaymentAdvice?.amount ?? preview?.amount ?? loadedPaymentAdvice?.amount ?? 0);
+
+  const documentNetPayable = showStoredDocument
+    ? (loadedPaymentAdvice!.net_payable ?? loadedPaymentAdvice!.amount ?? 0)
+    : (createdPaymentAdvice?.net_payable ??
+      preview?.net_payable ??
+      loadedPaymentAdvice?.net_payable ??
+      0);
+
+  const documentPreCharges = showStoredDocument
+    ? (loadedPaymentAdvice!.amount ?? 0)
+    : (preview?.amount ?? summary?.net_payable ?? summary?.final_total_amount ?? 0);
+
+  const documentCharges = showStoredDocument
+    ? (loadedPaymentAdvice!.charges ?? []).filter((c) => c.charge_value > 0)
+    : (formData.charges ?? []).filter((c) => c.charge_name && c.charge_value > 0);
+
+  const billWeight = showStoredDocument
+    ? (loadedPaymentAdvice!.bill_weight ?? null)
+    : (createdPaymentAdvice?.bill_weight ??
+      preview?.bill_weight ??
+      loadedPaymentAdvice?.bill_weight ??
+      null);
+  const kaantaWeight = showStoredDocument
+    ? (loadedPaymentAdvice!.kanta_weight ?? null)
+    : (createdPaymentAdvice?.kanta_weight ??
+      preview?.kanta_weight ??
+      loadedPaymentAdvice?.kanta_weight ??
+      null);
+  const danaDeduction = showStoredDocument
+    ? (loadedPaymentAdvice!.dana_deduction ?? null)
+    : (createdPaymentAdvice?.dana_deduction ??
+      preview?.dana_deduction ??
+      loadedPaymentAdvice?.dana_deduction ??
+      null);
+  const finalWeight = showStoredDocument
+    ? (loadedPaymentAdvice!.final_weight ?? null)
+    : (createdPaymentAdvice?.final_weight ??
+      preview?.final_weight ??
+      loadedPaymentAdvice?.final_weight ??
+      null);
+  const totalBags = showStoredDocument
+    ? ((loadedPaymentAdvice as PaymentAdvice & { total_bags?: number | null }).total_bags ??
+      preview?.total_bags ??
+      summary?.total_bags ??
+      null)
+    : (preview?.total_bags ?? summary?.total_bags ?? null);
+
+  const previewAmount = documentAmount;
+  const netPayable = documentNetPayable;
+
+  const canShowDocumentPreview =
+    !!preview || !!loadedPaymentAdvice || !!formData.sauda_id || !!formData.inward_slip_pass_id;
+
+  const canSubmit =
+    !loading &&
+    !loadingPreview &&
+    (!!(linkType === 'sauda' ? formData.sauda_id : formData.inward_slip_pass_id) ? !!preview : true);
+
+  const activeSaudas = saudas.filter(s => s.status === 'active' || s.status === 'completed' || s.status === 'draft');
 
   // Reference for PDF download
   const previewRef = useRef<HTMLDivElement>(null);
@@ -990,7 +998,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                       </button>
                       <button
                         type="submit"
-                        disabled={loading}
+                        disabled={!canSubmit}
                         className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
                       >
                         {loading ? 'Saving...' : isEditMode ? 'Update' : 'Create'}
@@ -1031,17 +1039,30 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
 
                   {/* Preview Section */}
                   <div className="bg-white dark:bg-gray-900 rounded-lg border border-border p-4 text-sm">
-                    {loadingSummary ? (
+                    {loadingPreview && !loadedPaymentAdvice ? (
                       <div className="flex justify-center items-center h-full">
                         <LoadingSpinner />
                       </div>
-                    ) : !summary && !formData.sauda_id && !formData.inward_slip_pass_id ? (
+                    ) : !canShowDocumentPreview ? (
                       <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                         <FileText className="h-12 w-12 mb-3 opacity-50" />
                         <p>Select a Sauda or ISP to see preview</p>
                       </div>
                     ) : (
+                      <>
+                        <PaymentAdviceStoredMismatchPanel
+                          stored={loadedPaymentAdvice}
+                          preview={preview}
+                          variant="form"
+                        />
                       <div className="space-y-4" ref={previewRef}>
+                        {showStoredDocument && (
+                          <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
+                            Showing <span className="font-semibold text-foreground">saved record</span> from the database.
+                            Recalculated preview is in the comparison panel above. Save to apply preview values.
+                          </div>
+                        )}
+
                         {/* Header */}
                         <div className="text-center border-b border-border pb-3">
                           <h3 className="font-bold text-lg">{defaultRecipient?.name || 'Loading...'}</h3>
@@ -1069,21 +1090,11 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                           <div className="mb-3 pb-3 border-b border-border">
                             <div className="text-xs font-semibold text-muted-foreground mb-2">Per Sauda Breakdown:</div>
                             <div className="space-y-2">
-                              {summary.saudas.map((saudaItem, idx) => (
+                              {summary.saudas.map((saudaItem, idx) => {
+                                const vendorSaudaTotal = paymentAdviceSaudaVendorAmount(saudaItem);
+
+                                return (
                                 <div key={saudaItem.sauda_id} className="border border-border/50 rounded p-2 bg-muted/20">
-                                  {(() => {
-                                    const saudaKaantas = kaantas.filter(k => k.sauda_id === saudaItem.sauda_id);
-                                    const saudaKaantaWeight = saudaKaantas.reduce((sum, k) => sum + (k.kaanta_weight || 0), 0);
-                                    const saudaSaidSentWeight = saudaKaantas.reduce((sum, k) => sum + (k.said_sent_weight || 0), 0);
-                                    const sauda = saudas.find(s => s.id === saudaItem.sauda_id);
-                                    const isDanaRequired = sauda?.is_dana_required ?? true;
-                                    const saudaDanaDeduction = isDanaRequired && saudaSaidSentWeight > 0
-                                      ? danaDeductionKgFromSaidSent(saudaSaidSentWeight)
-                                      : 0;
-                                    const vendorSaudaTotal =
-                                      ispSaudaVendorAmountAfterCommission(saudaItem);
-                                    return (
-                                      <>
                                   <div className="font-semibold text-xs mb-1">
                                     {idx + 1}.{' '}
                                     {[getRiceCodeName(saudaItem.sauda_details.rice_code_id), getRiceTypeLabel(saudaItem.sauda_details.rice_type, riceTypes), getRiceLengthLabel(saudaItem.sauda_details.rice_length, riceLengths)].filter(Boolean).join(' ') || 'N/A'}
@@ -1107,6 +1118,18 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                       <span className="text-muted-foreground">Base Amount:</span>
                                       <span>₹{saudaItem.base_amount.toFixed(2)}</span>
                                     </div>
+                                    {(saudaItem.dana_deduction_kg ?? 0) > 0 && (
+                                      <div className="flex justify-between text-red-600">
+                                        <span className="text-muted-foreground">Less: Dana (300gm per Qtl):</span>
+                                        <span>-{(saudaItem.dana_deduction_kg ?? 0).toFixed(2)} kg</span>
+                                      </div>
+                                    )}
+                                    {(saudaItem.dana_deduction_amount ?? 0) > 0 && (
+                                      <div className="flex justify-between text-red-600">
+                                        <span className="text-muted-foreground">Less: Dana (amount):</span>
+                                        <span>-₹{(saudaItem.dana_deduction_amount ?? 0).toFixed(2)}</span>
+                                      </div>
+                                    )}
                                     {saudaItem.cash_discount_amount > 0 && (
                                       <div className="flex justify-between text-emerald-600">
                                         <span>- Cash Discount:</span>
@@ -1119,33 +1142,14 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                         <span>₹{saudaItem.broker_commission_amount.toFixed(2)}</span>
                                       </div>
                                     )}
-                                    <div className="col-span-2 flex justify-between text-[9px] text-muted-foreground">
-                                      <span>Pricing Base:</span>
-                                      <span className="text-right">
-                                        {isDanaRequired
-                                          ? `(${saudaKaantaWeight.toFixed(2)} - ${saudaDanaDeduction.toFixed(2)}) x ₹${saudaItem.sauda_details.rate.toFixed(2)}`
-                                          : `${saudaKaantaWeight.toFixed(2)} x ₹${saudaItem.sauda_details.rate.toFixed(2)}`
-                                        } = ₹{saudaItem.base_amount.toFixed(2)}
-                                      </span>
-                                    </div>
-                                    <div className="col-span-2 flex justify-between text-[9px] text-muted-foreground">
-                                      <span>Pricing Flow:</span>
-                                      <span className="text-right">
-                                        {saudaItem.broker_commission_amount > 0
-                                          ? `(₹${saudaItem.base_amount.toFixed(2)} - ₹${saudaItem.cash_discount_amount.toFixed(2)}) - ₹${saudaItem.broker_commission_amount.toFixed(2)} = ₹${vendorSaudaTotal.toFixed(2)}`
-                                          : `(₹${saudaItem.base_amount.toFixed(2)} - ₹${saudaItem.cash_discount_amount.toFixed(2)}) = ₹${vendorSaudaTotal.toFixed(2)}`}
-                                      </span>
-                                    </div>
                                     <div className="col-span-2 flex justify-between font-semibold border-t border-border/30 pt-0.5 mt-0.5">
                                       <span>Sauda Total (vendor):</span>
                                       <span>₹{vendorSaudaTotal.toFixed(2)}</span>
                                     </div>
                                   </div>
-                                      </>
-                                    );
-                                  })()}
                                 </div>
-                              ))}
+                                );
+                              })}
                             </div>
                             <div className="text-xs font-semibold text-muted-foreground mt-2 pt-2 border-t border-border">Total Summary:</div>
                           </div>
@@ -1211,18 +1215,13 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                               </div>
                               <div className="divide-y divide-border">
                                 {summary.saudas.map((saudaItem, idx) => {
-                                  const sauda = saudas.find(s => s.id === saudaItem.sauda_id);
-                                  const isDanaRequired = sauda?.is_dana_required ?? true;
-                                  // Calculate dana deduction for this sauda's kaantas
-                                  const saudaKaantas = kaantas.filter(k => k.sauda_id === saudaItem.sauda_id);
-                                  const saudaSaidSentWeight = saudaKaantas.reduce((sum, k) => sum + (k.said_sent_weight || 0), 0);
-                                  const saudaDanaDeduction = isDanaRequired && saudaSaidSentWeight > 0
-                                    ? danaDeductionKgFromSaidSent(saudaSaidSentWeight)
-                                    : 0;
-                                  const vendorSaudaTotal =
-                                    ispSaudaVendorAmountAfterCommission(saudaItem);
-                                  
-                                  return (
+                                const sauda = saudas.find(s => s.id === saudaItem.sauda_id);
+                                const isDanaRequired = sauda?.is_dana_required ?? true;
+                                const saudaDanaKg = saudaItem.dana_deduction_kg ?? 0;
+                                const saudaDanaAmount = saudaItem.dana_deduction_amount ?? 0;
+                                const vendorSaudaTotal = paymentAdviceSaudaVendorAmount(saudaItem);
+
+                                return (
                                   <div key={saudaItem.sauda_id} className="p-3">
                                     <div className="flex items-center justify-between mb-2">
                                       <div className="font-semibold text-xs">
@@ -1239,7 +1238,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                             Dana Not Required
                                           </span>
                                         )}
-                                        {summary.saudas.length > 1 && (
+                                        {(summary.saudas?.length ?? 0) > 1 && (
                                           <div className="text-xs font-bold text-primary tabular-nums">
                                             ₹{vendorSaudaTotal.toFixed(2)}
                                           </div>
@@ -1285,11 +1284,19 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                       )}
                                       {/* Dana Deduction for this sauda */}
                                       {isDanaRequired ? (
-                                        saudaDanaDeduction > 0 ? (
-                                          <div className="flex justify-between col-span-2 text-red-600">
-                                            <span className="text-muted-foreground">Less: Dana (300gm per Qtl):</span>
-                                            <span>-{saudaDanaDeduction.toFixed(2)} kg</span>
-                                          </div>
+                                        saudaDanaKg > 0 ? (
+                                          <>
+                                            <div className="flex justify-between col-span-2 text-red-600">
+                                              <span className="text-muted-foreground">Less: Dana (300gm per Qtl):</span>
+                                              <span>-{saudaDanaKg.toFixed(2)} kg</span>
+                                            </div>
+                                            {saudaDanaAmount > 0 && (
+                                              <div className="flex justify-between col-span-2 text-red-600">
+                                                <span className="text-muted-foreground">Less: Dana (amount):</span>
+                                                <span>-₹{saudaDanaAmount.toFixed(2)}</span>
+                                              </div>
+                                            )}
+                                          </>
                                         ) : null
                                       ) : (
                                         <div className="flex justify-between col-span-2 text-muted-foreground">
@@ -1306,24 +1313,23 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                               <div className="bg-primary/10 px-3 py-2 border-t-2 border-primary/30">
                                 <div className="flex justify-between items-center text-sm font-bold">
                                   <span>Total (net payable, pre-charges):</span>
-                                  <span className="text-primary">₹{(summary.net_payable ?? summary.final_total_amount).toFixed(2)}</span>
+                                  <span className="text-primary">₹{documentPreCharges.toFixed(2)}</span>
                                 </div>
-                                {/* Weight Calculation Flow */}
-                                {(billWeight > 0 || kaantaWeight > 0 || danaDeduction > 0 || finalWeight > 0) && (
+                                {(billWeight != null || kaantaWeight != null || danaDeduction != null || finalWeight != null) && (
                                   <div className="mt-2 pt-2 border-t border-primary/20 space-y-0.5 text-[10px]">
-                                    {billWeight > 0 && (
+                                    {billWeight != null && billWeight > 0 && (
                                       <div className="flex justify-between">
                                         <span className="text-muted-foreground">Bill Weight:</span>
                                         <span>{billWeight.toFixed(2)} kg</span>
                                       </div>
                                     )}
-                                    {kaantaWeight > 0 && (
+                                    {kaantaWeight != null && kaantaWeight > 0 && (
                                       <div className="flex justify-between">
                                         <span className="text-muted-foreground">Kaanta Weight:</span>
                                         <span>{kaantaWeight.toFixed(2)} kg</span>
                                       </div>
                                     )}
-                                    {danaDeduction > 0 ? (
+                                    {danaDeduction != null && danaDeduction > 0 ? (
                                       <div className="flex justify-between text-red-600">
                                         <span className="text-muted-foreground">Less: Dana (300gm per Qtl):</span>
                                         <span>-{danaDeduction.toFixed(2)} kg</span>
@@ -1334,7 +1340,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                         <span className="text-xs">Not Applicable (No saudas require dana)</span>
                                       </div>
                                     )}
-                                    {finalWeight > 0 && (
+                                    {finalWeight != null && finalWeight > 0 && (
                                       <div className="flex justify-between font-semibold border-t border-primary/20 pt-0.5 mt-0.5">
                                         <span className="text-muted-foreground">Final Weight:</span>
                                         <span>{finalWeight.toFixed(2)} kg</span>
@@ -1343,8 +1349,8 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                   </div>
                                 )}
                                 <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                                  <span>Total Weight: {finalWeight.toFixed(2)} kg</span>
-                                  <span>Total Bags: {summary.total_bags}</span>
+                                  <span>Total Weight: {finalWeight != null ? `${finalWeight.toFixed(2)} kg` : '-'}</span>
+                                  <span>Total Bags: {totalBags ?? summary?.total_bags ?? '-'}</span>
                                 </div>
                               </div>
                             </div>
@@ -1357,10 +1363,10 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                             )}
                             
                             {/* Charges and Net Payable for ISP */}
-                            {(formData.charges || []).length > 0 && (
+                            {documentCharges.length > 0 && (
                               <div className="mt-3 pt-3 border-t border-border">
                                 <div className="text-xs font-semibold text-muted-foreground mb-2">Deductions:</div>
-                                {(formData.charges || []).map((charge, idx) => (
+                                {documentCharges.map((charge, idx) => (
                                   <div key={idx} className="flex justify-between text-xs">
                                     <span className="text-muted-foreground">- {charge.charge_name}:</span>
                                     <span className="font-medium text-red-600">
@@ -1383,7 +1389,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                   </p>
                                 </div>
                                 <span className="font-bold text-xl text-primary tabular-nums shrink-0">
-                                  ₹{calculateNetPayable().toFixed(2)}
+                                  ₹{netPayable.toFixed(2)}
                                 </span>
                               </div>
                             </div>
@@ -1407,14 +1413,14 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-muted-foreground">Bill Weight</span>
-                                <span className="font-medium">{billWeight.toFixed(2)} kg</span>
+                                <span className="font-medium">{billWeight != null ? `${billWeight.toFixed(2)} kg` : '-'}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-muted-foreground">Kaanta Weight</span>
-                                <span className="font-medium">{kaantaWeight.toFixed(2)} kg</span>
+                                <span className="font-medium">{kaantaWeight != null ? `${kaantaWeight.toFixed(2)} kg` : '-'}</span>
                               </div>
                               {selectedSauda && (selectedSauda.is_dana_required ?? true) ? (
-                                danaDeduction > 0 && (
+                                danaDeduction != null && danaDeduction > 0 && (
                                   <div className="flex justify-between text-red-600">
                                     <span className="text-muted-foreground">Less: Dana (300gm per Qtl)</span>
                                     <span className="font-medium">-{danaDeduction.toFixed(2)} kg</span>
@@ -1428,7 +1434,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                               )}
                               <div className="flex justify-between font-semibold">
                                 <span className="text-muted-foreground">Final Weight</span>
-                                <span className="font-medium">{finalWeight.toFixed(2)} kg</span>
+                                <span className="font-medium">{finalWeight != null ? `${finalWeight.toFixed(2)} kg` : '-'}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-muted-foreground">Rate</span>
@@ -1449,13 +1455,13 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                 <span className="font-medium">{(summary?.cash_discount_amount ?? 0).toFixed(2)}</span>
                               </div>
                             {/* Custom Charges */}
-                            {(formData.charges || []).map((charge, idx) => (
+                            {documentCharges.map((charge, idx) => (
                               <div key={idx} className="flex justify-between">
                                 <span className="text-muted-foreground">{charge.charge_name}</span>
                                 <span className="font-medium">
                                   {charge.charge_type === 'fixed' 
                                     ? charge.charge_value.toFixed(2) 
-                                    : ((previewAmount * charge.charge_value / 100)).toFixed(2)
+                                    : ((documentAmount * charge.charge_value / 100)).toFixed(2)
                                   }
                                 </span>
                               </div>
@@ -1468,7 +1474,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                                 </p>
                               </div>
                               <span className="font-bold text-lg text-primary tabular-nums shrink-0">
-                                {calculateNetPayable().toFixed(2)}
+                                {netPayable.toFixed(2)}
                               </span>
                             </div>
                           </div>
@@ -1490,7 +1496,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                             <div className="flex justify-between gap-2">
                               <span>Bag</span>
                               <span className="text-right text-foreground/90 font-medium tabular-nums shrink-0">
-                                {totalBags}
+                                {totalBags ?? '-'}
                               </span>
                             </div>
                             <div className="flex justify-between gap-2">
@@ -1516,7 +1522,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                         )}
 
                     {/* Download Button - Outside previewRef so it won't appear in PDF */}
-                    {summary && (
+                    {canShowDocumentPreview && (
                       <div className="pt-4 border-t border-border flex justify-center">
                         <button
                           type="button"
@@ -1529,6 +1535,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
                       </div>
                     )}
                       </div>
+                      </>
                     )}
                   </div>
                 </div>

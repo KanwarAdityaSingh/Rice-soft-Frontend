@@ -53,7 +53,7 @@ export function PaymentAdviceEmailModal({
 
     setLoadingPreview(true);
     try {
-      const preview = await paymentAdvicesAPI.getPaymentAdvicePreview(paymentAdviceData);
+      const preview = await paymentAdvicesAPI.getPaymentAdviceNotificationPreview(paymentAdviceData);
       if (preview?.email) {
         setEmailSubject(preview.email.subject || '');
         setEmailHtml(preview.email.html || '');

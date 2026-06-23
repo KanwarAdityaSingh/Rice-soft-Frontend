@@ -1,14 +1,18 @@
 import { apiService } from './api';
+import { normalizeIsoDateInput } from '../utils/dateFormatting';
 import type {
   AadhaarValidationResult,
   BankVerificationResult,
   DriverVerificationResponse,
   EmailVerificationResult,
   GSTLookupResponseData,
+  GstinByPanResponse,
   KycPersistContext,
+  PanContactResponse,
   PANLookupResponseData,
   RcChallanDetailsRequest,
   RcChallanDetailsResult,
+  RcFullLookupResult,
 } from '../types/entities';
 
 const BASE = '/kyc';
@@ -60,10 +64,11 @@ export const kycAPI = {
 
   /** Surepass driving licence verification */
   verifyDrivingLicense: (licenseNumber: string, dob?: string, persist?: KycPersistContext) => {
+    const normalizedDob = dob?.trim() ? normalizeIsoDateInput(dob) : '';
     const body = withPersistBody(
       {
-        license_number: licenseNumber.trim(),
-        ...(dob?.trim() ? { dob: dob.trim() } : {}),
+        id_number: licenseNumber.trim(),
+        ...(normalizedDob ? { dob: normalizedDob } : {}),
       },
       persist,
     );
@@ -97,6 +102,24 @@ export const kycAPI = {
     return apiService.get<PANLookupResponseData>(`${BASE}/pan/comprehensive?${params.toString()}`);
   },
 
+  /** Surepass GSTIN list by PAN */
+  lookupGstinByPan: (panNumber: string, persist?: KycPersistContext) => {
+    const params = new URLSearchParams({
+      pan_number: panNumber.trim().toUpperCase(),
+    });
+    appendPersistQuery(params, persist);
+    return apiService.get<GstinByPanResponse>(`${BASE}/gstin/by-pan?${params.toString()}`);
+  },
+
+  /** Surepass PAN email / mobile lookup */
+  lookupPanContact: (panNumber: string, persist?: KycPersistContext) => {
+    const params = new URLSearchParams({
+      pan_number: panNumber.trim().toUpperCase(),
+    });
+    appendPersistQuery(params, persist);
+    return apiService.get<PanContactResponse>(`${BASE}/pan/contact?${params.toString()}`);
+  },
+
   /** Surepass RC challan details (requires RC + chassis + engine numbers) */
   lookupRcChallanDetails: async (
     payload: RcChallanDetailsRequest,
@@ -122,5 +145,17 @@ export const kycAPI = {
       RcChallanDetailsResult & { surepass_response?: unknown }
     >(`${BASE}/rc/challan-details`, body);
     return response;
+  },
+
+  /** Surepass RC full lookup (registration certificate details) */
+  lookupRcFull: (idNumber: string, persist?: KycPersistContext) => {
+    const body = withPersistBody(
+      { id_number: idNumber.trim().toUpperCase() },
+      persist,
+    );
+    return apiService.post<RcFullLookupResult & { surepass_response?: unknown }>(
+      `${BASE}/rc/full`,
+      body,
+    );
   },
 };

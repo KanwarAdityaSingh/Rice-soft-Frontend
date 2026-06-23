@@ -1,4 +1,6 @@
 // API configuration and base service
+import { sanitizePhoneInput } from '../utils/validation';
+
 const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
 export interface ApiResponse<T = any> {
@@ -225,7 +227,7 @@ class ApiService {
 
   // OTP: Request an OTP for a phone number
   async requestOtp(phone: string): Promise<RequestOtpData> {
-    const normalizedPhone = phone.replace(/\D/g, '');
+    const normalizedPhone = sanitizePhoneInput(phone);
     if (normalizedPhone.length !== 10) {
       throw new ApiError('Phone must be 10 digits', 400);
     }
@@ -235,7 +237,7 @@ class ApiService {
 
   // OTP: Verify OTP and receive the same LoginResponse as password login
   async verifyOtp(phone: string, otp: string): Promise<LoginResponse> {
-    const normalizedPhone = phone.replace(/\D/g, '');
+    const normalizedPhone = sanitizePhoneInput(phone);
     const normalizedOtp = otp.replace(/\D/g, '').slice(0, 6);
     if (normalizedPhone.length !== 10) {
       throw new ApiError('Phone must be 10 digits', 400);

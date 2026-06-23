@@ -10,6 +10,7 @@ import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
 import { Users, Edit, Trash2, TrendingUp, Copy, Check } from 'lucide-react';
 import { canUpdate, isAdmin, isCustomUser } from '../../../utils/permissions';
 import type { Lead, LeadFilters } from '../../../types/entities';
+import { formatPhoneDisplay, formatPhonesForDisplay, sanitizePhoneInput } from '../../../utils/validation';
 
 interface LeadsTableProps {
   leads: Lead[];
@@ -38,7 +39,7 @@ export function LeadsTable({
 
   const filteredLeads = leads.filter((lead) => {
     const contactPersonsText = (lead.contact_persons || [])
-      .map(cp => `${cp.name} ${(cp.phones || []).join(' ')}`)
+      .map(cp => `${cp.name} ${formatPhonesForDisplay(cp.phones)} ${(cp.phones || []).map(sanitizePhoneInput).join(' ')}`)
       .join(' ')
       .toLowerCase();
     const matchesSearch =
@@ -167,7 +168,7 @@ export function LeadsTable({
                         <div key={idx}>
                           {cp.name}
                           {cp.phones && cp.phones.length > 0 && cp.phones.filter(p => p && p.trim()).length > 0 && (
-                            <span className="text-muted-foreground"> ({cp.phones.filter(p => p && p.trim()).join(', ')})</span>
+                            <span className="text-muted-foreground"> ({formatPhonesForDisplay(cp.phones.filter(p => p && p.trim()))})</span>
                           )}
                         </div>
                       ))
@@ -237,7 +238,7 @@ export function LeadsTable({
                       <p key={idx} className="truncate">
                         {cp.name}
                         {cp.phones && cp.phones.length > 0 && cp.phones.filter(p => p && p.trim()).length > 0 && (
-                          <span> ({cp.phones.filter(p => p && p.trim()).join(', ')})</span>
+                          <span> ({formatPhonesForDisplay(cp.phones.filter(p => p && p.trim()))})</span>
                         )}
                       </p>
                     ))}

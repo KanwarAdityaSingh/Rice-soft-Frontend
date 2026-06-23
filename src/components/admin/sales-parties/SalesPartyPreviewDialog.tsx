@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { X, CheckCircle2, Building2, MapPin, Briefcase, UserCheck } from 'lucide-react';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import type { CreateSalesPartyRequest } from '../../../types/entities';
+import { formatPhonesForDisplay } from '../../../utils/validation';
 
 interface SalesPartyPreviewDialogProps {
   open: boolean;
@@ -100,7 +101,7 @@ export function SalesPartyPreviewDialog({ open, onOpenChange, formData, onConfir
                     <div key={idx} className="mb-3 p-2 bg-muted/30 rounded-lg">
                       <div className="font-medium text-foreground mb-1">{contact.name}</div>
                       {contact.phones?.length > 0 && (
-                        <div className="text-xs">📞 {contact.phones.join(', ')}</div>
+                        <div className="text-xs">📞 {formatPhonesForDisplay(contact.phones)}</div>
                       )}
                       {contact.emails && contact.emails.length > 0 && (
                         <div className="text-xs">✉️ {contact.emails.join(', ')}</div>

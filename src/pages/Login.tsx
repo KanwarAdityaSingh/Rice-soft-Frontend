@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { Lock, AlertCircle, TrendingUp, Shield, Zap } from 'lucide-react'
 import { apiService, ApiError } from '../services/api'
+import { PhoneInput } from '../components/shared/PhoneInput'
+import { sanitizePhoneInput } from '../utils/validation'
 
 export default function LoginPage() {
   const { login, loginWithOtp, isLoading, error } = useAuth()
@@ -45,15 +47,14 @@ export default function LoginPage() {
     setCanResend(otpSent && otpStep === 'verify')
   }, [resendCooldown, otpSent, otpStep])
 
-  function handlePhoneChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const value = e.target.value.replace(/\D/g, '').slice(0, 10)
+  function handlePhoneChange(value: string) {
     setPhoneNumber(value)
     setOtpError(null)
   }
 
   async function handleRequestOtp(e?: React.FormEvent) {
     if (e) e.preventDefault()
-    const normalized = phoneNumber.replace(/\D/g, '')
+    const normalized = sanitizePhoneInput(phoneNumber)
     if (normalized.length !== 10) {
       setOtpError('Please enter a valid 10-digit phone number')
       return
@@ -92,7 +93,7 @@ export default function LoginPage() {
   async function handleVerifyOtp(e?: React.FormEvent) {
     if (e) e.preventDefault()
     const normalizedOtp = otp.replace(/\D/g, '')
-    const normalizedPhone = phoneNumber.replace(/\D/g, '')
+    const normalizedPhone = sanitizePhoneInput(phoneNumber)
     if (normalizedOtp.length !== 6) {
       setOtpError('Please enter a valid 6-digit OTP')
       return
@@ -323,20 +324,17 @@ export default function LoginPage() {
               <form onSubmit={handleRequestOtp} className="space-y-4">
                 <div className="space-y-2 sm:space-y-3">
                   <label htmlFor="phone" className="text-xs sm:text-sm font-semibold text-foreground">Phone number</label>
-                  <input
+                  <PhoneInput
                     id="phone"
-                    type="tel"
                     value={phoneNumber}
                     onChange={handlePhoneChange}
-                    placeholder="Enter 10-digit phone number"
-                    maxLength={10}
                     className="w-full rounded-lg sm:rounded-xl border border-border bg-background/80 px-3 sm:px-4 py-2.5 sm:py-3 text-sm outline-none ring-0 transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-primary/20 hover:border-primary/50"
                     disabled={isRequestingOtp}
                   />
                 </div>
                 <button
                   type="submit"
-                  disabled={isRequestingOtp || phoneNumber.replace(/\D/g, '').length !== 10}
+                  disabled={isRequestingOtp || sanitizePhoneInput(phoneNumber).length !== 10}
                   className="btn-primary w-full rounded-lg sm:rounded-xl py-2.5 sm:py-3 text-sm font-semibold shadow-lg hover:shadow-xl transition-all duration-200 transform hover:-translate-y-0.5 disabled:opacity-50"
                 >
                   {isRequestingOtp ? (

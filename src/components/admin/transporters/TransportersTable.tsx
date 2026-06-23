@@ -1,22 +1,32 @@
 import { useState, useMemo, useEffect } from 'react';
 import { SearchBar } from '../shared/SearchBar';
+import { FilterDropdown } from '../shared/FilterDropdown';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { EmptyState } from '../shared/EmptyState';
 import { ActionButtons } from '../shared/ActionButtons';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
-import { Truck, Car, ExternalLink } from 'lucide-react';
+import { Truck, Car, ExternalLink, Shield } from 'lucide-react';
 import { useTransporters } from '../../../hooks/useTransporters';
 import { useVehicles } from '../../../hooks/useVehicles';
 import { TransporterFormModal } from './TransporterFormModal';
+import { TransporterLinkVehiclesDialog } from './TransporterLinkVehiclesDialog';
 import { inwardSlipPassesAPI } from '../../../services/inwardSlipPasses.api';
 import { vehiclesAPI } from '../../../services/vehicles.api';
 import { Link, useSearchParams } from 'react-router-dom';
+import { formatPhoneDisplay } from '../../../utils/validation';
+import { formatTransporterVerifiedAt } from '../../../utils/transporterVerification';
 import type { Transporter, InwardSlipPass } from '../../../types/entities';
 
 export function TransportersTable() {
-  const { transporters, loading, deleteTransporter, refetch } = useTransporters(false);
-  const { vehicles } = useVehicles();
+  const [verificationFilter, setVerificationFilter] = useState<string | undefined>();
+  const isVerifiedParam =
+    verificationFilter === 'verified' ? true : verificationFilter === 'unverified' ? false : undefined;
+  const { transporters, loading, deleteTransporter, refetch } = useTransporters({
+    includeInactive: false,
+    isVerified: isVerifiedParam,
+  });
+  const { vehicles, refetch: refetchVehicles } = useVehicles();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -24,11 +34,19 @@ export function TransportersTable() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedTransporterId, setSelectedTransporterId] = useState<string | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [linkVehiclesCtx, setLinkVehiclesCtx] = useState<{ id: string; name: string } | null>(null);
   const [inwardSlipPasses, setInwardSlipPasses] = useState<InwardSlipPass[]>([]);
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('error');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+
+  const showComingSoon = (message: string) => {
+    setAlertType('info');
+    setAlertTitle('Coming soon');
+    setAlertMessage(message);
+    setAlertOpen(true);
+  };
 
   // Open create modal when opened via e.g. /directory/transporters?create=1 (new tab from vehicle form)
   useEffect(() => {
@@ -201,7 +219,10 @@ export function TransportersTable() {
         transporter.business_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (transporter.contact_persons && transporter.contact_persons.some(cp => 
           cp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          cp.phones?.some(phone => phone.toLowerCase().includes(searchQuery.toLowerCase())) ||
+          cp.phones?.some(phone =>
+            phone.includes(searchQuery) ||
+            formatPhoneDisplay(phone).includes(searchQuery)
+          ) ||
           cp.emails?.some(email => email && email.toLowerCase().includes(searchQuery.toLowerCase()))
         ));
       
@@ -219,7 +240,16 @@ export function TransportersTable() {
             placeholder="Search by business name, contact, phone, or email..." 
           />
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap items-center">
+          <FilterDropdown
+            label="Verified"
+            options={[
+              { label: 'Verified', value: 'verified' },
+              { label: 'Unverified', value: 'unverified' },
+            ]}
+            value={verificationFilter}
+            onChange={setVerificationFilter}
+          />
           <button
             onClick={() => setCreateModalOpen(true)}
             className="btn-primary rounded-xl inline-flex items-center justify-center gap-2 px-4 py-2"
@@ -250,6 +280,7 @@ export function TransportersTable() {
                   <th className="text-left py-3 px-4 text-sm font-semibold">Phone</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold">Email</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold">City</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold">Verified</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold">Vehicles</th>
                   <th className="text-right py-3 px-4 text-sm font-semibold">Actions</th>
                 </tr>
@@ -257,16 +288,28 @@ export function TransportersTable() {
               <tbody>
                 {filtered.map((transporter) => {
                   const primaryContact = transporter.contact_persons?.[0];
-                  const primaryPhone = primaryContact?.phones?.[0] || 'N/A';
+                  const primaryPhone = formatPhoneDisplay(primaryContact?.phones?.[0]) || 'N/A';
                   const primaryEmail = primaryContact?.emails?.[0] || 'N/A';
                   
                   return (
                     <tr key={transporter.id} className="border-b border-border/60 hover:bg-muted/30 transition-colors">
-                      <td className="py-3 px-4 text-sm font-medium">{transporter.business_name}</td>
+                      <td className="py-3 px-4 text-sm font-medium">
+                        <div className="flex items-center gap-2">
+                          <span>{transporter.business_name}</span>
+                          {transporter.is_verified && (
+                            <span title="Verified" className="inline-flex">
+                              <Shield className="h-3.5 w-3.5 text-emerald-500 shrink-0" aria-hidden />
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="py-3 px-4 text-sm">{primaryContact?.name || 'N/A'}</td>
                       <td className="py-3 px-4 text-sm">{primaryPhone}</td>
                       <td className="py-3 px-4 text-sm">{primaryEmail}</td>
                       <td className="py-3 px-4 text-sm">{transporter.address.city}</td>
+                      <td className="py-3 px-4 text-sm text-muted-foreground">
+                        {transporter.is_verified ? formatTransporterVerifiedAt(transporter.verified_at) : '—'}
+                      </td>
                       <td className="py-3 px-4 text-sm">
                         {(() => {
                           const linkedVehicles = getLinkedVehicles(transporter);
@@ -294,11 +337,32 @@ export function TransportersTable() {
                             </span>
                           )}
                           <ActionButtons
+                            onAddLinkedVehicle={() =>
+                              setLinkVehiclesCtx({
+                                id: transporter.id,
+                                name: transporter.business_name,
+                              })
+                            }
+                            onAddBankDetails={() =>
+                              showComingSoon('Bank details will be available in a future update.')
+                            }
+                            onShowLedger={() =>
+                              showComingSoon('Transporter ledger will be available in a future update.')
+                            }
                             onEdit={() => {
                               setSelectedTransporterId(transporter.id);
                               setEditModalOpen(true);
                             }}
                             onDelete={async () => {
+                              if (transporter.is_verified) {
+                                setAlertType('warning');
+                                setAlertTitle('Cannot Delete Transporter');
+                                setAlertMessage(
+                                  `"${transporter.business_name}" is verified and cannot be deleted.`,
+                                );
+                                setAlertOpen(true);
+                                return;
+                              }
                               if (isTransporterInUse(transporter.id)) {
                                 const ispNames = await getISPNamesForTransporter(transporter.id);
                                 const ispCount = ispNames.length;
@@ -332,6 +396,17 @@ export function TransportersTable() {
         onOpenChange={setDeleteDialogOpen}
         onConfirm={async () => {
           if (selectedTransporter) {
+            if (selectedTransporter.is_verified) {
+              setDeleteDialogOpen(false);
+              setAlertType('warning');
+              setAlertTitle('Cannot Delete Transporter');
+              setAlertMessage(
+                `"${selectedTransporter.business_name}" is verified and cannot be deleted.`,
+              );
+              setAlertOpen(true);
+              setSelectedTransporter(null);
+              return;
+            }
             try {
               await deleteTransporter(selectedTransporter.id);
               setDeleteDialogOpen(false);
@@ -361,9 +436,9 @@ export function TransportersTable() {
             }
           }
         }}
-        title="Delete Transporter"
-        description={`Are you sure you want to delete "${selectedTransporter?.business_name}"? This action cannot be undone.`}
-        confirmText="Delete"
+        title="Deactivate Transporter"
+        description={`Are you sure you want to deactivate "${selectedTransporter?.business_name}"? It will be hidden from the list but can be included again with inactive records.`}
+        confirmText="Deactivate"
       />
 
       <AlertDialog
@@ -372,6 +447,19 @@ export function TransportersTable() {
         type={alertType}
         title={alertTitle}
         message={alertMessage}
+      />
+
+      <TransporterLinkVehiclesDialog
+        open={linkVehiclesCtx !== null}
+        onOpenChange={(open) => {
+          if (!open) setLinkVehiclesCtx(null);
+        }}
+        transporterId={linkVehiclesCtx?.id ?? ''}
+        transporterName={linkVehiclesCtx?.name}
+        onSaved={() => {
+          refetch();
+          refetchVehicles();
+        }}
       />
 
       <TransporterFormModal

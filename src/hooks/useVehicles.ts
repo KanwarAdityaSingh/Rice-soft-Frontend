@@ -2,15 +2,27 @@ import { useState, useEffect, useCallback } from 'react';
 import { vehiclesAPI } from '../services/vehicles.api';
 import type { Vehicle } from '../types/entities';
 
-export function useVehicles(transporterId?: string, isActive?: boolean) {
+export interface UseVehiclesOptions {
+  /** When true, returns active + inactive. Default list is active only. */
+  includeInactive?: boolean;
+  excludeVerificationDetails?: boolean;
+}
+
+export function useVehicles(transporterId?: string, options?: UseVehiclesOptions) {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const includeInactive = options?.includeInactive ?? false;
+  const excludeVerificationDetails = options?.excludeVerificationDetails ?? false;
 
   const fetchVehicles = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await vehiclesAPI.getAllVehicles(transporterId, isActive);
+      const data = await vehiclesAPI.getAllVehicles({
+        transporterId,
+        includeInactive,
+        excludeVerificationDetails,
+      });
       setVehicles(data);
       setError(null);
     } catch (err) {
@@ -18,7 +30,7 @@ export function useVehicles(transporterId?: string, isActive?: boolean) {
     } finally {
       setLoading(false);
     }
-  }, [transporterId, isActive]);
+  }, [transporterId, includeInactive, excludeVerificationDetails]);
 
   useEffect(() => {
     fetchVehicles();
@@ -58,10 +70,10 @@ export function useVehicle(vehicleId: string | null | undefined) {
   return { vehicle, loading, error, refetch: fetchVehicle };
 }
 
-// Utility hook for vehicle lookup map
+/** Active vehicles only — for dropdowns and display maps. */
 export function useVehicleMap() {
-  const { vehicles, loading, error, refetch } = useVehicles(undefined, true);
-  
+  const { vehicles, loading, error, refetch } = useVehicles();
+
   const vehicleMap = vehicles.reduce((acc, vehicle) => {
     acc[vehicle.id] = vehicle;
     return acc;
@@ -77,14 +89,13 @@ export function useVehicleMap() {
     return vehicleMap[vehicleId] || null;
   };
 
-  return { 
-    vehicles, 
-    vehicleMap, 
-    getVehicleNumber, 
+  return {
+    vehicles,
+    vehicleMap,
+    getVehicleNumber,
     getVehicle,
-    loading, 
-    error, 
-    refetch 
+    loading,
+    error,
+    refetch,
   };
 }
-

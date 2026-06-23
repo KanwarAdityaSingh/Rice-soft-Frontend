@@ -7,6 +7,7 @@ import { ActionButtons } from '../shared/ActionButtons';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { UserCircle } from 'lucide-react';
 import { useBrokers } from '../../../hooks/useBrokers';
+import { formatPhoneDisplay } from '../../../utils/validation';
 
 interface BrokersTableProps {
   /** When set, shows Edit in the row menu (e.g. open `BrokerFormModal` with this id) */
@@ -86,7 +87,7 @@ export function BrokersTable({ onEditBroker }: BrokersTableProps = {}) {
                     <td className="py-3 px-4 text-sm font-medium">{broker.business_name || 'N/A'}</td>
                     <td className="py-3 px-4 text-sm">{broker.contact_persons?.[0]?.name || 'N/A'}</td>
                     <td className="py-3 px-4 text-sm">{broker.contact_persons?.[0]?.emails?.[0] || 'N/A'}</td>
-                    <td className="py-3 px-4 text-sm">{broker.contact_persons?.[0]?.phones?.[0] || 'N/A'}</td>
+                    <td className="py-3 px-4 text-sm">{formatPhoneDisplay(broker.contact_persons?.[0]?.phones?.[0]) || 'N/A'}</td>
                     <td className="py-3 px-4 text-sm capitalize">{broker.type}</td>
                     <td className="py-3 px-4 text-sm">{broker.address.city}</td>
                     <td className="py-3 px-4 text-right">
@@ -130,7 +131,7 @@ export function BrokersTable({ onEditBroker }: BrokersTableProps = {}) {
                   </div>
                   <div>
                     <span className="text-muted-foreground text-xs">Phone</span>
-                    <p className="truncate">{broker.contact_persons?.[0]?.phones?.[0] || 'N/A'}</p>
+                    <p className="truncate">{formatPhoneDisplay(broker.contact_persons?.[0]?.phones?.[0]) || 'N/A'}</p>
                   </div>
                   <div>
                     <span className="text-muted-foreground text-xs">Type</span>

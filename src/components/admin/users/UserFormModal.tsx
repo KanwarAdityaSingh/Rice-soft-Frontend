@@ -3,7 +3,9 @@ import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { usersAPI } from '../../../services/users.api';
-import { validateEmail, validateUsername, validatePassword } from '../../../utils/validation';
+import { validateEmail, validateUsername, validatePassword, sanitizePhoneInput, validatePhone } from '../../../utils/validation';
+import { EmailVerifyButton } from '../../shared/EmailVerifyButton';
+import { PhoneInput } from '../../shared/PhoneInput';
 import { AlertDialog } from '../../shared/AlertDialog';
 import type { CreateUserRequest, UpdateUserRequest, User } from '../../../types/entities';
 
@@ -76,6 +78,9 @@ export function UserFormModal({ open, onOpenChange, user }: UserFormModalProps) 
     if (!formData.full_name) {
       newErrors.full_name = 'Full name is required';
     }
+    if (formData.phone?.trim() && !validatePhone(formData.phone)) {
+      newErrors.phone = 'Enter a valid 10-digit mobile number';
+    }
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -89,7 +94,7 @@ export function UserFormModal({ open, onOpenChange, user }: UserFormModalProps) 
         const updateData: UpdateUserRequest = {
           username: formData.username,
           full_name: formData.full_name,
-          phone: formData.phone || undefined,
+          phone: formData.phone?.trim() ? sanitizePhoneInput(formData.phone) : undefined,
           user_type: formData.user_type,
         };
         
@@ -117,7 +122,7 @@ export function UserFormModal({ open, onOpenChange, user }: UserFormModalProps) 
           username: formData.username,
           password: formData.password,
           full_name: formData.full_name,
-          phone: formData.phone || undefined,
+          phone: formData.phone?.trim() ? sanitizePhoneInput(formData.phone) : undefined,
           user_type: formData.user_type,
         };
         
@@ -209,13 +214,24 @@ export function UserFormModal({ open, onOpenChange, user }: UserFormModalProps) 
 
               <div>
                 <label className="text-sm font-medium mb-1.5 block">Email</label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                  placeholder="john@example.com (optional)"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                    placeholder="john@example.com (optional)"
+                  />
+                  <EmailVerifyButton
+                    email={formData.email ?? ''}
+                    onError={(message) => setErrors({ ...errors, email: message })}
+                    onVerified={() => {
+                      const nextErrors = { ...errors };
+                      delete nextErrors.email;
+                      setErrors(nextErrors);
+                    }}
+                  />
+                </div>
                 {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
               </div>
 
@@ -247,13 +263,12 @@ export function UserFormModal({ open, onOpenChange, user }: UserFormModalProps) 
 
               <div>
                 <label className="text-sm font-medium mb-1.5 block">Phone</label>
-                <input
-                  type="tel"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                <PhoneInput
+                  value={formData.phone ?? ''}
+                  onChange={(phone) => setFormData({ ...formData, phone: phone || null })}
                   className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                  placeholder="9876543210"
                 />
+                {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone}</p>}
               </div>
 
               <div className="flex gap-3 pt-4">

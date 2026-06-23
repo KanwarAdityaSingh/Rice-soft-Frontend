@@ -1,15 +1,20 @@
 import type {
+  AadhaarValidationResult,
   EntityKycVerificationDetails,
   GSTLookupResponseData,
   KycPersistContext,
   PANLookupResponseData,
+  RcFullLookupResult,
   SurepassVerificationSnapshot,
   VehicleVerificationDetails,
 } from '../types/entities';
+import { extractRcFullData } from './rcFullMapping';
 
 export const KYC_VERIFICATION_LABELS: Record<string, string> = {
   pan: 'PAN',
   pan_comprehensive: 'PAN (Comprehensive)',
+  gstin_by_pan: 'GSTIN by PAN',
+  pan_contact: 'PAN contact',
   gst: 'GST',
   gst_advanced: 'GST (Advanced)',
   aadhaar: 'Aadhaar',
@@ -17,6 +22,7 @@ export const KYC_VERIFICATION_LABELS: Record<string, string> = {
   email: 'Email',
   driving_license: 'Driving licence',
   rc: 'RC verification',
+  rc_full: 'RC (Full)',
   rc_challan: 'RC challan details',
 };
 
@@ -41,6 +47,10 @@ export function transporterPersist(transporterId?: string | null): KycPersistCon
 
 export function vehiclePersist(vehicleId?: string | null): KycPersistContext | undefined {
   return vehicleId ? { entity_type: 'vehicle', entity_id: vehicleId } : undefined;
+}
+
+export function driverPersist(driverId?: string | null): KycPersistContext | undefined {
+  return driverId ? { entity_type: 'driver', entity_id: driverId } : undefined;
 }
 
 export function buildSurepassSnapshot(
@@ -80,6 +90,28 @@ export function persistPanLookupSnapshot(
     'pan_comprehensive',
     buildSurepassSnapshot(response.surepass_response, response.pan_data),
   );
+}
+
+/** Store Surepass Aadhaar validation snapshot from a successful lookup. */
+export function persistAadhaarValidationSnapshot(
+  existing: EntityKycVerificationDetails | undefined,
+  response: AadhaarValidationResult & { surepass_response?: unknown },
+): EntityKycVerificationDetails {
+  if (!response.surepass_response) return existing ?? {};
+  const { surepass_response, ...mapped } = response;
+  return mergeEntityKycSnapshot(
+    existing,
+    'aadhaar',
+    buildSurepassSnapshot(surepass_response, mapped),
+  );
+}
+
+export function isEmailVerifiedInKyc(
+  details: EntityKycVerificationDetails | undefined,
+  email: string,
+): boolean {
+  const normalized = email.trim().toLowerCase();
+  return Boolean(details?.emails?.[normalized]?.verified_at);
 }
 
 export function mergeEntityKycSnapshot(
@@ -141,7 +173,7 @@ export function collectVehicleKycEntries(
   details?: VehicleVerificationDetails | null,
 ): KycVerificationEntry[] {
   if (!details) return [];
-  return (['rc', 'rc_challan'] as const)
+  return (['rc_full', 'rc', 'rc_challan'] as const)
     .map((key) => {
       const snapshot = details[key];
       if (!snapshot?.verified_at) return null;
@@ -176,6 +208,34 @@ export function formatKycVerifiedAt(value: string): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString('en-IN');
+}
+
+/** Store Surepass RC full snapshot from a successful lookup. */
+export function persistRcFullSnapshot(
+  existing: VehicleVerificationDetails | undefined,
+  result: RcFullLookupResult,
+): VehicleVerificationDetails {
+  if (!result.surepass_response) return existing ?? {};
+  const rcData = extractRcFullData(result);
+  return {
+    ...existing,
+    rc_full: buildSurepassSnapshot(result.surepass_response, rcData ?? result.data),
+  };
+}
+
+function hasVehicleKycSnapshots(details?: VehicleVerificationDetails | null): boolean {
+  return collectVehicleKycEntries(details).length > 0;
+}
+
+/** Attach vehicle verification snapshots to create/update payloads. */
+export function buildVehicleSavePayload<
+  T extends { verification_details?: VehicleVerificationDetails },
+>(base: T, verificationDetails: VehicleVerificationDetails): T {
+  const payload: T = { ...base };
+  if (hasVehicleKycSnapshots(verificationDetails)) {
+    payload.verification_details = verificationDetails;
+  }
+  return payload;
 }
 
 /** Minimal bank fields required for backend `verify_bank`. */

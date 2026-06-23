@@ -9,6 +9,7 @@ import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { Users } from 'lucide-react';
 import { useUsers } from '../../../hooks/useUsers';
 import type { User } from '../../../types/entities';
+import { formatPhoneDisplay } from '../../../utils/validation';
 
 interface UsersTableProps {
   onEditUser?: (user: User) => void;
@@ -97,7 +98,7 @@ export function UsersTable({ onEditUser }: UsersTableProps) {
                     <td className="py-3 px-4 text-sm">{user.username}</td>
                     <td className="py-3 px-4 text-sm">{user.full_name}</td>
                     <td className="py-3 px-4 text-sm">{user.email}</td>
-                    <td className="py-3 px-4 text-sm">{user.phone || '-'}</td>
+                    <td className="py-3 px-4 text-sm">{formatPhoneDisplay(user.phone) || '-'}</td>
                     <td className="py-3 px-4 text-sm capitalize">{user.user_type}</td>
                     <td className="py-3 px-4 text-sm">
                       {user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never'}
@@ -151,7 +152,7 @@ export function UsersTable({ onEditUser }: UsersTableProps) {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <span className="text-muted-foreground text-xs">Phone</span>
-                      <p className="truncate">{user.phone || '-'}</p>
+                      <p className="truncate">{formatPhoneDisplay(user.phone) || '-'}</p>
                     </div>
                     <div>
                       <span className="text-muted-foreground text-xs">Type</span>

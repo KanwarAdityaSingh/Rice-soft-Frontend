@@ -5,7 +5,8 @@ import type {
   CreatePaymentAdviceRequest, 
   UpdatePaymentAdviceRequest,
   AddChargeRequest,
-  NetPayableResponse
+  NetPayableResponse,
+  PaymentAdvicePreviewResponse,
 } from '../types/entities';
 
 export const paymentAdvicesAPI = {
@@ -40,7 +41,7 @@ export const paymentAdvicesAPI = {
     return apiService.post<PaymentAdvice>('/payment-advices', payload);
   },
 
-  // Update payment advice
+  // Update payment advice (optional charges[] = full replace; omit charges to leave unchanged)
   updatePaymentAdvice: (id: string, data: UpdatePaymentAdviceRequest) => {
     const payload: UpdatePaymentAdviceRequest = {
       ...data,
@@ -86,13 +87,31 @@ export const paymentAdvicesAPI = {
     return apiService.get<NetPayableResponse>(`/payment-advices/${id}/net-payable`);
   },
 
+  /** Document preview for create/edit — weights, summary, amount, net payable. */
+  fetchPaymentAdvicePreview: (params: {
+    sauda_id?: string;
+    inward_slip_pass_id?: string;
+    godown_id?: string;
+    total_charges?: number;
+  }) => {
+    const searchParams = new URLSearchParams();
+    if (params.sauda_id) searchParams.set('sauda_id', params.sauda_id);
+    if (params.inward_slip_pass_id) searchParams.set('inward_slip_pass_id', params.inward_slip_pass_id);
+    if (params.godown_id) searchParams.set('godown_id', params.godown_id);
+    if (params.total_charges !== undefined) searchParams.set('total_charges', String(params.total_charges));
+    const q = searchParams.toString();
+    return apiService.get<PaymentAdvicePreviewResponse>(
+      q ? `/payment-advices/preview?${q}` : '/payment-advices/preview'
+    );
+  },
+
   // Delete payment advice
   deletePaymentAdvice: (id: string) => {
     return apiService.delete<{ success: boolean; message: string }>(`/payment-advices/${id}`);
   },
 
-  // Get payment advice notification preview
-  getPaymentAdvicePreview: async (data: {
+  // Get payment advice email/WhatsApp notification preview
+  getPaymentAdviceNotificationPreview: async (data: {
     adviceNumber: string;
     vendorName: string;
     amount: number;

@@ -2,7 +2,9 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { useSalesmen } from '../../../hooks/useSalesmen';
-import { validateEmail } from '../../../utils/validation';
+import { validateEmail, sanitizePhoneInput, validatePhone } from '../../../utils/validation';
+import { EmailVerifyButton } from '../../shared/EmailVerifyButton';
+import { PhoneInput } from '../../shared/PhoneInput';
 import { SalespersonPreviewDialog } from './SalespersonPreviewDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
 import type { CreateSalesmanRequest, Salesman } from '../../../types/entities';
@@ -52,6 +54,7 @@ export function SalesmanFormModal({ open, onOpenChange, editingSalesman = null }
     // Email is optional, but if provided, must be valid
     if (formData.email && !validateEmail(formData.email)) newErrors.email = 'Invalid email';
     if (!formData.phone) newErrors.phone = 'Phone is required';
+    else if (!validatePhone(formData.phone)) newErrors.phone = 'Enter a valid 10-digit mobile number';
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -71,7 +74,7 @@ export function SalesmanFormModal({ open, onOpenChange, editingSalesman = null }
         await updateSalesman(editingSalesman.id, {
           name: formData.name,
           email: formData.email,
-          phone: formData.phone,
+          phone: sanitizePhoneInput(formData.phone),
           is_active: formData.is_active,
         });
         setFormData({ name: '', email: '', phone: '' });
@@ -167,21 +170,31 @@ export function SalesmanFormModal({ open, onOpenChange, editingSalesman = null }
 
               <div>
                 <label className="text-sm font-medium mb-1.5 block">Email</label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                  />
+                  <EmailVerifyButton
+                    email={formData.email ?? ''}
+                    onError={(message) => setErrors({ ...errors, email: message })}
+                    onVerified={() => {
+                      const nextErrors = { ...errors };
+                      delete nextErrors.email;
+                      setErrors(nextErrors);
+                    }}
+                  />
+                </div>
                 {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
               </div>
 
               <div>
                 <label className="text-sm font-medium mb-1.5 block">Phone *</label>
-                <input
-                  type="tel"
+                <PhoneInput
                   value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  onChange={(phone) => setFormData({ ...formData, phone })}
                   className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                 />
                 {errors.phone && <p className="mt-1 text-xs text-red-600">{errors.phone}</p>}

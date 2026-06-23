@@ -12,22 +12,31 @@ import {
 import { leadsAPI } from '../../../services/leads.api';
 import { pincodeAPI } from '../../../services/pincode.api';
 import { bankAPI } from '../../../services/bank.api';
-import { validateEmail, validateGST, validatePAN, validateGoogleLocationLink } from '../../../utils/validation';
+import { validateEmail, validateGoogleLocationLink, getGstValidationError, getPanValidationError, getGstPanMismatchError, GST_EXAMPLE, PAN_EXAMPLE, GST_MAX_LENGTH, PAN_MAX_LENGTH, formatPhoneDisplay, formatPhonesForDisplay } from '../../../utils/validation';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { VendorPreviewDialog } from './VendorPreviewDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { EmailVerifyButton } from '../../shared/EmailVerifyButton';
+import { PhoneInput } from '../../shared/PhoneInput';
 import { KycVerificationDetailsPanel } from '../../shared/KycVerificationDetailsPanel';
 import type { CreateVendorRequest, UpdateVendorRequest, Lead, VendorBankDetails, ContactPerson, EntityKycVerificationDetails } from '../../../types/entities';
 import {
   buildEntitySavePayload,
   buildSurepassSnapshot,
   collectEntityKycEntries,
+  isEmailVerifiedInKyc,
   mergeEntityKycSnapshot,
-  persistGstLookupSnapshot,
-  persistPanLookupSnapshot,
   vendorPersist,
 } from '../../../utils/kycVerification';
+import {
+  applyAutofillAddress,
+  buildPanLookupAutofill,
+  mergePanContactIntoContactPersons,
+  persistEnrichedPanLookupSnapshots,
+  runEnrichedPanLookup,
+} from '../../../utils/panLookupEnrichment';
+import { buildEnrichedGstLookupAutofill, mergeGstContactPersons, persistEnrichedGstLookupSnapshots, runEnrichedGstLookup } from '../../../utils/gstLookupAutofill';
+import { verifyAutofilledEmails } from '../../../utils/emailVerification';
 
 interface VendorFormModalProps {
   open: boolean;
@@ -365,8 +374,9 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       return;
     }
     
-    if (!validateGST(formData.business_details.gst_number)) {
-      setErrors({ ...errors, gst_number: 'Invalid GST format' });
+    const gstError = getGstValidationError(formData.business_details.gst_number);
+    if (gstError) {
+      setErrors({ ...errors, gst_number: gstError });
       return;
     }
 
@@ -374,90 +384,52 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
     setErrors({ ...errors, gst_number: '' });
     
     try {
-      const response = await vendorsAPI.lookupGST(
+      const result = await runEnrichedGstLookup(
         formData.business_details.gst_number,
         vendorPersistContext,
       );
-      
-      // The API service returns response.data, which is { gst_data: {...}, mapped_data: {...} }
-      const mapped = response.mapped_data;
-      
-      // Track which fields are being auto-filled (merge so prior PAN/GST locks are preserved)
+      const autofill = buildEnrichedGstLookupAutofill(result);
       const autoFilledFields = new Set(gstAutoFilledFields);
-      
-      // Populate business name if available (convert to title case)
-      let businessName = formData.business_name;
-      if (mapped?.business_name) {
-        businessName = toTitleCase(mapped.business_name);
-        autoFilledFields.add('business_name');
-      }
-      
-      // Populate address fields (only fill non-empty values, convert to title case)
-      // Note: Address fields are NOT added to autoFilledFields, so they remain editable
-      const addressUpdate: any = { ...formData.address };
-      if (mapped?.address) {
-        if (mapped.address.street) {
-          addressUpdate.street = toTitleCase(mapped.address.street);
-        }
-        if (mapped.address.city) {
-          addressUpdate.city = toTitleCase(mapped.address.city);
-        }
-        if (mapped.address.state) {
-          addressUpdate.state = toTitleCase(mapped.address.state);
-        }
-        if (mapped.address.pincode) {
-          addressUpdate.pincode = mapped.address.pincode;
-        }
-        if (mapped.address.country) {
-          addressUpdate.country = toTitleCase(mapped.address.country);
-        }
-      }
-      
-      // Update business details
-      const businessDetailsUpdate: any = {
-        ...formData.business_details,
-      };
-      
-      // Set GST number if available
-      if (mapped?.business_details?.gst_number) {
-        businessDetailsUpdate.gst_number = mapped.business_details.gst_number;
-        autoFilledFields.add('gst_number');
-      }
-      
-      // Set PAN number if available
-      if (mapped?.business_details?.pan_number) {
-        businessDetailsUpdate.pan_number = mapped.business_details.pan_number;
-        autoFilledFields.add('pan_number');
-      }
-      
-      // Set business type if available
-      if (mapped?.business_details?.business_type) {
-        businessDetailsUpdate.business_type = mapped.business_details.business_type;
-        autoFilledFields.add('business_type');
-      }
-      
-      // Auto-fill account holder name with business name (locked after GST lookup)
+
+      if (autofill.businessName) autoFilledFields.add('business_name');
+      if (autofill.gstNumber) autoFilledFields.add('gst_number');
+      if (autofill.panNumber) autoFilledFields.add('pan_number');
+      if (autofill.businessType) autoFilledFields.add('business_type');
+      if (autofill.address.city) autoFilledFields.add('address.city');
       autoFilledFields.add('account_holder_name');
-      const bankDetailsUpdate = {
-        ...formData.bank_details,
-        account_holder_name: businessName,
-      };
-      
+
+      const businessName = autofill.businessName ?? formData.business_name;
+      const updatedContactPersons = mergeGstContactPersons(formData.contact_persons, autofill);
+
+      let nextKycDetails = persistEnrichedGstLookupSnapshots(kycVerificationDetails, result);
+      const emailVerification = await verifyAutofilledEmails(
+        autofill.emails,
+        updatedContactPersons,
+        nextKycDetails,
+        vendorPersistContext,
+      );
+      nextKycDetails = emailVerification.kycDetails;
+
       setFormData({
         ...formData,
         business_name: businessName,
-        address: addressUpdate,
-        business_details: businessDetailsUpdate,
-        bank_details: bankDetailsUpdate,
+        contact_persons: updatedContactPersons,
+        address: applyAutofillAddress(formData.address, autofill.address),
+        business_details: {
+          ...formData.business_details,
+          ...(autofill.panNumber ? { pan_number: autofill.panNumber } : {}),
+          ...(autofill.gstNumber ? { gst_number: autofill.gstNumber } : {}),
+          ...(autofill.businessType ? { business_type: autofill.businessType } : {}),
+        },
+        bank_details: {
+          ...formData.bank_details,
+          account_holder_name: businessName,
+        },
       });
-      
-      // Set the auto-filled fields
-      setGstAutoFilledFields(autoFilledFields);
 
-      setKycVerificationDetails((prev) => persistGstLookupSnapshot(prev, response));
-      
-      // Clear any previous errors
-      setErrors({ ...errors, gst_number: '' });
+      setGstAutoFilledFields(autoFilledFields);
+      setKycVerificationDetails(nextKycDetails);
+      setErrors({ ...errors, gst_number: '', ...emailVerification.fieldErrors });
     } catch (error: any) {
       console.error('GST lookup error:', error);
       setErrors({ ...errors, gst_number: error?.message || 'Failed to lookup GST details' });
@@ -472,8 +444,9 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       return;
     }
     
-    if (!validatePAN(formData.business_details.pan_number)) {
-      setErrors({ ...errors, pan_number: 'Invalid PAN format' });
+    const panError = getPanValidationError(formData.business_details.pan_number);
+    if (panError) {
+      setErrors({ ...errors, pan_number: panError });
       return;
     }
 
@@ -481,79 +454,47 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
     setErrors({ ...errors, pan_number: '' });
     
     try {
-      const response = await vendorsAPI.lookupPAN(
+      const result = await runEnrichedPanLookup(
         formData.business_details.pan_number,
         vendorPersistContext,
       );
-      
-      // The API service returns response.data, which is { pan_data: {...}, mapped_data: {...} }
-      const mapped = response.mapped_data;
-      const panData = response.pan_data;
-      
-      // Track which fields are being auto-filled (merge so GST-locked fields e.g. account_holder_name stay)
+      const autofill = buildPanLookupAutofill(result);
       const autoFilledFields = new Set(gstAutoFilledFields);
-      
-      // Populate business name if available (convert to title case)
-      let businessName = formData.business_name;
-      if (mapped?.business_name) {
-        businessName = toTitleCase(mapped.business_name);
-        autoFilledFields.add('business_name');
-      }
-      
-      // Populate contact person if PAN is for a person (individual)
-      let updatedContactPersons = [...formData.contact_persons];
-      if (panData?.category === 'person' && panData?.name) {
-        updatedContactPersons[0] = { ...updatedContactPersons[0], name: toTitleCase(panData.name) };
-      }
-      
-      // Populate address fields (only fill non-empty values, convert to title case)
-      // Note: Address fields are NOT added to autoFilledFields, so they remain editable
-      const addressUpdate: any = { ...formData.address };
-      if (mapped?.address) {
-        if (mapped.address.street) addressUpdate.street = toTitleCase(mapped.address.street);
-        if (mapped.address.city) addressUpdate.city = toTitleCase(mapped.address.city);
-        if (mapped.address.state) addressUpdate.state = toTitleCase(mapped.address.state);
-        if (mapped.address.pincode) addressUpdate.pincode = mapped.address.pincode;
-        if (mapped.address.country) addressUpdate.country = toTitleCase(mapped.address.country);
-      }
-      
-      // Update business details
-      const businessDetailsUpdate: any = {
+      autofill.lockedFields.forEach((field) => autoFilledFields.add(field));
+
+      const businessName = autofill.businessName ?? formData.business_name;
+      const businessDetailsUpdate = {
         ...formData.business_details,
+        ...(autofill.panNumber ? { pan_number: autofill.panNumber } : {}),
+        ...(autofill.gstNumber ? { gst_number: autofill.gstNumber } : {}),
+        ...(autofill.businessType ? { business_type: autofill.businessType } : {}),
       };
-      
-      // Ensure PAN number is set
-      if (mapped?.business_details?.pan_number) {
-        businessDetailsUpdate.pan_number = mapped.business_details.pan_number;
-        autoFilledFields.add('pan_number');
-      }
-      
-      // Set business type if available
-      if (mapped?.business_details?.business_type) {
-        businessDetailsUpdate.business_type = mapped.business_details.business_type;
-      }
-      
-      // Auto-fill account holder name with business name (editable unless already locked by GST lookup)
-      const bankDetailsUpdate = {
-        ...formData.bank_details,
-        account_holder_name: businessName,
-      };
-      
+      const updatedContactPersons = mergePanContactIntoContactPersons(formData.contact_persons, autofill);
+
+      let nextKycDetails = persistEnrichedPanLookupSnapshots(kycVerificationDetails, result);
+      const emailVerification = await verifyAutofilledEmails(
+        autofill.emails,
+        updatedContactPersons,
+        nextKycDetails,
+        vendorPersistContext,
+      );
+      nextKycDetails = emailVerification.kycDetails;
+
       setFormData({
         ...formData,
         business_name: businessName,
         contact_persons: updatedContactPersons,
-        address: addressUpdate,
+        address: applyAutofillAddress(formData.address, autofill.address),
         business_details: businessDetailsUpdate,
-        bank_details: bankDetailsUpdate,
+        bank_details: {
+          ...formData.bank_details,
+          account_holder_name: businessName,
+        },
       });
-      
-      setGstAutoFilledFields(autoFilledFields);
 
-      setKycVerificationDetails((prev) => persistPanLookupSnapshot(prev, response));
-      
-      // Clear any previous errors
-      setErrors({ ...errors, pan_number: '' });
+      setGstAutoFilledFields(autoFilledFields);
+      setKycVerificationDetails(nextKycDetails);
+      setErrors({ ...errors, pan_number: '', ...emailVerification.fieldErrors });
     } catch (error: any) {
       console.error('PAN lookup error:', error);
       setErrors({ ...errors, pan_number: error?.message || 'Failed to lookup PAN details' });
@@ -928,7 +869,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                           value={formData.business_details.gst_number}
                           onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, gst_number: e.target.value.toUpperCase() } })}
                           className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                          placeholder="27ABCDE1234F1Z5"
+                          placeholder={GST_EXAMPLE}
+                          maxLength={GST_MAX_LENGTH}
                         />
                         <button 
                           type="button" 
@@ -956,7 +898,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                           value={formData.business_details.pan_number}
                           onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, pan_number: e.target.value.toUpperCase() } })}
                           className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
-                          placeholder="ABCDE1234F"
+                          placeholder={PAN_EXAMPLE}
+                          maxLength={PAN_MAX_LENGTH}
                           readOnly={gstAutoFilledFields.has('pan_number')}
                         />
                         <button 
@@ -1043,12 +986,10 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                           <div className="space-y-2">
                             {contactPerson.phones.map((phone, phoneIdx) => (
                               <div key={phoneIdx} className="flex gap-2">
-                                <input
-                                  type="tel"
+                                <PhoneInput
                                   value={phone}
-                                  onChange={(e) => updatePhone(personIdx, phoneIdx, e.target.value)}
+                                  onChange={(value) => updatePhone(personIdx, phoneIdx, value)}
                                   className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                                  placeholder="Phone number"
                                 />
                                 {contactPerson.phones.length > 1 && (
                                   <button
@@ -1092,6 +1033,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                                 <EmailVerifyButton
                                   email={email}
                                   persist={vendorPersistContext}
+                                  verifiedFromSnapshot={isEmailVerifiedInKyc(kycVerificationDetails, email)}
                                   onError={(message) => {
                                     setErrors({
                                       ...errors,
@@ -1520,7 +1462,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                               <div className="font-medium">{contact.name}</div>
                               {contact.phones && contact.phones.length > 0 && (
                                 <div className="text-xs text-muted-foreground mt-1">
-                                  Phones: {contact.phones.filter(p => p && p.trim()).join(', ') || '-'}
+                                  Phones: {formatPhonesForDisplay(contact.phones.filter(p => p && p.trim())) || '-'}
                                 </div>
                               )}
                               {contact.emails && contact.emails.length > 0 && (
@@ -1539,7 +1481,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                       <div>
                         <label className="text-sm font-medium mb-1.5 block">Phone</label>
                         <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm">
-                          {leadData.phone}
+                          {formatPhoneDisplay(leadData.phone)}
                         </div>
                       </div>
                     )}

@@ -8,6 +8,7 @@ import { LeadPriorityBadge } from '../../components/admin/shared/LeadPriorityBad
 import { LeadInfoCards } from '../../components/crm/leads/LeadInfoCards';
 import { LeadEventsTimeline } from '../../components/crm/leads/LeadEventsTimeline';
 import { LoadingSpinner } from '../../components/admin/shared/LoadingSpinner';
+import { formatPhonesForDisplay } from '../../utils/validation';
 import { ConfirmDialog } from '../../components/admin/shared/ConfirmDialog';
 import { ConversionDialog } from '../../components/crm/leads/ConversionDialog';
 import { AddEventDialog } from '../../components/crm/leads/AddEventDialog';
@@ -122,7 +123,7 @@ export default function LeadDetailPage() {
                   <p key={idx}>
                     {cp.name}
                     {cp.phones && cp.phones.length > 0 && cp.phones.filter(p => p && p.trim()).length > 0 && (
-                      <span> - {cp.phones.filter(p => p && p.trim()).join(', ')}</span>
+                      <span> - {formatPhonesForDisplay(cp.phones.filter(p => p && p.trim()))}</span>
                     )}
                   </p>
                 ))}

@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { X, CheckCircle2, User } from 'lucide-react';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import type { CreateSalesmanRequest } from '../../../types/entities';
+import { formatPhoneDisplay } from '../../../utils/validation';
 
 interface SalespersonPreviewDialogProps {
   open: boolean;
@@ -91,7 +92,7 @@ export function SalespersonPreviewDialog({ open, onOpenChange, formData, onConfi
               <InfoSection title="Salesperson Information" icon={User}>
                 <InfoRow label="Name" value={formData.name} />
                 <InfoRow label="Email" value={formData.email} />
-                <InfoRow label="Phone" value={formData.phone} />
+                <InfoRow label="Phone" value={formatPhoneDisplay(formData.phone)} />
                 <InfoRow 
                   label="Status" 
                   value={formData.is_active !== false ? 'Active' : 'Inactive'} 
