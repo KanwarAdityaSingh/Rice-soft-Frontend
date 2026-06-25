@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
-import { Store, Plus, Mail, Phone, MapPin, CreditCard, FileText, Calendar, UserCircle, ExternalLink, AlertTriangle } from 'lucide-react'
+import { Store, Plus, Mail, Phone, MapPin, CreditCard, FileText, Calendar, UserCircle, ExternalLink, AlertTriangle, Shield } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { SearchBar } from '../../components/admin/shared/SearchBar'
 import { FilterDropdown } from '../../components/admin/shared/FilterDropdown'
@@ -20,14 +20,21 @@ import { getRiceTypeLabel } from '../../utils/riceType'
 import { isAdmin } from '../../utils/permissions'
 import type { Lead } from '../../types/entities'
 import { formatPhoneDisplay } from '../../utils/validation'
+import { formatVendorVerifiedAt } from '../../utils/vendorVerification'
 
 export default function VendorsPage() {
-  const [statusFilter, setStatusFilter] = useState<string | undefined>('active')
-  const includeInactive = statusFilter !== 'active'
-  const { vendors, loading, deleteVendor, refetch } = useVendors({ includeInactive })
+  const [registrationFilter, setRegistrationFilter] = useState<string | undefined>()
+  const [statusFilter, setStatusFilter] = useState<string | undefined>()
+  const registrationTypeParam =
+    registrationFilter === 'registered' || registrationFilter === 'unregistered'
+      ? registrationFilter
+      : undefined
+  const { vendors, loading, deleteVendor, refetch } = useVendors({
+    registrationType: registrationTypeParam as 'registered' | 'unregistered' | undefined,
+    includeInactive: statusFilter === 'inactive',
+  })
   const navigate = useNavigate()
   const [searchQuery, setSearchQuery] = useState('')
-  const [bankVerifyFilter, setBankVerifyFilter] = useState<string | undefined>()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
@@ -41,6 +48,13 @@ export default function VendorsPage() {
   const [addSiteCtx, setAddSiteCtx] = useState<{ id: string; name: string } | null>(null)
   const [viewSitesCtx, setViewSitesCtx] = useState<{ id: string; name: string } | null>(null)
 
+  const showComingSoon = (message: string) => {
+    setAlertType('info')
+    setAlertTitle('Coming soon')
+    setAlertMessage(message)
+    setAlertOpen(true)
+  }
+
   const filtered = useMemo(() => {
     return vendors.filter((v) => {
       const q = searchQuery.toLowerCase()
@@ -51,16 +65,15 @@ export default function VendorsPage() {
         (primaryContact?.emails?.[0] || '').toLowerCase().includes(q) ||
         (primaryContact?.phones?.[0] || '').includes(searchQuery)
 
-      const matchesStatus =
-        statusFilter === 'inactive' ? !v.is_active : statusFilter === 'active' ? v.is_active : true
+      const matchesStatus = statusFilter
+        ? statusFilter === 'active'
+          ? v.is_active
+          : !v.is_active
+        : true
 
-      const verified = Boolean(v.bank_details_verified_at)
-      const matchesBankFilter =
-        bankVerifyFilter === 'verified' ? verified : bankVerifyFilter === 'unverified' ? !verified : true
-
-      return matchesSearch && matchesStatus && matchesBankFilter
+      return matchesSearch && matchesStatus
     })
-  }, [vendors, searchQuery, bankVerifyFilter, statusFilter])
+  }, [vendors, searchQuery, statusFilter])
 
   // Fetch lead details for vendors with lead_id
   useEffect(() => {
@@ -202,6 +215,15 @@ export default function VendorsPage() {
             <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search by business, contact, email, or phone..." />
           </div>
           <FilterDropdown
+            label="Registration"
+            options={[
+              { label: 'Registered', value: 'registered' },
+              { label: 'Unregistered', value: 'unregistered' },
+            ]}
+            value={registrationFilter}
+            onChange={setRegistrationFilter}
+          />
+          <FilterDropdown
             label="Status"
             options={[
               { label: 'Active', value: 'active' },
@@ -209,15 +231,6 @@ export default function VendorsPage() {
             ]}
             value={statusFilter}
             onChange={setStatusFilter}
-          />
-          <FilterDropdown
-            label="Bank"
-            options={[
-              { label: 'Verified', value: 'verified' },
-              { label: 'Not verified', value: 'unverified' },
-            ]}
-            value={bankVerifyFilter}
-            onChange={setBankVerifyFilter}
           />
         </div>
         {isAdmin() && (
@@ -247,7 +260,14 @@ export default function VendorsPage() {
                     <Store className="h-5 w-5" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h3 className="text-sm font-semibold leading-tight break-words">{v.business_name.trim()}</h3>
+                    <h3 className="text-sm font-semibold leading-tight break-words flex items-center gap-1.5">
+                      {v.business_name.trim()}
+                      {v.is_verified && (
+                        <span title={`KYC verified${v.verified_at ? ` · ${formatVendorVerifiedAt(v.verified_at)}` : ''}`} className="inline-flex">
+                          <Shield className="h-3.5 w-3.5 text-emerald-500 shrink-0" aria-hidden />
+                        </span>
+                      )}
+                    </h3>
                     <div className="text-xs text-muted-foreground flex items-start gap-1 mt-0.5">
                       <MapPin className="h-3 w-3 shrink-0 mt-0.5" />
                       <span className="break-words">{v.address.city.trim()}</span>
@@ -255,6 +275,9 @@ export default function VendorsPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-1 justify-end shrink-0">
+                  <span className="whitespace-nowrap px-2 py-1 rounded-md text-[10px] bg-muted text-muted-foreground border border-border/60">
+                    {v.registration_type === 'unregistered' ? 'Unregistered' : 'Registered'}
+                  </span>
                   {v.bank_details_verified_at && (
                     <span
                       className="whitespace-nowrap px-2 py-1 rounded-md text-[10px] bg-sky-500/15 text-sky-700 dark:text-sky-400 border border-sky-500/25"
@@ -340,6 +363,12 @@ export default function VendorsPage() {
                     <span className="min-w-0 break-words">PAN: {v.business_details.pan_number}</span>
                   </div>
                 )}
+                {v.registration_type === 'unregistered' && v.aadhar_number && (
+                  <div className="flex items-start gap-2 min-w-0">
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                    <span className="min-w-0 break-words">Aadhaar: {v.aadhar_number.replace(/(\d{4})(?=\d)/g, '$1 ').trim()}</span>
+                  </div>
+                )}
                 
                 {/* Bank Details */}
                 {v.bank_details && (
@@ -421,6 +450,11 @@ export default function VendorsPage() {
                     isActive={v.is_active}
                     onAddSite={() => setAddSiteCtx({ id: v.id, name: v.business_name })}
                     onViewSites={() => setViewSitesCtx({ id: v.id, name: v.business_name })}
+                    addSiteLabel="Add dispatch address"
+                    viewSitesLabel="View dispatch addresses"
+                    onShowLedger={() =>
+                      showComingSoon('Purchase party ledger will be available in a future update.')
+                    }
                     onEdit={() => {
                       setSelectedVendorId(v.id)
                       setEditModalOpen(true)

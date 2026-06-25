@@ -1,5 +1,6 @@
 import type {
   AadhaarValidationResult,
+  BankVerificationResult,
   EntityKycVerificationDetails,
   GSTLookupResponseData,
   KycPersistContext,
@@ -102,6 +103,20 @@ export function persistAadhaarValidationSnapshot(
   return mergeEntityKycSnapshot(
     existing,
     'aadhaar',
+    buildSurepassSnapshot(surepass_response, mapped),
+  );
+}
+
+/** Store Surepass bank verification snapshot from a successful lookup. */
+export function persistBankVerificationSnapshot(
+  existing: EntityKycVerificationDetails | undefined,
+  result: BankVerificationResult & { surepass_response?: unknown },
+): EntityKycVerificationDetails {
+  if (!result.surepass_response) return existing ?? {};
+  const { surepass_response, ...mapped } = result;
+  return mergeEntityKycSnapshot(
+    existing,
+    'bank',
     buildSurepassSnapshot(surepass_response, mapped),
   );
 }
@@ -260,8 +275,8 @@ function hasKycSnapshots(details?: EntityKycVerificationDetails | null): boolean
 
 /**
  * Attach session KYC snapshots to create/update payloads.
- * Skips verify_bank when bank was already verified in-session and a bank snapshot is present
- * (backend should persist the snapshot without calling Surepass again).
+ * With verify_bank, the backend compares bank_details to kyc_verification_details.bank
+ * (from a prior GET /kyc/bank/verify) — it does not call Surepass on create.
  */
 export function buildEntitySavePayload<
   T extends {
@@ -274,9 +289,11 @@ export function buildEntitySavePayload<
   options: {
     kycVerificationDetails: EntityKycVerificationDetails;
     bankVerifiedInSession: boolean;
+    /** Server-side bank verification timestamp — skip re-verify when unchanged. */
+    bankDetailsVerifiedAt?: string | null;
   },
 ): T {
-  const { kycVerificationDetails, bankVerifiedInSession } = options;
+  const { kycVerificationDetails, bankVerifiedInSession, bankDetailsVerifiedAt } = options;
   const payload: T = { ...base };
 
   if (hasKycSnapshots(kycVerificationDetails)) {
@@ -285,12 +302,16 @@ export function buildEntitySavePayload<
 
   const bankReady = shouldVerifyBankFields(payload.bank_details);
   const hasBankSnapshot = Boolean(kycVerificationDetails.bank?.verified_at);
+  const alreadyVerified =
+    Boolean(bankDetailsVerifiedAt) || (bankVerifiedInSession && hasBankSnapshot);
 
   if (bankReady) {
-    if (bankVerifiedInSession && hasBankSnapshot) {
+    if (alreadyVerified) {
       delete payload.verify_bank;
-    } else {
+    } else if (hasBankSnapshot) {
       payload.verify_bank = true;
+    } else {
+      delete payload.verify_bank;
     }
   } else {
     delete payload.verify_bank;

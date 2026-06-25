@@ -512,6 +512,9 @@ export function LeadFormModal({ open, onOpenChange, onSave, lead, mode: propMode
                 isEdit={isEdit}
                 mode={mode}
                 onPreviewClick={mode === 'create' ? handlePreviewClick : undefined}
+                excludeLeadId={lead?.id}
+                originalGstNumber={lead?.business_details?.gst_number ?? ''}
+                originalPanNumber={lead?.business_details?.pan_number ?? ''}
               />
             </form>
           </motion.div>

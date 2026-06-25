@@ -1,10 +1,10 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState, useEffect } from 'react';
-import { X, Search, Plus, ShieldCheck } from 'lucide-react';
+import { X, Search, Plus, ShieldCheck, Shield } from 'lucide-react';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { brokersAPI } from '../../../services/brokers.api';
-import { bankAPI } from '../../../services/bank.api';
+import { kycAPI } from '../../../services/kyc.api';
 import {
   validateEmail,
   validateAadhaar,
@@ -23,16 +23,15 @@ import { BrokerPreviewDialog } from './BrokerPreviewDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { EmailVerifyButton } from '../../shared/EmailVerifyButton';
 import { PhoneInput } from '../../shared/PhoneInput';
-import { KycVerificationDetailsPanel } from '../../shared/KycVerificationDetailsPanel';
 import type { CreateBrokerRequest, BrokerBankDetails, Broker, UpdateBrokerRequest, EntityKycVerificationDetails } from '../../../types/entities';
 import {
   buildEntitySavePayload,
   buildSurepassSnapshot,
   brokerPersist,
-  collectEntityKycEntries,
   isEmailVerifiedInKyc,
   mergeEntityKycSnapshot,
   persistAadhaarValidationSnapshot,
+  persistBankVerificationSnapshot,
 } from '../../../utils/kycVerification';
 import {
   applyAadhaarStateToAddress,
@@ -52,7 +51,9 @@ import {
   persistEnrichedGstLookupSnapshots,
   runEnrichedGstLookup,
 } from '../../../utils/gstLookupAutofill';
-import { verifyAutofilledEmails } from '../../../utils/emailVerification';
+import { verifyAutofilledEmails, isVerifiedEmailInput, VERIFIED_EMAIL_INPUT_CLASS } from '../../../utils/emailVerification';
+import { canVerifyBankAccountLookup, getBankAccountHolderNameMismatchError, mapBankVerifyToBankDetails } from '../../../utils/bankVerification';
+import { assertEntityNotDuplicateBeforeVerification } from '../../../utils/entityDuplicateCheck';
 import {
   BROKER_CREATE_LENIENT_BANK_MESSAGE,
   BROKER_UPDATE_LENIENT_BANK_MESSAGE,
@@ -293,11 +294,16 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
   const [aadhaarValidated, setAadhaarValidated] = useState(false);
   const [aadhaarValidationSummary, setAadhaarValidationSummary] = useState<string | null>(null);
   const [kycVerificationDetails, setKycVerificationDetails] = useState<EntityKycVerificationDetails>({});
+  const [bankDetailsVerifiedAt, setBankDetailsVerifiedAt] = useState<string | null>(null);
+  const [bankVerificationError, setBankVerificationError] = useState<string | null>(null);
   const brokerPersistContext = brokerPersist(brokerId);
   const [gstAutoFilledFields, setGstAutoFilledFields] = useState<Set<string>>(new Set());
   /** Snapshot from server — in edit, GST/PAN cannot be changed (same pattern as VendorFormModal). */
   const [originalGstNumber, setOriginalGstNumber] = useState('');
   const [originalPanNumber, setOriginalPanNumber] = useState('');
+  const [originalAadhaarNumber, setOriginalAadhaarNumber] = useState('');
+  const [originalBankAccount, setOriginalBankAccount] = useState('');
+  const [originalBankIfsc, setOriginalBankIfsc] = useState('');
   /** Name field read-only when filled from PAN / Aadhaar lookup (per contact row index). */
   const [contactPersonNameFromGovApi, setContactPersonNameFromGovApi] = useState<boolean[]>([false]);
 
@@ -320,6 +326,8 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
       setAadhaarValidated(false);
       setAadhaarValidationSummary(null);
       setKycVerificationDetails({});
+      setBankDetailsVerifiedAt(null);
+      setBankVerificationError(null);
       return;
     }
     let cancelled = false;
@@ -330,10 +338,15 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
         if (cancelled) return;
         setFormData(brokerEntityToForm(b));
         setKycVerificationDetails(b.kyc_verification_details ?? {});
+        setBankDetailsVerifiedAt(b.bank_details_verified_at ?? null);
+        setBankVerificationError(b.bank_verification_error ?? null);
         const gst = (b.business_details?.gst_number ?? '').trim();
         const pan = (b.business_details?.pan_number ?? '').trim();
         setOriginalGstNumber(gst);
         setOriginalPanNumber(pan);
+        setOriginalAadhaarNumber((b.business_details?.aadhaar_number ?? '').replace(/\s/g, ''));
+        setOriginalBankAccount((b.bank_details?.account_number ?? '').replace(/\s/g, ''));
+        setOriginalBankIfsc((b.bank_details?.ifsc_code ?? '').trim().toUpperCase());
         // First contact name typically tied to PAN — lock in edit when PAN exists (gov identity)
         const n = Math.max(1, b.contact_persons?.length ?? 1);
         const nameLocks = new Array(n).fill(false);
@@ -361,36 +374,64 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
     // Intentionally omit onOpenChange — stable close handler would still change identity per parent render
   }, [open, brokerId]);
 
-  const handleIFSCLookup = async (ifscCode: string) => {
-    // Only lookup if IFSC is exactly 11 characters (basic validation, let API handle detailed validation)
-    if (!ifscCode || ifscCode.length !== 11) {
-      setErrors({ ...errors, ifsc_code: 'IFSC code must be exactly 11 characters' });
+  const duplicateCheckOptions = () => ({
+    excludeId: brokerId,
+    unchangedFrom: {
+      gst_number: originalGstNumber,
+      pan_number: originalPanNumber,
+      aadhaar_number: originalAadhaarNumber,
+      account_number: originalBankAccount,
+      ifsc_code: originalBankIfsc,
+    },
+  });
+
+  const handleBankVerifySearch = async () => {
+    const bd = formData.bank_details;
+    const accountNumber = bd?.account_number?.trim();
+    const ifscCode = bd?.ifsc_code?.trim();
+
+    if (!canVerifyBankAccountLookup(accountNumber, ifscCode)) {
+      setErrors((prev) => ({
+        ...prev,
+        bank_account_number: !accountNumber ? 'Account number is required for bank verify' : prev.bank_account_number ?? '',
+        ifsc_code: !ifscCode || ifscCode.length !== 11 ? 'Valid IFSC is required for bank verify' : prev.ifsc_code ?? '',
+      }));
       return;
     }
 
     setIfscLoading(true);
-    setErrors({ ...errors, ifsc_code: '' });
-    
+    setErrors((prev) => ({ ...prev, ifsc_code: '', bank_account_number: '' }));
+
     try {
-      console.log('Calling IFSC lookup API for:', ifscCode);
-      const response = await bankAPI.lookupIFSC(ifscCode);
-      console.log('IFSC lookup response:', response);
-      
-      if (response.bank_details) {
-        setFormData({
-          ...formData,
-          bank_details: {
-            ...formData.bank_details,
-            bank_name: toTitleCase(response.bank_details.bank_name) || formData.bank_details?.bank_name || '',
-            branch: toTitleCase(response.bank_details.branch) || formData.bank_details?.branch || '',
-            ifsc_code: response.bank_details.ifsc_code || ifscCode,
-          }
-        });
-        setErrors({ ...errors, ifsc_code: '' });
+      await assertEntityNotDuplicateBeforeVerification(
+        'broker',
+        { account_number: accountNumber, ifsc_code: ifscCode },
+        'bank',
+        duplicateCheckOptions(),
+      );
+      const result = await kycAPI.verifyBank(accountNumber!, ifscCode!, brokerPersistContext);
+      const nextBankDetails = mapBankVerifyToBankDetails(result, formData.bank_details);
+      setFormData((prev) => ({ ...prev, bank_details: nextBankDetails }));
+
+      const holderMismatch = getBankAccountHolderNameMismatchError(
+        bd?.account_holder_name,
+        result.account_holder_name,
+      );
+      if (result.surepass_response) {
+        setKycVerificationDetails((prev) => persistBankVerificationSnapshot(prev, result));
       }
-    } catch (error: any) {
-      console.error('IFSC lookup error:', error);
-      setErrors({ ...errors, ifsc_code: error?.message || 'IFSC code not found' });
+      if (holderMismatch) {
+        setErrors((prev) => ({
+          ...prev,
+          account_holder_name: holderMismatch,
+        }));
+        return;
+      }
+    } catch (error: unknown) {
+      setErrors((prev) => ({
+        ...prev,
+        ifsc_code: error instanceof Error ? error.message : 'Bank verification failed',
+      }));
     } finally {
       setIfscLoading(false);
     }
@@ -525,6 +566,12 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
     setErrors({ ...errors, pan_number: '' });
     
     try {
+      await assertEntityNotDuplicateBeforeVerification(
+        'broker',
+        { pan_number: formData.business_details.pan_number },
+        'pan',
+        duplicateCheckOptions(),
+      );
       const result = await runEnrichedPanLookup(
         formData.business_details.pan_number,
         brokerPersistContext,
@@ -627,6 +674,12 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
     setErrors({ ...errors, gst_number: '' });
     
     try {
+      await assertEntityNotDuplicateBeforeVerification(
+        'broker',
+        { gst_number: formData.business_details.gst_number },
+        'gst',
+        duplicateCheckOptions(),
+      );
       const result = await runEnrichedGstLookup(
         formData.business_details.gst_number,
         brokerPersistContext,
@@ -699,6 +752,12 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
     setAadhaarValidationSummary(null);
     
     try {
+      await assertEntityNotDuplicateBeforeVerification(
+        'broker',
+        { aadhaar_number: formData.business_details.aadhaar_number },
+        'aadhaar',
+        duplicateCheckOptions(),
+      );
       const response = await brokersAPI.lookupAadhaar(
         formData.business_details.aadhaar_number,
         brokerPersistContext,
@@ -909,12 +968,6 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
               {/* Step 1: Basic Info */}
               {step === 1 && (
                 <div className="space-y-4">
-                  {isEdit && (
-                    <KycVerificationDetailsPanel
-                      entries={collectEntityKycEntries(kycVerificationDetails)}
-                      emptyMessage="No Surepass snapshots saved yet. Lookups and verify actions persist full responses when editing an existing broker."
-                    />
-                  )}
                   {/* Business Type Selector */}
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Business Type *</label>
@@ -1159,6 +1212,7 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
                                   placeholder="Email"
                                   value={email}
                                   onChange={(e) => {
+                                    if (isVerifiedEmailInput(email, { kyc: kycVerificationDetails })) return;
                                     const value = e.target.value;
                                     const updated = [...(formData.contact_persons || [])];
                                     const updatedEmails = [...(updated[index].emails || [''])];
@@ -1182,7 +1236,12 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
                                       setErrors({ ...errors, [errorKey]: 'Invalid email format' });
                                     }
                                   }}
-                                  className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                                  readOnly={isVerifiedEmailInput(email, { kyc: kycVerificationDetails })}
+                                  className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
+                                    isVerifiedEmailInput(email, { kyc: kycVerificationDetails })
+                                      ? VERIFIED_EMAIL_INPUT_CLASS
+                                      : ''
+                                  }`}
                                 />
                                 <EmailVerifyButton
                                   email={email}
@@ -1378,6 +1437,20 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
               {/* Step 3: Bank Details */}
               {step === 3 && (
                 <div className="space-y-4">
+                  {bankDetailsVerifiedAt && (
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400"
+                      title={`Bank verified ${new Date(bankDetailsVerifiedAt).toLocaleString('en-IN')}`}
+                    >
+                      <Shield className="h-3.5 w-3.5" />
+                      Bank verified
+                    </span>
+                  )}
+                  {!bankDetailsVerifiedAt && bankVerificationError?.trim() && (
+                    <p className="text-xs text-amber-700 dark:text-amber-300 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2">
+                      {bankVerificationError.trim()}
+                    </p>
+                  )}
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Account Holder Name</label>
                     <input
@@ -1396,6 +1469,9 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
                       }
                       className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
                     />
+                    {errors.account_holder_name && (
+                      <p className="mt-1 text-xs text-red-600">{errors.account_holder_name}</p>
+                    )}
                   </div>
 
                   <div>
@@ -1431,10 +1507,6 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
                               ifsc_code: value 
                             } 
                           });
-                          // Auto-lookup when 11 characters are entered
-                          if (value.length === 11) {
-                            handleIFSCLookup(value);
-                          }
                         }}
                         className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                         placeholder="HDFC0001234"
@@ -1442,16 +1514,16 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
                       />
                       <button 
                         type="button" 
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          const ifscCode = formData.bank_details?.ifsc_code || '';
-                          if (ifscCode && ifscCode.length === 11) {
-                            handleIFSCLookup(ifscCode);
-                          }
-                        }} 
-                        disabled={ifscLoading || !formData.bank_details?.ifsc_code || formData.bank_details.ifsc_code.length !== 11}
-                        className="btn-secondary flex items-center gap-2"
+                        onClick={() => void handleBankVerifySearch()}
+                        disabled={
+                          ifscLoading ||
+                          !canVerifyBankAccountLookup(
+                            formData.bank_details?.account_number,
+                            formData.bank_details?.ifsc_code,
+                          )
+                        }
+                        className="btn-secondary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Verify bank account via Surepass"
                       >
                         {ifscLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
                       </button>

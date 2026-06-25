@@ -12,6 +12,7 @@ import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { SalesPartyPreviewDialog } from './SalesPartyPreviewDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { EmailVerifyButton } from '../../shared/EmailVerifyButton';
+import { GoogleMapsLinkFieldLabel } from '../../shared/GoogleMapsLinkGuide';
 import { PhoneInput } from '../../shared/PhoneInput';
 import type { CreateSalesPartyRequest, UpdateSalesPartyRequest, Lead, VendorBankDetails, ContactPerson } from '../../../types/entities';
 import {
@@ -21,7 +22,8 @@ import {
   runEnrichedPanLookup,
 } from '../../../utils/panLookupEnrichment';
 import { buildEnrichedGstLookupAutofill, mergeGstContactPersons, persistEnrichedGstLookupSnapshots, runEnrichedGstLookup } from '../../../utils/gstLookupAutofill';
-import { verifyAutofilledEmails } from '../../../utils/emailVerification';
+import { verifyAutofilledEmails, isVerifiedEmailInput, rememberVerifiedEmail, VERIFIED_EMAIL_INPUT_CLASS } from '../../../utils/emailVerification';
+import { assertEntityNotDuplicateBeforeVerification } from '../../../utils/entityDuplicateCheck';
 
 interface SalesPartyFormModalProps {
   open: boolean;
@@ -311,6 +313,14 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
     setFormData({ ...formData, contact_persons: updated });
   };
 
+  const duplicateCheckOptions = () => ({
+    excludeId: salesPartyId,
+    unchangedFrom: {
+      gst_number: originalGstNumber,
+      pan_number: originalPanNumber,
+    },
+  });
+
   const handleGSTLookup = async () => {
     if (!formData.business_details.gst_number) {
       setErrors({ ...errors, gst_number: 'Please enter a GST number' });
@@ -327,6 +337,12 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
     setErrors({ ...errors, gst_number: '' });
     
     try {
+      await assertEntityNotDuplicateBeforeVerification(
+        'sales_party',
+        { gst_number: formData.business_details.gst_number },
+        'gst',
+        duplicateCheckOptions(),
+      );
       const result = await runEnrichedGstLookup(formData.business_details.gst_number);
       const autofill = buildEnrichedGstLookupAutofill(result);
       const autoFilledFields = new Set(gstAutoFilledFields);
@@ -384,6 +400,12 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
     setErrors({ ...errors, pan_number: '' });
     
     try {
+      await assertEntityNotDuplicateBeforeVerification(
+        'sales_party',
+        { pan_number: formData.business_details.pan_number },
+        'pan',
+        duplicateCheckOptions(),
+      );
       const result = await runEnrichedPanLookup(formData.business_details.pan_number);
       const autofill = buildPanLookupAutofill(result);
       const autoFilledFields = new Set<string>();
@@ -859,8 +881,16 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
                                 <input
                                   type="email"
                                   value={email}
-                                  onChange={(e) => updateEmail(personIdx, emailIdx, e.target.value)}
-                                  className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                                  onChange={(e) => {
+                                    if (isVerifiedEmailInput(email, { verifiedEmails: verifiedAutofillEmails })) return;
+                                    updateEmail(personIdx, emailIdx, e.target.value);
+                                  }}
+                                  readOnly={isVerifiedEmailInput(email, { verifiedEmails: verifiedAutofillEmails })}
+                                  className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
+                                    isVerifiedEmailInput(email, { verifiedEmails: verifiedAutofillEmails })
+                                      ? VERIFIED_EMAIL_INPUT_CLASS
+                                      : ''
+                                  }`}
                                   placeholder="Email address"
                                 />
                                 <EmailVerifyButton
@@ -877,6 +907,7 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
                                     const nextErrors = { ...errors };
                                     delete nextErrors[errorKey];
                                     setErrors(nextErrors);
+                                    setVerifiedAutofillEmails((prev) => rememberVerifiedEmail(prev, email));
                                   }}
                                 />
                                 <button
@@ -997,7 +1028,7 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
 
                   {/* Google Maps Location Link */}
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block">Google Maps Location Link</label>
+                    <GoogleMapsLinkFieldLabel />
                     <input
                       type="text"
                       value={formData.google_location_link || ''}

@@ -7,8 +7,10 @@ export interface ApiResponse<T = any> {
   success: boolean;
   data: T;
   message: string;
-  /** Present on some vendor-create responses when bank verification fails leniently */
+  /** Present on create/update when bank verification fails leniently (e.g. holder name mismatch). */
   verification_error?: string;
+  /** True when create/update persisted but bank verification did not pass. */
+  bank_verification_flagged?: boolean;
   /** Present on vendor-create when verify_bank succeeded (Surepass + markBankDetailsVerified) */
   verification_message?: string;
   timestamp?: string;
@@ -283,6 +285,13 @@ class ApiService {
   async postEnvelope<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, {
       method: 'POST',
+      body: data ? JSON.stringify(data) : undefined,
+    });
+  }
+
+  async putEnvelope<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
+    return this.request<T>(endpoint, {
+      method: 'PUT',
       body: data ? JSON.stringify(data) : undefined,
     });
   }

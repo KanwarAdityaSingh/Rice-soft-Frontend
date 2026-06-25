@@ -5,10 +5,9 @@ import { driversAPI } from '../../../services/drivers.api';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import type { CreateDriverRequest, Driver, DriverVerificationResponse, SurepassVerificationSnapshot } from '../../../types/entities';
-import { KycVerificationDetailsPanel } from '../../shared/KycVerificationDetailsPanel';
 import { PhoneInput } from '../../shared/PhoneInput';
 import { sanitizePhoneInput, validatePhone, sanitizeDrivingLicenseInput, getDrivingLicenseValidationError, validateDrivingLicense, DRIVING_LICENSE_DISPLAY_EXAMPLE, DRIVING_LICENSE_FORMAT_HINT, DRIVING_LICENSE_MAX_LENGTH } from '../../../utils/validation';
-import { buildSurepassSnapshot, collectDriverKycEntries } from '../../../utils/kycVerification';
+import { buildSurepassSnapshot } from '../../../utils/kycVerification';
 import { formatDriverVerifiedAt } from '../../../utils/driverVerification';
 import {
   collectApiLockedFieldsFromDriver,
@@ -447,14 +446,6 @@ export function DriverFormModal({ open, onOpenChange, driverId }: DriverFormModa
                         </button>
                       )}
                     </div>
-                  )}
-
-                  {isEditMode && (
-                    <KycVerificationDetailsPanel
-                      entries={collectDriverKycEntries(loadedDriver?.verification_details ?? formData.verification_details)}
-                      title="Stored Surepass verification"
-                      emptyMessage="No Surepass snapshot yet. Enter DOB and verify to persist licence details from Surepass."
-                    />
                   )}
 
                   <div>

@@ -1,32 +1,39 @@
 import { useState, useEffect, useCallback } from 'react';
-import { vendorsAPI } from '../services/vendors.api';
+import { vendorsAPI, type GetAllVendorsOptions } from '../services/vendors.api';
 import type { Vendor, CreateVendorRequest, UpdateVendorRequest } from '../types/entities';
 
-export type UseVendorsOptions = {
-  /** When true, requests `include_inactive=true` so inactive vendors are returned. */
-  includeInactive?: boolean;
-};
+export type UseVendorsOptions = GetAllVendorsOptions;
 
 export function useVendors(options: UseVendorsOptions = {}) {
-  const { includeInactive = false } = options;
+  const {
+    includeInactive = false,
+    type,
+    registrationType,
+    isVerified,
+    bankVerified,
+  } = options;
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Toast removed for now
 
   const fetchVendors = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await vendorsAPI.getAllVendors(includeInactive);
+      const data = await vendorsAPI.getAllVendors({
+        includeInactive,
+        type,
+        registrationType,
+        isVerified,
+        bankVerified,
+      });
       setVendors(data);
     } catch (err: any) {
       setError(err.message);
-      // showError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [includeInactive]);
+  }, [includeInactive, type, registrationType, isVerified, bankVerified]);
 
   useEffect(() => {
     void fetchVendors();
@@ -38,7 +45,6 @@ export function useVendors(options: UseVendorsOptions = {}) {
       await fetchVendors();
       return result;
     } catch (err: any) {
-      // showError(err.message || 'Failed to create vendor');
       throw err;
     }
   };
@@ -57,9 +63,7 @@ export function useVendors(options: UseVendorsOptions = {}) {
     try {
       await vendorsAPI.deleteVendor(id);
       setVendors(vendors.filter((v) => v.id !== id));
-      // success('Vendor deleted successfully');
     } catch (err: any) {
-      // showError(err.message || 'Failed to delete vendor');
       throw err;
     }
   };
@@ -74,4 +78,3 @@ export function useVendors(options: UseVendorsOptions = {}) {
     refetch: fetchVendors,
   };
 }
-

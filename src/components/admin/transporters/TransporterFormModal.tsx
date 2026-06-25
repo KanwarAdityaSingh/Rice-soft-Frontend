@@ -3,8 +3,10 @@ import React, { useState, useEffect } from 'react';
 import { X, Plus, Search, ShieldCheck, Check, Shield } from 'lucide-react';
 import { useTransporters } from '../../../hooks/useTransporters';
 import { transportersAPI } from '../../../services/transporters.api';
+import { kycAPI } from '../../../services/kyc.api';
 import {
   validateAadhaar,
+  validateIFSC,
   getGstValidationError,
   getPanValidationError,
   getGstPanMismatchError,
@@ -16,7 +18,7 @@ import {
 import { CustomSelect } from '../../shared/CustomSelect';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
-import type { ContactPerson, CreateTransporterRequest, UpdateTransporterRequest, EntityKycVerificationDetails } from '../../../types/entities';
+import type { ContactPerson, CreateTransporterRequest, UpdateTransporterRequest, EntityKycVerificationDetails, Transporter } from '../../../types/entities';
 import {
   buildEntitySavePayload,
   persistAadhaarValidationSnapshot,
@@ -24,8 +26,11 @@ import {
   buildSurepassSnapshot,
   isEmailVerifiedInKyc,
   mergeEntityKycSnapshot,
+  clearBankKycSnapshot,
+  shouldVerifyBankFields,
+  persistBankVerificationSnapshot,
 } from '../../../utils/kycVerification';
-import { verifyAutofilledEmails } from '../../../utils/emailVerification';
+import { verifyAutofilledEmails, isVerifiedEmailInput, VERIFIED_EMAIL_INPUT_CLASS } from '../../../utils/emailVerification';
 import { EmailVerifyButton } from '../../shared/EmailVerifyButton';
 import { PhoneInput } from '../../shared/PhoneInput';
 import {
@@ -47,6 +52,7 @@ import {
   collectAadhaarAutofillLocks,
   collectLockedFieldsFromSavedKyc,
   collectTransporterAutofillLocks,
+  collectBankFieldLocks,
   collectVerifiedEmailFieldLocksFromList,
   contactRowHasLockedField,
   isTransporterFieldLocked,
@@ -56,7 +62,14 @@ import {
 import {
   computeTransporterVerifiedFromKyc,
   formatTransporterVerifiedAt,
+  getTransporterSaveAlert,
 } from '../../../utils/transporterVerification';
+import {
+  hasTransporterBankInput,
+} from '../../../utils/transporterBank';
+import { canVerifyBankAccountLookup, getBankAccountHolderNameMismatchError, mapBankVerifyToBankDetails } from '../../../utils/bankVerification';
+import { assertEntityNotDuplicateBeforeVerification } from '../../../utils/entityDuplicateCheck';
+import { TransporterBankDetailsStep } from './TransporterBankDetailsStep';
 
 function isContactPersonRowEmpty(cp: ContactPerson): boolean {
   const name = (cp.name || '').trim();
@@ -82,13 +95,23 @@ function summarizeValidationErrors(errors: Record<string, string>): string {
   return `${messages.slice(0, 3).join(' · ')}${messages.length > 3 ? ` (+${messages.length - 3} more)` : ''}`;
 }
 
+function isStep2ErrorKey(key: string): boolean {
+  return key.startsWith('address.');
+}
+
 interface TransporterFormModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   transporterId?: string | null;
+  initialStep?: 1 | 2 | 3;
 }
 
-export function TransporterFormModal({ open, onOpenChange, transporterId }: TransporterFormModalProps) {
+export function TransporterFormModal({
+  open,
+  onOpenChange,
+  transporterId,
+  initialStep = 1,
+}: TransporterFormModalProps) {
   const { createTransporter, updateTransporter } = useTransporters();
   const isEditMode = !!transporterId;
   
@@ -117,6 +140,9 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
   const [apiLockedFields, setApiLockedFields] = useState<Set<string>>(new Set());
   const [originalGstNumber, setOriginalGstNumber] = useState<string>('');
   const [originalPanNumber, setOriginalPanNumber] = useState<string>('');
+  const [originalAadharNumber, setOriginalAadharNumber] = useState<string>('');
+  const [originalBankAccount, setOriginalBankAccount] = useState<string>('');
+  const [originalBankIfsc, setOriginalBankIfsc] = useState<string>('');
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
@@ -127,6 +153,10 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
   const [aadhaarValidationSummary, setAadhaarValidationSummary] = useState<string | null>(null);
   const [isVerified, setIsVerified] = useState(false);
   const [verifiedAt, setVerifiedAt] = useState<string | null>(null);
+  const [ifscLoading, setIfscLoading] = useState(false);
+  const [bankVerifiedInSession, setBankVerifiedInSession] = useState(false);
+  const [bankDetailsVerifiedAt, setBankDetailsVerifiedAt] = useState<string | null>(null);
+  const [bankVerificationError, setBankVerificationError] = useState<string | null>(null);
   const transporterPersistContext = transporterPersist(transporterId);
   const isFieldLocked = (key: string) => isTransporterFieldLocked(apiLockedFields, key);
   const lockedClass = (key: string) => (isFieldLocked(key) ? TRANSPORTER_LOCKED_INPUT_CLASS : '');
@@ -165,8 +195,15 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
       loadTransporterData();
     } else if (open && !transporterId) {
       resetForm();
+      setStep(initialStep);
     }
   }, [open, transporterId]);
+
+  useEffect(() => {
+    if (open && isEditMode && !loadingTransporter) {
+      setStep(initialStep);
+    }
+  }, [open, initialStep, isEditMode, loadingTransporter]);
 
   const loadTransporterData = async () => {
     if (!transporterId) return;
@@ -179,6 +216,9 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
       // Store original values to check if they should be disabled
       setOriginalGstNumber(gstNumber);
       setOriginalPanNumber(panNumber);
+      setOriginalAadharNumber(transporter.aadhar_number || '');
+      setOriginalBankAccount(transporter.bank_details?.account_number?.replace(/\s/g, '') || '');
+      setOriginalBankIfsc(transporter.bank_details?.ifsc_code?.trim().toUpperCase() || '');
       
       setFormData({
         business_name: transporter.business_name,
@@ -208,7 +248,18 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
       setKycVerificationDetails(transporter.kyc_verification_details ?? {});
       setIsVerified(transporter.is_verified);
       setVerifiedAt(transporter.verified_at);
-      setApiLockedFields(collectLockedFieldsFromSavedKyc(transporter.kyc_verification_details, loadedForm));
+      const savedKyc = transporter.kyc_verification_details ?? {};
+      setBankDetailsVerifiedAt(transporter.bank_details_verified_at ?? null);
+      setBankVerificationError(transporter.bank_verification_error ?? null);
+      setBankVerifiedInSession(Boolean(transporter.bank_details_verified_at || savedKyc.bank?.verified_at));
+      setApiLockedFields(
+        mergeFieldLocks(
+          collectLockedFieldsFromSavedKyc(savedKyc, loadedForm),
+          collectBankFieldLocks(transporter.bank_details, savedKyc, {
+            bankDetailsVerifiedAt: transporter.bank_details_verified_at,
+          }),
+        ),
+      );
       setErrors({});
     } catch (error: any) {
       setAlertType('error');
@@ -242,6 +293,9 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
     setApiLockedFields(new Set());
     setOriginalGstNumber('');
     setOriginalPanNumber('');
+    setOriginalAadharNumber('');
+    setOriginalBankAccount('');
+    setOriginalBankIfsc('');
     setStep(1);
     setKycVerificationDetails({});
     setPanLookupNotice(null);
@@ -249,7 +303,21 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
     setAadhaarValidationSummary(null);
     setIsVerified(false);
     setVerifiedAt(null);
+    setBankVerifiedInSession(false);
+    setBankDetailsVerifiedAt(null);
+    setBankVerificationError(null);
   };
+
+  const duplicateCheckOptions = () => ({
+    excludeId: transporterId,
+    unchangedFrom: {
+      gst_number: originalGstNumber,
+      pan_number: originalPanNumber,
+      aadhar_number: originalAadharNumber,
+      account_number: originalBankAccount,
+      ifsc_code: originalBankIfsc,
+    },
+  });
 
   const handleGSTLookup = async () => {
     if (!formData.gst_number) {
@@ -268,13 +336,29 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
     setPanLookupNotice(null);
     
     try {
+      await assertEntityNotDuplicateBeforeVerification(
+        'transporter',
+        { gst_number: formData.gst_number ?? undefined },
+        'gst',
+        duplicateCheckOptions(),
+      );
       const result = await runEnrichedGstLookup(formData.gst_number, transporterPersistContext);
       const autofill = buildTransporterGstAutofill(result);
-      const updatedForm = {
+      let updatedForm = {
         ...formData,
         ...applyTransporterKycAutofill(formData, autofill),
       };
       const autofillLocks = collectTransporterAutofillLocks(autofill, updatedForm.contact_persons ?? []);
+      if (autofill.fillBusinessName && autofill.businessName) {
+        updatedForm = {
+          ...updatedForm,
+          bank_details: {
+            ...formData.bank_details,
+            account_holder_name: autofill.businessName,
+          },
+        };
+        autofillLocks.add('bank_details.account_holder_name');
+      }
 
       let nextKycDetails = persistEnrichedGstLookupSnapshots(kycVerificationDetails, result);
       const emailVerification = await verifyAutofilledEmails(
@@ -326,6 +410,12 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
     setPanLookupNotice(null);
     
     try {
+      await assertEntityNotDuplicateBeforeVerification(
+        'transporter',
+        { pan_number: formData.pan_number ?? undefined },
+        'pan',
+        duplicateCheckOptions(),
+      );
       const result = await runEnrichedPanLookup(formData.pan_number, transporterPersistContext);
       const autofill = buildTransporterPanAutofill(result);
       const updatedForm = {
@@ -401,6 +491,12 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
     setAadhaarValidationSummary(null);
 
     try {
+      await assertEntityNotDuplicateBeforeVerification(
+        'transporter',
+        { aadhar_number: formData.aadhar_number ?? undefined },
+        'aadhaar',
+        duplicateCheckOptions(),
+      );
       const response = await transportersAPI.lookupAadhaar(
         formData.aadhar_number,
         transporterPersistContext,
@@ -503,11 +599,18 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
         if (mismatchError) newErrors.pan_number = mismatchError;
       }
     } else {
-      if (formData.pan_number) {
-        const panError = getPanValidationError(formData.pan_number);
+      const hasPan = Boolean(formData.pan_number?.trim());
+      const hasAadhaar = Boolean(formData.aadhar_number?.trim());
+      if (!hasPan && !hasAadhaar) {
+        const msg = 'Either PAN or Aadhaar is required for unregistered transporters';
+        newErrors.pan_number = msg;
+        newErrors.aadhar_number = msg;
+      }
+      if (hasPan) {
+        const panError = getPanValidationError(formData.pan_number!);
         if (panError) newErrors.pan_number = panError;
       }
-      if (formData.aadhar_number?.trim() && !validateAadhaar(formData.aadhar_number)) {
+      if (hasAadhaar && !validateAadhaar(formData.aadhar_number!)) {
         newErrors.aadhar_number = 'Invalid Aadhaar format (12 digits, cannot start with 0 or 1)';
       }
     }
@@ -543,7 +646,121 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
       newErrors['address.country'] = 'Country is required';
     }
 
+    const bd = formData.bank_details;
+    if (bd?.ifsc_code?.trim() && !validateIFSC(bd.ifsc_code)) {
+      newErrors.bank_ifsc_code = 'Invalid IFSC format';
+    }
+    if (hasTransporterBankInput(bd) && !shouldVerifyBankFields(bd)) {
+      if (!bd?.account_holder_name?.trim()) {
+        newErrors.bank_account_holder_name = 'Account holder name is required';
+      }
+      if (!bd?.account_number?.trim()) {
+        newErrors.bank_account_number = 'Account number is required';
+      }
+      if (!bd?.ifsc_code?.trim() || bd.ifsc_code.length !== 11) {
+        newErrors.bank_ifsc_code = newErrors.bank_ifsc_code ?? 'Valid IFSC is required';
+      }
+    }
+
     return newErrors;
+  };
+
+  const applyBankFieldLocks = (
+    bankDetails: CreateTransporterRequest['bank_details'],
+    kyc: EntityKycVerificationDetails,
+    verifiedAt?: string | null,
+  ) => {
+    setApiLockedFields((prev) =>
+      mergeFieldLocks(
+        prev,
+        collectBankFieldLocks(bankDetails, kyc, { bankDetailsVerifiedAt: verifiedAt ?? bankDetailsVerifiedAt }),
+      ),
+    );
+  };
+
+  const handleBankCredentialChange = () => {
+    setBankVerificationError(null);
+    const serverBankVerified = Boolean(bankDetailsVerifiedAt);
+    if (serverBankVerified || bankVerifiedInSession) {
+      setBankVerifiedInSession(false);
+      setBankDetailsVerifiedAt(null);
+      setApiLockedFields((prev) => {
+        const next = new Set(prev);
+        next.delete('bank_details.account_holder_name');
+        next.delete('bank_details.account_number');
+        next.delete('bank_details.ifsc_code');
+        next.delete('bank_details.bank_name');
+        next.delete('bank_details.branch');
+        return next;
+      });
+    }
+    if (serverBankVerified || bankVerifiedInSession || kycVerificationDetails.bank) {
+      setKycVerificationDetails((prev) => clearBankKycSnapshot(prev));
+    }
+  };
+
+  const handleBankVerifySearch = async () => {
+    const bd = formData.bank_details;
+    const accountNumber = bd?.account_number?.trim();
+    const ifscCode = bd?.ifsc_code?.trim();
+
+    if (!canVerifyBankAccountLookup(accountNumber, ifscCode)) {
+      setErrors((prev) => ({
+        ...prev,
+        bank_account_number: !accountNumber ? 'Account number is required for bank verify' : prev.bank_account_number ?? '',
+        bank_ifsc_code: !ifscCode || ifscCode.length !== 11 || !validateIFSC(ifscCode)
+          ? 'Valid IFSC is required for bank verify'
+          : prev.bank_ifsc_code ?? '',
+      }));
+      return;
+    }
+    if (isFieldLocked('bank_details.ifsc_code')) return;
+
+    setIfscLoading(true);
+    setErrors((prev) => ({ ...prev, bank_ifsc_code: '', bank_account_number: '', bank_account_holder_name: '' }));
+
+    try {
+      await assertEntityNotDuplicateBeforeVerification(
+        'transporter',
+        { account_number: accountNumber, ifsc_code: ifscCode },
+        'bank',
+        duplicateCheckOptions(),
+      );
+      const result = await kycAPI.verifyBank(accountNumber!, ifscCode!, transporterPersistContext);
+      const nextBankDetails = mapBankVerifyToBankDetails(result, formData.bank_details);
+      setFormData((prev) => ({ ...prev, bank_details: nextBankDetails }));
+      setApiLockedFields((prev) =>
+        mergeFieldLocks(prev, collectBankFieldLocks(nextBankDetails, kycVerificationDetails, { ifscLookupOnly: true })),
+      );
+
+      const holderMismatch = getBankAccountHolderNameMismatchError(
+        bd?.account_holder_name,
+        result.account_holder_name,
+      );
+      if (result.surepass_response) {
+        setKycVerificationDetails((prev) => persistBankVerificationSnapshot(prev, result));
+      }
+      if (holderMismatch) {
+        setErrors((prev) => ({
+          ...prev,
+          bank_account_holder_name: holderMismatch,
+        }));
+        return;
+      }
+    } catch (error: unknown) {
+      setApiLockedFields((prev) => {
+        const next = new Set(prev);
+        next.delete('bank_details.bank_name');
+        next.delete('bank_details.branch');
+        return next;
+      });
+      setErrors((prev) => ({
+        ...prev,
+        bank_ifsc_code: error instanceof Error ? error.message : 'Bank verification failed',
+      }));
+    } finally {
+      setIfscLoading(false);
+    }
   };
 
   const buildStep1Errors = (): Record<string, string> => {
@@ -553,7 +770,7 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
 
   const buildStep2Errors = (): Record<string, string> => {
     const all = buildFormErrors();
-    return Object.fromEntries(Object.entries(all).filter(([key]) => key.startsWith('address.')));
+    return Object.fromEntries(Object.entries(all).filter(([key]) => isStep2ErrorKey(key)));
   };
 
   const handleNextStep = () => {
@@ -570,6 +787,20 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
     setStep(2);
   };
 
+  const handleNextToBank = () => {
+    const step2Errors = buildStep2Errors();
+    setErrors(step2Errors);
+    if (Object.keys(step2Errors).length > 0) {
+      setAlertType('warning');
+      setAlertTitle('Complete required fields');
+      setAlertMessage(summarizeValidationErrors(step2Errors));
+      setAlertOpen(true);
+      return;
+    }
+    setErrors({});
+    setStep(3);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const formErrors = buildFormErrors();
@@ -577,8 +808,13 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
 
     if (Object.keys(formErrors).length > 0) {
       const step1Errors = buildStep1Errors();
+      const step2Errors = buildStep2Errors();
       if (Object.keys(step1Errors).length > 0) {
         setStep(1);
+      } else if (Object.keys(step2Errors).length > 0) {
+        setStep(2);
+      } else {
+        setStep(3);
       }
       setAlertType('warning');
       setAlertTitle('Cannot save transporter');
@@ -600,23 +836,40 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
           ...rest,
           contact_persons: (formData.contact_persons || []).filter((cp) => !isContactPersonRowEmpty(cp)),
         },
-        { kycVerificationDetails, bankVerifiedInSession: false },
+        { kycVerificationDetails, bankVerifiedInSession, bankDetailsVerifiedAt },
       );
 
+      const applySavedTransporter = (saved: Transporter) => {
+        setIsVerified(saved.is_verified);
+        setVerifiedAt(saved.verified_at);
+        setBankDetailsVerifiedAt(saved.bank_details_verified_at ?? null);
+        setBankVerificationError(saved.bank_verification_error ?? null);
+        const nextKyc = saved.kyc_verification_details ?? kycVerificationDetails;
+        if (saved.kyc_verification_details) {
+          setKycVerificationDetails(saved.kyc_verification_details);
+        }
+        setBankVerifiedInSession(Boolean(saved.bank_details_verified_at));
+        applyBankFieldLocks(saved.bank_details, nextKyc, saved.bank_details_verified_at);
+      };
+
       if (isEditMode && transporterId) {
-        const saved = await updateTransporter(transporterId, submitData as UpdateTransporterRequest);
-        setIsVerified(saved.is_verified);
-        setVerifiedAt(saved.verified_at);
-        setAlertType('success');
-        setAlertTitle('Success');
-        setAlertMessage('Transporter updated successfully');
+        const { transporter, message, verification_error, verification_message } = await updateTransporter(
+          transporterId,
+          submitData as UpdateTransporterRequest,
+        );
+        applySavedTransporter(transporter);
+        const alert = getTransporterSaveAlert(true, message, verification_error, verification_message);
+        setAlertType(alert.alertType);
+        setAlertTitle(alert.alertTitle);
+        setAlertMessage(alert.alertMessage);
       } else {
-        const saved = await createTransporter(submitData);
-        setIsVerified(saved.is_verified);
-        setVerifiedAt(saved.verified_at);
-        setAlertType('success');
-        setAlertTitle('Success');
-        setAlertMessage('Transporter created successfully');
+        const { transporter, message, verification_error, verification_message } =
+          await createTransporter(submitData);
+        applySavedTransporter(transporter);
+        const alert = getTransporterSaveAlert(false, message, verification_error, verification_message);
+        setAlertType(alert.alertType);
+        setAlertTitle(alert.alertTitle);
+        setAlertMessage(alert.alertMessage);
       }
       setAlertOpen(true);
       setTimeout(() => {
@@ -697,7 +950,7 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                         <p className="text-sm text-primary/90">
                           <span className="font-medium">Note:</span> {formData.transport_type === 'registered' 
                             ? 'For registered transporters, GST number is mandatory. Verified when GST or PAN Surepass lookup succeeds.' 
-                            : 'For unregistered transporters, PAN lookup and Aadhaar are optional. Verified when Aadhaar Surepass validation succeeds.'}
+                            : 'For unregistered transporters, either PAN or Aadhaar is required. Verified when Surepass lookup succeeds.'}
                         </p>
                         {!isVerified && isEditMode && transporterPersistContext && (
                           <p className="text-xs text-amber-700 dark:text-amber-400">
@@ -754,6 +1007,9 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                         </>
                       ) : (
                         <>
+                          <p className="text-xs text-muted-foreground -mt-1 mb-1">
+                            Either PAN or Aadhaar is required.
+                          </p>
                           {renderPanNumberField()}
 
                           {/* Aadhaar Number for unregistered (full width) */}
@@ -933,16 +1189,30 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                                           placeholder="Email"
                                           value={email}
                                           onChange={(e) => {
+                                            if (
+                                              isFieldLocked(`contact_person_${index}_email_${emailIndex}`) ||
+                                              isVerifiedEmailInput(email, { kyc: kycVerificationDetails })
+                                            ) {
+                                              return;
+                                            }
                                             const updated = [...(formData.contact_persons || [])];
                                             const updatedEmails = [...(updated[index].emails || [''])];
                                             updatedEmails[emailIndex] = e.target.value;
                                             updated[index] = { ...updated[index], emails: updatedEmails };
                                             setFormData({ ...formData, contact_persons: updated });
                                           }}
-                                          readOnly={isFieldLocked(`contact_person_${index}_email_${emailIndex}`)}
-                                          className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${lockedClass(`contact_person_${index}_email_${emailIndex}`)}`}
+                                          readOnly={
+                                            isFieldLocked(`contact_person_${index}_email_${emailIndex}`) ||
+                                            isVerifiedEmailInput(email, { kyc: kycVerificationDetails })
+                                          }
+                                          className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${lockedClass(`contact_person_${index}_email_${emailIndex}`)} ${
+                                            isVerifiedEmailInput(email, { kyc: kycVerificationDetails })
+                                              ? VERIFIED_EMAIL_INPUT_CLASS
+                                              : ''
+                                          }`}
                                         />
-                                        {isFieldLocked(`contact_person_${index}_email_${emailIndex}`) ? (
+                                        {isFieldLocked(`contact_person_${index}_email_${emailIndex}`) ||
+                                        isVerifiedEmailInput(email, { kyc: kycVerificationDetails }) ? (
                                           <span
                                             className="shrink-0 rounded-lg border border-border px-2 py-2 text-emerald-600"
                                             title="Email verified"
@@ -1178,11 +1448,58 @@ export function TransporterFormModal({ open, onOpenChange, transporterId }: Tran
                         </div>
                       </div>
 
-                      {/* Back and Submit buttons for Step 2 */}
+                      {/* Back and Next for Step 2 */}
                       <div className="flex justify-between gap-3 pt-4">
                         <button
                           type="button"
                           onClick={() => setStep(1)}
+                          className="px-4 py-2 border border-border rounded-lg hover:bg-muted transition-colors"
+                        >
+                          Back
+                        </button>
+                        <div className="flex gap-3">
+                          <button
+                            type="button"
+                            onClick={() => onOpenChange(false)}
+                            className="px-4 py-2 border border-border rounded-lg hover:bg-muted transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleNextToBank}
+                            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                          >
+                            Next: Bank Details
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Step 3: Bank Details */}
+                  {step === 3 && (
+                    <>
+                      <TransporterBankDetailsStep
+                        formData={formData}
+                        setFormData={setFormData}
+                        errors={errors}
+                        setErrors={setErrors}
+                        kycVerificationDetails={kycVerificationDetails}
+                        bankDetailsVerifiedAt={bankDetailsVerifiedAt}
+                        bankVerificationError={bankVerificationError}
+                        isEditMode={isEditMode}
+                        isFieldLocked={isFieldLocked}
+                        lockedClass={lockedClass}
+                        ifscLoading={ifscLoading}
+                        onBankVerifySearch={handleBankVerifySearch}
+                        onBankCredentialChange={handleBankCredentialChange}
+                      />
+
+                      <div className="flex justify-between gap-3 pt-4">
+                        <button
+                          type="button"
+                          onClick={() => setStep(2)}
                           className="px-4 py-2 border border-border rounded-lg hover:bg-muted transition-colors"
                         >
                           Back

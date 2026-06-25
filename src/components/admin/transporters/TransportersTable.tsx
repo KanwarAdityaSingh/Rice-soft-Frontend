@@ -20,11 +20,15 @@ import type { Transporter, InwardSlipPass } from '../../../types/entities';
 
 export function TransportersTable() {
   const [verificationFilter, setVerificationFilter] = useState<string | undefined>();
+  const [bankVerifyFilter, setBankVerifyFilter] = useState<string | undefined>();
   const isVerifiedParam =
     verificationFilter === 'verified' ? true : verificationFilter === 'unverified' ? false : undefined;
+  const bankVerifiedParam =
+    bankVerifyFilter === 'verified' ? true : bankVerifyFilter === 'unverified' ? false : undefined;
   const { transporters, loading, deleteTransporter, refetch } = useTransporters({
     includeInactive: false,
     isVerified: isVerifiedParam,
+    bankVerified: bankVerifiedParam,
   });
   const { vehicles, refetch: refetchVehicles } = useVehicles();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -33,6 +37,7 @@ export function TransportersTable() {
   const [selectedTransporter, setSelectedTransporter] = useState<Transporter | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedTransporterId, setSelectedTransporterId] = useState<string | null>(null);
+  const [editInitialStep, setEditInitialStep] = useState<1 | 2 | 3>(1);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [linkVehiclesCtx, setLinkVehiclesCtx] = useState<{ id: string; name: string } | null>(null);
   const [inwardSlipPasses, setInwardSlipPasses] = useState<InwardSlipPass[]>([]);
@@ -242,13 +247,22 @@ export function TransportersTable() {
         </div>
         <div className="flex gap-2 flex-wrap items-center">
           <FilterDropdown
-            label="Verified"
+            label="KYC"
             options={[
               { label: 'Verified', value: 'verified' },
               { label: 'Unverified', value: 'unverified' },
             ]}
             value={verificationFilter}
             onChange={setVerificationFilter}
+          />
+          <FilterDropdown
+            label="Bank"
+            options={[
+              { label: 'Verified', value: 'verified' },
+              { label: 'Not verified', value: 'unverified' },
+            ]}
+            value={bankVerifyFilter}
+            onChange={setBankVerifyFilter}
           />
           <button
             onClick={() => setCreateModalOpen(true)}
@@ -280,7 +294,8 @@ export function TransportersTable() {
                   <th className="text-left py-3 px-4 text-sm font-semibold">Phone</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold">Email</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold">City</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold">Verified</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold">KYC</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold">Bank</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold">Vehicles</th>
                   <th className="text-right py-3 px-4 text-sm font-semibold">Actions</th>
                 </tr>
@@ -309,6 +324,22 @@ export function TransportersTable() {
                       <td className="py-3 px-4 text-sm">{transporter.address.city}</td>
                       <td className="py-3 px-4 text-sm text-muted-foreground">
                         {transporter.is_verified ? formatTransporterVerifiedAt(transporter.verified_at) : '—'}
+                      </td>
+                      <td className="py-3 px-4 text-sm max-w-[14rem]">
+                        {transporter.bank_details_verified_at ? (
+                          <span className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-sky-500/15 text-sky-700 dark:text-sky-400 border border-sky-500/25">
+                            Verified
+                          </span>
+                        ) : transporter.bank_verification_error?.trim() ? (
+                          <span
+                            className="inline-flex items-start gap-1 rounded-md px-2 py-0.5 text-xs font-medium bg-amber-500/10 text-amber-900 dark:text-amber-200 border border-amber-500/25"
+                            title={transporter.bank_verification_error.trim()}
+                          >
+                            <span className="line-clamp-2">{transporter.bank_verification_error.trim()}</span>
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">—</span>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-sm">
                         {(() => {
@@ -343,13 +374,16 @@ export function TransportersTable() {
                                 name: transporter.business_name,
                               })
                             }
-                            onAddBankDetails={() =>
-                              showComingSoon('Bank details will be available in a future update.')
-                            }
+                            onAddBankDetails={() => {
+                              setEditInitialStep(3);
+                              setSelectedTransporterId(transporter.id);
+                              setEditModalOpen(true);
+                            }}
                             onShowLedger={() =>
                               showComingSoon('Transporter ledger will be available in a future update.')
                             }
                             onEdit={() => {
+                              setEditInitialStep(1);
                               setSelectedTransporterId(transporter.id);
                               setEditModalOpen(true);
                             }}
@@ -482,6 +516,7 @@ export function TransportersTable() {
           }
         }}
         transporterId={selectedTransporterId}
+        initialStep={editInitialStep}
       />
     </div>
   );

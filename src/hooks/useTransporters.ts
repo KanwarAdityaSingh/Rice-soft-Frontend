@@ -5,6 +5,7 @@ import type { Transporter, CreateTransporterRequest, UpdateTransporterRequest } 
 export function useTransporters(options?: boolean | GetAllTransportersOptions) {
   const includeInactive = typeof options === 'boolean' ? options : options?.includeInactive ?? false;
   const isVerified = typeof options === 'boolean' ? undefined : options?.isVerified;
+  const bankVerified = typeof options === 'boolean' ? undefined : options?.bankVerified;
   const [transporters, setTransporters] = useState<Transporter[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -13,29 +14,29 @@ export function useTransporters(options?: boolean | GetAllTransportersOptions) {
     setLoading(true);
     setError(null);
     try {
-      const data = await transportersAPI.getAllTransporters({ includeInactive, isVerified });
+      const data = await transportersAPI.getAllTransporters({ includeInactive, isVerified, bankVerified });
       setTransporters(data);
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [includeInactive, isVerified]);
+  }, [includeInactive, isVerified, bankVerified]);
 
   useEffect(() => {
     void fetchTransporters();
   }, [fetchTransporters]);
 
   const createTransporter = async (data: CreateTransporterRequest) => {
-    const newTransporter = await transportersAPI.createTransporter(data);
+    const result = await transportersAPI.createTransporter(data);
     await fetchTransporters();
-    return newTransporter;
+    return result;
   };
 
   const updateTransporter = async (id: string, data: UpdateTransporterRequest) => {
-    const updatedTransporter = await transportersAPI.updateTransporter(id, data);
+    const result = await transportersAPI.updateTransporter(id, data);
     await fetchTransporters();
-    return updatedTransporter;
+    return result;
   };
 
   const deleteTransporter = async (id: string) => {

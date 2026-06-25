@@ -13,7 +13,8 @@ import {
   mergeGstContactPersons,
   runEnrichedGstLookup,
 } from '../../../utils/gstLookupAutofill';
-import { verifyAutofilledEmails } from '../../../utils/emailVerification';
+import { verifyAutofilledEmails, isVerifiedEmailInput, rememberVerifiedEmail, VERIFIED_EMAIL_INPUT_CLASS } from '../../../utils/emailVerification';
+import { assertEntityNotDuplicateBeforeVerification } from '../../../utils/entityDuplicateCheck';
 import { EmailVerifyButton } from '../../shared/EmailVerifyButton';
 import { PhoneInput } from '../../shared/PhoneInput';
 import type {
@@ -67,6 +68,8 @@ export function PackagingVendorFormModal({ open, onOpenChange, vendorId, onVendo
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+  const [verifiedEmails, setVerifiedEmails] = useState<Set<string>>(new Set());
+  const [originalGstNumber, setOriginalGstNumber] = useState('');
 
   useEffect(() => {
     if (open && vendorId && isEditMode) {
@@ -107,7 +110,9 @@ export function PackagingVendorFormModal({ open, onOpenChange, vendorId, onVendo
           },
           gst_number: vendor.gst_number || null,
         });
+        setOriginalGstNumber((vendor.gst_number ?? '').trim().toUpperCase());
         setErrors({});
+        setVerifiedEmails(new Set());
       }
     } catch (error: any) {
       console.error('Failed to load vendor:', error);
@@ -135,6 +140,8 @@ export function PackagingVendorFormModal({ open, onOpenChange, vendorId, onVendo
       gst_number: null,
     });
     setErrors({});
+    setVerifiedEmails(new Set());
+    setOriginalGstNumber('');
   };
 
   // Contact persons management functions
@@ -237,6 +244,20 @@ export function PackagingVendorFormModal({ open, onOpenChange, vendorId, onVendo
     });
 
     try {
+      await assertEntityNotDuplicateBeforeVerification(
+        'packaging_vendor',
+        { gst_number: gstRaw },
+        'gst',
+        {
+          excludeId: vendorId,
+          unchangedFrom: { gst_number: originalGstNumber },
+        },
+        packagingVendors.map((v) => ({
+          id: v.id,
+          displayName: v.name?.trim() || 'Unknown',
+          gst_number: v.gst_number,
+        })),
+      );
       const result = await runEnrichedGstLookup(gstRaw);
       const autofill = buildEnrichedGstLookupAutofill(result);
       const updatedContactPersons = mergeGstContactPersons(formData.contact_persons, autofill);
@@ -271,6 +292,13 @@ export function PackagingVendorFormModal({ open, onOpenChange, vendorId, onVendo
         gst_number: '',
         ...emailVerification.fieldErrors,
       }));
+      setVerifiedEmails((prev) => {
+        let next = prev;
+        for (const verified of emailVerification.verifiedEmails) {
+          next = rememberVerifiedEmail(next, verified);
+        }
+        return next;
+      });
     } catch (error: any) {
       console.error('GST lookup error:', error);
       setErrors((prev) => ({
@@ -561,12 +589,21 @@ export function PackagingVendorFormModal({ open, onOpenChange, vendorId, onVendo
                                 <input
                                   type="email"
                                   value={email}
-                                  onChange={(e) => updateEmail(cpIndex, emailIndex, e.target.value)}
-                                  className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary"
+                                  onChange={(e) => {
+                                    if (isVerifiedEmailInput(email, { verifiedEmails })) return;
+                                    updateEmail(cpIndex, emailIndex, e.target.value);
+                                  }}
+                                  readOnly={isVerifiedEmailInput(email, { verifiedEmails })}
+                                  className={`flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary ${
+                                    isVerifiedEmailInput(email, { verifiedEmails })
+                                      ? VERIFIED_EMAIL_INPUT_CLASS
+                                      : ''
+                                  }`}
                                   placeholder="Email address"
                                 />
                                 <EmailVerifyButton
                                   email={email}
+                                  verifiedFromSnapshot={verifiedEmails.has(email.trim().toLowerCase())}
                                   onError={(message) => {
                                     setErrors({
                                       ...errors,
@@ -578,6 +615,7 @@ export function PackagingVendorFormModal({ open, onOpenChange, vendorId, onVendo
                                     const nextErrors = { ...errors };
                                     delete nextErrors[errorKey];
                                     setErrors(nextErrors);
+                                    setVerifiedEmails((prev) => rememberVerifiedEmail(prev, email));
                                   }}
                                 />
                               </div>

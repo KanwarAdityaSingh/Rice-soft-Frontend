@@ -116,6 +116,8 @@ export interface Vendor {
   address: VendorAddress;
   business_details: VendorBusinessDetails;
   bank_details?: VendorBankDetails;
+  registration_type: 'registered' | 'unregistered';
+  aadhar_number: string | null;
   type: 'purchaser' | 'seller' | 'both';
   is_active: boolean;
   google_location_link?: string | null;
@@ -125,6 +127,9 @@ export interface Vendor {
   last_enquiry_date?: string | null;
   lead_id?: string | null;
   user_id?: string | null;
+  /** Identity KYC verified (GST/PAN or Aadhaar) — separate from bank verification */
+  is_verified: boolean;
+  verified_at: string | null;
   /** Set when bank account was verified (e.g. Surepass) */
   bank_details_verified_at?: string | null;
   bank_details_verified_by?: string | null;
@@ -140,7 +145,9 @@ export interface CreateVendorRequest {
   address: VendorAddress;
   business_details: VendorBusinessDetails;
   bank_details?: VendorBankDetails;
-  /** When true, backend runs bank verification on create (Surepass); failures still return 201 with a lenient message. */
+  registration_type: 'registered' | 'unregistered';
+  aadhar_number?: string | null;
+  /** When true, backend compares bank_details to kyc_verification_details.bank on create (no Surepass call). */
   verify_bank?: boolean;
   /** Surepass snapshots collected during the form session — merged into JSONB on save. */
   kyc_verification_details?: EntityKycVerificationDetails;
@@ -216,6 +223,7 @@ export interface TransporterAddress {
 }
 
 export interface TransporterBankDetails {
+  account_holder_name?: string;
   bank_name?: string;
   ifsc_code?: string;
   account_number?: string;
@@ -234,6 +242,11 @@ export interface Transporter {
   vehicle_numbers: string[]; // Deprecated, kept for backward compatibility
   vehicle_ids: string[]; // NEW: Array of vehicle UUIDs
   bank_details?: TransporterBankDetails;
+  /** Set when bank account was verified (e.g. Surepass) */
+  bank_details_verified_at?: string | null;
+  bank_details_verified_by?: string | null;
+  /** Persisted when bank verification failed (lenient create/update) */
+  bank_verification_error?: string | null;
   is_active: boolean;
   is_verified: boolean;
   verified_at: string | null;
@@ -461,6 +474,8 @@ export interface CreateTransporterRequest {
   vehicle_numbers?: string[]; // Deprecated, kept for backward compatibility
   vehicle_ids?: string[]; // NEW: Array of vehicle UUIDs to link
   bank_details?: TransporterBankDetails;
+  /** When true, backend runs bank verification on create/update (Surepass). */
+  verify_bank?: boolean;
   is_active?: boolean;
   is_verified?: boolean;
   verified_at?: string | null;
@@ -584,7 +599,7 @@ export interface CreateBrokerRequest {
   broker_details?: BrokerDetails;
   type: 'purchase' | 'sale' | 'both';
   is_active?: boolean;
-  /** When true, backend runs bank verification on create (Surepass); failures still return 201 with a lenient message. */
+  /** When true, backend compares bank_details to kyc_verification_details.bank on create (no Surepass call). */
   verify_bank?: boolean;
   /** Surepass snapshots collected during the form session — merged into JSONB on save. */
   kyc_verification_details?: EntityKycVerificationDetails;

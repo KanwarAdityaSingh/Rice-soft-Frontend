@@ -2,6 +2,7 @@ import type {
   ContactPerson,
   CreateTransporterRequest,
   EntityKycVerificationDetails,
+  TransporterBankDetails,
   VendorAddress,
 } from '../types/entities';
 import { isEmailVerifiedInKyc } from './kycVerification';
@@ -144,6 +145,32 @@ export function collectLockedFieldsFromSavedKyc(
   if (hasAadhaar) {
     if (form.aadhar_number) locks.add('aadhar_number');
     if (form.address.state?.trim()) locks.add('address.state');
+  }
+
+  return locks;
+}
+
+/** Lock bank fields prefilled from IFSC lookup or Surepass bank verify. */
+export function collectBankFieldLocks(
+  bankDetails: TransporterBankDetails | undefined,
+  kyc: EntityKycVerificationDetails | undefined,
+  options?: { ifscLookupOnly?: boolean; bankDetailsVerifiedAt?: string | null },
+): Set<TransporterFieldLockKey> {
+  const locks = new Set<TransporterFieldLockKey>();
+  if (!bankDetails) return locks;
+
+  /** Server marked bank verified — lock credentials. Snapshot alone does not count. */
+  const bankVerified = Boolean(options?.bankDetailsVerifiedAt);
+
+  if (bankVerified || options?.ifscLookupOnly) {
+    if (bankDetails.bank_name?.trim()) locks.add('bank_details.bank_name');
+    if (bankDetails.branch?.trim()) locks.add('bank_details.branch');
+  }
+
+  if (bankVerified && !options?.ifscLookupOnly) {
+    if (bankDetails.account_holder_name?.trim()) locks.add('bank_details.account_holder_name');
+    if (bankDetails.account_number?.trim()) locks.add('bank_details.account_number');
+    if (bankDetails.ifsc_code?.trim()) locks.add('bank_details.ifsc_code');
   }
 
   return locks;

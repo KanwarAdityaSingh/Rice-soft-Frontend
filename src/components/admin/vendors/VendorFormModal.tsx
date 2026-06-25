@@ -1,31 +1,33 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState, useEffect } from 'react';
-import { X, Search, ExternalLink, Loader2 } from 'lucide-react';
+import { X, Search, ExternalLink, Loader2, Shield, ShieldCheck, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { useVendors } from '../../../hooks/useVendors';
 import {
   vendorsAPI,
-  VENDOR_CREATE_LENIENT_BANK_MESSAGE,
-  VENDOR_UPDATE_LENIENT_BANK_MESSAGE,
 } from '../../../services/vendors.api';
 import { leadsAPI } from '../../../services/leads.api';
 import { pincodeAPI } from '../../../services/pincode.api';
-import { bankAPI } from '../../../services/bank.api';
-import { validateEmail, validateGoogleLocationLink, getGstValidationError, getPanValidationError, getGstPanMismatchError, GST_EXAMPLE, PAN_EXAMPLE, GST_MAX_LENGTH, PAN_MAX_LENGTH, formatPhoneDisplay, formatPhonesForDisplay } from '../../../utils/validation';
+import { kycAPI } from '../../../services/kyc.api';
+import { validateEmail, validateGoogleLocationLink, validateAadhaar, getGstValidationError, getPanValidationError, getGstPanMismatchError, GST_EXAMPLE, PAN_EXAMPLE, GST_MAX_LENGTH, PAN_MAX_LENGTH, formatPhoneDisplay, formatPhonesForDisplay } from '../../../utils/validation';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { VendorPreviewDialog } from './VendorPreviewDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { EmailVerifyButton } from '../../shared/EmailVerifyButton';
 import { PhoneInput } from '../../shared/PhoneInput';
-import { KycVerificationDetailsPanel } from '../../shared/KycVerificationDetailsPanel';
+import { BankAccountInput } from '../../shared/BankAccountInput';
+import { GoogleMapsLinkFieldLabel } from '../../shared/GoogleMapsLinkGuide';
 import type { CreateVendorRequest, UpdateVendorRequest, Lead, VendorBankDetails, ContactPerson, EntityKycVerificationDetails } from '../../../types/entities';
 import {
   buildEntitySavePayload,
   buildSurepassSnapshot,
-  collectEntityKycEntries,
+  clearBankKycSnapshot,
   isEmailVerifiedInKyc,
   mergeEntityKycSnapshot,
+  persistAadhaarValidationSnapshot,
+  persistBankVerificationSnapshot,
+  shouldVerifyBankFields,
   vendorPersist,
 } from '../../../utils/kycVerification';
 import {
@@ -36,7 +38,31 @@ import {
   runEnrichedPanLookup,
 } from '../../../utils/panLookupEnrichment';
 import { buildEnrichedGstLookupAutofill, mergeGstContactPersons, persistEnrichedGstLookupSnapshots, runEnrichedGstLookup } from '../../../utils/gstLookupAutofill';
-import { verifyAutofilledEmails } from '../../../utils/emailVerification';
+import { verifyAutofilledEmails, isVerifiedEmailInput, VERIFIED_EMAIL_INPUT_CLASS, applyAutofillEmailVerificationToErrors, shouldShowEmailFieldError } from '../../../utils/emailVerification';
+import { sanitizeBankAccountInput } from '../../../utils/bankAccountFormatting';
+import { canVerifyBankAccountLookup, getBankAccountHolderNameMismatchError, mapBankVerifyToBankDetails } from '../../../utils/bankVerification';
+import {
+  applyAadhaarStateToAddress,
+  buildAadhaarValidationAutofill,
+  formatAadhaarValidationSummary,
+} from '../../../utils/aadhaarValidationAutofill';
+import {
+  collectGstLookupAutofillLocks,
+  collectAadhaarAutofillLocks,
+  collectLockedFieldsFromSavedVendorKyc,
+  collectPanLookupAutofillLocks,
+  collectVerifiedEmailFieldLocksFromList,
+  collectVendorBankFieldLocks,
+  isVendorFieldLocked,
+  lockedClassFor,
+  mergeFieldLocks,
+} from '../../../utils/vendorAutofillLocks';
+import {
+  computeVendorVerifiedFromKyc,
+  formatVendorVerifiedAt,
+  getVendorSaveAlert,
+} from '../../../utils/vendorVerification';
+import { assertEntityNotDuplicateBeforeVerification } from '../../../utils/entityDuplicateCheck';
 
 interface VendorFormModalProps {
   open: boolean;
@@ -44,37 +70,6 @@ interface VendorFormModalProps {
   vendorId?: string | null;
   defaultType?: 'purchaser' | 'seller' | 'both';
   lockType?: boolean;
-}
-
-function getVendorSaveAlert(
-  isEdit: boolean,
-  message: string,
-  verification_error?: string,
-  verification_message?: string
-): { alertType: 'success' | 'warning'; alertTitle: string; alertMessage: string } {
-  const lenientMsg = isEdit ? VENDOR_UPDATE_LENIENT_BANK_MESSAGE : VENDOR_CREATE_LENIENT_BANK_MESSAGE;
-  const isLenientBank =
-    message.trim() === lenientMsg.trim() ||
-    /bank could not be verified/i.test(message);
-  if (isLenientBank) {
-    const main = message || lenientMsg;
-    const detail = verification_error?.trim();
-    return {
-      alertType: 'warning',
-      alertTitle: isEdit ? 'Vendor Updated' : 'Vendor Created',
-      alertMessage: detail ? `${main}\n\n${detail}` : main,
-    };
-  }
-  const defaultSuccess = isEdit
-    ? 'The vendor has been updated successfully.'
-    : 'The vendor has been created successfully.';
-  const baseMsg = message?.trim() || defaultSuccess;
-  const bankLine = verification_message?.trim() || '';
-  return {
-    alertType: 'success',
-    alertTitle: isEdit ? 'Vendor Updated Successfully' : 'Vendor Created Successfully',
-    alertMessage: bankLine ? `${baseMsg}\n\n${bankLine}` : baseMsg,
-  };
 }
 
 // Helper function to convert ALL CAPS text to Title Case
@@ -127,6 +122,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       bank_name: '',
       branch: '',
     } as VendorBankDetails,
+    registration_type: 'registered',
+    aadhar_number: null,
     type: defaultType || 'both',
     is_active: true,
     google_location_link: null,
@@ -145,10 +142,50 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
   const [loadingVendor, setLoadingVendor] = useState(false);
   const [originalGstNumber, setOriginalGstNumber] = useState<string>('');
   const [originalPanNumber, setOriginalPanNumber] = useState<string>('');
+  const [originalAadharNumber, setOriginalAadharNumber] = useState<string>('');
+  const [originalBankAccount, setOriginalBankAccount] = useState<string>('');
+  const [originalBankIfsc, setOriginalBankIfsc] = useState<string>('');
   const [leadData, setLeadData] = useState<Lead | null>(null);
-  const [gstAutoFilledFields, setGstAutoFilledFields] = useState<Set<string>>(new Set());
+  const [apiLockedFields, setApiLockedFields] = useState<Set<string>>(new Set());
   const [kycVerificationDetails, setKycVerificationDetails] = useState<EntityKycVerificationDetails>({});
+  const [aadhaarValidated, setAadhaarValidated] = useState(false);
+  const [aadhaarValidationSummary, setAadhaarValidationSummary] = useState<string | null>(null);
+  const [isVerified, setIsVerified] = useState(false);
+  const [verifiedAt, setVerifiedAt] = useState<string | null>(null);
+  const [bankDetailsVerifiedAt, setBankDetailsVerifiedAt] = useState<string | null>(null);
+  const [bankVerificationError, setBankVerificationError] = useState<string | null>(null);
   const vendorPersistContext = vendorPersist(vendorId);
+  const isFieldLocked = (key: string) => isVendorFieldLocked(apiLockedFields, key);
+  const lockedClass = (key: string) => lockedClassFor(apiLockedFields, key);
+
+  const syncVerifiedFromKyc = (
+    registrationType: 'registered' | 'unregistered',
+    kyc: EntityKycVerificationDetails,
+    serverVerified?: { is_verified: boolean; verified_at: string | null },
+  ) => {
+    if (serverVerified) {
+      setIsVerified(serverVerified.is_verified);
+      setVerifiedAt(serverVerified.verified_at);
+      return;
+    }
+    const computed = computeVendorVerifiedFromKyc(registrationType, kyc);
+    setIsVerified(computed);
+    setVerifiedAt(computed ? new Date().toISOString() : null);
+  };
+
+  const refreshVerifiedFromServer = async () => {
+    if (!vendorId) return;
+    try {
+      const vendor = await vendorsAPI.getVendorById(vendorId);
+      setIsVerified(vendor.is_verified);
+      setVerifiedAt(vendor.verified_at);
+      if (vendor.kyc_verification_details) {
+        setKycVerificationDetails(vendor.kyc_verification_details);
+      }
+    } catch {
+      // Non-blocking — local KYC state still reflects the lookup
+    }
+  };
 
   // Load vendor data when in edit mode
   useEffect(() => {
@@ -183,11 +220,15 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       const vendor = await vendorsAPI.getVendorById(vendorId);
       const gstNumber = vendor.business_details?.gst_number || '';
       const panNumber = vendor.business_details?.pan_number || '';
+      const aadharNumber = vendor.aadhar_number || '';
       
       // Store original values to check if they should be disabled
       setOriginalGstNumber(gstNumber);
       setOriginalPanNumber(panNumber);
-      setGstAutoFilledFields(new Set());
+      setOriginalAadharNumber(aadharNumber);
+      setOriginalBankAccount(sanitizeBankAccountInput(vendor.bank_details?.account_number || ''));
+      setOriginalBankIfsc(vendor.bank_details?.ifsc_code?.trim().toUpperCase() || '');
+      setApiLockedFields(new Set());
 
       setFormData({
         business_name: vendor.business_name || '',
@@ -211,7 +252,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
         },
         bank_details: vendor.bank_details ? {
           account_holder_name: vendor.bank_details.account_holder_name || '',
-          account_number: vendor.bank_details.account_number || '',
+          account_number: sanitizeBankAccountInput(vendor.bank_details.account_number || ''),
           ifsc_code: vendor.bank_details.ifsc_code || '',
           bank_name: vendor.bank_details.bank_name || '',
           branch: vendor.bank_details.branch || '',
@@ -223,10 +264,42 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
           branch: '',
         },
         type: vendor.type || 'both',
+        registration_type: vendor.registration_type || 'registered',
+        aadhar_number: aadharNumber || null,
         is_active: vendor.is_active ?? true,
         google_location_link: vendor.google_location_link || null,
       });
       setKycVerificationDetails(vendor.kyc_verification_details ?? {});
+      setIsVerified(vendor.is_verified);
+      setVerifiedAt(vendor.verified_at);
+      setAadhaarValidated(Boolean(vendor.kyc_verification_details?.aadhaar));
+      setBankDetailsVerifiedAt(vendor.bank_details_verified_at ?? null);
+      setBankVerificationError(vendor.bank_verification_error ?? null);
+      const savedKyc = vendor.kyc_verification_details ?? {};
+      const loadedForm = {
+        business_name: vendor.business_name || '',
+        business_details: {
+          gst_number: gstNumber,
+          pan_number: panNumber,
+        },
+        aadhar_number: aadharNumber || null,
+        address: {
+          street: vendor.address?.street || '',
+          city: vendor.address?.city || '',
+          state: vendor.address?.state || '',
+          pincode: vendor.address?.pincode || '',
+          country: vendor.address?.country || 'India',
+        },
+        contact_persons: vendor.contact_persons ?? [],
+      };
+      setApiLockedFields(
+        mergeFieldLocks(
+          collectLockedFieldsFromSavedVendorKyc(savedKyc, loadedForm),
+          collectVendorBankFieldLocks(vendor.bank_details, savedKyc, {
+            bankDetailsVerifiedAt: vendor.bank_details_verified_at,
+          }),
+        ),
+      );
       setStep(1);
       setErrors({});
     } catch (error: any) {
@@ -278,6 +351,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
         bank_name: '',
         branch: '',
       },
+      registration_type: 'registered',
+      aadhar_number: null,
       type: defaultType || 'both',
       is_active: true,
       google_location_link: null,
@@ -286,9 +361,17 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
     setErrors({});
     setOriginalGstNumber('');
     setOriginalPanNumber('');
-    setBankDetailsLockedFromIfsc(false);
-    setGstAutoFilledFields(new Set());
+    setOriginalAadharNumber('');
+    setOriginalBankAccount('');
+    setOriginalBankIfsc('');
+    setApiLockedFields(new Set());
     setKycVerificationDetails({});
+    setAadhaarValidated(false);
+    setAadhaarValidationSummary(null);
+    setIsVerified(false);
+    setVerifiedAt(null);
+    setBankDetailsVerifiedAt(null);
+    setBankVerificationError(null);
   };
 
   // Contact persons management functions
@@ -368,6 +451,17 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
     setFormData({ ...formData, contact_persons: updated });
   };
 
+  const duplicateCheckOptions = () => ({
+    excludeVendorId: vendorId,
+    unchangedFrom: {
+      gst_number: originalGstNumber,
+      pan_number: originalPanNumber,
+      aadhaar_number: originalAadharNumber,
+      account_number: originalBankAccount,
+      ifsc_code: originalBankIfsc,
+    },
+  });
+
   const handleGSTLookup = async () => {
     if (!formData.business_details.gst_number) {
       setErrors({ ...errors, gst_number: 'Please enter a GST number' });
@@ -384,20 +478,17 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
     setErrors({ ...errors, gst_number: '' });
     
     try {
+      await assertEntityNotDuplicateBeforeVerification(
+        'vendor',
+        { gst_number: formData.business_details.gst_number },
+        'gst',
+        duplicateCheckOptions(),
+      );
       const result = await runEnrichedGstLookup(
         formData.business_details.gst_number,
         vendorPersistContext,
       );
       const autofill = buildEnrichedGstLookupAutofill(result);
-      const autoFilledFields = new Set(gstAutoFilledFields);
-
-      if (autofill.businessName) autoFilledFields.add('business_name');
-      if (autofill.gstNumber) autoFilledFields.add('gst_number');
-      if (autofill.panNumber) autoFilledFields.add('pan_number');
-      if (autofill.businessType) autoFilledFields.add('business_type');
-      if (autofill.address.city) autoFilledFields.add('address.city');
-      autoFilledFields.add('account_holder_name');
-
       const businessName = autofill.businessName ?? formData.business_name;
       const updatedContactPersons = mergeGstContactPersons(formData.contact_persons, autofill);
 
@@ -409,6 +500,11 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
         vendorPersistContext,
       );
       nextKycDetails = emailVerification.kycDetails;
+      const autofillLocks = collectGstLookupAutofillLocks(autofill, updatedContactPersons);
+      const verifiedEmailLocks = collectVerifiedEmailFieldLocksFromList(
+        updatedContactPersons,
+        emailVerification.verifiedEmails,
+      );
 
       setFormData({
         ...formData,
@@ -427,9 +523,18 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
         },
       });
 
-      setGstAutoFilledFields(autoFilledFields);
+      setApiLockedFields((prev) => mergeFieldLocks(prev, mergeFieldLocks(autofillLocks, verifiedEmailLocks)));
       setKycVerificationDetails(nextKycDetails);
-      setErrors({ ...errors, gst_number: '', ...emailVerification.fieldErrors });
+      setErrors((prev) =>
+        applyAutofillEmailVerificationToErrors(prev, emailVerification, updatedContactPersons, {
+          gst_number: '',
+        }),
+      );
+      if (vendorId) {
+        await refreshVerifiedFromServer();
+      } else {
+        syncVerifiedFromKyc(formData.registration_type, nextKycDetails);
+      }
     } catch (error: any) {
       console.error('GST lookup error:', error);
       setErrors({ ...errors, gst_number: error?.message || 'Failed to lookup GST details' });
@@ -443,7 +548,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       setErrors({ ...errors, pan_number: 'Please enter a PAN number' });
       return;
     }
-    
+
     const panError = getPanValidationError(formData.business_details.pan_number);
     if (panError) {
       setErrors({ ...errors, pan_number: panError });
@@ -452,39 +557,124 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
 
     setLookupLoading(true);
     setErrors({ ...errors, pan_number: '' });
-    
+
     try {
-      const result = await runEnrichedPanLookup(
+      await assertEntityNotDuplicateBeforeVerification(
+        'vendor',
+        { pan_number: formData.business_details.pan_number },
+        'pan',
+        duplicateCheckOptions(),
+      );
+      const panResult = await runEnrichedPanLookup(
         formData.business_details.pan_number,
         vendorPersistContext,
       );
-      const autofill = buildPanLookupAutofill(result);
-      const autoFilledFields = new Set(gstAutoFilledFields);
-      autofill.lockedFields.forEach((field) => autoFilledFields.add(field));
+      let nextKycDetails = persistEnrichedPanLookupSnapshots(kycVerificationDetails, panResult);
+      const panAutofill = buildPanLookupAutofill(panResult);
+      const gstNumber = panAutofill.gstNumber?.trim();
 
-      const businessName = autofill.businessName ?? formData.business_name;
+      if (gstNumber) {
+        try {
+          await assertEntityNotDuplicateBeforeVerification(
+            'vendor',
+            { gst_number: gstNumber },
+            'gst',
+            duplicateCheckOptions(),
+          );
+          const gstResult = await runEnrichedGstLookup(gstNumber, vendorPersistContext);
+          const autofill = buildEnrichedGstLookupAutofill(gstResult);
+          const businessName = autofill.businessName ?? panAutofill.businessName ?? formData.business_name;
+          const updatedContactPersons = mergeGstContactPersons(formData.contact_persons, autofill);
+
+          nextKycDetails = persistEnrichedGstLookupSnapshots(nextKycDetails, gstResult);
+          const emailVerification = await verifyAutofilledEmails(
+            autofill.emails,
+            updatedContactPersons,
+            nextKycDetails,
+            vendorPersistContext,
+          );
+          nextKycDetails = emailVerification.kycDetails;
+          const autofillLocks = collectGstLookupAutofillLocks(autofill, updatedContactPersons);
+          const verifiedEmailLocks = collectVerifiedEmailFieldLocksFromList(
+            updatedContactPersons,
+            emailVerification.verifiedEmails,
+          );
+
+          setFormData({
+            ...formData,
+            registration_type: 'registered',
+            business_name: businessName,
+            contact_persons: updatedContactPersons,
+            address: applyAutofillAddress(formData.address, autofill.address),
+            business_details: {
+              ...formData.business_details,
+              ...(autofill.panNumber ? { pan_number: autofill.panNumber } : {}),
+              ...(autofill.gstNumber ? { gst_number: autofill.gstNumber } : {}),
+              ...(autofill.businessType ? { business_type: autofill.businessType } : {}),
+            },
+            bank_details: {
+              ...formData.bank_details,
+              account_holder_name: businessName,
+            },
+          });
+
+          setApiLockedFields((prev) => mergeFieldLocks(prev, mergeFieldLocks(autofillLocks, verifiedEmailLocks)));
+          setKycVerificationDetails(nextKycDetails);
+          setErrors((prev) =>
+            applyAutofillEmailVerificationToErrors(prev, emailVerification, updatedContactPersons, {
+              pan_number: '',
+              gst_number: '',
+            }),
+          );
+          if (formData.registration_type === 'unregistered') {
+            setAlertType('success');
+            setAlertTitle('PAN lookup complete');
+            setAlertMessage('GST details found and filled. Vendor set to Registered.');
+            setAlertOpen(true);
+          }
+          if (vendorId) {
+            await refreshVerifiedFromServer();
+          } else {
+            syncVerifiedFromKyc('registered', nextKycDetails);
+          }
+          return;
+        } catch (gstError: unknown) {
+          const msg = gstError instanceof Error ? gstError.message : '';
+          if (msg.includes('already exists')) {
+            setErrors((prev) => ({ ...prev, gst_number: msg }));
+            return;
+          }
+          console.warn('GST lookup after PAN failed; applying PAN autofill with GST number', gstError);
+        }
+      }
+
+      const businessName = panAutofill.businessName ?? formData.business_name;
       const businessDetailsUpdate = {
         ...formData.business_details,
-        ...(autofill.panNumber ? { pan_number: autofill.panNumber } : {}),
-        ...(autofill.gstNumber ? { gst_number: autofill.gstNumber } : {}),
-        ...(autofill.businessType ? { business_type: autofill.businessType } : {}),
+        ...(panAutofill.panNumber ? { pan_number: panAutofill.panNumber } : {}),
+        ...(panAutofill.gstNumber ? { gst_number: panAutofill.gstNumber } : {}),
+        ...(panAutofill.businessType ? { business_type: panAutofill.businessType } : {}),
       };
-      const updatedContactPersons = mergePanContactIntoContactPersons(formData.contact_persons, autofill);
+      const updatedContactPersons = mergePanContactIntoContactPersons(formData.contact_persons, panAutofill);
 
-      let nextKycDetails = persistEnrichedPanLookupSnapshots(kycVerificationDetails, result);
       const emailVerification = await verifyAutofilledEmails(
-        autofill.emails,
+        panAutofill.emails,
         updatedContactPersons,
         nextKycDetails,
         vendorPersistContext,
       );
       nextKycDetails = emailVerification.kycDetails;
+      const autofillLocks = collectPanLookupAutofillLocks(panAutofill, updatedContactPersons);
+      const verifiedEmailLocks = collectVerifiedEmailFieldLocksFromList(
+        updatedContactPersons,
+        emailVerification.verifiedEmails,
+      );
 
       setFormData({
         ...formData,
         business_name: businessName,
         contact_persons: updatedContactPersons,
-        address: applyAutofillAddress(formData.address, autofill.address),
+        address: applyAutofillAddress(formData.address, panAutofill.address),
         business_details: businessDetailsUpdate,
         bank_details: {
           ...formData.bank_details,
@@ -492,12 +682,77 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
         },
       });
 
-      setGstAutoFilledFields(autoFilledFields);
+      setApiLockedFields((prev) => mergeFieldLocks(prev, mergeFieldLocks(autofillLocks, verifiedEmailLocks)));
       setKycVerificationDetails(nextKycDetails);
-      setErrors({ ...errors, pan_number: '', ...emailVerification.fieldErrors });
+      setErrors((prev) =>
+        applyAutofillEmailVerificationToErrors(prev, emailVerification, updatedContactPersons, {
+          pan_number: '',
+        }),
+      );
+      if (vendorId) {
+        await refreshVerifiedFromServer();
+      } else {
+        syncVerifiedFromKyc(formData.registration_type, nextKycDetails);
+      }
     } catch (error: any) {
       console.error('PAN lookup error:', error);
       setErrors({ ...errors, pan_number: error?.message || 'Failed to lookup PAN details' });
+    } finally {
+      setLookupLoading(false);
+    }
+  };
+
+  const handleAadhaarLookup = async () => {
+    if (!formData.aadhar_number?.trim()) {
+      setErrors({ ...errors, aadhar_number: 'Please enter an Aadhaar number' });
+      return;
+    }
+
+    if (!validateAadhaar(formData.aadhar_number)) {
+      setErrors({ ...errors, aadhar_number: 'Invalid Aadhaar format (12 digits, cannot start with 0 or 1)' });
+      return;
+    }
+
+    setLookupLoading(true);
+    setErrors({ ...errors, aadhar_number: '' });
+    setAadhaarValidated(false);
+    setAadhaarValidationSummary(null);
+
+    try {
+      await assertEntityNotDuplicateBeforeVerification(
+        'vendor',
+        { aadhar_number: formData.aadhar_number },
+        'aadhaar',
+        duplicateCheckOptions(),
+      );
+      const response = await vendorsAPI.lookupAadhaar(formData.aadhar_number, vendorId);
+      const autofill = buildAadhaarValidationAutofill(response);
+      const summary = formatAadhaarValidationSummary(autofill);
+      const nextAddress = applyAadhaarStateToAddress(formData.address, autofill);
+
+      setFormData({
+        ...formData,
+        aadhar_number: autofill.aadhaarNumber,
+        address: nextAddress,
+      });
+
+      setApiLockedFields((prev) =>
+        mergeFieldLocks(prev, collectAadhaarAutofillLocks(autofill, nextAddress)),
+      );
+
+      const nextKyc = persistAadhaarValidationSnapshot(kycVerificationDetails, response);
+      setKycVerificationDetails(nextKyc);
+      setAadhaarValidated(true);
+      setAadhaarValidationSummary(summary);
+      setErrors({ ...errors, aadhar_number: '' });
+      if (vendorId) {
+        await refreshVerifiedFromServer();
+      } else {
+        syncVerifiedFromKyc('unregistered', nextKyc);
+      }
+    } catch (error: any) {
+      console.error('Aadhaar lookup error:', error);
+      setErrors({ ...errors, aadhar_number: error?.message || 'Failed to validate Aadhaar number' });
     } finally {
       setLookupLoading(false);
     }
@@ -547,41 +802,84 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
   };
 
   const [ifscLoading, setIfscLoading] = useState(false);
-  /** Bank name & branch filled by IFSC lookup — not editable until IFSC is changed. */
-  const [bankDetailsLockedFromIfsc, setBankDetailsLockedFromIfsc] = useState(false);
 
-  const handleIFSCLookup = async (ifscCode: string) => {
-    // Only lookup if IFSC is exactly 11 characters (basic validation, let API handle detailed validation)
-    if (!ifscCode || ifscCode.length !== 11) {
-      setErrors({ ...errors, ifsc_code: 'IFSC code must be exactly 11 characters' });
+  const handleBankCredentialChange = () => {
+    setBankVerificationError(null);
+    const serverBankVerified = Boolean(bankDetailsVerifiedAt);
+    if (serverBankVerified) {
+      setBankDetailsVerifiedAt(null);
+      setApiLockedFields((prev) => {
+        const next = new Set(prev);
+        ['account_holder_name', 'account_number', 'ifsc_code', 'bank_name', 'branch'].forEach((key) =>
+          next.delete(key),
+        );
+        return next;
+      });
+    }
+    if (serverBankVerified || kycVerificationDetails.bank) {
+      setKycVerificationDetails((prev) => clearBankKycSnapshot(prev));
+    }
+  };
+
+  const handleBankVerifySearch = async () => {
+    const bd = formData.bank_details;
+    const accountNumber = bd?.account_number?.trim();
+    const ifscCode = bd?.ifsc_code?.trim();
+
+    if (!canVerifyBankAccountLookup(accountNumber, ifscCode)) {
+      setErrors((prev) => ({
+        ...prev,
+        bank_account_number: !accountNumber ? 'Account number is required for bank verify' : prev.bank_account_number ?? '',
+        ifsc_code: !ifscCode || ifscCode.length !== 11 ? 'Valid IFSC is required for bank verify' : prev.ifsc_code ?? '',
+      }));
       return;
     }
 
     setIfscLoading(true);
-    setErrors({ ...errors, ifsc_code: '' });
-    
+    setErrors((prev) => ({ ...prev, ifsc_code: '', bank_account_number: '', account_holder_name: '' }));
+
     try {
-      console.log('Calling IFSC lookup API for:', ifscCode);
-      const response = await bankAPI.lookupIFSC(ifscCode);
-      console.log('IFSC lookup response:', response);
-      
-      if (response.bank_details) {
-        setFormData({
-          ...formData,
-          bank_details: {
-            ...formData.bank_details,
-            bank_name: toTitleCase(response.bank_details.bank_name) || formData.bank_details?.bank_name || '',
-            branch: toTitleCase(response.bank_details.branch) || formData.bank_details?.branch || '',
-            ifsc_code: response.bank_details.ifsc_code || ifscCode,
-          }
-        });
-        setBankDetailsLockedFromIfsc(true);
-        setErrors({ ...errors, ifsc_code: '' });
+      await assertEntityNotDuplicateBeforeVerification(
+        'vendor',
+        { account_number: accountNumber, ifsc_code: ifscCode },
+        'bank',
+        duplicateCheckOptions(),
+      );
+      const result = await kycAPI.verifyBank(accountNumber!, ifscCode!, vendorPersistContext);
+      const nextBankDetails = mapBankVerifyToBankDetails(result, formData.bank_details);
+      setFormData((prev) => ({ ...prev, bank_details: nextBankDetails }));
+      setApiLockedFields((prev) =>
+        mergeFieldLocks(
+          prev,
+          collectVendorBankFieldLocks(nextBankDetails, kycVerificationDetails, { ifscLookupOnly: true }),
+        ),
+      );
+
+      const holderMismatch = getBankAccountHolderNameMismatchError(
+        bd?.account_holder_name,
+        result.account_holder_name,
+      );
+      if (result.surepass_response) {
+        setKycVerificationDetails((prev) => persistBankVerificationSnapshot(prev, result));
       }
-    } catch (error: any) {
-      console.error('IFSC lookup error:', error);
-      setBankDetailsLockedFromIfsc(false);
-      setErrors({ ...errors, ifsc_code: error?.message || 'IFSC code not found' });
+      if (holderMismatch) {
+        setErrors((prev) => ({
+          ...prev,
+          account_holder_name: holderMismatch,
+        }));
+        return;
+      }
+    } catch (error: unknown) {
+      setApiLockedFields((prev) => {
+        const next = new Set(prev);
+        next.delete('bank_name');
+        next.delete('branch');
+        return next;
+      });
+      setErrors((prev) => ({
+        ...prev,
+        ifsc_code: error instanceof Error ? error.message : 'Bank verification failed',
+      }));
     } finally {
       setIfscLoading(false);
     }
@@ -615,9 +913,42 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
     if (!formData.address.city) newErrors.city = 'City required';
     if (!formData.address.state) newErrors.state = 'State required';
     if (!formData.address.pincode) newErrors.pincode = 'Pincode required';
-    if (!formData.business_details.pan_number && !formData.business_details.gst_number) {
-      newErrors.gst_number = 'Either GST or PAN required';
+
+    if (formData.registration_type === 'registered') {
+      if (!formData.business_details.gst_number?.trim()) {
+        newErrors.gst_number = 'GST number is required for registered vendors';
+      } else {
+        const gstError = getGstValidationError(formData.business_details.gst_number);
+        if (gstError) newErrors.gst_number = gstError;
+      }
+      if (formData.business_details.pan_number) {
+        const panError = getPanValidationError(formData.business_details.pan_number);
+        if (panError) newErrors.pan_number = panError;
+      }
+      if (formData.business_details.gst_number && formData.business_details.pan_number) {
+        const mismatchError = getGstPanMismatchError(
+          formData.business_details.gst_number,
+          formData.business_details.pan_number,
+        );
+        if (mismatchError) newErrors.pan_number = mismatchError;
+      }
+    } else {
+      const hasPan = Boolean(formData.business_details.pan_number?.trim());
+      const hasAadhaar = Boolean(formData.aadhar_number?.trim());
+      if (!hasPan && !hasAadhaar) {
+        const msg = 'Either PAN or Aadhaar is required for unregistered vendors';
+        newErrors.pan_number = msg;
+        newErrors.aadhar_number = msg;
+      }
+      if (hasAadhaar && !validateAadhaar(formData.aadhar_number!)) {
+        newErrors.aadhar_number = 'Invalid Aadhaar format (12 digits, cannot start with 0 or 1)';
+      }
+      if (hasPan) {
+        const panError = getPanValidationError(formData.business_details.pan_number!);
+        if (panError) newErrors.pan_number = panError;
+      }
     }
+
     if (formData.google_location_link) {
       const val = formData.google_location_link.trim();
       if (!validateGoogleLocationLink(val)) {
@@ -625,6 +956,12 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       } else if (val.length > 500) {
         newErrors.google_location_link = 'Link must be at most 500 characters';
       }
+    }
+
+    const bankReady = shouldVerifyBankFields(formData.bank_details);
+    if (bankReady && !kycVerificationDetails.bank?.verified_at) {
+      newErrors.bank_account_number =
+        'Verify bank account (search on IFSC) before saving — snapshot is required for bank verification';
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -636,12 +973,15 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
           key === 'contact_persons' ||
           key.startsWith('contact_person_') ||
           key === 'gst_number' ||
-          key === 'pan_number',
+          key === 'pan_number' ||
+          key === 'aadhar_number',
       );
       if (hasStep1Errors) {
         setStep(1);
       } else if (newErrors.street || newErrors.city || newErrors.state || newErrors.pincode) {
         setStep(2);
+      } else if (newErrors.bank_account_number) {
+        setStep(3);
       }
       return false;
     }
@@ -663,13 +1003,20 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       try {
         const updatePayload = buildEntitySavePayload(
           formData as UpdateVendorRequest,
-          { kycVerificationDetails, bankVerifiedInSession: false },
+          { kycVerificationDetails, bankVerifiedInSession: false, bankDetailsVerifiedAt },
         );
-        const { message, verification_error, verification_message } = await updateVendor(
-          vendorId,
-          updatePayload
-        );
-        const a = getVendorSaveAlert(true, message, verification_error, verification_message);
+        const {
+          vendor: saved,
+          message,
+          verification_error,
+          verification_message,
+          bank_verification_flagged,
+        } = await updateVendor(vendorId, updatePayload);
+        const a = getVendorSaveAlert(true, message, verification_error, verification_message, {
+          bankVerificationFlagged: bank_verification_flagged,
+          vendorBankVerificationError: saved.bank_verification_error,
+          isActive: saved.is_active,
+        });
         setAlertType(a.alertType);
         setAlertTitle(a.alertTitle);
         setAlertMessage(a.alertMessage);
@@ -700,13 +1047,20 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       if (isEditMode && vendorId) {
         const updatePayload = buildEntitySavePayload(
           data as UpdateVendorRequest,
-          { kycVerificationDetails, bankVerifiedInSession: false },
+          { kycVerificationDetails, bankVerifiedInSession: false, bankDetailsVerifiedAt },
         );
-        const { message, verification_error, verification_message } = await updateVendor(
-          vendorId,
-          updatePayload
-        );
-        const a = getVendorSaveAlert(true, message, verification_error, verification_message);
+        const {
+          vendor: saved,
+          message,
+          verification_error,
+          verification_message,
+          bank_verification_flagged,
+        } = await updateVendor(vendorId, updatePayload);
+        const a = getVendorSaveAlert(true, message, verification_error, verification_message, {
+          bankVerificationFlagged: bank_verification_flagged,
+          vendorBankVerificationError: saved.bank_verification_error,
+          isActive: saved.is_active,
+        });
         setAlertType(a.alertType);
         setAlertTitle(a.alertTitle);
         setAlertMessage(a.alertMessage);
@@ -714,10 +1068,21 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
         const createPayload = buildEntitySavePayload(data as CreateVendorRequest, {
           kycVerificationDetails,
           bankVerifiedInSession: false,
+          bankDetailsVerifiedAt,
         });
-        const { message, verification_error, verification_message } = await createVendor(createPayload);
+        const {
+          vendor: saved,
+          message,
+          verification_error,
+          verification_message,
+          bank_verification_flagged,
+        } = await createVendor(createPayload);
         resetForm();
-        const a = getVendorSaveAlert(false, message, verification_error, verification_message);
+        const a = getVendorSaveAlert(false, message, verification_error, verification_message, {
+          bankVerificationFlagged: bank_verification_flagged,
+          vendorBankVerificationError: saved.bank_verification_error,
+          isActive: saved.is_active,
+        });
         setAlertType(a.alertType);
         setAlertTitle(a.alertTitle);
         setAlertMessage(a.alertMessage);
@@ -740,7 +1105,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       
       // Check for errors and clear auto-filled fields so user can edit them
       const errorText = (error?.error || errorMessage || '').toLowerCase();
-      const updatedAutoFilledFields = new Set(gstAutoFilledFields);
+      const updatedAutoFilledFields = new Set(apiLockedFields);
       
       // Check for PAN/GST number already exists errors and clear those fields from auto-filled
       if (errorText.includes('pan number already exists') || errorText.includes('pan already exists')) {
@@ -752,9 +1117,9 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       
       // If any validation error occurs, clear all auto-filled fields to allow editing
       if (errorText.includes('already exists') || errorText.includes('duplicate') || errorText.includes('invalid')) {
-        setGstAutoFilledFields(new Set());
+        setApiLockedFields(new Set());
       } else {
-        setGstAutoFilledFields(updatedAutoFilledFields);
+        setApiLockedFields(updatedAutoFilledFields);
       }
       
       setAlertMessage(errorMessage);
@@ -766,8 +1131,6 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       setLoading(false);
     }
   };
-
-  const kycEntries = collectEntityKycEntries(kycVerificationDetails);
 
   return (
     <>
@@ -844,76 +1207,212 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
             <form onSubmit={(e) => { e.preventDefault(); handleSubmit(e); }} className="space-y-4">
               {step === 1 && (
                 <div className="space-y-4">
-                  {kycEntries.length > 0 && (
-                    <KycVerificationDetailsPanel
-                      entries={kycEntries}
-                      title={isEditMode ? 'Stored Surepass verifications' : 'Surepass verifications this session'}
-                      emptyMessage="No Surepass snapshots yet."
-                    />
-                  )}
-                  <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 mb-2">
-                    <p className="text-sm text-primary/90">
-                      <span className="font-medium">Note:</span> One of the fields (either GST Number or PAN Number) is mandatory.
-                    </p>
-                  </div>
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block">GST Number</label>
-                    {isEditMode && originalGstNumber && originalGstNumber.trim().length > 0 ? (
-                      <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm pointer-events-none select-none">
-                        {originalGstNumber}
-                      </div>
-                    ) : (
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={formData.business_details.gst_number}
-                          onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, gst_number: e.target.value.toUpperCase() } })}
-                          className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
-                          placeholder={GST_EXAMPLE}
-                          maxLength={GST_MAX_LENGTH}
-                        />
-                        <button 
-                          type="button" 
-                          onClick={handleGSTLookup} 
-                          disabled={lookupLoading} 
-                          className="btn-secondary flex items-center gap-2"
-                        >
-                          {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
-                        </button>
-                      </div>
-                    )}
-                    {errors.gst_number && <p className="mt-1 text-xs text-red-600">{errors.gst_number}</p>}
+                    <label className="text-sm font-medium mb-1.5 block">
+                      Registration Type <span className="text-red-500">*</span>
+                    </label>
+                    <CustomSelect
+                      value={formData.registration_type}
+                      onChange={(value) =>
+                        setFormData({
+                          ...formData,
+                          registration_type: value as 'registered' | 'unregistered',
+                        })
+                      }
+                      options={[
+                        { value: 'registered', label: 'Registered' },
+                        { value: 'unregistered', label: 'Unregistered' },
+                      ]}
+                      placeholder="Select Registration Type"
+                    />
                   </div>
 
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">PAN Number</label>
-                    {isEditMode && originalPanNumber && originalPanNumber.trim().length > 0 ? (
-                      <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm pointer-events-none select-none">
-                        {originalPanNumber}
+                  {(isVerified && verifiedAt) || (!isVerified && isEditMode && vendorId) ? (
+                    <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 mb-2 space-y-1">
+                      {!isVerified && isEditMode && vendorId && (
+                        <p className="text-xs text-amber-700 dark:text-amber-400">
+                          Unverified — run GST/PAN or Aadhaar lookup to verify via Surepass.
+                        </p>
+                      )}
+                      {isVerified && verifiedAt && (
+                        <p className="text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                          <Check className="h-3 w-3 shrink-0" />
+                          Verified {formatVendorVerifiedAt(verifiedAt)}
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {formData.registration_type === 'registered' ? (
+                    <>
+                      <div>
+                        <label className="text-sm font-medium mb-1.5 block">
+                          GST Number <span className="text-red-500">*</span>
+                        </label>
+                        {isEditMode && originalGstNumber && originalGstNumber.trim().length > 0 ? (
+                          <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm pointer-events-none select-none">
+                            {originalGstNumber}
+                          </div>
+                        ) : (
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={formData.business_details.gst_number}
+                              onChange={(e) =>
+                                setFormData({
+                                  ...formData,
+                                  business_details: {
+                                    ...formData.business_details,
+                                    gst_number: e.target.value.toUpperCase(),
+                                  },
+                                })
+                              }
+                              className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed ${lockedClass('gst_number')}`}
+                              placeholder={GST_EXAMPLE}
+                              maxLength={GST_MAX_LENGTH}
+                              readOnly={isFieldLocked('gst_number')}
+                            />
+                            <button
+                              type="button"
+                              onClick={handleGSTLookup}
+                              disabled={lookupLoading}
+                              className="btn-secondary flex items-center gap-2"
+                            >
+                              {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                            </button>
+                          </div>
+                        )}
+                        {errors.gst_number && <p className="mt-1 text-xs text-red-600">{errors.gst_number}</p>}
                       </div>
-                    ) : (
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={formData.business_details.pan_number}
-                          onChange={(e) => setFormData({ ...formData, business_details: { ...formData.business_details, pan_number: e.target.value.toUpperCase() } })}
-                          className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
-                          placeholder={PAN_EXAMPLE}
-                          maxLength={PAN_MAX_LENGTH}
-                          readOnly={gstAutoFilledFields.has('pan_number')}
-                        />
-                        <button 
-                          type="button" 
-                          onClick={handlePANLookup} 
-                          disabled={lookupLoading} 
-                          className="btn-secondary flex items-center gap-2"
-                        >
-                          {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
-                        </button>
+
+                      <div>
+                        <label className="text-sm font-medium mb-1.5 block">PAN Number</label>
+                        {isEditMode && originalPanNumber && originalPanNumber.trim().length > 0 ? (
+                          <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm pointer-events-none select-none">
+                            {originalPanNumber}
+                          </div>
+                        ) : (
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={formData.business_details.pan_number}
+                              onChange={(e) =>
+                                setFormData({
+                                  ...formData,
+                                  business_details: {
+                                    ...formData.business_details,
+                                    pan_number: e.target.value.toUpperCase(),
+                                  },
+                                })
+                              }
+                              className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed ${lockedClass('pan_number')}`}
+                              placeholder={PAN_EXAMPLE}
+                              maxLength={PAN_MAX_LENGTH}
+                              readOnly={isFieldLocked('pan_number')}
+                            />
+                            <button
+                              type="button"
+                              onClick={handlePANLookup}
+                              disabled={lookupLoading}
+                              className="btn-secondary flex items-center gap-2"
+                            >
+                              {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                            </button>
+                          </div>
+                        )}
+                        {errors.pan_number && <p className="mt-1 text-xs text-red-600">{errors.pan_number}</p>}
                       </div>
-                    )}
-                    {errors.pan_number && <p className="mt-1 text-xs text-red-600">{errors.pan_number}</p>}
-                  </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs text-muted-foreground -mt-1 mb-1">
+                        Either PAN or Aadhaar is required.
+                      </p>
+                      <div>
+                        <label className="text-sm font-medium mb-1.5 block">PAN Number</label>
+                        {isEditMode && originalPanNumber && originalPanNumber.trim().length > 0 ? (
+                          <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm pointer-events-none select-none">
+                            {originalPanNumber}
+                          </div>
+                        ) : (
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={formData.business_details.pan_number}
+                              onChange={(e) =>
+                                setFormData({
+                                  ...formData,
+                                  business_details: {
+                                    ...formData.business_details,
+                                    pan_number: e.target.value.toUpperCase(),
+                                  },
+                                })
+                              }
+                              className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed ${lockedClass('pan_number')}`}
+                              placeholder={PAN_EXAMPLE}
+                              maxLength={PAN_MAX_LENGTH}
+                              readOnly={isFieldLocked('pan_number')}
+                            />
+                            <button
+                              type="button"
+                              onClick={handlePANLookup}
+                              disabled={lookupLoading}
+                              className="btn-secondary flex items-center gap-2"
+                            >
+                              {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                            </button>
+                          </div>
+                        )}
+                        {errors.pan_number && <p className="mt-1 text-xs text-red-600">{errors.pan_number}</p>}
+                      </div>
+
+                      <div>
+                        <label className="text-sm font-medium mb-1.5 block">Aadhaar Number</label>
+                        {isEditMode && originalAadharNumber && originalAadharNumber.trim().length > 0 ? (
+                          <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm pointer-events-none select-none">
+                            {originalAadharNumber}
+                          </div>
+                        ) : isFieldLocked('aadhar_number') ? (
+                          <div className={`w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm ${lockedClass('aadhar_number')}`}>
+                            {formData.aadhar_number}
+                          </div>
+                        ) : (
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={formData.aadhar_number || ''}
+                              onChange={(e) => {
+                                setFormData({ ...formData, aadhar_number: e.target.value || null });
+                                setAadhaarValidated(false);
+                                setAadhaarValidationSummary(null);
+                              }}
+                              className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                              placeholder="234567890123"
+                              maxLength={14}
+                            />
+                            <button
+                              type="button"
+                              onClick={handleAadhaarLookup}
+                              disabled={lookupLoading}
+                              className="btn-secondary flex items-center gap-2"
+                              title="Validate Aadhaar"
+                            >
+                              {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                            </button>
+                          </div>
+                        )}
+                        {errors.aadhar_number && (
+                          <p className="mt-1 text-xs text-red-600">{errors.aadhar_number}</p>
+                        )}
+                        {aadhaarValidated && !errors.aadhar_number && (
+                          <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
+                            <ShieldCheck className="h-3 w-3 shrink-0" />
+                            {aadhaarValidationSummary ?? 'Aadhaar validated via Surepass'}
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  )}
 
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Business Name *</label>
@@ -921,10 +1420,15 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                       type="text"
                       value={formData.business_name}
                       onChange={(e) => setFormData({ ...formData, business_name: e.target.value })}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
-                      readOnly={isEditMode || gstAutoFilledFields.has('business_name')}
+                      className={`w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed ${lockedClass('business_name')}`}
+                      readOnly={isEditMode || isFieldLocked('business_name')}
                     />
                     {errors.business_name && <p className="mt-1 text-xs text-red-600">{errors.business_name}</p>}
+                    {formData.registration_type === 'unregistered' && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Enter the business or trade name manually. Contact and address can be filled from PAN lookup.
+                      </p>
+                    )}
                   </div>
 
                   {/* Contact Persons Section */}
@@ -989,7 +1493,9 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                                 <PhoneInput
                                   value={phone}
                                   onChange={(value) => updatePhone(personIdx, phoneIdx, value)}
-                                  className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                                  readOnly={isFieldLocked(`contact_person_${personIdx}_phone_${phoneIdx}`)}
+                                  disabled={isFieldLocked(`contact_person_${personIdx}_phone_${phoneIdx}`)}
+                                  className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${lockedClass(`contact_person_${personIdx}_phone_${phoneIdx}`)}`}
                                 />
                                 {contactPerson.phones.length > 1 && (
                                   <button
@@ -1026,8 +1532,19 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                                 <input
                                   type="email"
                                   value={email}
-                                  onChange={(e) => updateEmail(personIdx, emailIdx, e.target.value)}
-                                  className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                                  onChange={(e) => {
+                                    if (isVerifiedEmailInput(email, { kyc: kycVerificationDetails }) || isFieldLocked(`contact_person_${personIdx}_email_${emailIdx}`)) return;
+                                    updateEmail(personIdx, emailIdx, e.target.value);
+                                  }}
+                                  readOnly={
+                                    isFieldLocked(`contact_person_${personIdx}_email_${emailIdx}`) ||
+                                    isVerifiedEmailInput(email, { kyc: kycVerificationDetails })
+                                  }
+                                  className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${lockedClass(`contact_person_${personIdx}_email_${emailIdx}`)} ${
+                                    isVerifiedEmailInput(email, { kyc: kycVerificationDetails })
+                                      ? VERIFIED_EMAIL_INPUT_CLASS
+                                      : ''
+                                  }`}
                                   placeholder="Email address"
                                 />
                                 <EmailVerifyButton
@@ -1035,19 +1552,23 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                                   persist={vendorPersistContext}
                                   verifiedFromSnapshot={isEmailVerifiedInKyc(kycVerificationDetails, email)}
                                   onError={(message) => {
-                                    setErrors({
-                                      ...errors,
-                                      [`contact_person_${personIdx}_email_${emailIdx}`]: message,
-                                    });
+                                    const errorKey = `contact_person_${personIdx}_email_${emailIdx}`;
+                                    setErrors((prev) => ({ ...prev, [errorKey]: message }));
                                   }}
                                   onVerified={() => {
                                     const errorKey = `contact_person_${personIdx}_email_${emailIdx}`;
-                                    const nextErrors = { ...errors };
-                                    delete nextErrors[errorKey];
-                                    setErrors(nextErrors);
+                                    setErrors((prev) => {
+                                      const next = { ...prev };
+                                      delete next[errorKey];
+                                      return next;
+                                    });
+                                    setApiLockedFields((prev) =>
+                                      mergeFieldLocks(prev, new Set([errorKey])),
+                                    );
                                   }}
                                   onSnapshotSaved={(result) => {
                                     if (!result.surepass_response) return;
+                                    const errorKey = `contact_person_${personIdx}_email_${emailIdx}`;
                                     setKycVerificationDetails((prev) =>
                                       mergeEntityKycSnapshot(
                                         prev,
@@ -1055,6 +1576,14 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                                         buildSurepassSnapshot(result.surepass_response, result),
                                         email,
                                       ),
+                                    );
+                                    setErrors((prev) => {
+                                      const next = { ...prev };
+                                      delete next[errorKey];
+                                      return next;
+                                    });
+                                    setApiLockedFields((prev) =>
+                                      mergeFieldLocks(prev, new Set([errorKey])),
                                     );
                                   }}
                                 />
@@ -1068,13 +1597,16 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                               </div>
                             ))}
                           </div>
-                          {contactPerson.emails?.map((_, emailIdx) => (
-                            errors[`contact_person_${personIdx}_email_${emailIdx}`] && (
+                          {contactPerson.emails?.map((email, emailIdx) => {
+                            const errorKey = `contact_person_${personIdx}_email_${emailIdx}`;
+                            const error = errors[errorKey];
+                            if (!shouldShowEmailFieldError(email, error, kycVerificationDetails)) return null;
+                            return (
                               <p key={emailIdx} className="mt-1 text-xs text-red-600">
-                                {errors[`contact_person_${personIdx}_email_${emailIdx}`]}
+                                {error}
                               </p>
-                            )
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     ))}
@@ -1110,8 +1642,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                       type="text"
                       value={formData.address.street}
                       onChange={(e) => setFormData({ ...formData, address: { ...formData.address, street: e.target.value } })}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
-                      readOnly={gstAutoFilledFields.has('address.street')}
+                      className={`w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed ${lockedClass('address.street')}`}
+                      readOnly={isFieldLocked('address.street')}
                     />
                     {errors.street && <p className="mt-1 text-xs text-red-600">{errors.street}</p>}
                   </div>
@@ -1123,8 +1655,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                         type="text"
                         value={formData.address.city}
                         onChange={(e) => setFormData({ ...formData, address: { ...formData.address, city: e.target.value } })}
-                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
-                        readOnly={gstAutoFilledFields.has('address.city')}
+                        className={`w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed ${lockedClass('address.city')}`}
+                        readOnly={isFieldLocked('address.city')}
                       />
                       {errors.city && <p className="mt-1 text-xs text-red-600">{errors.city}</p>}
                     </div>
@@ -1135,8 +1667,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                         type="text"
                         value={formData.address.state}
                         onChange={(e) => setFormData({ ...formData, address: { ...formData.address, state: e.target.value } })}
-                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
-                        readOnly={gstAutoFilledFields.has('address.state')}
+                        className={`w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed ${lockedClass('address.state')}`}
+                        readOnly={isFieldLocked('address.state')}
                       />
                       {errors.state && <p className="mt-1 text-xs text-red-600">{errors.state}</p>}
                     </div>
@@ -1164,10 +1696,10 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                               handlePincodeLookup(value);
                             }
                           }}
-                          className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
+                          className={`w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed ${lockedClass('address.pincode')}`}
                           placeholder="6 digits"
                           maxLength={6}
-                          readOnly={gstAutoFilledFields.has('address.pincode')}
+                          readOnly={isFieldLocked('address.pincode')}
                         />
                         {pincodeLoading && (
                           <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -1184,15 +1716,15 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                         type="text"
                         value={formData.address.country}
                         onChange={(e) => setFormData({ ...formData, address: { ...formData.address, country: e.target.value } })}
-                        className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
-                        readOnly={gstAutoFilledFields.has('address.country')}
+                        className={`w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed ${lockedClass('address.country')}`}
+                        readOnly={isFieldLocked('address.country')}
                       />
                     </div>
                   </div>
 
                   {/* Google Maps Location Link */}
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block">Google Maps Location Link</label>
+                    <GoogleMapsLinkFieldLabel />
                     <input
                       type="text"
                       value={formData.google_location_link || ''}
@@ -1236,45 +1768,67 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
 
               {step === 3 && (
                 <div className="space-y-4">
-                  {kycEntries.some((e) => e.key === 'bank') && (
-                    <KycVerificationDetailsPanel
-                      entries={kycEntries.filter((e) => e.key === 'bank')}
-                      title="Bank verification (Surepass)"
-                      emptyMessage="Verify bank account to see the Surepass response."
-                    />
+                  {bankDetailsVerifiedAt && (
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400"
+                      title={`Bank verified ${new Date(bankDetailsVerifiedAt).toLocaleString('en-IN')}`}
+                    >
+                      <Shield className="h-3.5 w-3.5" />
+                      Bank verified
+                    </span>
+                  )}
+                  {!bankDetailsVerifiedAt && bankVerificationError?.trim() && (
+                    <p className="text-xs text-amber-700 dark:text-amber-300 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2">
+                      {bankVerificationError.trim()}
+                      {isEditMode && (
+                        <span className="block mt-1.5 text-amber-800/90 dark:text-amber-200/90">
+                          Update bank details below, then use the verify button on IFSC to re-check before saving.
+                        </span>
+                      )}
+                    </p>
                   )}
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Account Holder Name</label>
                     <input
                       type="text"
                       value={formData.bank_details?.account_holder_name || ''}
-                      onChange={(e) => setFormData({ 
-                        ...formData, 
-                        bank_details: { 
-                          ...formData.bank_details, 
-                          account_holder_name: e.target.value 
-                        } 
-                      })}
-                      readOnly={gstAutoFilledFields.has('account_holder_name')}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
+                      onChange={(e) => {
+                        if (isFieldLocked('account_holder_name')) return;
+                        handleBankCredentialChange();
+                        setFormData({
+                          ...formData,
+                          bank_details: {
+                            ...formData.bank_details,
+                            account_holder_name: e.target.value,
+                          },
+                        });
+                      }}
+                      readOnly={isFieldLocked('account_holder_name')}
+                      className={`w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed ${lockedClass('account_holder_name')}`}
                     />
+                    {errors.account_holder_name && (
+                      <p className="mt-1 text-xs text-red-600">{errors.account_holder_name}</p>
+                    )}
                   </div>
 
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Account Number</label>
-                    <input
-                      type="text"
+                    <BankAccountInput
                       value={formData.bank_details?.account_number || ''}
-                      onChange={(e) => {
-                        setFormData({ 
-                          ...formData, 
-                          bank_details: { 
-                            ...formData.bank_details, 
-                            account_number: e.target.value 
-                          } 
+                      onChange={(value) => {
+                        if (isFieldLocked('account_number')) return;
+                        handleBankCredentialChange();
+                        setFormData({
+                          ...formData,
+                          bank_details: {
+                            ...formData.bank_details,
+                            account_number: value,
+                          },
                         });
                       }}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                      readOnly={isFieldLocked('account_number')}
+                      disabled={isFieldLocked('account_number')}
+                      className={`w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${lockedClass('account_number')}`}
                     />
                   </div>
 
@@ -1285,60 +1839,40 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                         type="text"
                         value={formData.bank_details?.ifsc_code || ''}
                         onChange={(e) => {
+                          if (isFieldLocked('ifsc_code')) return;
+                          handleBankCredentialChange();
                           const value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 11);
-                          setBankDetailsLockedFromIfsc(false);
-                          setFormData({ 
-                            ...formData, 
-                            bank_details: { 
-                              ...formData.bank_details, 
-                              ifsc_code: value 
-                            } 
+                          setApiLockedFields((prev) => {
+                            const next = new Set(prev);
+                            next.delete('bank_name');
+                            next.delete('branch');
+                            return next;
                           });
-                          // Auto-lookup when 11 characters are entered
-                          if (value.length === 11) {
-                            handleIFSCLookup(value);
-                          }
+                          setFormData({
+                            ...formData,
+                            bank_details: {
+                              ...formData.bank_details,
+                              ifsc_code: value,
+                            },
+                          });
                         }}
-                        className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                        readOnly={isFieldLocked('ifsc_code')}
+                        className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary font-mono uppercase ${lockedClass('ifsc_code')}`}
                         placeholder="HDFC0001234"
                         maxLength={11}
                       />
-                      <button 
-                        type="button" 
-                        onClick={async (e) => {
-                          console.log('IFSC search button clicked');
-                          e.preventDefault();
-                          e.stopPropagation();
-                          
-                          if (ifscLoading) {
-                            console.log('Already loading, ignoring click');
-                            return;
-                          }
-                          
-                          const ifscCode = formData.bank_details?.ifsc_code?.trim() || '';
-                          console.log('IFSC code from form:', ifscCode, 'Length:', ifscCode.length);
-                          
-                          if (!ifscCode) {
-                            console.log('No IFSC code provided');
-                            setErrors({ ...errors, ifsc_code: 'Please enter an IFSC code' });
-                            return;
-                          }
-                          
-                          if (ifscCode.length !== 11) {
-                            console.log('IFSC code length is not 11:', ifscCode.length);
-                            setErrors({ ...errors, ifsc_code: 'IFSC code must be exactly 11 characters' });
-                            return;
-                          }
-                          
-                          console.log('Calling handleIFSCLookup with:', ifscCode);
-                          try {
-                            await handleIFSCLookup(ifscCode);
-                          } catch (error) {
-                            console.error('Error in onClick handler:', error);
-                          }
-                        }} 
-                        disabled={ifscLoading}
+                      <button
+                        type="button"
+                        onClick={() => void handleBankVerifySearch()}
+                        disabled={
+                          ifscLoading ||
+                          !canVerifyBankAccountLookup(
+                            formData.bank_details?.account_number,
+                            formData.bank_details?.ifsc_code,
+                          )
+                        }
                         className="btn-secondary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Verify bank account via Surepass"
                       >
                         {ifscLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
                       </button>
@@ -1351,19 +1885,20 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                     <input
                       type="text"
                       value={formData.bank_details?.bank_name || ''}
-                      onChange={(e) => setFormData({ 
-                        ...formData, 
-                        bank_details: { 
-                          ...formData.bank_details, 
-                          bank_name: e.target.value 
-                        } 
-                      })}
-                      readOnly={bankDetailsLockedFromIfsc}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed read-only:bg-muted/40"
+                      onChange={(e) => {
+                        if (isFieldLocked('bank_name')) return;
+                        handleBankCredentialChange();
+                        setFormData({
+                          ...formData,
+                          bank_details: {
+                            ...formData.bank_details,
+                            bank_name: e.target.value,
+                          },
+                        });
+                      }}
+                      readOnly={isFieldLocked('bank_name')}
+                      className={`w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed ${lockedClass('bank_name')}`}
                     />
-                    {bankDetailsLockedFromIfsc && (
-                      <p className="mt-1 text-xs text-muted-foreground">Set from IFSC lookup. Change IFSC to edit.</p>
-                    )}
                   </div>
 
                   <div>
@@ -1371,15 +1906,19 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                     <input
                       type="text"
                       value={formData.bank_details?.branch || ''}
-                      onChange={(e) => setFormData({ 
-                        ...formData, 
-                        bank_details: { 
-                          ...formData.bank_details, 
-                          branch: e.target.value 
-                        } 
-                      })}
-                      readOnly={bankDetailsLockedFromIfsc}
-                      className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed read-only:bg-muted/40"
+                      onChange={(e) => {
+                        if (isFieldLocked('branch')) return;
+                        handleBankCredentialChange();
+                        setFormData({
+                          ...formData,
+                          bank_details: {
+                            ...formData.bank_details,
+                            branch: e.target.value,
+                          },
+                        });
+                      }}
+                      readOnly={isFieldLocked('branch')}
+                      className={`w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed ${lockedClass('branch')}`}
                     />
                   </div>
 

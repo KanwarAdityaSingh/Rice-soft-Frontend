@@ -5,6 +5,7 @@ import { CustomSelect } from '../../shared/CustomSelect';
 import { usersAPI } from '../../../services/users.api';
 import { validateEmail, validateUsername, validatePassword, sanitizePhoneInput, validatePhone } from '../../../utils/validation';
 import { EmailVerifyButton } from '../../shared/EmailVerifyButton';
+import { isVerifiedEmailInput, normalizeVerifiedEmail, VERIFIED_EMAIL_INPUT_CLASS } from '../../../utils/emailVerification';
 import { PhoneInput } from '../../shared/PhoneInput';
 import { AlertDialog } from '../../shared/AlertDialog';
 import type { CreateUserRequest, UpdateUserRequest, User } from '../../../types/entities';
@@ -31,6 +32,7 @@ export function UserFormModal({ open, onOpenChange, user }: UserFormModalProps) 
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+  const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null);
 
   // Reset form when modal opens/closes or user changes
   useEffect(() => {
@@ -57,6 +59,7 @@ export function UserFormModal({ open, onOpenChange, user }: UserFormModalProps) 
         });
       }
       setErrors({});
+      setVerifiedEmail(null);
     }
   }, [open, user]);
 
@@ -218,17 +221,27 @@ export function UserFormModal({ open, onOpenChange, user }: UserFormModalProps) 
                   <input
                     type="email"
                     value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                    onChange={(e) => {
+                      if (isVerifiedEmailInput(formData.email ?? '', { verifiedSingleEmail: verifiedEmail })) return;
+                      setFormData({ ...formData, email: e.target.value });
+                    }}
+                    readOnly={isVerifiedEmailInput(formData.email ?? '', { verifiedSingleEmail: verifiedEmail })}
+                    className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
+                      isVerifiedEmailInput(formData.email ?? '', { verifiedSingleEmail: verifiedEmail })
+                        ? VERIFIED_EMAIL_INPUT_CLASS
+                        : ''
+                    }`}
                     placeholder="john@example.com (optional)"
                   />
                   <EmailVerifyButton
                     email={formData.email ?? ''}
+                    verifiedFromSnapshot={verifiedEmail === normalizeVerifiedEmail(formData.email ?? '')}
                     onError={(message) => setErrors({ ...errors, email: message })}
                     onVerified={() => {
                       const nextErrors = { ...errors };
                       delete nextErrors.email;
                       setErrors(nextErrors);
+                      setVerifiedEmail(normalizeVerifiedEmail(formData.email ?? ''));
                     }}
                   />
                 </div>

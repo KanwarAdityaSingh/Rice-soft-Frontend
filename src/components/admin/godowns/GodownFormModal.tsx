@@ -5,6 +5,7 @@ import { godownsAPI } from '../../../services/godowns.api';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { EmailVerifyButton } from '../../shared/EmailVerifyButton';
+import { GoogleMapsLinkFieldLabel } from '../../shared/GoogleMapsLinkGuide';
 import { PhoneInput } from '../../shared/PhoneInput';
 import { getGstValidationError, GST_EXAMPLE, GST_MAX_LENGTH } from '../../../utils/validation';
 import { applyAutofillAddress } from '../../../utils/panLookupEnrichment';
@@ -13,7 +14,8 @@ import {
   mergeGstContactPersons,
   runEnrichedGstLookup,
 } from '../../../utils/gstLookupAutofill';
-import { verifyAutofilledEmails } from '../../../utils/emailVerification';
+import { verifyAutofilledEmails, isVerifiedEmailInput, rememberVerifiedEmail, VERIFIED_EMAIL_INPUT_CLASS } from '../../../utils/emailVerification';
+import { assertEntityNotDuplicateBeforeVerification } from '../../../utils/entityDuplicateCheck';
 import { sanitizePhoneList } from '../../../utils/phoneFormatting';
 
 function isValidGoogleMapsLink(value: string | null | undefined): boolean {
@@ -85,6 +87,8 @@ export function GodownFormModal({ open, onOpenChange, godownId }: GodownFormModa
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('error');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+  const [verifiedEmails, setVerifiedEmails] = useState<Set<string>>(new Set());
+  const [originalGstNumber, setOriginalGstNumber] = useState('');
 
   useEffect(() => {
     if (open && godownId) {
@@ -99,6 +103,8 @@ export function GodownFormModal({ open, onOpenChange, godownId }: GodownFormModa
         is_active: true,
       });
       setErrors({});
+      setVerifiedEmails(new Set());
+      setOriginalGstNumber('');
     }
   }, [open, godownId]);
 
@@ -114,7 +120,9 @@ export function GodownFormModal({ open, onOpenChange, godownId }: GodownFormModa
         google_maps_link: g.google_maps_link ?? null,
         is_active: g.is_active,
       });
+      setOriginalGstNumber((g.gst_number ?? '').trim().toUpperCase());
       setErrors({});
+      setVerifiedEmails(new Set());
     } catch (e: any) {
       setAlertType('error');
       setAlertTitle('Error');
@@ -145,6 +153,15 @@ export function GodownFormModal({ open, onOpenChange, godownId }: GodownFormModa
     });
 
     try {
+      await assertEntityNotDuplicateBeforeVerification(
+        'godown',
+        { gst_number: gstRaw },
+        'gst',
+        {
+          excludeId: godownId,
+          unchangedFrom: { gst_number: originalGstNumber },
+        },
+      );
       const result = await runEnrichedGstLookup(gstRaw);
       const autofill = buildEnrichedGstLookupAutofill(result);
       const updatedContactPersons = mergeGstContactPersons(form.contact_persons, autofill);
@@ -166,6 +183,13 @@ export function GodownFormModal({ open, onOpenChange, godownId }: GodownFormModa
         gst_number: '',
         ...emailVerification.fieldErrors,
       }));
+      setVerifiedEmails((prev) => {
+        let next = prev;
+        for (const verified of emailVerification.verifiedEmails) {
+          next = rememberVerifiedEmail(next, verified);
+        }
+        return next;
+      });
     } catch (e: any) {
       console.error('GST lookup error:', e);
       setErrors((prev) => ({
@@ -435,16 +459,23 @@ export function GodownFormModal({ open, onOpenChange, godownId }: GodownFormModa
                                   placeholder="Email"
                                   value={email}
                                   onChange={(e) => {
+                                    if (isVerifiedEmailInput(email, { verifiedEmails })) return;
                                     const updated = [...form.contact_persons];
                                     const emails = [...(updated[index].emails || [''])];
                                     emails[emailIndex] = e.target.value;
                                     updated[index] = { ...updated[index], emails };
                                     setForm((p) => ({ ...p, contact_persons: updated }));
                                   }}
-                                  className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                                  readOnly={isVerifiedEmailInput(email, { verifiedEmails })}
+                                  className={`flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm ${
+                                    isVerifiedEmailInput(email, { verifiedEmails })
+                                      ? VERIFIED_EMAIL_INPUT_CLASS
+                                      : ''
+                                  }`}
                                 />
                                 <EmailVerifyButton
                                   email={email}
+                                  verifiedFromSnapshot={verifiedEmails.has(email.trim().toLowerCase())}
                                   onError={(message) => {
                                     setErrors({
                                       ...errors,
@@ -456,6 +487,7 @@ export function GodownFormModal({ open, onOpenChange, godownId }: GodownFormModa
                                     const nextErrors = { ...errors };
                                     delete nextErrors[errorKey];
                                     setErrors(nextErrors);
+                                    setVerifiedEmails((prev) => rememberVerifiedEmail(prev, email));
                                   }}
                                 />
                                 {(contact.emails || ['']).length > 1 && (
@@ -587,7 +619,10 @@ export function GodownFormModal({ open, onOpenChange, godownId }: GodownFormModa
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1">Google Maps link</label>
+                  <GoogleMapsLinkFieldLabel
+                    label="Google Maps link"
+                    className="block text-xs font-medium mb-1"
+                  />
                   <input
                     type="url"
                     inputMode="url"

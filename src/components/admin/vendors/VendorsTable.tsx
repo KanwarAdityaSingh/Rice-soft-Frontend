@@ -142,6 +142,8 @@ export function VendorsTable() {
                         isActive={vendor.is_active}
                         onAddSite={() => setAddSiteCtx({ id: vendor.id, name: vendor.business_name })}
                         onViewSites={() => setViewSitesCtx({ id: vendor.id, name: vendor.business_name })}
+                        addSiteLabel="Add dispatch address"
+                        viewSitesLabel="View dispatch addresses"
                         onEdit={() => {
                           setSelectedVendorId(vendor.id);
                           setEditModalOpen(true);

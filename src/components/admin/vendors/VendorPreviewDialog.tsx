@@ -5,6 +5,7 @@ import { X, CheckCircle2, Building2, MapPin, FileText, Briefcase, Package, UserC
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import type { CreateVendorRequest } from '../../../types/entities';
 import { formatPhonesForDisplay } from '../../../utils/validation';
+import { formatBankAccountDisplay } from '../../../utils/bankAccountFormatting';
 
 interface VendorPreviewDialogProps {
   open: boolean;
@@ -28,6 +29,11 @@ export function VendorPreviewDialog({ open, onOpenChange, formData, onConfirm }:
     } finally {
       setLoading(false);
     }
+  };
+
+  const getRegistrationTypeLabel = (registrationType: string | undefined): string => {
+    if (!registrationType) return 'Registered';
+    return registrationType === 'unregistered' ? 'Unregistered' : 'Registered';
   };
 
   const getTypeLabel = (type: string | undefined): string => {
@@ -64,18 +70,6 @@ export function VendorPreviewDialog({ open, onOpenChange, formData, onConfirm }:
         <span className="text-foreground font-medium text-right flex-1">{value}</span>
       </div>
     );
-  };
-
-  // Extract first name from first contact person
-  const getFirstName = (): string => {
-    const firstContact = formData.contact_persons?.[0];
-    if (!firstContact?.name) return '';
-    return firstContact.name.split(' ')[0];
-  };
-
-  // Get primary email from first contact person
-  const getPrimaryEmail = (): string | undefined => {
-    return formData.contact_persons?.[0]?.emails?.[0];
   };
 
   return (
@@ -117,6 +111,7 @@ export function VendorPreviewDialog({ open, onOpenChange, formData, onConfirm }:
               {/* Basic Information */}
               <InfoSection title="Basic Information" icon={Building2}>
                 <InfoRow label="Business Name" value={formData.business_name} />
+                <InfoRow label="Registration" value={getRegistrationTypeLabel(formData.registration_type)} />
                 <InfoRow label="Type" value={getTypeLabel(formData.type)} />
                 <InfoRow 
                   label="Status" 
@@ -175,6 +170,9 @@ export function VendorPreviewDialog({ open, onOpenChange, formData, onConfirm }:
                     label="PAN Number" 
                     value={formData.business_details.pan_number || undefined} 
                   />
+                  {formData.registration_type === 'unregistered' && (
+                    <InfoRow label="Aadhaar Number" value={formData.aadhar_number || undefined} />
+                  )}
                 </InfoSection>
               )}
 
@@ -187,7 +185,7 @@ export function VendorPreviewDialog({ open, onOpenChange, formData, onConfirm }:
                   />
                   <InfoRow 
                     label="Account Number" 
-                    value={formData.bank_details.account_number || undefined} 
+                    value={formatBankAccountDisplay(formData.bank_details.account_number) || undefined} 
                   />
                   <InfoRow 
                     label="IFSC Code" 
@@ -204,13 +202,6 @@ export function VendorPreviewDialog({ open, onOpenChange, formData, onConfirm }:
                 </InfoSection>
               )}
             </div>
-
-            {/* User Account Information */}
-            {formData.contact_persons?.[0]?.name && getPrimaryEmail() && (
-              <div className="bg-primary/10 border border-primary/20 rounded-lg p-3 text-sm">
-                A user account for this vendor will be created with username {getFirstName()} and email {getPrimaryEmail()}
-              </div>
-            )}
 
             {/* Action Buttons */}
             <div className="flex gap-3 mt-8 pt-6 border-t border-border">

@@ -6,6 +6,7 @@ import { salesPartySitesAPI } from '../../../services/salesPartySites.api';
 import type { VendorAddress } from '../../../types/entities';
 import { validateGoogleLocationLink } from '../../../utils/validation';
 import { AlertDialog } from '../../shared/AlertDialog';
+import { GoogleMapsLinkFieldLabel } from '../../shared/GoogleMapsLinkGuide';
 
 export type PartySiteKind = 'vendor' | 'sales_party';
 
@@ -251,7 +252,10 @@ export function PartySiteFormModal({
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground">Google Maps link (optional)</label>
+                  <GoogleMapsLinkFieldLabel
+                    label="Google Maps link (optional)"
+                    className="text-xs font-medium text-muted-foreground"
+                  />
                   <input
                     className="mt-1 w-full rounded-lg border bg-background px-3 py-2 text-sm"
                     value={googleLocationLink}

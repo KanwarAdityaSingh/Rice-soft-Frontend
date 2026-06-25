@@ -15,6 +15,8 @@ interface ActionButtonsProps {
   /** Extra locations (vendor / sales party sites) */
   onAddSite?: () => void;
   onViewSites?: () => void;
+  addSiteLabel?: string;
+  viewSitesLabel?: string;
   /** Vehicle ↔ transporter linking */
   onAddLinkedTransporter?: () => void;
   onAddLinkedVehicle?: () => void;
@@ -32,6 +34,8 @@ export function ActionButtons({
   onPermissions,
   onAddSite,
   onViewSites,
+  addSiteLabel = 'Add site',
+  viewSitesLabel = 'View sites',
   onAddLinkedTransporter,
   onAddLinkedVehicle,
   onAddBankDetails,
@@ -87,7 +91,7 @@ export function ActionButtons({
                 className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
                 onSelect={onAddSite}
               >
-                <MapPin className="h-4 w-4" /> Add site
+                <MapPin className="h-4 w-4" /> {addSiteLabel}
               </DropdownMenu.Item>
             )}
             {allowEdit && onViewSites && (
@@ -95,7 +99,7 @@ export function ActionButtons({
                 className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
                 onSelect={onViewSites}
               >
-                <MapPinned className="h-4 w-4" /> View sites
+                <MapPinned className="h-4 w-4" /> {viewSitesLabel}
               </DropdownMenu.Item>
             )}
             {allowEdit && onAddLinkedTransporter && (
@@ -127,7 +131,7 @@ export function ActionButtons({
                 className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
                 onSelect={onShowLedger}
               >
-                <BookOpen className="h-4 w-4" /> Show ledger
+                <BookOpen className="h-4 w-4" /> Ledger
               </DropdownMenu.Item>
             )}
             {allowEdit && (

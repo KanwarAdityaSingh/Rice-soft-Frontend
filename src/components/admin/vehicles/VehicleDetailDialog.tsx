@@ -4,9 +4,7 @@ import { X, Car, Shield, Truck } from 'lucide-react';
 import { vehiclesAPI } from '../../../services/vehicles.api';
 import { useTransporters } from '../../../hooks/useTransporters';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
-import { KycVerificationDetailsPanel } from '../../shared/KycVerificationDetailsPanel';
 import { VehicleLinkedIspsList } from './VehicleLinkedIspsList';
-import { collectVehicleKycEntries } from '../../../utils/kycVerification';
 import type { InwardSlipPass, RiceCode, RiceType, RcFullData, Sauda, Vehicle } from '../../../types/entities';
 
 interface VehicleDetailDialogProps {
@@ -219,12 +217,6 @@ export function VehicleDetailDialog({
                     riceTypes={riceTypes}
                   />
                 </section>
-
-                <KycVerificationDetailsPanel
-                  entries={collectVehicleKycEntries(vehicle.verification_details)}
-                  title="Stored Surepass verifications"
-                  emptyMessage="No Surepass snapshots saved on this vehicle yet."
-                />
 
                 <section className="pt-4 border-t border-border">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-muted-foreground">

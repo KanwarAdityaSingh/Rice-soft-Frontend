@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import { useSalesmen } from '../../../hooks/useSalesmen';
 import { validateEmail, sanitizePhoneInput, validatePhone } from '../../../utils/validation';
 import { EmailVerifyButton } from '../../shared/EmailVerifyButton';
+import { isVerifiedEmailInput, normalizeVerifiedEmail, VERIFIED_EMAIL_INPUT_CLASS } from '../../../utils/emailVerification';
 import { PhoneInput } from '../../shared/PhoneInput';
 import { SalespersonPreviewDialog } from './SalespersonPreviewDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
@@ -31,6 +32,7 @@ export function SalesmanFormModal({ open, onOpenChange, editingSalesman = null }
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+  const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -45,6 +47,7 @@ export function SalesmanFormModal({ open, onOpenChange, editingSalesman = null }
       setFormData({ name: '', email: '', phone: '' });
     }
     setErrors({});
+    setVerifiedEmail(null);
   }, [open, editingSalesman]);
 
   const validateForm = (): boolean => {
@@ -174,16 +177,26 @@ export function SalesmanFormModal({ open, onOpenChange, editingSalesman = null }
                   <input
                     type="email"
                     value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                    onChange={(e) => {
+                      if (isVerifiedEmailInput(formData.email ?? '', { verifiedSingleEmail: verifiedEmail })) return;
+                      setFormData({ ...formData, email: e.target.value });
+                    }}
+                    readOnly={isVerifiedEmailInput(formData.email ?? '', { verifiedSingleEmail: verifiedEmail })}
+                    className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
+                      isVerifiedEmailInput(formData.email ?? '', { verifiedSingleEmail: verifiedEmail })
+                        ? VERIFIED_EMAIL_INPUT_CLASS
+                        : ''
+                    }`}
                   />
                   <EmailVerifyButton
                     email={formData.email ?? ''}
+                    verifiedFromSnapshot={verifiedEmail === normalizeVerifiedEmail(formData.email ?? '')}
                     onError={(message) => setErrors({ ...errors, email: message })}
                     onVerified={() => {
                       const nextErrors = { ...errors };
                       delete nextErrors.email;
                       setErrors(nextErrors);
+                      setVerifiedEmail(normalizeVerifiedEmail(formData.email ?? ''));
                     }}
                   />
                 </div>

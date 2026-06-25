@@ -53,6 +53,36 @@ export function findEmailFieldKeys(contactPersons: ContactPerson[], email: strin
   return keys;
 }
 
+export const VERIFIED_EMAIL_INPUT_CLASS =
+  'read-only:cursor-not-allowed opacity-80 bg-muted/40 pointer-events-none';
+
+/** True when an email must not be edited after successful verification. */
+export function isVerifiedEmailInput(
+  email: string,
+  options?: {
+    kyc?: EntityKycVerificationDetails;
+    verifiedEmails?: ReadonlySet<string>;
+    verifiedSingleEmail?: string | null;
+  },
+): boolean {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return false;
+  if (options?.verifiedSingleEmail === normalized) return true;
+  if (options?.verifiedEmails?.has(normalized)) return true;
+  if (options?.kyc && isEmailVerifiedInKyc(options.kyc, normalized)) return true;
+  return false;
+}
+
+export function rememberVerifiedEmail(existing: Set<string>, email: string): Set<string> {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return existing;
+  return new Set([...existing, normalized]);
+}
+
+export function normalizeVerifiedEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
 export interface AutofillEmailVerificationResult {
   kycDetails: EntityKycVerificationDetails;
   fieldErrors: Record<string, string>;
@@ -108,5 +138,37 @@ export async function verifyAutofilledEmails(
     }),
   );
 
+  for (const verified of verifiedEmails) {
+    for (const key of findEmailFieldKeys(contactPersons, verified)) {
+      delete fieldErrors[key];
+    }
+  }
+
   return { kycDetails, fieldErrors, verifiedEmails };
+}
+
+/** Merge autofill email verification into form errors — clears stale errors for verified emails. */
+export function applyAutofillEmailVerificationToErrors(
+  existingErrors: Record<string, string>,
+  verification: AutofillEmailVerificationResult,
+  contactPersons: ContactPerson[],
+  fieldClears: Record<string, string> = {},
+): Record<string, string> {
+  const next = { ...existingErrors, ...fieldClears };
+  for (const email of verification.verifiedEmails) {
+    for (const key of findEmailFieldKeys(contactPersons, email)) {
+      delete next[key];
+    }
+  }
+  return { ...next, ...verification.fieldErrors };
+}
+
+/** Hide field-level email errors once the address is verified in session KYC. */
+export function shouldShowEmailFieldError(
+  email: string,
+  error: string | undefined,
+  kyc?: EntityKycVerificationDetails,
+): boolean {
+  if (!error) return false;
+  return !isVerifiedEmailInput(email, { kyc });
 }

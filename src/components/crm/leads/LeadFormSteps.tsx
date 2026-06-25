@@ -10,8 +10,9 @@ import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { pincodeAPI } from '../../../services/pincode.api';
 import { validatePhone, validateGoogleLocationLink, getGstValidationError, getPanValidationError, getPhoneValidationError, GST_EXAMPLE, PAN_EXAMPLE, GST_MAX_LENGTH, PAN_MAX_LENGTH } from '../../../utils/validation';
 import { EmailVerifyButton } from '../../shared/EmailVerifyButton';
+import { GoogleMapsLinkFieldLabel } from '../../shared/GoogleMapsLinkGuide';
 import { PhoneInput } from '../../shared/PhoneInput';
-import { verifyAutofilledEmails } from '../../../utils/emailVerification';
+import { verifyAutofilledEmails, isVerifiedEmailInput, rememberVerifiedEmail, VERIFIED_EMAIL_INPUT_CLASS } from '../../../utils/emailVerification';
 import {
   applyAutofillAddress,
   buildPanLookupAutofill,
@@ -23,6 +24,7 @@ import {
   mergeGstContactPersons,
   runEnrichedGstLookup,
 } from '../../../utils/gstLookupAutofill';
+import { assertEntityNotDuplicateBeforeVerification } from '../../../utils/entityDuplicateCheck';
 import type { CreateLeadRequest, Salesman, RiceCode, RiceType } from '../../../types/entities';
 
 // Utility function to convert string to title case
@@ -52,6 +54,9 @@ interface LeadFormStepsProps {
   isEdit?: boolean;
   mode?: 'create' | 'edit' | 'pre-conversion';
   onPreviewClick?: () => void;
+  excludeLeadId?: string | null;
+  originalGstNumber?: string;
+  originalPanNumber?: string;
 }
 
 export function LeadFormSteps({
@@ -63,7 +68,10 @@ export function LeadFormSteps({
   setStep,
   isEdit,
   mode = 'edit',
-  onPreviewClick
+  onPreviewClick,
+  excludeLeadId,
+  originalGstNumber = '',
+  originalPanNumber = '',
 }: LeadFormStepsProps) {
   const [salesmen, setSalesmen] = useState<Salesman[]>([]);
   const { brokers: allBrokers, loading: loadingBrokers } = useBrokers();
@@ -162,6 +170,14 @@ export function LeadFormSteps({
     return {};
   };
 
+  const duplicateCheckOptions = () => ({
+    excludeId: excludeLeadId,
+    unchangedFrom: {
+      gst_number: originalGstNumber,
+      pan_number: originalPanNumber,
+    },
+  });
+
   const handleGSTLookup = async () => {
     const gstNumber = formData.business_details?.gst_number || '';
     if (!gstNumber) {
@@ -179,6 +195,12 @@ export function LeadFormSteps({
     setErrors({ ...errors, gst_number: '' });
     
     try {
+      await assertEntityNotDuplicateBeforeVerification(
+        'lead',
+        { gst_number: gstNumber },
+        'gst',
+        duplicateCheckOptions(),
+      );
       const result = await runEnrichedGstLookup(gstNumber);
       const autofill = buildEnrichedGstLookupAutofill(result);
       const autoFilledFieldsSet = new Set<string>();
@@ -240,6 +262,12 @@ export function LeadFormSteps({
     setErrors({ ...errors, pan_number: '' });
     
     try {
+      await assertEntityNotDuplicateBeforeVerification(
+        'lead',
+        { pan_number: panNumber },
+        'pan',
+        duplicateCheckOptions(),
+      );
       const result = await runEnrichedPanLookup(panNumber);
       const autofill = buildPanLookupAutofill(result);
       const autoFilledFieldsSet = new Set<string>();
@@ -456,7 +484,6 @@ export function LeadFormSteps({
                                 setErrors(newErrors);
                               }
                             }}
-                            className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                           />
                           {(contact.phones || ['']).length > 1 && (
                             <button
@@ -502,6 +529,7 @@ export function LeadFormSteps({
                             placeholder="Email"
                             value={email}
                             onChange={(e) => {
+                              if (isVerifiedEmailInput(email, { verifiedEmails: verifiedAutofillEmails })) return;
                               const value = e.target.value;
                               const updated = [...(formData.contact_persons || [])];
                               const updatedEmails = [...(updated[index].emails || [''])];
@@ -525,7 +553,12 @@ export function LeadFormSteps({
                                 setErrors({ ...errors, [errorKey]: 'Invalid email format' });
                               }
                             }}
-                            className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                            readOnly={isVerifiedEmailInput(email, { verifiedEmails: verifiedAutofillEmails })}
+                            className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
+                              isVerifiedEmailInput(email, { verifiedEmails: verifiedAutofillEmails })
+                                ? VERIFIED_EMAIL_INPUT_CLASS
+                                : ''
+                            }`}
                           />
                           <EmailVerifyButton
                             email={email}
@@ -541,6 +574,7 @@ export function LeadFormSteps({
                               const nextErrors = { ...errors };
                               delete nextErrors[errorKey];
                               setErrors(nextErrors);
+                              setVerifiedAutofillEmails((prev) => rememberVerifiedEmail(prev, email));
                             }}
                           />
                           {(contact.emails || ['']).length > 1 && (
@@ -770,7 +804,7 @@ export function LeadFormSteps({
 
           {/* Google Maps Location Link */}
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Google Maps Location Link</label>
+            <GoogleMapsLinkFieldLabel />
             <input
               type="text"
               value={formData.google_location_link || ''}
@@ -982,7 +1016,6 @@ export function LeadFormSteps({
                                 setErrors(newErrors);
                               }
                             }}
-                            className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
                           />
                           {(contact.phones || ['']).length > 1 && (
                             <button
@@ -1028,6 +1061,7 @@ export function LeadFormSteps({
                             placeholder="Email"
                             value={email}
                             onChange={(e) => {
+                              if (isVerifiedEmailInput(email, { verifiedEmails: verifiedAutofillEmails })) return;
                               const value = e.target.value;
                               const updated = [...(formData.contact_persons || [])];
                               const updatedEmails = [...(updated[index].emails || [''])];
@@ -1051,7 +1085,12 @@ export function LeadFormSteps({
                                 setErrors({ ...errors, [errorKey]: 'Invalid email format' });
                               }
                             }}
-                            className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
+                            readOnly={isVerifiedEmailInput(email, { verifiedEmails: verifiedAutofillEmails })}
+                            className={`flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
+                              isVerifiedEmailInput(email, { verifiedEmails: verifiedAutofillEmails })
+                                ? VERIFIED_EMAIL_INPUT_CLASS
+                                : ''
+                            }`}
                           />
                           <EmailVerifyButton
                             email={email}
@@ -1067,6 +1106,7 @@ export function LeadFormSteps({
                               const nextErrors = { ...errors };
                               delete nextErrors[errorKey];
                               setErrors(nextErrors);
+                              setVerifiedAutofillEmails((prev) => rememberVerifiedEmail(prev, email));
                             }}
                           />
                           {(contact.emails || ['']).length > 1 && (
@@ -1488,7 +1528,7 @@ export function LeadFormSteps({
 
           {/* Google Maps Location Link */}
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Google Maps Location Link</label>
+            <GoogleMapsLinkFieldLabel />
             <input
               type="text"
               value={formData.google_location_link || ''}
