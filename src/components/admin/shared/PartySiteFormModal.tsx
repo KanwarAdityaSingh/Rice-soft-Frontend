@@ -168,7 +168,14 @@ export function PartySiteFormModal({
     }
   };
 
-  const title = isEdit ? 'Edit site' : 'Add site';
+  const title =
+    kind === 'sales_party'
+      ? isEdit
+        ? 'Edit additional delivery address'
+        : 'Additional delivery address'
+      : isEdit
+        ? 'Edit dispatch address'
+        : 'Add dispatch address';
   const displayPartyName = partyName?.trim() || '—';
 
   return (

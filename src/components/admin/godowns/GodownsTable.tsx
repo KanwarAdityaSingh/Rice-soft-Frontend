@@ -13,10 +13,10 @@ import { GodownFormModal } from './GodownFormModal';
 import type { Godown } from '../../../types/entities';
 
 export function GodownsTable() {
-  const [includeInactive, setIncludeInactive] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<string | undefined>('active');
+  const includeInactive = statusFilter !== 'active';
   const { godowns, loading, deleteGodown, refetch } = useGodowns(includeInactive);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [createOpen, setCreateOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -78,14 +78,6 @@ export function GodownsTable() {
           value={statusFilter}
           onChange={setStatusFilter}
         />
-        <label className="flex items-center gap-2 text-sm whitespace-nowrap px-2">
-          <input
-            type="checkbox"
-            checked={includeInactive}
-            onChange={(e) => setIncludeInactive(e.target.checked)}
-          />
-          Show inactive
-        </label>
         {isAdmin() && (
           <button
             type="button"

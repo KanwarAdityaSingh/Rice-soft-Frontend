@@ -102,7 +102,6 @@ export function buildPanLookupAutofill(result: EnrichedPanLookupResult): PanLook
   const panData = panComprehensive.pan_data;
 
   let businessName = panMapped?.business_name ? toTitleCase(panMapped.business_name) : undefined;
-  if (businessName) lockedFields.push('business_name');
 
   let panNumber =
     panMapped?.business_details?.pan_number?.trim().toUpperCase() ||
@@ -127,7 +126,6 @@ export function buildPanLookupAutofill(result: EnrichedPanLookupResult): PanLook
     const gstMapped = gstAdvanced.mapped_data;
     if (gstMapped.business_name) {
       businessName = toTitleCase(gstMapped.business_name);
-      if (!lockedFields.includes('business_name')) lockedFields.push('business_name');
     }
     if (gstMapped.address) {
       address = { ...address, ...titleCaseAddress(gstMapped.address) };

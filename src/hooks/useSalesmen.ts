@@ -1,39 +1,41 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { salesmenAPI } from '../services/salesmen.api';
 import type { Salesman, CreateSalesmanRequest, UpdateSalesmanRequest } from '../types/entities';
 
-export function useSalesmen() {
+export interface UseSalesmenOptions {
+  /** When true, returns active + inactive. Default list is active only. */
+  includeInactive?: boolean;
+}
+
+export function useSalesmen(options?: UseSalesmenOptions) {
+  const includeInactive = options?.includeInactive ?? false;
   const [salesmen, setSalesmen] = useState<Salesman[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Toast removed for now
 
-  const fetchSalesmen = async () => {
+  const fetchSalesmen = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await salesmenAPI.getAllSalesmen();
+      const data = await salesmenAPI.getAllSalesmen(includeInactive);
       setSalesmen(data);
     } catch (err: any) {
       setError(err.message);
-      // showError(err.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [includeInactive]);
 
   useEffect(() => {
-    fetchSalesmen();
-  }, []);
+    void fetchSalesmen();
+  }, [fetchSalesmen]);
 
   const createSalesman = async (data: CreateSalesmanRequest) => {
     try {
       const newSalesman = await salesmenAPI.createSalesman(data);
-      // Refetch all salesmen to ensure we have the latest data from the server
       await fetchSalesmen();
       return newSalesman;
     } catch (err: any) {
-      // showError(err.message || 'Failed to create salesman');
       throw err;
     }
   };
@@ -42,10 +44,8 @@ export function useSalesmen() {
     try {
       const updatedSalesman = await salesmenAPI.updateSalesman(id, data);
       setSalesmen((prev) => prev.map((s) => (s.id === id ? updatedSalesman : s)));
-      // success('Salesman updated successfully');
       return updatedSalesman;
     } catch (err: any) {
-      // showError(err.message || 'Failed to update salesman');
       throw err;
     }
   };
@@ -53,10 +53,8 @@ export function useSalesmen() {
   const deleteSalesman = async (id: string) => {
     try {
       await salesmenAPI.deleteSalesman(id);
-      setSalesmen(salesmen.filter((s) => s.id !== id));
-      // success('Salesman deleted successfully');
+      setSalesmen((prev) => prev.filter((s) => s.id !== id));
     } catch (err: any) {
-      // showError(err.message || 'Failed to delete salesman');
       throw err;
     }
   };
@@ -71,4 +69,3 @@ export function useSalesmen() {
     refetch: fetchSalesmen,
   };
 }
-

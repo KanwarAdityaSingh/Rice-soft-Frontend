@@ -1,7 +1,8 @@
 import { useMemo, useState, useEffect } from 'react';
-import { Store, Plus, Mail, Phone, MapPin, CreditCard, FileText, Calendar, UserCircle, ExternalLink } from 'lucide-react';
+import { Store, Plus, Mail, Phone, MapPin, CreditCard, FileText, Calendar, UserCircle, ExternalLink, Shield } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { SearchBar } from '../../components/admin/shared/SearchBar';
+import { FilterDropdown } from '../../components/admin/shared/FilterDropdown';
 import { LoadingSpinner } from '../../components/admin/shared/LoadingSpinner';
 import { EmptyState } from '../../components/admin/shared/EmptyState';
 import { ActionButtons } from '../../components/admin/shared/ActionButtons';
@@ -16,9 +17,19 @@ import { salesSaudasAPI } from '../../services/salesSaudas.api';
 import { isAdmin } from '../../utils/permissions';
 import type { Lead } from '../../types/entities';
 import { formatPhoneDisplay } from '../../utils/validation';
+import { formatSalesPartyVerifiedAt } from '../../utils/salesPartyVerification';
 
 export default function SalesPartiesPage() {
-  const { salesParties, loading, deleteSalesParty, refetch } = useSalesParties();
+  const [registrationFilter, setRegistrationFilter] = useState<string | undefined>();
+  const [statusFilter, setStatusFilter] = useState<string | undefined>('active');
+  const registrationTypeParam =
+    registrationFilter === 'registered' || registrationFilter === 'unregistered'
+      ? registrationFilter
+      : undefined;
+  const { salesParties, loading, deleteSalesParty, refetch } = useSalesParties({
+    registrationType: registrationTypeParam as 'registered' | 'unregistered' | undefined,
+    includeInactive: statusFilter !== 'active',
+  });
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -43,9 +54,16 @@ export default function SalesPartiesPage() {
         (primaryContact?.name || '').toLowerCase().includes(q) ||
         (primaryContact?.emails?.[0] || '').toLowerCase().includes(q) ||
         (primaryContact?.phones?.[0] || '').includes(searchQuery);
-      return matchesSearch;
+
+      const matchesStatus = statusFilter
+        ? statusFilter === 'active'
+          ? s.is_active
+          : !s.is_active
+        : true;
+
+      return matchesSearch && matchesStatus;
     });
-  }, [salesParties, searchQuery]);
+  }, [salesParties, searchQuery, statusFilter]);
 
   useEffect(() => {
     const fetchLeadDetails = async () => {
@@ -105,11 +123,31 @@ export default function SalesPartiesPage() {
       </header>
 
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-        <div className="w-full min-w-0 flex-1">
-          <SearchBar
-            value={searchQuery}
-            onChange={setSearchQuery}
-            placeholder="Search by business, contact, email, or phone..."
+        <div className="w-full min-w-0 flex-1 flex flex-col sm:flex-row gap-3 sm:items-center">
+          <div className="min-w-0 flex-1">
+            <SearchBar
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Search by business, contact, email, or phone..."
+            />
+          </div>
+          <FilterDropdown
+            label="Registration"
+            options={[
+              { label: 'Registered', value: 'registered' },
+              { label: 'Unregistered', value: 'unregistered' },
+            ]}
+            value={registrationFilter}
+            onChange={setRegistrationFilter}
+          />
+          <FilterDropdown
+            label="Status"
+            options={[
+              { label: 'Active', value: 'active' },
+              { label: 'Inactive', value: 'inactive' },
+            ]}
+            value={statusFilter}
+            onChange={setStatusFilter}
           />
         </div>
         {isAdmin() && (
@@ -137,85 +175,101 @@ export default function SalesPartiesPage() {
           {filtered.map((s) => (
             <article
               key={s.id}
-              className="group rounded-2xl p-4 bg-gradient-to-br from-background to-muted/40 border border-border/60 hover:border-primary/40 transition-all duration-300 shadow-sm hover:shadow-md"
+              className="group min-w-0 rounded-2xl p-4 bg-gradient-to-br from-background to-muted/40 border border-border/60 hover:border-primary/40 transition-all duration-300 shadow-sm hover:shadow-md overflow-hidden"
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shadow-inner">
+              <div className="flex items-start justify-between gap-3 min-w-0">
+                <div className="flex items-start gap-3 min-w-0 flex-1">
+                  <div className="h-10 w-10 shrink-0 rounded-xl bg-primary/10 text-primary flex items-center justify-center shadow-inner">
                     <Store className="h-5 w-5" />
                   </div>
-                  <div>
-                    <h3 className="text-sm font-semibold leading-tight">{s.business_name.trim()}</h3>
-                    <div className="text-xs text-muted-foreground inline-flex items-center gap-1">
-                      <MapPin className="h-3 w-3" /> {s.address.city.trim()}
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-sm font-semibold leading-tight break-words flex items-center gap-1.5">
+                      {s.business_name.trim()}
+                      {s.is_verified && (
+                        <span
+                          title={`KYC verified${s.verified_at ? ` · ${formatSalesPartyVerifiedAt(s.verified_at)}` : ''}`}
+                          className="inline-flex shrink-0"
+                        >
+                          <Shield className="h-3.5 w-3.5 text-emerald-500 shrink-0" aria-hidden />
+                        </span>
+                      )}
+                    </h3>
+                    <div className="text-xs text-muted-foreground flex items-start gap-1 mt-0.5">
+                      <MapPin className="h-3 w-3 shrink-0 mt-0.5" />
+                      <span className="break-words">{s.address.city.trim()}</span>
                     </div>
                   </div>
                 </div>
-                <span
-                  className={`whitespace-nowrap px-2 py-1 rounded-md text-[10px] ${
-                    s.is_active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground'
-                  }`}
-                >
-                  {s.is_active ? 'Active' : 'Inactive'}
-                </span>
+                <div className="flex flex-wrap gap-1 justify-end shrink-0">
+                  <span className="whitespace-nowrap px-2 py-1 rounded-md text-[10px] bg-muted text-muted-foreground border border-border/60">
+                    {s.registration_type === 'unregistered' ? 'Unregistered' : 'Registered'}
+                  </span>
+                  <span
+                    className={`whitespace-nowrap px-2 py-1 rounded-md text-[10px] ${
+                      s.is_active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground'
+                    }`}
+                  >
+                    {s.is_active ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
               </div>
-              <div className="mt-3 grid gap-1.5 text-xs">
+              <div className="mt-3 grid gap-1.5 text-xs min-w-0">
                 {s.contact_persons?.[0] && (
                   <>
-                    <div className="inline-flex items-center gap-2 text-foreground/90">
-                      <span className="text-muted-foreground w-16">Contact</span>
-                      <span className="font-medium">{s.contact_persons[0].name?.trim() || 'N/A'}</span>
+                    <div className="flex items-start gap-2 text-foreground/90 min-w-0">
+                      <span className="text-muted-foreground w-16 shrink-0">Contact</span>
+                      <span className="font-medium min-w-0 break-words">{s.contact_persons[0].name?.trim() || 'N/A'}</span>
                     </div>
                     {s.contact_persons[0].emails?.[0] && (
-                      <div className="inline-flex items-center gap-2">
-                        <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="truncate">{s.contact_persons[0].emails[0].trim()}</span>
+                      <div className="flex items-start gap-2 min-w-0">
+                        <Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                        <span className="min-w-0 break-words">{s.contact_persons[0].emails[0].trim()}</span>
                       </div>
                     )}
                     {s.contact_persons[0].phones?.[0] && (
-                      <div className="inline-flex items-center gap-2">
-                        <Phone className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span>{formatPhoneDisplay(s.contact_persons[0].phones[0])}</span>
+                      <div className="flex items-start gap-2 min-w-0">
+                        <Phone className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                        <span className="min-w-0 break-words">{formatPhoneDisplay(s.contact_persons[0].phones[0])}</span>
                       </div>
                     )}
                   </>
                 )}
                 {s.address?.street && (
-                  <div className="inline-flex items-center gap-2">
-                    <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="truncate">{s.address.street.trim()}</span>
+                  <div className="flex items-start gap-2 min-w-0">
+                    <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                    <span className="min-w-0 break-words">{s.address.street.trim()}</span>
                   </div>
                 )}
                 {(s.address?.city || s.address?.state || s.address?.pincode) && (
-                  <div className="inline-flex items-center gap-2">
-                    <MapPin className="h-3.5 w-3.5 text-muted-foreground opacity-0" />
-                    <span className="truncate">
+                  <div className="flex items-start gap-2 min-w-0">
+                    <MapPin className="h-3.5 w-3.5 text-muted-foreground opacity-0 shrink-0 mt-0.5" />
+                    <span className="min-w-0 break-words">
                       {[s.address.city, s.address.state, s.address.pincode].filter(Boolean).join(', ')}
                     </span>
                   </div>
                 )}
                 {s.business_details?.gst_number && (
-                  <div className="inline-flex items-center gap-2">
-                    <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="truncate">GST: {s.business_details.gst_number}</span>
+                  <div className="flex items-start gap-2 min-w-0">
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                    <span className="min-w-0 break-words">GST: {s.business_details.gst_number}</span>
                   </div>
                 )}
                 {s.business_details?.pan_number && (
-                  <div className="inline-flex items-center gap-2">
-                    <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="truncate">PAN: {s.business_details.pan_number}</span>
+                  <div className="flex items-start gap-2 min-w-0">
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                    <span className="min-w-0 break-words">PAN: {s.business_details.pan_number}</span>
                   </div>
                 )}
                 {s.bank_details?.account_holder_name && (
-                  <div className="inline-flex items-center gap-2">
-                    <CreditCard className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="truncate">A/C: {s.bank_details.account_holder_name}</span>
+                  <div className="flex items-start gap-2 min-w-0">
+                    <CreditCard className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                    <span className="min-w-0 break-words">A/C: {s.bank_details.account_holder_name}</span>
                   </div>
                 )}
                 {s.last_enquiry_date && (
-                  <div className="inline-flex items-center gap-2">
-                    <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span>Last Enquiry: {new Date(s.last_enquiry_date).toLocaleDateString()}</span>
+                  <div className="flex items-start gap-2 min-w-0">
+                    <Calendar className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                    <span className="min-w-0 break-words">Last Enquiry: {new Date(s.last_enquiry_date).toLocaleDateString()}</span>
                   </div>
                 )}
               </div>
@@ -254,6 +308,8 @@ export default function SalesPartiesPage() {
                     isActive={s.is_active}
                     onAddSite={() => setAddSiteCtx({ id: s.id, name: s.business_name })}
                     onViewSites={() => setViewSitesCtx({ id: s.id, name: s.business_name })}
+                    addSiteLabel="Additional delivery address"
+                    viewSitesLabel="View delivery addresses"
                     onEdit={() => {
                       setSelectedSalesPartyId(s.id);
                       setEditModalOpen(true);

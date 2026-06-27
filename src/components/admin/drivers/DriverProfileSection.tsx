@@ -1,10 +1,15 @@
 import type { CreateDriverRequest, Driver } from '../../../types/entities';
+import { formatIsoDateAsDdMmYyyy } from '../../../utils/dateFormatting';
 import {
   driverProfileImageSrc,
+  formatDriverExpiryDate,
   formatDriverGender,
   hasDriverProfileData,
   normalizeVehicleClasses,
-  resolveDriverLicenseExpiry,
+  resolveDriverCityName,
+  resolveDriverRegularLicenseExpiry,
+  resolveDriverStateName,
+  resolveDriverTransportLicenseExpiry,
 } from '../../../utils/driverProfile';
 import { DRIVER_LOCKED_INPUT_CLASS, type DriverFieldLockKey } from '../../../utils/driverAutofillLocks';
 import { DriverVehicleClassBadges } from './DriverVehicleClassBadges';
@@ -16,16 +21,18 @@ interface DriverProfileSectionProps {
 }
 
 export function DriverProfileSection({ loadedDriver, formData, lockedClass }: DriverProfileSectionProps) {
+  const profileSource = loadedDriver ?? formData;
   const profile = {
     name: loadedDriver?.name ?? formData.name,
     address: loadedDriver?.address ?? formData.address,
     pincode: loadedDriver?.pincode ?? formData.pincode,
     gender: loadedDriver?.gender ?? formData.gender,
     date_of_birth: loadedDriver?.date_of_birth ?? formData.date_of_birth,
-    license_expires_at:
-      resolveDriverLicenseExpiry(loadedDriver ?? {}) ??
-      formData.license_expires_at ??
-      null,
+    license_expires_at: resolveDriverRegularLicenseExpiry(profileSource),
+    transport_license_expires_at: resolveDriverTransportLicenseExpiry(profileSource),
+    father_or_husband_name: loadedDriver?.father_or_husband_name ?? formData.father_or_husband_name,
+    state: loadedDriver?.state ?? formData.state,
+    city_name: loadedDriver?.city_name ?? formData.city_name,
     profile_image: loadedDriver?.profile_image ?? formData.profile_image,
     vehicle_classes: loadedDriver?.vehicle_classes ?? formData.vehicle_classes,
   };
@@ -33,6 +40,8 @@ export function DriverProfileSection({ loadedDriver, formData, lockedClass }: Dr
   if (!hasDriverProfileData(profile)) return null;
 
   const avatarSrc = driverProfileImageSrc(profile.profile_image);
+  const cityName = resolveDriverCityName(profileSource);
+  const stateName = resolveDriverStateName(profileSource);
 
   return (
     <div className="rounded-lg border border-border/60 bg-muted/20 p-4 space-y-4">
@@ -61,13 +70,25 @@ export function DriverProfileSection({ loadedDriver, formData, lockedClass }: Dr
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
+        {profile.father_or_husband_name && (
+          <div>
+            <label className="block text-xs font-medium mb-1 text-muted-foreground">Father / husband name</label>
+            <input
+              type="text"
+              className={`w-full rounded-lg border border-border bg-background px-3 py-2 text-sm ${DRIVER_LOCKED_INPUT_CLASS}`}
+              value={profile.father_or_husband_name}
+              disabled
+              readOnly
+            />
+          </div>
+        )}
         {profile.date_of_birth && (
           <div>
             <label className="block text-xs font-medium mb-1 text-muted-foreground">Date of birth</label>
             <input
               type="text"
               className={`w-full rounded-lg border border-border bg-background px-3 py-2 text-sm ${lockedClass('date_of_birth') || DRIVER_LOCKED_INPUT_CLASS}`}
-              value={profile.date_of_birth}
+              value={formatIsoDateAsDdMmYyyy(profile.date_of_birth)}
               disabled
               readOnly
             />
@@ -75,11 +96,47 @@ export function DriverProfileSection({ loadedDriver, formData, lockedClass }: Dr
         )}
         {profile.license_expires_at && (
           <div>
-            <label className="block text-xs font-medium mb-1 text-muted-foreground">Licence expires</label>
+            <label className="block text-xs font-medium mb-1 text-muted-foreground">Licence expires (DOE)</label>
             <input
               type="text"
               className={`w-full rounded-lg border border-border bg-background px-3 py-2 text-sm ${lockedClass('license_expires_at') || DRIVER_LOCKED_INPUT_CLASS}`}
-              value={profile.license_expires_at}
+              value={formatDriverExpiryDate(profile.license_expires_at)}
+              disabled
+              readOnly
+            />
+          </div>
+        )}
+        {profile.transport_license_expires_at && (
+          <div>
+            <label className="block text-xs font-medium mb-1 text-muted-foreground">Transport expires (DOE)</label>
+            <input
+              type="text"
+              className={`w-full rounded-lg border border-border bg-background px-3 py-2 text-sm ${DRIVER_LOCKED_INPUT_CLASS}`}
+              value={formatDriverExpiryDate(profile.transport_license_expires_at)}
+              disabled
+              readOnly
+            />
+          </div>
+        )}
+        {cityName && (
+          <div>
+            <label className="block text-xs font-medium mb-1 text-muted-foreground">City</label>
+            <input
+              type="text"
+              className={`w-full rounded-lg border border-border bg-background px-3 py-2 text-sm ${DRIVER_LOCKED_INPUT_CLASS}`}
+              value={cityName}
+              disabled
+              readOnly
+            />
+          </div>
+        )}
+        {stateName && (
+          <div>
+            <label className="block text-xs font-medium mb-1 text-muted-foreground">State</label>
+            <input
+              type="text"
+              className={`w-full rounded-lg border border-border bg-background px-3 py-2 text-sm ${DRIVER_LOCKED_INPUT_CLASS}`}
+              value={stateName}
               disabled
               readOnly
             />

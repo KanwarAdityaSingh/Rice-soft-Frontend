@@ -1,28 +1,17 @@
 import type { PermissionsMap, PermissionAction, PermissionsEntityKey } from '../types/entities';
-
-const STORAGE_KEY = 'auth:permissions';
+import { getStoredPermissions, getStoredUser, setStoredPermissions } from '../services/authStorage';
 
 let cachedPermissions: PermissionsMap | null | undefined;
 
 export const getPermissions = (): PermissionsMap | null => {
-  if (cachedPermissions !== undefined) return cachedPermissions as any;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    cachedPermissions = raw ? JSON.parse(raw) : null;
-    return cachedPermissions;
-  } catch {
-    cachedPermissions = null;
-    return null;
-  }
+  if (cachedPermissions !== undefined) return cachedPermissions as PermissionsMap | null;
+  cachedPermissions = getStoredPermissions();
+  return cachedPermissions;
 };
 
 export const setPermissions = (permissions: PermissionsMap | null) => {
   cachedPermissions = permissions;
-  if (permissions) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(permissions));
-  } else {
-    localStorage.removeItem(STORAGE_KEY);
-  }
+  setStoredPermissions(permissions);
 };
 
 export const can = (entity: PermissionsEntityKey, action: PermissionAction): boolean => {
@@ -45,30 +34,20 @@ export const canDelete = (entity: PermissionsEntityKey) => can(entity, 'delete')
 export const getEntityPermissions = (entity: PermissionsEntityKey) => getPermissions()?.[entity] || null;
 
 export const isCustomUser = (): boolean => {
-  try {
-    const user = JSON.parse(localStorage.getItem('auth:user') || '{}');
-    return user?.user_type === 'custom';
-  } catch {
-    return false;
-  }
+  const user = getStoredUser<{ user_type?: string }>();
+  return user?.user_type === 'custom';
 };
 
 export const isAdmin = (): boolean => {
-  try {
-    const user = JSON.parse(localStorage.getItem('auth:user') || '{}');
-    return user?.user_type === 'admin';
-  } catch {
-    return false;
-  }
+  const user = getStoredUser<{ user_type?: string }>();
+  return user?.user_type === 'admin';
 };
 
 export const hasAccess = (entity: PermissionsEntityKey, action: PermissionAction): boolean => {
-  if (isAdmin()) return true; // Admin bypass
+  if (isAdmin()) return true;
   if (isCustomUser()) return can(entity, action);
-  return false; // Non-custom users use user_type logic elsewhere; default false here
+  return false;
 };
 
 export const PERMISSION_ENTITIES: PermissionsEntityKey[] = ['salesman', 'broker', 'vendor', 'leads', 'riceCode'];
 export const PERMISSION_ACTIONS: PermissionAction[] = ['create', 'read', 'update', 'delete'];
-
-

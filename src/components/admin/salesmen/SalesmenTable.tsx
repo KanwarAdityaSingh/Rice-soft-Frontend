@@ -12,9 +12,11 @@ import type { Salesman } from '../../../types/entities';
 import { formatPhoneDisplay } from '../../../utils/validation';
 
 export function SalesmenTable() {
-  const { salesmen, loading, deleteSalesman, refetch } = useSalesmen();
+  const [statusFilter, setStatusFilter] = useState<string | undefined>('active');
+  const { salesmen, loading, deleteSalesman, refetch } = useSalesmen({
+    includeInactive: statusFilter !== 'active',
+  });
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedSalesman, setSelectedSalesman] = useState<{ id: string; name?: string } | null>(null);
   const [formOpen, setFormOpen] = useState(false);

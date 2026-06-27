@@ -21,7 +21,9 @@ import { Link, useSearchParams } from 'react-router-dom';
 import type { Vehicle } from '../../../types/entities';
 
 export function VehiclesTable() {
+  const [statusFilter, setStatusFilter] = useState<string | undefined>('active');
   const { vehicles, loading, refetch } = useVehicles(undefined, {
+    includeInactive: statusFilter !== 'active',
     excludeVerificationDetails: true,
   });
   const { transporters } = useTransporters();
@@ -139,9 +141,15 @@ export function VehiclesTable() {
         ? (verificationFilter === 'verified' ? v.is_verified : !v.is_verified)
         : true;
 
-      return matchesSearch && matchesVerification;
+      const matchesStatus = statusFilter
+        ? statusFilter === 'active'
+          ? v.is_active
+          : !v.is_active
+        : true;
+
+      return matchesSearch && matchesVerification && matchesStatus;
     });
-  }, [vehicles, searchQuery, verificationFilter]);
+  }, [vehicles, searchQuery, verificationFilter, statusFilter]);
 
   const handleDelete = async () => {
     if (!selectedVehicle) return;
@@ -179,6 +187,15 @@ export function VehiclesTable() {
             ]}
             value={verificationFilter}
             onChange={setVerificationFilter}
+          />
+          <FilterDropdown
+            label="Status"
+            options={[
+              { label: 'Active', value: 'active' },
+              { label: 'Inactive', value: 'inactive' },
+            ]}
+            value={statusFilter}
+            onChange={setStatusFilter}
           />
           <button
             onClick={() => setCreateOpen(true)}

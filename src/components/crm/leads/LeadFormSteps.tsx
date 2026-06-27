@@ -25,6 +25,8 @@ import {
   runEnrichedGstLookup,
 } from '../../../utils/gstLookupAutofill';
 import { assertEntityNotDuplicateBeforeVerification } from '../../../utils/entityDuplicateCheck';
+import { applyGstOcrToLead, applyPanOcrToLead } from '../../../utils/documentOcrPrefill';
+import { KycDocumentOcrSection } from '../../shared/KycDocumentOcrSection';
 import type { CreateLeadRequest, Salesman, RiceCode, RiceType } from '../../../types/entities';
 
 // Utility function to convert string to title case
@@ -83,6 +85,7 @@ export function LeadFormSteps({
   const [pincodeLoading, setPincodeLoading] = useState(false);
   const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set());
   const [verifiedAutofillEmails, setVerifiedAutofillEmails] = useState<Set<string>>(new Set());
+  const [ocrNotice, setOcrNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   
   // Filter to only active brokers for dropdown
   const brokers = allBrokers.filter(b => b.is_active);
@@ -205,7 +208,6 @@ export function LeadFormSteps({
       const autofill = buildEnrichedGstLookupAutofill(result);
       const autoFilledFieldsSet = new Set<string>();
 
-      if (autofill.businessName) autoFilledFieldsSet.add('company_name');
       if (autofill.gstNumber) autoFilledFieldsSet.add('gst_number');
       if (autofill.panNumber) autoFilledFieldsSet.add('pan_number');
 
@@ -272,11 +274,8 @@ export function LeadFormSteps({
       const autofill = buildPanLookupAutofill(result);
       const autoFilledFieldsSet = new Set<string>();
       autofill.lockedFields.forEach((field) => {
-        if (field === 'business_name') {
-          autoFilledFieldsSet.add('company_name');
-        } else {
-          autoFilledFieldsSet.add(field);
-        }
+        if (field === 'business_name') return;
+        autoFilledFieldsSet.add(field);
       });
 
       const updatedContactPersons = mergePanContactIntoContactPersons(formData.contact_persons || [], autofill);
@@ -363,6 +362,62 @@ export function LeadFormSteps({
     }
   };
 
+  const renderLeadDocumentOcr = () => (
+    <div className="space-y-2">
+      {ocrNotice && (
+        <p
+          className={`text-xs ${
+            ocrNotice.type === 'success'
+              ? 'text-emerald-700 dark:text-emerald-400'
+              : 'text-red-600'
+          }`}
+        >
+          {ocrNotice.message}
+        </p>
+      )}
+      <KycDocumentOcrSection
+        docs={['gst', 'pan']}
+        disabled={lookupLoading}
+        onGstResult={(result) => {
+          setFormData((prev) => ({
+            ...prev,
+            ...applyGstOcrToLead(
+              {
+                company_name: prev.company_name,
+                business_details: prev.business_details,
+                address: prev.address,
+                contact_persons: prev.contact_persons,
+              },
+              result,
+            ),
+          }));
+          setErrors({ ...errors, gst_number: '', pan_number: '' });
+        }}
+        onPanResult={(result) => {
+          setFormData((prev) => ({
+            ...prev,
+            ...applyPanOcrToLead(
+              {
+                company_name: prev.company_name,
+                business_details: prev.business_details,
+                address: prev.address,
+                contact_persons: prev.contact_persons,
+              },
+              result,
+            ),
+          }));
+          setErrors({ ...errors, pan_number: '' });
+        }}
+        onSuccess={(_title, message) => {
+          setOcrNotice({ type: 'success', message });
+        }}
+        onError={(_title, message) => {
+          setOcrNotice({ type: 'error', message });
+        }}
+      />
+    </div>
+  );
+
   return (
     <>
       {/* CREATE MODE - Step 1: Essential Info Only */}
@@ -373,6 +428,8 @@ export function LeadFormSteps({
               <span className="font-medium">Note:</span> GST Number and PAN Number are optional. You can use the lookup feature to automatically fill in business details.
             </p>
           </div>
+
+          {renderLeadDocumentOcr()}
 
           <div>
             <label className="text-sm font-medium mb-1.5 block">GST Number</label>
@@ -422,10 +479,7 @@ export function LeadFormSteps({
               type="text"
               value={formData.company_name}
               onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
-              readOnly={autoFilledFields.has('company_name')}
-              className={`w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
-                autoFilledFields.has('company_name') ? 'read-only:cursor-not-allowed opacity-75' : ''
-              }`}
+              className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
             />
             {errors.company_name && <p className="mt-1 text-xs text-red-600">{errors.company_name}</p>}
           </div>
@@ -906,6 +960,8 @@ export function LeadFormSteps({
             </p>
           </div>
 
+          {renderLeadDocumentOcr()}
+
           <div>
             <label className="text-sm font-medium mb-1.5 block">GST Number</label>
             <div className="flex gap-2">
@@ -954,10 +1010,7 @@ export function LeadFormSteps({
               type="text"
               value={formData.company_name}
               onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
-              readOnly={autoFilledFields.has('company_name')}
-              className={`w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${
-                autoFilledFields.has('company_name') ? 'read-only:cursor-not-allowed opacity-75' : ''
-              }`}
+              className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary"
             />
             {errors.company_name && <p className="mt-1 text-xs text-red-600">{errors.company_name}</p>}
           </div>

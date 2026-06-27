@@ -1,30 +1,34 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { brokersAPI } from '../services/brokers.api';
 import type { Broker, CreateBrokerRequest, UpdateBrokerRequest } from '../types/entities';
 
-export function useBrokers() {
+export interface UseBrokersOptions {
+  /** When true, returns active + inactive. Default list is active only. */
+  includeInactive?: boolean;
+}
+
+export function useBrokers(options?: UseBrokersOptions) {
+  const includeInactive = options?.includeInactive ?? false;
   const [brokers, setBrokers] = useState<Broker[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Toast removed for now
 
-  const fetchBrokers = async () => {
+  const fetchBrokers = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await brokersAPI.getAllBrokers();
+      const data = await brokersAPI.getAllBrokers(includeInactive);
       setBrokers(data);
     } catch (err: any) {
       setError(err.message);
-      // showError(err.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [includeInactive]);
 
   useEffect(() => {
-    fetchBrokers();
-  }, []);
+    void fetchBrokers();
+  }, [fetchBrokers]);
 
   const createBroker = async (data: CreateBrokerRequest) => {
     try {
@@ -32,7 +36,6 @@ export function useBrokers() {
       await fetchBrokers();
       return result;
     } catch (err: any) {
-      // showError(err.message || 'Failed to create broker');
       throw err;
     }
   };
@@ -43,7 +46,6 @@ export function useBrokers() {
       await fetchBrokers();
       return result;
     } catch (err: any) {
-      // showError(err.message || 'Failed to update broker');
       throw err;
     }
   };
@@ -51,10 +53,8 @@ export function useBrokers() {
   const deleteBroker = async (id: string) => {
     try {
       await brokersAPI.deleteBroker(id);
-      setBrokers(brokers.filter((b) => b.id !== id));
-      // success('Broker deleted successfully');
+      setBrokers((prev) => prev.filter((b) => b.id !== id));
     } catch (err: any) {
-      // showError(err.message || 'Failed to delete broker');
       throw err;
     }
   };
@@ -69,4 +69,3 @@ export function useBrokers() {
     refetch: fetchBrokers,
   };
 }
-

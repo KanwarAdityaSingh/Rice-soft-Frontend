@@ -1,4 +1,4 @@
-import type { Driver, DriverVerificationResponse } from '../types/entities';
+import type { Driver, DriverVerificationResponse, DrivingLicenseOcrResponse } from '../types/entities';
 
 export type DriverFieldLockKey =
   | 'license_number'
@@ -9,7 +9,8 @@ export type DriverFieldLockKey =
   | 'pincode'
   | 'gender'
   | 'profile_image'
-  | 'vehicle_classes';
+  | 'vehicle_classes'
+  | 'state';
 
 export const DRIVER_LOCKED_INPUT_CLASS = 'opacity-60 cursor-not-allowed bg-muted/30';
 
@@ -34,6 +35,31 @@ export function collectApiLockedFieldsFromDriver(driver: Driver): Set<DriverFiel
   addIfPresent(locks, 'gender', driver.gender);
   addIfPresent(locks, 'profile_image', driver.profile_image);
   addIfPresent(locks, 'vehicle_classes', driver.vehicle_classes);
+  addIfPresent(locks, 'state', driver.state);
+  return locks;
+}
+
+/** Lock fields returned from Surepass licence OCR (prefill only — not full verify). */
+export function collectApiLockedFieldsFromOcrResult(
+  result: DrivingLicenseOcrResponse,
+): Set<DriverFieldLockKey> {
+  const locks = new Set<DriverFieldLockKey>();
+  addIfPresent(locks, 'license_number', result.license_number);
+  addIfPresent(locks, 'name', result.full_name ?? result.name);
+  addIfPresent(locks, 'date_of_birth', result.date_of_birth ?? result.dob);
+  addIfPresent(locks, 'address', result.address);
+  addIfPresent(locks, 'pincode', result.pincode);
+  addIfPresent(locks, 'state', result.state);
+
+  const driver = result.driver;
+  if (driver) {
+    addIfPresent(locks, 'license_number', driver.license_number);
+    addIfPresent(locks, 'name', driver.name);
+    addIfPresent(locks, 'date_of_birth', driver.date_of_birth);
+    addIfPresent(locks, 'address', driver.address);
+    addIfPresent(locks, 'pincode', driver.pincode);
+    addIfPresent(locks, 'state', driver.state);
+  }
   return locks;
 }
 
@@ -51,6 +77,7 @@ export function collectApiLockedFieldsFromVerifyResult(
   addIfPresent(locks, 'gender', result.gender);
   addIfPresent(locks, 'profile_image', result.profile_image);
   addIfPresent(locks, 'vehicle_classes', result.vehicle_classes);
+  addIfPresent(locks, 'state', result.state);
 
   const driver = result.driver;
   if (driver) {

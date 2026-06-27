@@ -2,6 +2,8 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { X, Package, Download, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
+import { riceLengthsAPI } from '../../../services/riceLengths.api';
+import { toRiceLengthLabelOptions } from '../../../utils/riceLengthModule';
 import { vendorsAPI } from '../../../services/vendors.api';
 import { useVendors } from '../../../hooks/useVendors';
 import { useBrokers } from '../../../hooks/useBrokers';
@@ -45,12 +47,12 @@ export function SaudaPreviewDialog({ open, onOpenChange, sauda, serialNumber }: 
         const [codes, types, lengths, recipient] = await Promise.all([
           riceCodesAPI.getAllRiceCodes(),
           riceCodesAPI.getRiceTypes(),
-          riceCodesAPI.getRiceLengths(),
+          riceLengthsAPI.getAllRiceLengths(),
           vendorsAPI.getDefaultRecipient()
         ]);
         setRiceCodes(codes);
         setRiceTypes(types);
-        setRiceLengths(lengths);
+        setRiceLengths(toRiceLengthLabelOptions(lengths));
         setDefaultRecipient(recipient);
       } catch (error) {
         console.error('Failed to fetch data:', error);

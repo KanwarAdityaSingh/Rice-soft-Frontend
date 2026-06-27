@@ -139,9 +139,9 @@ export const vendorsAPI = {
     };
   },
 
-  // Delete vendor
+  // Hard delete vendor
   deleteVendor: (id: string) => {
-    return apiService.post<{ success: boolean; message: string }>(`/vendors/deleteVendor/${id}`);
+    return apiService.delete<{ success: boolean; message: string }>(`/vendors/${id}`);
   },
 
   // Lookup GST (Surepass GSTIN Advanced — snapshots persisted on save via kyc_verification_details)

@@ -40,7 +40,7 @@ export function useTransporters(options?: boolean | GetAllTransportersOptions) {
   };
 
   const deleteTransporter = async (id: string) => {
-    await transportersAPI.deactivateTransporter(id);
+    await transportersAPI.deleteTransporter(id);
     await fetchTransporters();
   };
 

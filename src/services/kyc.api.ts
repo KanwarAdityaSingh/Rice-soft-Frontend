@@ -1,19 +1,28 @@
 import { apiService } from './api';
 import { normalizeIsoDateInput } from '../utils/dateFormatting';
 import type {
+  AadhaarOcrResponse,
   AadhaarValidationResult,
   BankVerificationResult,
   DriverVerificationResponse,
   EmailVerificationResult,
   GSTLookupResponseData,
   GstinByPanResponse,
+  GstOcrResponse,
   KycPersistContext,
   PanContactResponse,
+  PanOcrResponse,
   PANLookupResponseData,
   RcChallanDetailsRequest,
   RcChallanDetailsResult,
   RcFullLookupResult,
+  RcOcrResponse,
+  DrivingLicenseOcrResponse,
+  DrivingLicenseOcrUploadOptions,
+  DocumentOcrUploadOptions,
 } from '../types/entities';
+import { postDrivingLicenseOcr } from './licenseOcr.api';
+import { postDocumentOcr } from './documentOcr.api';
 
 const BASE = '/kyc';
 
@@ -74,6 +83,23 @@ export const kycAPI = {
     );
     return apiService.post<DriverVerificationResponse>(`${BASE}/driving-license/verify`, body);
   },
+
+  /** Surepass licence-v2 OCR (extract only — does not verify or set is_verified). */
+  ocrDrivingLicense: (front: File, options?: Omit<DrivingLicenseOcrUploadOptions, 'driverId'>) =>
+    postDrivingLicenseOcr(`${BASE}/driving-license/ocr`, front, options),
+
+  /** Surepass GST OCR (extract only). */
+  ocrGstin: (file: File) => postDocumentOcr<GstOcrResponse>(`${BASE}/gstin/ocr`, file),
+
+  /** Surepass PAN OCR (extract only). */
+  ocrPan: (file: File, options?: DocumentOcrUploadOptions) =>
+    postDocumentOcr<PanOcrResponse>(`${BASE}/pan/ocr`, file, options),
+
+  /** Surepass Aadhaar OCR (extract only). */
+  ocrAadhaar: (file: File) => postDocumentOcr<AadhaarOcrResponse>(`${BASE}/aadhaar/ocr`, file),
+
+  /** Surepass vehicle RC OCR (extract only). */
+  ocrRc: (file: File) => postDocumentOcr<RcOcrResponse>(`${BASE}/rc/ocr`, file),
 
   /** Surepass email deliverability check */
   verifyEmail: (email: string, persist?: KycPersistContext) => {

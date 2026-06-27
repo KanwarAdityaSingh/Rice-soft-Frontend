@@ -18,7 +18,10 @@ import type { Sauda } from '../../types/entities'
 import { formatPhoneDisplay } from '../../utils/validation'
 
 export default function BrokersPage() {
-  const { brokers, loading, deleteBroker, refetch } = useBrokers()
+  const [statusFilter, setStatusFilter] = useState<string | undefined>('active')
+  const { brokers, loading, deleteBroker, refetch } = useBrokers({
+    includeInactive: statusFilter !== 'active',
+  })
   const [searchQuery, setSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState<string | undefined>()
   const [bankVerifyFilter, setBankVerifyFilter] = useState<string | undefined>()
@@ -178,9 +181,15 @@ export default function BrokersPage() {
       const matchesBankFilter =
         bankVerifyFilter === 'verified' ? verified : bankVerifyFilter === 'unverified' ? !verified : true
 
-      return matchesSearch && matchesType && matchesBankFilter
+      const matchesStatus = statusFilter
+        ? statusFilter === 'active'
+          ? b.is_active
+          : !b.is_active
+        : true
+
+      return matchesSearch && matchesType && matchesBankFilter && matchesStatus
     })
-  }, [brokers, searchQuery, typeFilter, bankVerifyFilter])
+  }, [brokers, searchQuery, typeFilter, bankVerifyFilter, statusFilter])
 
   return (
     <div className="container mx-auto py-6 sm:py-10 space-y-6 sm:space-y-8 px-4 sm:px-6">
@@ -220,6 +229,15 @@ export default function BrokersPage() {
               ]}
               value={bankVerifyFilter}
               onChange={setBankVerifyFilter}
+            />
+            <FilterDropdown
+              label="Status"
+              options={[
+                { label: 'Active', value: 'active' },
+                { label: 'Inactive', value: 'inactive' },
+              ]}
+              value={statusFilter}
+              onChange={setStatusFilter}
             />
           </div>
           <button

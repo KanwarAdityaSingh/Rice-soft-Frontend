@@ -1,8 +1,9 @@
-import { apiService } from './api';
+import { API_BASE_URL, apiService } from './api';
+import { authenticatedFetch, authenticatedFetchEnvelopeData } from './authenticatedFetch';
 import { floorNetPayable } from '../utils/money';
-import type { 
-  PaymentAdvice, 
-  CreatePaymentAdviceRequest, 
+import type {
+  PaymentAdvice,
+  CreatePaymentAdviceRequest,
   UpdatePaymentAdviceRequest,
   AddChargeRequest,
   NetPayableResponse,
@@ -10,9 +11,8 @@ import type {
 } from '../types/entities';
 
 export const paymentAdvicesAPI = {
-  // Get all payment advices - now filters by sauda_id or inward_slip_pass_id
   getAllPaymentAdvices: (
-    sauda_id?: string, 
+    sauda_id?: string,
     inward_slip_pass_id?: string,
     status?: 'pending' | 'completed' | 'failed'
   ) => {
@@ -25,12 +25,10 @@ export const paymentAdvicesAPI = {
     return apiService.get<PaymentAdvice[]>(url);
   },
 
-  // Get payment advice by ID
   getPaymentAdviceById: (id: string) => {
     return apiService.get<PaymentAdvice>(`/payment-advices/${id}`);
   },
 
-  // Create payment advice
   createPaymentAdvice: (data: CreatePaymentAdviceRequest) => {
     const payload: CreatePaymentAdviceRequest = {
       ...data,
@@ -41,7 +39,6 @@ export const paymentAdvicesAPI = {
     return apiService.post<PaymentAdvice>('/payment-advices', payload);
   },
 
-  // Update payment advice (optional charges[] = full replace; omit charges to leave unchanged)
   updatePaymentAdvice: (id: string, data: UpdatePaymentAdviceRequest) => {
     const payload: UpdatePaymentAdviceRequest = {
       ...data,
@@ -52,42 +49,29 @@ export const paymentAdvicesAPI = {
     return apiService.put<PaymentAdvice>(`/payment-advices/${id}`, payload);
   },
 
-  // Upload payment slip
   uploadSlip: async (id: string, file: File) => {
     const formData = new FormData();
     formData.append('file', file);
-    const token = localStorage.getItem('auth:token');
-    const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3000/api';
-    const response = await fetch(`${API_BASE_URL}/payment-advices/${id}/upload-slip`, {
+    return authenticatedFetchEnvelopeData(`${API_BASE_URL}/payment-advices/${id}/upload-slip`, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
       body: formData,
     });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.message || 'Upload failed');
-    }
-    return data.data;
   },
 
-  // Add charge
   addCharge: (id: string, charge: AddChargeRequest) => {
     return apiService.post<PaymentAdvice>(`/payment-advices/${id}/charges`, charge);
   },
 
-  // Remove charge
   removeCharge: (id: string, chargeId: string) => {
-    return apiService.delete<{ success: boolean; message: string }>(`/payment-advices/${id}/charges/${chargeId}`);
+    return apiService.delete<{ success: boolean; message: string }>(
+      `/payment-advices/${id}/charges/${chargeId}`
+    );
   },
 
-  // Get net payable
   getNetPayable: (id: string) => {
     return apiService.get<NetPayableResponse>(`/payment-advices/${id}/net-payable`);
   },
 
-  /** Document preview for create/edit — weights, summary, amount, net payable. */
   fetchPaymentAdvicePreview: (params: {
     sauda_id?: string;
     inward_slip_pass_id?: string;
@@ -105,12 +89,10 @@ export const paymentAdvicesAPI = {
     );
   },
 
-  // Delete payment advice
   deletePaymentAdvice: (id: string) => {
     return apiService.delete<{ success: boolean; message: string }>(`/payment-advices/${id}`);
   },
 
-  // Get payment advice email/WhatsApp notification preview
   getPaymentAdviceNotificationPreview: async (data: {
     adviceNumber: string;
     vendorName: string;
@@ -122,39 +104,32 @@ export const paymentAdvicesAPI = {
       ifscCode?: string;
     };
   }) => {
-    const token = localStorage.getItem('auth:token');
-    const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3000/api';
-    const response = await fetch(`${API_BASE_URL}/payment-advices/preview`, {
+    const response = await authenticatedFetch(`${API_BASE_URL}/payment-advices/preview`, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...data, amount: floorNetPayable(data.amount) }),
     });
     const result = await response.json();
+    apiService.inspectSessionFromResponse(result);
     if (!response.ok || result.status !== 'success') {
       throw new Error(result.message || 'Failed to load preview');
     }
     return result.data;
   },
 
-  // Send payment advice via email
-  sendPaymentAdviceEmail: async (
-    data: {
-      emails: string[];
-      adviceNumber: string;
-      vendorName: string;
-      amount: number;
-      date: string;
-      bankDetails?: {
-        bankName?: string;
-        accountNumber?: string;
-        ifscCode?: string;
-      };
-      file: File;
-    }
-  ) => {
+  sendPaymentAdviceEmail: async (data: {
+    emails: string[];
+    adviceNumber: string;
+    vendorName: string;
+    amount: number;
+    date: string;
+    bankDetails?: {
+      bankName?: string;
+      accountNumber?: string;
+      ifscCode?: string;
+    };
+    file: File;
+  }) => {
     const formData = new FormData();
     formData.append('emails', JSON.stringify(data.emails));
     formData.append('adviceNumber', data.adviceNumber);
@@ -166,34 +141,27 @@ export const paymentAdvicesAPI = {
     }
     formData.append('file', data.file);
 
-    const token = localStorage.getItem('auth:token');
-    const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3000/api';
-    const response = await fetch(`${API_BASE_URL}/payment-advices/send-email`, {
+    const response = await authenticatedFetch(`${API_BASE_URL}/payment-advices/send-email`, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
       body: formData,
     });
     const result = await response.json();
+    apiService.inspectSessionFromResponse(result);
     if (!response.ok || result.status !== 'success') {
       throw new Error(result.message || 'Failed to send email');
     }
     return result.data;
   },
 
-  // Send payment advice via WhatsApp
-  sendPaymentAdviceWhatsApp: async (
-    data: {
-      whatsappNumbers: string[];
-      adviceNumber: string;
-      vendorName: string;
-      amount: number;
-      date: string;
-      file?: File;
-      pdfUrl?: string;
-    }
-  ) => {
+  sendPaymentAdviceWhatsApp: async (data: {
+    whatsappNumbers: string[];
+    adviceNumber: string;
+    vendorName: string;
+    amount: number;
+    date: string;
+    file?: File;
+    pdfUrl?: string;
+  }) => {
     const formData = new FormData();
     formData.append('whatsappNumbers', JSON.stringify(data.whatsappNumbers));
     formData.append('adviceNumber', data.adviceNumber);
@@ -206,20 +174,15 @@ export const paymentAdvicesAPI = {
       formData.append('pdfUrl', data.pdfUrl);
     }
 
-    const token = localStorage.getItem('auth:token');
-    const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3000/api';
-    const response = await fetch(`${API_BASE_URL}/payment-advices/send-whatsapp`, {
+    const response = await authenticatedFetch(`${API_BASE_URL}/payment-advices/send-whatsapp`, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
       body: formData,
     });
     const result = await response.json();
+    apiService.inspectSessionFromResponse(result);
     if (!response.ok || result.status !== 'success') {
       throw new Error(result.message || 'Failed to send WhatsApp');
     }
     return result.data;
   },
 };
-

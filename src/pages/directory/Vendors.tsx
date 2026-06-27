@@ -24,14 +24,14 @@ import { formatVendorVerifiedAt } from '../../utils/vendorVerification'
 
 export default function VendorsPage() {
   const [registrationFilter, setRegistrationFilter] = useState<string | undefined>()
-  const [statusFilter, setStatusFilter] = useState<string | undefined>()
+  const [statusFilter, setStatusFilter] = useState<string | undefined>('active')
   const registrationTypeParam =
     registrationFilter === 'registered' || registrationFilter === 'unregistered'
       ? registrationFilter
       : undefined
   const { vendors, loading, deleteVendor, refetch } = useVendors({
     registrationType: registrationTypeParam as 'registered' | 'unregistered' | undefined,
-    includeInactive: statusFilter === 'inactive',
+    includeInactive: statusFilter !== 'active',
   })
   const navigate = useNavigate()
   const [searchQuery, setSearchQuery] = useState('')

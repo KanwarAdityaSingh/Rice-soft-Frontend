@@ -8,7 +8,9 @@ import { useSaudas } from '../../../hooks/useSaudas';
 import { useInwardSlipPasses } from '../../../hooks/useInwardSlipPasses';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
+import { riceLengthsAPI } from '../../../services/riceLengths.api';
 import { getRiceTypeLabel, getRiceLengthLabel } from '../../../utils/riceType';
+import { toRiceLengthLabelOptions } from '../../../utils/riceLengthModule';
 import { formatWeightDisplay } from '../../../utils/saudaCompletion';
 import {
   computePaymentAdviceTotalCharges,
@@ -66,12 +68,12 @@ export function PaymentAdvicePreviewDialog({ open, onOpenChange, paymentAdvice }
           vendorsAPI.getDefaultRecipient(),
           riceCodesAPI.getAllRiceCodes(),
           riceCodesAPI.getRiceTypes(),
-          riceCodesAPI.getRiceLengths(),
+          riceLengthsAPI.getAllRiceLengths(),
         ]);
         setDefaultRecipient(recipient);
         setRiceCodes(codes);
         setRiceTypes(types);
-        setRiceLengths(lengths);
+        setRiceLengths(toRiceLengthLabelOptions(lengths));
       } catch (error) {
         console.error('Failed to fetch reference data:', error);
       }

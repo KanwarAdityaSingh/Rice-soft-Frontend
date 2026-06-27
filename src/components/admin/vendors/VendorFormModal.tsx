@@ -24,9 +24,11 @@ import {
   buildSurepassSnapshot,
   clearBankKycSnapshot,
   isEmailVerifiedInKyc,
+  isEntityBankVerified,
   mergeEntityKycSnapshot,
   persistAadhaarValidationSnapshot,
   persistBankVerificationSnapshot,
+  resolveEntityBankVerifiedAt,
   shouldVerifyBankFields,
   vendorPersist,
 } from '../../../utils/kycVerification';
@@ -62,6 +64,12 @@ import {
   formatVendorVerifiedAt,
   getVendorSaveAlert,
 } from '../../../utils/vendorVerification';
+import {
+  applyAadhaarOcrToNestedParty,
+  applyGstOcrToNestedParty,
+  applyPanOcrToNestedParty,
+} from '../../../utils/documentOcrPrefill';
+import { KycDocumentOcrSection } from '../../shared/KycDocumentOcrSection';
 import { assertEntityNotDuplicateBeforeVerification } from '../../../utils/entityDuplicateCheck';
 
 interface VendorFormModalProps {
@@ -153,10 +161,26 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
   const [isVerified, setIsVerified] = useState(false);
   const [verifiedAt, setVerifiedAt] = useState<string | null>(null);
   const [bankDetailsVerifiedAt, setBankDetailsVerifiedAt] = useState<string | null>(null);
+  const [bankVerifiedInSession, setBankVerifiedInSession] = useState(false);
   const [bankVerificationError, setBankVerificationError] = useState<string | null>(null);
   const vendorPersistContext = vendorPersist(vendorId);
   const isFieldLocked = (key: string) => isVendorFieldLocked(apiLockedFields, key);
   const lockedClass = (key: string) => lockedClassFor(apiLockedFields, key);
+
+  const isIdentityVerified = (
+    registrationType: 'registered' | 'unregistered' = formData.registration_type,
+  ) =>
+    isVerified || computeVendorVerifiedFromKyc(registrationType, kycVerificationDetails);
+
+  const displayBankVerifiedAt = resolveEntityBankVerifiedAt(
+    bankDetailsVerifiedAt,
+    kycVerificationDetails,
+  );
+  const showBankVerified = isEntityBankVerified(
+    bankDetailsVerifiedAt,
+    kycVerificationDetails,
+    bankVerifiedInSession,
+  );
 
   const syncVerifiedFromKyc = (
     registrationType: 'registered' | 'unregistered',
@@ -274,6 +298,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       setVerifiedAt(vendor.verified_at);
       setAadhaarValidated(Boolean(vendor.kyc_verification_details?.aadhaar));
       setBankDetailsVerifiedAt(vendor.bank_details_verified_at ?? null);
+      setBankVerifiedInSession(Boolean(vendor.bank_details_verified_at));
       setBankVerificationError(vendor.bank_verification_error ?? null);
       const savedKyc = vendor.kyc_verification_details ?? {};
       const loadedForm = {
@@ -371,6 +396,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
     setIsVerified(false);
     setVerifiedAt(null);
     setBankDetailsVerifiedAt(null);
+    setBankVerifiedInSession(false);
     setBankVerificationError(null);
   };
 
@@ -806,7 +832,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
   const handleBankCredentialChange = () => {
     setBankVerificationError(null);
     const serverBankVerified = Boolean(bankDetailsVerifiedAt);
-    if (serverBankVerified) {
+    if (serverBankVerified || bankVerifiedInSession) {
+      setBankVerifiedInSession(false);
       setBankDetailsVerifiedAt(null);
       setApiLockedFields((prev) => {
         const next = new Set(prev);
@@ -816,7 +843,7 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
         return next;
       });
     }
-    if (serverBankVerified || kycVerificationDetails.bank) {
+    if (serverBankVerified || bankVerifiedInSession || kycVerificationDetails.bank) {
       setKycVerificationDetails((prev) => clearBankKycSnapshot(prev));
     }
   };
@@ -869,6 +896,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
         }));
         return;
       }
+      setBankVerifiedInSession(true);
+      setBankVerificationError(null);
     } catch (error: unknown) {
       setApiLockedFields((prev) => {
         const next = new Set(prev);
@@ -1003,7 +1032,11 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       try {
         const updatePayload = buildEntitySavePayload(
           formData as UpdateVendorRequest,
-          { kycVerificationDetails, bankVerifiedInSession: false, bankDetailsVerifiedAt },
+          {
+            kycVerificationDetails,
+            bankDetailsVerifiedAt,
+            identityVerified: isIdentityVerified(),
+          },
         );
         const {
           vendor: saved,
@@ -1047,7 +1080,13 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       if (isEditMode && vendorId) {
         const updatePayload = buildEntitySavePayload(
           data as UpdateVendorRequest,
-          { kycVerificationDetails, bankVerifiedInSession: false, bankDetailsVerifiedAt },
+          {
+            kycVerificationDetails,
+            bankDetailsVerifiedAt,
+            identityVerified: isIdentityVerified(
+              (data as CreateVendorRequest).registration_type,
+            ),
+          },
         );
         const {
           vendor: saved,
@@ -1067,8 +1106,10 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       } else {
         const createPayload = buildEntitySavePayload(data as CreateVendorRequest, {
           kycVerificationDetails,
-          bankVerifiedInSession: false,
           bankDetailsVerifiedAt,
+          identityVerified: isIdentityVerified(
+            (data as CreateVendorRequest).registration_type,
+          ),
         });
         const {
           vendor: saved,
@@ -1243,6 +1284,92 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                     </div>
                   ) : null}
 
+                  {!isVerified && (
+                    <KycDocumentOcrSection
+                      docs={
+                        formData.registration_type === 'registered'
+                          ? ['gst', 'pan']
+                          : ['pan', 'aadhaar']
+                      }
+                      disabled={lookupLoading || loading}
+                      onGstResult={(result) => {
+                        setFormData((prev) => ({
+                          ...prev,
+                          ...applyGstOcrToNestedParty(
+                            {
+                              business_name: prev.business_name,
+                              aadhar_number: prev.aadhar_number,
+                              business_details: prev.business_details,
+                              address: prev.address,
+                              contact_persons: prev.contact_persons,
+                            },
+                            result,
+                          ),
+                        }));
+                        setErrors((prev) => {
+                          const next = { ...prev };
+                          delete next.gst_number;
+                          delete next.pan_number;
+                          return next;
+                        });
+                      }}
+                      onPanResult={(result) => {
+                        setFormData((prev) => ({
+                          ...prev,
+                          ...applyPanOcrToNestedParty(
+                            {
+                              business_name: prev.business_name,
+                              aadhar_number: prev.aadhar_number,
+                              business_details: prev.business_details,
+                              address: prev.address,
+                              contact_persons: prev.contact_persons,
+                            },
+                            result,
+                          ),
+                        }));
+                        setErrors((prev) => {
+                          const next = { ...prev };
+                          delete next.pan_number;
+                          return next;
+                        });
+                      }}
+                      onAadhaarResult={(result) => {
+                        setFormData((prev) => ({
+                          ...prev,
+                          ...applyAadhaarOcrToNestedParty(
+                            {
+                              business_name: prev.business_name,
+                              aadhar_number: prev.aadhar_number,
+                              business_details: prev.business_details,
+                              address: prev.address,
+                              contact_persons: prev.contact_persons,
+                            },
+                            result,
+                          ),
+                        }));
+                        setAadhaarValidated(false);
+                        setAadhaarValidationSummary(null);
+                        setErrors((prev) => {
+                          const next = { ...prev };
+                          delete next.aadhar_number;
+                          return next;
+                        });
+                      }}
+                      onSuccess={(title, message) => {
+                        setAlertType('success');
+                        setAlertTitle(title);
+                        setAlertMessage(message);
+                        setAlertOpen(true);
+                      }}
+                      onError={(title, message) => {
+                        setAlertType('error');
+                        setAlertTitle(title);
+                        setAlertMessage(message);
+                        setAlertOpen(true);
+                      }}
+                    />
+                  )}
+
                   {formData.registration_type === 'registered' ? (
                     <>
                       <div>
@@ -1250,8 +1377,19 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                           GST Number <span className="text-red-500">*</span>
                         </label>
                         {isEditMode && originalGstNumber && originalGstNumber.trim().length > 0 ? (
-                          <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm pointer-events-none select-none">
-                            {originalGstNumber}
+                          <div className="flex gap-2">
+                            <div className="flex-1 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm pointer-events-none select-none">
+                              {originalGstNumber}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleGSTLookup}
+                              disabled={lookupLoading}
+                              className="btn-secondary flex items-center gap-2 shrink-0"
+                              title="Verify GST via Surepass"
+                            >
+                              {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                            </button>
                           </div>
                         ) : (
                           <div className="flex gap-2">
@@ -1288,8 +1426,19 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                       <div>
                         <label className="text-sm font-medium mb-1.5 block">PAN Number</label>
                         {isEditMode && originalPanNumber && originalPanNumber.trim().length > 0 ? (
-                          <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm pointer-events-none select-none">
-                            {originalPanNumber}
+                          <div className="flex gap-2">
+                            <div className="flex-1 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm pointer-events-none select-none">
+                              {originalPanNumber}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handlePANLookup}
+                              disabled={lookupLoading}
+                              className="btn-secondary flex items-center gap-2 shrink-0"
+                              title="Verify PAN via Surepass"
+                            >
+                              {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                            </button>
                           </div>
                         ) : (
                           <div className="flex gap-2">
@@ -1331,8 +1480,19 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                       <div>
                         <label className="text-sm font-medium mb-1.5 block">PAN Number</label>
                         {isEditMode && originalPanNumber && originalPanNumber.trim().length > 0 ? (
-                          <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm pointer-events-none select-none">
-                            {originalPanNumber}
+                          <div className="flex gap-2">
+                            <div className="flex-1 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm pointer-events-none select-none">
+                              {originalPanNumber}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handlePANLookup}
+                              disabled={lookupLoading}
+                              className="btn-secondary flex items-center gap-2 shrink-0"
+                              title="Verify PAN via Surepass"
+                            >
+                              {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                            </button>
                           </div>
                         ) : (
                           <div className="flex gap-2">
@@ -1369,8 +1529,19 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                       <div>
                         <label className="text-sm font-medium mb-1.5 block">Aadhaar Number</label>
                         {isEditMode && originalAadharNumber && originalAadharNumber.trim().length > 0 ? (
-                          <div className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm pointer-events-none select-none">
-                            {originalAadharNumber}
+                          <div className="flex gap-2">
+                            <div className="flex-1 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm pointer-events-none select-none">
+                              {originalAadharNumber.replace(/(\d{4})(?=\d)/g, '$1 ').trim()}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleAadhaarLookup}
+                              disabled={lookupLoading}
+                              className="btn-secondary flex items-center gap-2 shrink-0"
+                              title="Verify Aadhaar via Surepass"
+                            >
+                              {lookupLoading ? <LoadingSpinner size="sm" /> : <Search className="h-4 w-4" />}
+                            </button>
                           </div>
                         ) : isFieldLocked('aadhar_number') ? (
                           <div className={`w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm ${lockedClass('aadhar_number')}`}>
@@ -1420,8 +1591,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
                       type="text"
                       value={formData.business_name}
                       onChange={(e) => setFormData({ ...formData, business_name: e.target.value })}
-                      className={`w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed ${lockedClass('business_name')}`}
-                      readOnly={isEditMode || isFieldLocked('business_name')}
+                      className={`w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${isEditMode ? 'read-only:cursor-not-allowed' : ''}`}
+                      readOnly={isEditMode}
                     />
                     {errors.business_name && <p className="mt-1 text-xs text-red-600">{errors.business_name}</p>}
                     {formData.registration_type === 'unregistered' && (
@@ -1768,16 +1939,20 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
 
               {step === 3 && (
                 <div className="space-y-4">
-                  {bankDetailsVerifiedAt && (
+                  {showBankVerified && (
                     <span
                       className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400"
-                      title={`Bank verified ${new Date(bankDetailsVerifiedAt).toLocaleString('en-IN')}`}
+                      title={
+                        displayBankVerifiedAt
+                          ? `Bank verified ${new Date(displayBankVerifiedAt).toLocaleString('en-IN')}`
+                          : 'Bank verified in this session — save to persist'
+                      }
                     >
                       <Shield className="h-3.5 w-3.5" />
                       Bank verified
                     </span>
                   )}
-                  {!bankDetailsVerifiedAt && bankVerificationError?.trim() && (
+                  {!showBankVerified && bankVerificationError?.trim() && (
                     <p className="text-xs text-amber-700 dark:text-amber-300 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2">
                       {bankVerificationError.trim()}
                       {isEditMode && (

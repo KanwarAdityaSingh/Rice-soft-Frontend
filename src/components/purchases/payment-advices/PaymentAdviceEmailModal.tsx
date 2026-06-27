@@ -4,6 +4,7 @@ import { X, Mail, Send, Loader2, Plus, Trash2, FileText, AlertCircle } from 'luc
 import { useToast } from '../../shared/Toast';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { paymentAdvicesAPI } from '../../../services/paymentAdvices.api';
+import { getAccessToken } from '../../../services/authStorage';
 
 interface PaymentAdviceEmailModalProps {
   open: boolean;
@@ -28,7 +29,7 @@ export function PaymentAdviceEmailModal({
   paymentAdviceData,
   onSuccess,
 }: PaymentAdviceEmailModalProps) {
-  const token = localStorage.getItem('auth:token');
+  const token = getAccessToken();
   const { success, error: showError } = useToast();
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [sending, setSending] = useState(false);

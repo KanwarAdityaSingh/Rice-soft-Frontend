@@ -15,6 +15,8 @@ import {
 } from '../../../utils/gstLookupAutofill';
 import { verifyAutofilledEmails, isVerifiedEmailInput, rememberVerifiedEmail, VERIFIED_EMAIL_INPUT_CLASS } from '../../../utils/emailVerification';
 import { assertEntityNotDuplicateBeforeVerification } from '../../../utils/entityDuplicateCheck';
+import { applyGstOcrToSimpleEntity } from '../../../utils/documentOcrPrefill';
+import { KycDocumentOcrSection } from '../../shared/KycDocumentOcrSection';
 import { EmailVerifyButton } from '../../shared/EmailVerifyButton';
 import { PhoneInput } from '../../shared/PhoneInput';
 import type {
@@ -442,6 +444,44 @@ export function PackagingVendorFormModal({ open, onOpenChange, vendorId, onVendo
 
               {!loadingVendor && (
                 <form onSubmit={handleSubmit} className="space-y-4">
+                  <KycDocumentOcrSection
+                    docs={['gst']}
+                    disabled={lookupLoading || loading}
+                    onGstResult={(result) => {
+                      setFormData((prev) => ({
+                        ...prev,
+                        ...applyGstOcrToSimpleEntity(
+                          {
+                            name: prev.name,
+                            gst_number: prev.gst_number,
+                            address: prev.address,
+                            contact_persons: prev.contact_persons,
+                          },
+                          result,
+                        ),
+                      }));
+                      if (errors.gst_number) {
+                        setErrors((prev) => {
+                          const next = { ...prev };
+                          delete next.gst_number;
+                          return next;
+                        });
+                      }
+                    }}
+                    onSuccess={(title, message) => {
+                      setAlertType('success');
+                      setAlertTitle(title);
+                      setAlertMessage(message);
+                      setAlertOpen(true);
+                    }}
+                    onError={(title, message) => {
+                      setAlertType('error');
+                      setAlertTitle(title);
+                      setAlertMessage(message);
+                      setAlertOpen(true);
+                    }}
+                  />
+
                   {/* GST Number */}
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">GST Number</label>

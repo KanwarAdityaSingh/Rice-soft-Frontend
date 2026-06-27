@@ -12,9 +12,11 @@ import { formatPhoneDisplay } from '../../utils/validation'
 import type { Salesman } from '../../types/entities'
 
 export default function SalesmenPage() {
-  const { salesmen, loading, deleteSalesman, refetch } = useSalesmen()
+  const [statusFilter, setStatusFilter] = useState<string | undefined>('active')
+  const { salesmen, loading, deleteSalesman, refetch } = useSalesmen({
+    includeInactive: statusFilter !== 'active',
+  })
   const [searchQuery, setSearchQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string | undefined>()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)

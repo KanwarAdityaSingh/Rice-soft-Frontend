@@ -1,27 +1,29 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { X, Plus, RefreshCw, Check, Loader2, Download, FileText, Mail, MessageCircle } from 'lucide-react';
 import { useSaudas } from '../../../hooks/useSaudas';
 import { saudasAPI } from '../../../services/saudas.api';
 import { useVendors } from '../../../hooks/useVendors';
 import { useBrokers } from '../../../hooks/useBrokers';
-import { riceCodesAPI } from '../../../services/riceCodes.api';
+import { riceCodesAPI, type CreateRiceCodeRequest } from '../../../services/riceCodes.api';
+import { riceLengthsAPI } from '../../../services/riceLengths.api';
+import { RiceCodeFormModal } from '../../admin/rice-codes/RiceCodeFormModal';
 import { vendorsAPI } from '../../../services/vendors.api';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
-import { DateInputWithSteppers } from '../../shared/DateInputWithSteppers';
+import { DateInputWithSteppers, toIsoDateString } from '../../shared/DateInputWithSteppers';
 import { NotificationModal } from '../../shared/NotificationModal';
+import { isAdmin } from '../../../utils/permissions';
 import type {
   CreateSaudaRequest,
   UpdateSaudaRequest,
   RiceCode,
+  RiceLengthRecord,
   RiceType,
-  RiceLength,
   CashDiscountType,
   BrokerCommissionType,
 } from '../../../types/entities';
-import { RICE_LENGTH_VALUES } from '../../../constants/rice-lengths';
 
 // Default recipient type
 interface DefaultRecipient {
@@ -49,7 +51,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
   const isEditMode = !!saudaId;
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
-  const [riceLengths, setRiceLengths] = useState<RiceType[]>([]);
+  const [riceLengths, setRiceLengths] = useState<RiceLengthRecord[]>([]);
   const [loadingRiceCodes, setLoadingRiceCodes] = useState(false);
   const [loadingRiceTypes, setLoadingRiceTypes] = useState(false);
   const [loadingRiceLengths, setLoadingRiceLengths] = useState(false);
@@ -57,11 +59,13 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
   const [brokerCommissionUnit, setBrokerCommissionUnit] = useState<'kg' | 'quintal' | 'ton'>('kg');
   const [defaultRecipient, setDefaultRecipient] = useState<DefaultRecipient | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+  /** Original sauda_date when editing — non-admins may keep an existing backdate but not pick a new one. */
+  const loadedSaudaDateRef = useRef<string | null>(null);
   const [formData, setFormData] = useState<CreateSaudaRequest>({
     sauda_type: 'exgodown',
     rice_code_id: null,
     rice_type: null,
-    rice_length: null,
+    rice_length_id: null,
     rate: 0,
     purchaser_id: '',
     broker_id: null,
@@ -93,6 +97,38 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationInitialTab, setNotificationInitialTab] = useState<'email' | 'whatsapp'>('email');
   const [createdSaudaId, setCreatedSaudaId] = useState<string | null>(null);
+  const [riceCodeFormOpen, setRiceCodeFormOpen] = useState(false);
+
+  const todayIso = useMemo(() => toIsoDateString(new Date()), [open]);
+
+  const saudaDateMin = useMemo((): string | undefined => {
+    if (isAdmin()) return undefined;
+    const loaded = loadedSaudaDateRef.current;
+    if (isEditMode && loaded && loaded < todayIso) {
+      return loaded;
+    }
+    return todayIso;
+  }, [isEditMode, todayIso, formData.sauda_date]);
+  const refetchRiceCodes = useCallback(async () => {
+    setLoadingRiceCodes(true);
+    try {
+      const data = await riceCodesAPI.getAllRiceCodes();
+      setRiceCodes(data);
+    } catch (error) {
+      console.error('Failed to fetch rice codes:', error);
+    } finally {
+      setLoadingRiceCodes(false);
+    }
+  }, []);
+
+  const handleCreateRiceCode = async (data: CreateRiceCodeRequest) => {
+    const created = await riceCodesAPI.createRiceCode(data);
+    setRiceCodes((prev) =>
+      [...prev, created].sort((a, b) => a.rice_code_name.localeCompare(b.rice_code_name)),
+    );
+    setFormData((prev) => ({ ...prev, rice_code_id: created.rice_code_id }));
+    return created;
+  };
 
   useEffect(() => {
     if (open && saudaId && isEditMode) {
@@ -103,17 +139,6 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
   }, [open, saudaId]);
 
   useEffect(() => {
-    const fetchRiceCodes = async () => {
-      setLoadingRiceCodes(true);
-      try {
-        const data = await riceCodesAPI.getAllRiceCodes();
-        setRiceCodes(data);
-      } catch (error) {
-        console.error('Failed to fetch rice codes:', error);
-      } finally {
-        setLoadingRiceCodes(false);
-      }
-    };
     const fetchDefaultRecipient = async () => {
       try {
         const recipient = await vendorsAPI.getDefaultRecipient();
@@ -123,10 +148,10 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
       }
     };
     if (open) {
-      fetchRiceCodes();
+      void refetchRiceCodes();
       fetchDefaultRecipient();
     }
-  }, [open]);
+  }, [open, refetchRiceCodes]);
 
   useEffect(() => {
     const fetchRiceTypes = async () => {
@@ -149,7 +174,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
     const fetchRiceLengths = async () => {
       setLoadingRiceLengths(true);
       try {
-        const data = await riceCodesAPI.getRiceLengths();
+        const data = await riceLengthsAPI.getAllRiceLengths();
         setRiceLengths(data);
       } catch (error) {
         console.error('Failed to fetch rice lengths:', error);
@@ -167,11 +192,12 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
     setLoadingSauda(true);
     try {
       const sauda = await saudasAPI.getSaudaById(saudaId);
+      loadedSaudaDateRef.current = sauda.sauda_date || null;
       setFormData({
         sauda_type: sauda.sauda_type,
         rice_code_id: sauda.rice_code_id || null,
         rice_type: sauda.rice_type || null,
-        rice_length: sauda.rice_length ?? null,
+        rice_length_id: sauda.rice_length_id ?? null,
         rate: sauda.rate,
         purchaser_id: sauda.purchaser_id,
         broker_id: sauda.broker_id || null,
@@ -205,11 +231,12 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
   };
 
   const resetForm = () => {
+    loadedSaudaDateRef.current = null;
     setFormData({
       sauda_type: 'exgodown',
       rice_code_id: null,
       rice_type: null,
-      rice_length: null,
+      rice_length_id: null,
       rate: 0,
       purchaser_id: '',
       broker_id: null,
@@ -290,8 +317,20 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
     if (formData.rice_type && !allowedRiceTypes.includes(formData.rice_type)) {
       newErrors.rice_type = 'Invalid rice type';
     }
-    if (formData.rice_length != null && !RICE_LENGTH_VALUES.includes(formData.rice_length)) {
-      newErrors.rice_length = 'Invalid rice length';
+    if (
+      formData.rice_length_id != null &&
+      !riceLengths.some((row) => row.id === formData.rice_length_id)
+    ) {
+      newErrors.rice_length_id = 'Invalid rice length';
+    }
+
+    if (!isAdmin() && formData.sauda_date && formData.sauda_date < todayIso) {
+      const loaded = loadedSaudaDateRef.current;
+      const keepingExistingBackdate =
+        isEditMode && loaded && loaded < todayIso && formData.sauda_date === loaded;
+      if (!keepingExistingBackdate) {
+        newErrors.sauda_date = 'Only administrators can set a sauda date in the past';
+      }
     }
 
     // Validate estimated_delivery_time is integer if provided (API contract: integer, minimum 0)
@@ -410,7 +449,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
       const cleanedData: CreateSaudaRequest | UpdateSaudaRequest = {
         sauda_type: formData.sauda_type,
         rice_type: formData.rice_type || null,
-        rice_length: formData.rice_length ?? null,
+        rice_length_id: formData.rice_length_id ?? null,
         rice_code_id: formData.rice_code_id || null,
         rate: parseFloat(((formData.rate || 0) / f).toFixed(2)), // API contract: precision 2 decimal places
         purchaser_id: formData.purchaser_id,
@@ -486,10 +525,10 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
     return type ? type.label : riceType;
   };
 
-  const getRiceLengthName = (riceLength: RiceLength | string | null) => {
-    if (!riceLength) return '-';
-    const row = riceLengths.find((r) => r.value === riceLength);
-    return row ? row.label : riceLength;
+  const getRiceLengthName = (riceLengthId: string | null | undefined) => {
+    if (!riceLengthId) return '-';
+    const row = riceLengths.find((r) => r.id === riceLengthId);
+    return row ? row.name : '-';
   };
 
   const getVendorName = (vendorId: string) => {
@@ -696,24 +735,46 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
 
                       <div>
                         <label className="block text-xs font-medium mb-0.5">Rice Code</label>
-                        {loadingRiceCodes ? (
-                          <div className="w-full rounded-md border border-border bg-background/60 px-2 py-1.5 text-sm flex items-center gap-2">
-                            <LoadingSpinner size="sm" />
-                            <span className="text-muted-foreground text-xs">Loading...</span>
-                          </div>
-                        ) : (
-                          <CustomSelect
-                            value={formData.rice_code_id || null}
-                            onChange={(value) => setFormData({ ...formData, rice_code_id: value || null })}
-                            options={riceCodes.map((riceCode) => ({
-                              value: riceCode.rice_code_id,
-                              label: riceCode.rice_code_name
-                            }))}
-                            placeholder="Select"
-                            allowClear={true}
-                            clearLabel="None"
-                          />
-                        )}
+                        <div className="flex gap-1">
+                          {loadingRiceCodes ? (
+                            <div className="flex-1 min-w-0 rounded-md border border-border bg-background/60 px-2 py-1.5 text-sm flex items-center gap-2">
+                              <LoadingSpinner size="sm" />
+                              <span className="text-muted-foreground text-xs">Loading...</span>
+                            </div>
+                          ) : (
+                            <select
+                              value={formData.rice_code_id || ''}
+                              onChange={(e) =>
+                                setFormData({ ...formData, rice_code_id: e.target.value || null })
+                              }
+                              className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md bg-background truncate"
+                            >
+                              <option value="">Select</option>
+                              {riceCodes.map((riceCode) => (
+                                <option key={riceCode.rice_code_id} value={riceCode.rice_code_id}>
+                                  {riceCode.rice_code_name}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => void refetchRiceCodes()}
+                            disabled={loadingRiceCodes}
+                            className="flex-shrink-0 p-1.5 border border-border rounded-md bg-background hover:bg-muted transition-colors disabled:opacity-50"
+                            title="Refresh"
+                          >
+                            <RefreshCw className={`h-3.5 w-3.5 ${loadingRiceCodes ? 'animate-spin' : ''}`} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRiceCodeFormOpen(true)}
+                            className="flex-shrink-0 p-1.5 border border-border rounded-md bg-background hover:bg-muted transition-colors"
+                            title="Add new rice code"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </div>
 
                       <div>
@@ -749,18 +810,18 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                             <span className="text-muted-foreground text-xs">Loading...</span>
                           </div>
                         ) : (
-                          <div className={errors.rice_length ? 'border border-red-500 rounded-md' : ''}>
+                          <div className={errors.rice_length_id ? 'border border-red-500 rounded-md' : ''}>
                             <CustomSelect
-                              value={formData.rice_length ?? null}
+                              value={formData.rice_length_id ?? null}
                               onChange={(value) =>
                                 setFormData({
                                   ...formData,
-                                  rice_length: (value as RiceLength | null) || null,
+                                  rice_length_id: value || null,
                                 })
                               }
                               options={riceLengths.map((r) => ({
-                                value: r.value,
-                                label: r.label,
+                                value: r.id,
+                                label: r.name,
                               }))}
                               placeholder="Optional"
                               allowClear={true}
@@ -768,8 +829,8 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                             />
                           </div>
                         )}
-                        {errors.rice_length && (
-                          <p className="text-xs text-red-500 mt-0.5">{errors.rice_length}</p>
+                        {errors.rice_length_id && (
+                          <p className="text-xs text-red-500 mt-0.5">{errors.rice_length_id}</p>
                         )}
                       </div>
                     </div>
@@ -779,8 +840,27 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                         className="w-full"
                         inputClassName="py-1.5 text-sm"
                         value={formData.sauda_date || ''}
-                        onChange={(v) => setFormData({ ...formData, sauda_date: v || null })}
+                        min={saudaDateMin}
+                        invalid={Boolean(errors.sauda_date)}
+                        onChange={(v) => {
+                          const next = v || null;
+                          if (!isAdmin() && next && saudaDateMin && next < saudaDateMin) {
+                            return;
+                          }
+                          setFormData({ ...formData, sauda_date: next });
+                          if (errors.sauda_date) {
+                            setErrors((prev) => ({ ...prev, sauda_date: '' }));
+                          }
+                        }}
                       />
+                      {!isAdmin() && (
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          Past dates can only be set by an administrator.
+                        </p>
+                      )}
+                      {errors.sauda_date && (
+                        <p className="text-xs text-red-500 mt-0.5">{errors.sauda_date}</p>
+                      )}
                     </div>
                   </div>
 
@@ -1312,7 +1392,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Rice Length:</span>
-                            <span className="font-semibold">{getRiceLengthName(formData.rice_length ?? null)}</span>
+                            <span className="font-semibold">{getRiceLengthName(formData.rice_length_id)}</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Date:</span>
@@ -1419,6 +1499,13 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
         type={alertType}
         title={alertTitle}
         message={alertMessage}
+      />
+
+      <RiceCodeFormModal
+        open={riceCodeFormOpen}
+        onOpenChange={setRiceCodeFormOpen}
+        onCreate={handleCreateRiceCode}
+        nested
       />
 
       <NotificationModal

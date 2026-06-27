@@ -38,6 +38,10 @@ export function vendorPersist(vendorId?: string | null): KycPersistContext | und
   return vendorId ? { entity_type: 'vendor', entity_id: vendorId } : undefined;
 }
 
+export function salesPartyPersist(salesPartyId?: string | null): KycPersistContext | undefined {
+  return salesPartyId ? { entity_type: 'sales_party', entity_id: salesPartyId } : undefined;
+}
+
 export function brokerPersist(brokerId?: string | null): KycPersistContext | undefined {
   return brokerId ? { entity_type: 'broker', entity_id: brokerId } : undefined;
 }
@@ -283,18 +287,24 @@ export function buildEntitySavePayload<
     verify_bank?: boolean;
     kyc_verification_details?: EntityKycVerificationDetails;
     bank_details?: BankVerifyInput | null;
+    is_active?: boolean;
   },
 >(
   base: T,
   options: {
     kycVerificationDetails: EntityKycVerificationDetails;
-    bankVerifiedInSession: boolean;
-    /** Server-side bank verification timestamp — skip re-verify when unchanged. */
+    /** Server-side bank verification timestamp — skip verify_bank when already persisted. */
     bankDetailsVerifiedAt?: string | null;
+    /** When true (KYC identity verified), save as active. */
+    identityVerified?: boolean;
   },
 ): T {
-  const { kycVerificationDetails, bankVerifiedInSession, bankDetailsVerifiedAt } = options;
+  const { kycVerificationDetails, bankDetailsVerifiedAt, identityVerified } = options;
   const payload: T = { ...base };
+
+  if (identityVerified) {
+    payload.is_active = true;
+  }
 
   if (hasKycSnapshots(kycVerificationDetails)) {
     payload.kyc_verification_details = kycVerificationDetails;
@@ -302,11 +312,11 @@ export function buildEntitySavePayload<
 
   const bankReady = shouldVerifyBankFields(payload.bank_details);
   const hasBankSnapshot = Boolean(kycVerificationDetails.bank?.verified_at);
-  const alreadyVerified =
-    Boolean(bankDetailsVerifiedAt) || (bankVerifiedInSession && hasBankSnapshot);
+  /** Only the persisted entity timestamp skips verify_bank; session snapshots still need save. */
+  const alreadyVerifiedOnServer = Boolean(bankDetailsVerifiedAt);
 
   if (bankReady) {
-    if (alreadyVerified) {
+    if (alreadyVerifiedOnServer) {
       delete payload.verify_bank;
     } else if (hasBankSnapshot) {
       payload.verify_bank = true;
@@ -328,4 +338,23 @@ export function clearBankKycSnapshot(
   const next = { ...details };
   delete next.bank;
   return next;
+}
+
+/** Server timestamp on the entity, or session bank snapshot time for UI. */
+export function resolveEntityBankVerifiedAt(
+  bankDetailsVerifiedAt?: string | null,
+  kyc?: EntityKycVerificationDetails | null,
+): string | null {
+  const server = bankDetailsVerifiedAt?.trim();
+  if (server) return server;
+  const session = kyc?.bank?.verified_at?.trim();
+  return session || null;
+}
+
+export function isEntityBankVerified(
+  bankDetailsVerifiedAt?: string | null,
+  kyc?: EntityKycVerificationDetails | null,
+  bankVerifiedInSession?: boolean,
+): boolean {
+  return Boolean(resolveEntityBankVerifiedAt(bankDetailsVerifiedAt, kyc) || bankVerifiedInSession);
 }

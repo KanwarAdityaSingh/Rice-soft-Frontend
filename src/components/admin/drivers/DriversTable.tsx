@@ -6,22 +6,31 @@ import { EmptyState } from '../shared/EmptyState';
 import { ActionButtons } from '../shared/ActionButtons';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
-import { IdCard, Shield } from 'lucide-react';
+import { IdCard, Shield, AlertTriangle } from 'lucide-react';
 import { useDrivers } from '../../../hooks/useDrivers';
 import { driversAPI } from '../../../services/drivers.api';
 import { DriverFormModal } from './DriverFormModal';
 import type { Driver } from '../../../types/entities';
 import { formatPhoneDisplay } from '../../../utils/validation';
-import { formatDriverVerifiedAt } from '../../../utils/driverVerification';
-import { driverProfileImageSrc } from '../../../utils/driverProfile';
+import {
+  formatDriverVerifiedAt,
+  getDriverTransportDoeWarning,
+  hasDriverTransportDoePresent,
+} from '../../../utils/driverVerification';
+import { driverProfileImageSrc, formatDriverExpiryDate, resolveDriverCityName, resolveDriverLicenseExpiry, resolveDriverStateName, resolveDriverTransportLicenseExpiry } from '../../../utils/driverProfile';
 import { DriverVehicleClassBadges } from './DriverVehicleClassBadges';
 
 export function DriversTable() {
   const [verificationFilter, setVerificationFilter] = useState<string | undefined>();
+  const [statusFilter, setStatusFilter] = useState<string | undefined>('active');
+  const [transportDoeFilter, setTransportDoeFilter] = useState<string | undefined>();
   const isVerifiedParam =
     verificationFilter === 'verified' ? true : verificationFilter === 'unverified' ? false : undefined;
 
-  const { drivers, loading, refetch } = useDrivers({ isVerified: isVerifiedParam });
+  const { drivers, loading, refetch } = useDrivers({
+    includeInactive: statusFilter !== 'active',
+    isVerified: isVerifiedParam,
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
@@ -41,11 +50,25 @@ export function DriversTable() {
         d.license_number.toLowerCase().includes(q) ||
         d.phone.includes(searchQuery.replace(/\D/g, '')) ||
         formatPhoneDisplay(d.phone).includes(searchQuery) ||
-        (d.name?.toLowerCase().includes(q) ?? false);
+        (d.name?.toLowerCase().includes(q) ?? false) ||
+        (d.father_or_husband_name?.toLowerCase().includes(q) ?? false);
 
-      return matchesSearch;
+      const matchesStatus = statusFilter
+        ? statusFilter === 'active'
+          ? d.is_active
+          : !d.is_active
+        : true;
+
+      const transportDoePresent = hasDriverTransportDoePresent(d);
+      const matchesTransportDoe = transportDoeFilter
+        ? transportDoeFilter === 'present'
+          ? transportDoePresent
+          : !transportDoePresent
+        : true;
+
+      return matchesSearch && matchesStatus && matchesTransportDoe;
     });
-  }, [drivers, searchQuery]);
+  }, [drivers, searchQuery, statusFilter, transportDoeFilter]);
 
   const handleDelete = async () => {
     if (!selectedDriver) return;
@@ -86,6 +109,24 @@ export function DriversTable() {
             value={verificationFilter}
             onChange={setVerificationFilter}
           />
+          <FilterDropdown
+            label="Status"
+            options={[
+              { label: 'Active', value: 'active' },
+              { label: 'Inactive', value: 'inactive' },
+            ]}
+            value={statusFilter}
+            onChange={setStatusFilter}
+          />
+          <FilterDropdown
+            label="Transport DOE"
+            options={[
+              { label: 'Present', value: 'present' },
+              { label: 'Not present', value: 'not_present' },
+            ]}
+            value={transportDoeFilter}
+            onChange={setTransportDoeFilter}
+          />
           <button
             type="button"
             onClick={() => setCreateOpen(true)}
@@ -113,19 +154,28 @@ export function DriversTable() {
               <tr className="border-b border-border">
                 <th className="text-left py-3 px-4 text-sm font-semibold">License</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold">Name</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold">Father&apos;s name</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold">Expires</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold">Transport DOE</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold">City</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold">State</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold">Phone</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold">Verified</th>
                 <th className="text-right py-3 px-4 text-sm font-semibold">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((driver) => (
+              {filtered.map((driver) => {
+                const transportDoeWarning = getDriverTransportDoeWarning(driver);
+                const city = resolveDriverCityName(driver);
+                const state = resolveDriverStateName(driver);
+                return (
                 <tr
                   key={driver.id}
                   className="border-b border-border/60 hover:bg-muted/30 transition-colors"
                 >
                   <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-medium font-mono">{driver.license_number}</span>
                       {driver.is_verified && (
                         <span title="Verified" className="inline-flex">
@@ -152,6 +202,33 @@ export function DriversTable() {
                       </div>
                     </div>
                   </td>
+                  <td className="py-3 px-4 text-sm max-w-[10rem]">
+                    <span className="line-clamp-2 break-words">
+                      {driver.father_or_husband_name?.trim() || '—'}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 text-sm whitespace-nowrap">
+                    {formatDriverExpiryDate(resolveDriverLicenseExpiry(driver))}
+                  </td>
+                  <td className="py-3 px-4 text-sm max-w-[11rem]">
+                    {transportDoeWarning ? (
+                      <span
+                        className="inline-flex items-start gap-1 rounded-md px-2 py-0.5 text-xs font-medium bg-amber-500/10 text-amber-900 dark:text-amber-200 border border-amber-500/25"
+                        title={transportDoeWarning}
+                      >
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" aria-hidden />
+                        <span className="line-clamp-2 break-words">{transportDoeWarning}</span>
+                      </span>
+                    ) : (
+                      formatDriverExpiryDate(resolveDriverTransportLicenseExpiry(driver))
+                    )}
+                  </td>
+                  <td className="py-3 px-4 text-sm max-w-[10rem]">
+                    {city ? <span className="line-clamp-2 break-words">{city}</span> : null}
+                  </td>
+                  <td className="py-3 px-4 text-sm max-w-[8rem]">
+                    {state ? <span className="line-clamp-2 break-words">{state}</span> : null}
+                  </td>
                   <td className="py-3 px-4 text-sm">{formatPhoneDisplay(driver.phone)}</td>
                   <td className="py-3 px-4 text-sm text-muted-foreground">
                     {driver.is_verified ? formatDriverVerifiedAt(driver.verified_at) : '—'}
@@ -163,22 +240,14 @@ export function DriversTable() {
                         setEditModalOpen(true);
                       }}
                       onDelete={() => {
-                        if (driver.is_verified) {
-                          setAlertType('warning');
-                          setAlertTitle('Cannot delete driver');
-                          setAlertMessage(
-                            `Driver with licence "${driver.license_number}" is verified and cannot be deleted.`,
-                          );
-                          setAlertOpen(true);
-                          return;
-                        }
                         setSelectedDriver(driver);
                         setDeleteDialogOpen(true);
                       }}
                     />
                   </td>
                 </tr>
-              ))}
+              );
+              })}
             </tbody>
           </table>
         </div>
@@ -210,19 +279,7 @@ export function DriversTable() {
         title="Delete driver"
         description={`Delete driver with licence “${selectedDriver?.license_number}”? This cannot be undone.`}
         confirmText={deleting ? 'Deleting…' : 'Delete'}
-        onConfirm={() => {
-          if (selectedDriver?.is_verified) {
-            setAlertType('warning');
-            setAlertTitle('Cannot delete driver');
-            setAlertMessage(
-              `Driver with licence "${selectedDriver.license_number}" is verified and cannot be deleted.`,
-            );
-            setAlertOpen(true);
-            setDeleteDialogOpen(false);
-            return;
-          }
-          void handleDelete();
-        }}
+        onConfirm={() => void handleDelete()}
         variant="danger"
       />
 

@@ -16,10 +16,12 @@ interface UsersTableProps {
 }
 
 export function UsersTable({ onEditUser }: UsersTableProps) {
-  const { users, loading, deleteUser, toggleUserStatus } = useUsers();
+  const [statusFilter, setStatusFilter] = useState<string | undefined>('active');
+  const { users, loading, deleteUser, toggleUserStatus } = useUsers({
+    includeInactive: statusFilter !== 'active',
+  });
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [typeFilter, setTypeFilter] = useState<string | undefined>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<{ id: string; full_name?: string; username?: string } | null>(null);

@@ -15,7 +15,10 @@ interface BrokersTableProps {
 }
 
 export function BrokersTable({ onEditBroker }: BrokersTableProps = {}) {
-  const { brokers, loading, deleteBroker } = useBrokers();
+  const [statusFilter, setStatusFilter] = useState<string | undefined>('active');
+  const { brokers, loading, deleteBroker } = useBrokers({
+    includeInactive: statusFilter !== 'active',
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string | undefined>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -32,8 +35,13 @@ export function BrokersTable({ onEditBroker }: BrokersTableProps = {}) {
       (primaryContact?.phones?.[0]?.includes(q) || false);
     
     const matchesType = typeFilter ? broker.type === typeFilter : true;
+    const matchesStatus = statusFilter
+      ? statusFilter === 'active'
+        ? broker.is_active
+        : !broker.is_active
+      : true;
 
-    return matchesSearch && matchesType;
+    return matchesSearch && matchesType && matchesStatus;
   });
 
   return (
@@ -53,6 +61,15 @@ export function BrokersTable({ onEditBroker }: BrokersTableProps = {}) {
             ]}
             value={typeFilter}
             onChange={setTypeFilter}
+          />
+          <FilterDropdown
+            label="Status"
+            options={[
+              { label: 'Active', value: 'active' },
+              { label: 'Inactive', value: 'inactive' },
+            ]}
+            value={statusFilter}
+            onChange={setStatusFilter}
           />
         </div>
       </div>

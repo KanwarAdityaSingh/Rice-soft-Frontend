@@ -72,12 +72,15 @@ export function CustomSelect({
 
   const displayOptions = allowClear ? [
     { value: '__clear__', label: clearLabel },
-    ...options
-  ] : options;
+    ...options.filter((o) => o.value != null && o.value !== ''),
+  ] : options.filter((o) => o.value != null && o.value !== '');
+
+  const hasValidValue =
+    value != null && value !== '' && displayOptions.some((o) => o.value === value);
 
   return (
     <Select.Root 
-      value={value || undefined} 
+      value={hasValidValue ? value! : undefined} 
       onValueChange={handleValueChange} 
       disabled={disabled}
       onOpenChange={setIsOpen}

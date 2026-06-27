@@ -1,8 +1,25 @@
-import { apiService } from './api';
-import type { Kaanta, CreateKaantaRequest, UpdateKaantaRequest } from '../types/entities';
+import { API_BASE_URL, apiService } from './api';
+import { authenticatedFetchEnvelopeData } from './authenticatedFetch';
+import type {
+  Kaanta,
+  CreateKaantaRequest,
+  UpdateKaantaRequest,
+  KaantaWeightExtraction,
+} from '../types/entities';
+
+async function uploadKaantaFile(id: string, endpoint: string, file: File): Promise<{ url: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return authenticatedFetchEnvelopeData<{ url: string }>(
+    `${API_BASE_URL}/kaantas/${id}/${endpoint}`,
+    {
+      method: 'POST',
+      body: formData,
+    }
+  );
+}
 
 export const kaantasAPI = {
-  // Get all kaantas with optional filters
   getAllKaantas: (sauda_id?: string, inward_slip_pass_id?: string, godown_id?: string) => {
     let url = '/kaantas';
     const params = new URLSearchParams();
@@ -13,64 +30,43 @@ export const kaantasAPI = {
     return apiService.get<Kaanta[]>(url);
   },
 
-  // Get kaanta by ID
   getKaantaById: (id: string) => {
     return apiService.get<Kaanta>(`/kaantas/${id}`);
   },
 
-  // Create kaanta (auto-creates lot in backend)
+  extractWeights: async (file: File, inwardSlipPassId?: string): Promise<KaantaWeightExtraction> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (inwardSlipPassId) {
+      formData.append('inward_slip_pass_id', inwardSlipPassId);
+    }
+    return authenticatedFetchEnvelopeData<KaantaWeightExtraction>(
+      `${API_BASE_URL}/kaantas/extract-weights`,
+      {
+        method: 'POST',
+        body: formData,
+      }
+    );
+  },
+
   createKaanta: (data: CreateKaantaRequest) => {
     return apiService.post<Kaanta>('/kaantas', data);
   },
 
-  // Update kaanta (backend syncs linked inward slip lot, lot_inventory, bags_inventory)
   updateKaanta: (id: string, data: UpdateKaantaRequest) => {
     return apiService.put<Kaanta>(`/kaantas/${id}`, data);
   },
 
-  // Delete kaanta (cascade deletes associated lot)
   deleteKaanta: (id: string) => {
     return apiService.delete<{ success: boolean; message: string }>(`/kaantas/${id}`);
   },
 
-  // Upload khaali kaanta parchi (empty kaanta receipt)
-  uploadKhaaliKaantaParchi: async (id: string, file: File) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    const token = localStorage.getItem('auth:token');
-    const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3000/api';
-    const response = await fetch(`${API_BASE_URL}/kaantas/${id}/upload-khaali-kaanta-parchi`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: formData,
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.message || 'Upload failed');
-    }
-    return data.data;
-  },
+  uploadKhaaliKaantaParchi: (id: string, file: File) =>
+    uploadKaantaFile(id, 'upload-khaali-kaanta-parchi', file),
 
-  // Upload bhara kaanta parchi (filled kaanta receipt)
-  uploadBharaKaantaParchi: async (id: string, file: File) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    const token = localStorage.getItem('auth:token');
-    const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3000/api';
-    const response = await fetch(`${API_BASE_URL}/kaantas/${id}/upload-bhara-kaanta-parchi`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: formData,
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.message || 'Upload failed');
-    }
-    return data.data;
-  },
+  uploadBharaKaantaParchi: (id: string, file: File) =>
+    uploadKaantaFile(id, 'upload-bhara-kaanta-parchi', file),
+
+  uploadCombinedKaantaParchi: (id: string, file: File) =>
+    uploadKaantaFile(id, 'upload-combined-parchi', file),
 };
-

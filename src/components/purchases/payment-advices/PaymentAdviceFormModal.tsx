@@ -12,7 +12,9 @@ import { useInwardSlipPasses } from '../../../hooks/useInwardSlipPasses';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { transportersAPI } from '../../../services/transporters.api';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
+import { riceLengthsAPI } from '../../../services/riceLengths.api';
 import { getRiceTypeLabel, getRiceLengthLabel } from '../../../utils/riceType';
+import { toRiceLengthLabelOptions } from '../../../utils/riceLengthModule';
 import {
   getCompletionStatus,
   formatCompletionPercentage,
@@ -133,13 +135,13 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
         const [codes, types, lengths, trans, recipient] = await Promise.all([
           riceCodesAPI.getAllRiceCodes(),
           riceCodesAPI.getRiceTypes(),
-          riceCodesAPI.getRiceLengths(),
+          riceLengthsAPI.getAllRiceLengths(),
           transportersAPI.getAllTransporters(),
           vendorsAPI.getDefaultRecipient()
         ]);
         setRiceCodes(codes);
         setRiceTypes(types);
-        setRiceLengths(lengths);
+        setRiceLengths(toRiceLengthLabelOptions(lengths));
         setTransporters(trans);
         setDefaultRecipient(recipient);
       } catch (error) {

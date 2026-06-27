@@ -14,6 +14,10 @@ import {
 import { mapRcFullToVehicleForm } from '../../../utils/rcFullMapping';
 import { getUserFacingApiErrorMessage } from '../../../utils/errorHandler';
 import { getDirectoryTransportersPagePath } from '../../../utils/appRoutes';
+import { kycAPI } from '../../../services/kyc.api';
+import { mapRcOcrToVehicleForm } from '../../../utils/documentOcrFields';
+import { DOCUMENT_OCR_FILE_HINT } from '../../../utils/documentOcr';
+import { DocumentOcrUpload } from '../../shared/DocumentOcrUpload';
 import {
   getVehicleNumberValidationError,
   sanitizeVehicleNumberInput,
@@ -53,6 +57,7 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
   const [loading, setLoading] = useState(false);
   const [loadingVehicle, setLoadingVehicle] = useState(false);
   const [fetchingRc, setFetchingRc] = useState(false);
+  const [scanningRcOcr, setScanningRcOcr] = useState(false);
   const [verificationDetails, setVerificationDetails] = useState<VehicleVerificationDetails>({});
   const vehiclePersistContext = vehiclePersist(vehicleId);
   const [alertOpen, setAlertOpen] = useState(false);
@@ -218,6 +223,47 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
     }
   };
 
+  const handleRcOcrScan = async (file: File) => {
+    setScanningRcOcr(true);
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next.rc_fetch;
+      delete next.vehicle_number;
+      return next;
+    });
+
+    try {
+      const result = await kycAPI.ocrRc(file);
+      const mapped = mapRcOcrToVehicleForm(result);
+      if (!mapped?.vehicle_number) {
+        throw new Error('Could not extract registration number from RC');
+      }
+
+      setFormData((prev) => ({
+        ...prev,
+        ...mapped,
+        transporter_ids: prev.transporter_ids,
+        is_active: prev.is_active,
+      }));
+
+      setAlertType('success');
+      setAlertTitle('RC scanned');
+      setAlertMessage(
+        `${mapped.vehicle_number}${mapped.owner_name ? ` · ${mapped.owner_name}` : ''} — review prefilled fields, then Fetch RC for full validation.`,
+      );
+      setAlertOpen(true);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'RC scan failed';
+      setErrors((prev) => ({ ...prev, rc_fetch: message }));
+      setAlertType('error');
+      setAlertTitle('Scan failed');
+      setAlertMessage(message);
+      setAlertOpen(true);
+    } finally {
+      setScanningRcOcr(false);
+    }
+  };
+
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
     const vehicleNumberError = getVehicleNumberValidationError(formData.vehicle_number);
@@ -329,6 +375,16 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                 <div className="flex justify-center py-10"><LoadingSpinner /></div>
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-4">
+                  {!formData.is_verified && (
+                    <DocumentOcrUpload
+                      title="Scan vehicle RC (OCR)"
+                      hint={`Upload the RC document image or PDF. Prefills registration details — use Fetch RC for full validation. ${DOCUMENT_OCR_FILE_HINT}.`}
+                      scanning={scanningRcOcr}
+                      disabled={fetchingRc || loading}
+                      onScan={(file) => void handleRcOcrScan(file)}
+                    />
+                  )}
+
                   {/* Vehicle Number */}
                   <div>
                     <label className="block text-sm font-medium mb-1">

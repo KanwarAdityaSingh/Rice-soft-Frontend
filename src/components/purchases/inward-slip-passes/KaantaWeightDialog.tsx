@@ -1,7 +1,8 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState, useEffect } from 'react';
-import { X, Scale, Package, Check, Circle, Trash2, Pencil, Image as ImageIcon, Upload } from 'lucide-react';
+import { X, Scale, Package, Check, Circle, Trash2, Pencil, Image as ImageIcon, Upload, AlertTriangle } from 'lucide-react';
 import { kaantasAPI } from '../../../services/kaantas.api';
+import { CombinedKaantaSlipUpload } from './CombinedKaantaSlipUpload';
 import { saudasAPI } from '../../../services/saudas.api';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { AlertDialog } from '../../shared/AlertDialog';
@@ -20,7 +21,9 @@ import type {
   CreateKaantaRequest,
   Kaanta,
   UpdateKaantaRequest,
+  KaantaWeightExtraction,
 } from '../../../types/entities';
+import { weightToInput } from '../../../utils/kaantaExtraction';
 import { KAANTA_BAG_TYPE_OPTIONS, formatKaantaBagTypeLabel } from '../../../constants/bagAndPacketTypes';
 
 interface KaantaWeightDialogProps {
@@ -38,7 +41,10 @@ interface KaantaEntry {
   bag_weight: string;
   no_of_bags: string;
   bag_type: BagType;
+  ticket_number: string;
+  parchi_vehicle_number: string;
   isEnabled: boolean;
+  aiWeightsApplied?: boolean;
 }
 
 const KAANTA_OVERWEIGHT_TOLERANCE_KG = 1000;
@@ -61,6 +67,8 @@ function kaantaToEditDraft(kaanta: Kaanta): KaantaEntry {
     bag_weight: String(kaanta.bag_weight),
     no_of_bags: String(kaanta.no_of_bags),
     bag_type: kaanta.bag_type,
+    ticket_number: kaanta.ticket_number?.trim() ?? '',
+    parchi_vehicle_number: kaanta.parchi_vehicle_number?.trim() ?? '',
     isEnabled: true,
   };
 }
@@ -94,6 +102,11 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
   const [documentViewerOpen, setDocumentViewerOpen] = useState(false);
   const [viewerDocuments, setViewerDocuments] = useState<DocumentInfo[]>([]);
 
+  const [combinedSlipFile, setCombinedSlipFile] = useState<File | null>(null);
+  const [combinedSlipPreview, setCombinedSlipPreview] = useState<string | null>(null);
+  const [extractingSlip, setExtractingSlip] = useState(false);
+  const [extractionResult, setExtractionResult] = useState<KaantaWeightExtraction | null>(null);
+
   // Load data when dialog opens
   useEffect(() => {
     if (open && isp) {
@@ -107,8 +120,71 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
       setEditDraft(null);
       setEditErrors({});
       setUpdatingKaantaId(null);
+      clearCombinedSlip();
     }
   }, [open]);
+
+  const clearCombinedSlip = () => {
+    setCombinedSlipFile(null);
+    setExtractionResult(null);
+    setExtractingSlip(false);
+    setCombinedSlipPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setKaantaEntries((entries) =>
+      entries.map((entry) => ({ ...entry, aiWeightsApplied: false })),
+    );
+  };
+
+  const applyExtractionToEntries = (extracted: KaantaWeightExtraction) => {
+    setKaantaEntries((entries) =>
+      entries.map((entry) => {
+        if (!entry.isEnabled) return entry;
+        const next: KaantaEntry = {
+          ...entry,
+          full_truck_weight: weightToInput(extracted.full_truck_weight) || entry.full_truck_weight,
+          empty_truck_weight: weightToInput(extracted.empty_truck_weight) || entry.empty_truck_weight,
+          ticket_number: extracted.ticket_number?.trim() ?? entry.ticket_number,
+          parchi_vehicle_number: extracted.vehicle_number?.trim() ?? entry.parchi_vehicle_number,
+          aiWeightsApplied: Boolean(extracted.validation?.weights_extracted),
+        };
+        const fullWeight = parseFloat(next.full_truck_weight) || 0;
+        const emptyWeight = parseFloat(next.empty_truck_weight) || 0;
+        const kaantaWeight = Math.max(0, fullWeight - emptyWeight);
+        const bags = parseInt(next.no_of_bags, 10);
+        if (kaantaWeight > 0 && !Number.isNaN(bags) && bags > 0) {
+          const ceiled = ceilToNearestGreaterWholeKg(kaantaWeight / bags);
+          next.bag_weight = ceiled !== null ? String(ceiled) : next.bag_weight;
+        }
+        return next;
+      }),
+    );
+  };
+
+  const handleCombinedSlipSelected = async (file: File) => {
+    if (!isp) return;
+    setCombinedSlipFile(file);
+    setCombinedSlipPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+    setExtractingSlip(true);
+    setExtractionResult(null);
+    try {
+      const extracted = await kaantasAPI.extractWeights(file, isp.id);
+      setExtractionResult(extracted);
+      applyExtractionToEntries(extracted);
+    } catch (error: unknown) {
+      setAlertType('error');
+      setAlertTitle('Extraction failed');
+      setAlertMessage(error instanceof Error ? error.message : 'Could not read weights from slip');
+      setAlertOpen(true);
+      clearCombinedSlip();
+    } finally {
+      setExtractingSlip(false);
+    }
+  };
 
   const fetchData = async () => {
     if (!isp?.sauda_ids?.length) return;
@@ -140,12 +216,15 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
           bag_weight: '',
           no_of_bags: '',
           bag_type: 'pp' as BagType,
+          ticket_number: '',
+          parchi_vehicle_number: '',
           isEnabled: true,
         })));
       } else {
         setKaantaEntries([]);
       }
       setErrors({});
+      clearCombinedSlip();
     } catch (error) {
       console.error('Failed to fetch data:', error);
     } finally {
@@ -200,6 +279,13 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
   const updateEntry = (index: number, field: keyof KaantaEntry, value: string | boolean) => {
     const newEntries = [...kaantaEntries];
     newEntries[index] = { ...newEntries[index], [field]: value };
+
+    if (
+      typeof value === 'string' &&
+      (field === 'full_truck_weight' || field === 'empty_truck_weight')
+    ) {
+      newEntries[index].aiWeightsApplied = false;
+    }
 
     // Auto bag weight from net ÷ manual bag count: ceil to nearest greater whole kg.
     if (
@@ -321,7 +407,8 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
 
     setLoading(true);
     try {
-      const promises = filledEntries.map(entry => {
+      const createdKaantas: Kaanta[] = [];
+      for (const entry of filledEntries) {
         const kaantaData: CreateKaantaRequest = {
           sauda_id: entry.sauda_id,
           inward_slip_pass_id: isp.id,
@@ -329,17 +416,34 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
           empty_truck_weight: parseFloat(entry.empty_truck_weight),
           said_sent_weight: parseFloat(entry.said_sent_weight),
           bag_weight: parseFloat(entry.bag_weight),
-          no_of_bags: parseInt(entry.no_of_bags),
+          no_of_bags: parseInt(entry.no_of_bags, 10),
           bag_type: entry.bag_type,
         };
-        return kaantasAPI.createKaanta(kaantaData);
-      });
+        if (entry.ticket_number.trim()) {
+          kaantaData.ticket_number = entry.ticket_number.trim();
+        }
+        if (entry.parchi_vehicle_number.trim()) {
+          kaantaData.parchi_vehicle_number = entry.parchi_vehicle_number.trim();
+        }
+        const created = await kaantasAPI.createKaanta(kaantaData);
+        createdKaantas.push(created);
+        if (combinedSlipFile) {
+          try {
+            await kaantasAPI.uploadCombinedKaantaParchi(created.id, combinedSlipFile);
+          } catch {
+            // Kaanta saved; combined parchi can be retried from the record
+          }
+        }
+      }
 
-      await Promise.all(promises);
-      
-      setAlertType('success');
+      const mismatchCount = createdKaantas.filter((k) => k.vehicle_number_mismatch).length;
+      setAlertType(mismatchCount > 0 || extractionResult?.needs_review ? 'warning' : 'success');
       setAlertTitle('Success');
-      setAlertMessage(`${filledEntries.length} Kaanta(s) created successfully! Lots have been auto-created.`);
+      setAlertMessage(
+        mismatchCount > 0
+          ? `${createdKaantas.length} kaanta(s) created. ${mismatchCount} with vehicle mismatch — please verify.`
+          : `${createdKaantas.length} Kaanta(s) created successfully! Lots have been auto-created.`,
+      );
       setAlertOpen(true);
       
       // Refresh data to show newly created kaantas and updated sauda completion status
@@ -517,14 +621,20 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
     }
   };
 
-  const handleImageUpload = async (kaantaId: string, imageType: 'khaali' | 'bhara', file: File) => {
+  const handleImageUpload = async (
+    kaantaId: string,
+    imageType: 'khaali' | 'bhara' | 'combined',
+    file: File,
+  ) => {
     const uploadKey = `${kaantaId}-${imageType}`;
     setUploadingImage(prev => ({ ...prev, [uploadKey]: true }));
     try {
       if (imageType === 'khaali') {
         await kaantasAPI.uploadKhaaliKaantaParchi(kaantaId, file);
-      } else {
+      } else if (imageType === 'bhara') {
         await kaantasAPI.uploadBharaKaantaParchi(kaantaId, file);
+      } else {
+        await kaantasAPI.uploadCombinedKaantaParchi(kaantaId, file);
       }
       setAlertType('success');
       setAlertTitle('Success');
@@ -544,19 +654,28 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
     }
   };
 
-  const handleViewImage = (kaanta: Kaanta, imageType: 'khaali' | 'bhara') => {
-    const imageUrl = imageType === 'khaali' 
-      ? kaanta.khaali_kaanta_parchi_url 
-      : kaanta.bhara_kaanta_parchi_url;
-    
+  const handleViewImage = (kaanta: Kaanta, imageType: 'khaali' | 'bhara' | 'combined') => {
+    const imageUrl =
+      imageType === 'khaali'
+        ? kaanta.khaali_kaanta_parchi_url
+        : imageType === 'bhara'
+          ? kaanta.bhara_kaanta_parchi_url
+          : kaanta.combined_kaanta_parchi_url;
+
     if (imageUrl) {
-      const label = imageType === 'khaali' 
-        ? 'Khaali Kaanta Parchi (Empty)' 
-        : 'Bhara Kaanta Parchi (Filled)';
+      const label =
+        imageType === 'khaali'
+          ? 'Khaali Kaanta Parchi (Empty)'
+          : imageType === 'bhara'
+            ? 'Bhara Kaanta Parchi (Filled)'
+            : 'Combined Kaanta Slip';
       setViewerDocuments([{ url: imageUrl, label, type: 'image' }]);
       setDocumentViewerOpen(true);
     }
   };
+
+  const aiWeightInputClass = (entry: KaantaEntry) =>
+    entry.aiWeightsApplied ? 'border-amber-500/70 ring-1 ring-amber-500/25' : 'border-border';
 
   const filledCount = getFilledEntries().length;
 
@@ -666,7 +785,24 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                     <code className="text-[10px] px-1.5 py-0 rounded bg-muted text-muted-foreground">
                                       {kaanta.kaanta_id}
                                     </code>
+                                    {kaanta.vehicle_number_mismatch && (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0 rounded-md text-[10px] bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30">
+                                        <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden />
+                                        Vehicle mismatch
+                                      </span>
+                                    )}
                                   </div>
+                                  {(kaanta.ticket_number || kaanta.parchi_vehicle_number) && (
+                                    <p className="text-[11px] text-muted-foreground mt-1">
+                                      {kaanta.ticket_number && (
+                                        <span>Ticket {kaanta.ticket_number}</span>
+                                      )}
+                                      {kaanta.ticket_number && kaanta.parchi_vehicle_number && ' · '}
+                                      {kaanta.parchi_vehicle_number && (
+                                        <span>Slip vehicle {kaanta.parchi_vehicle_number}</span>
+                                      )}
+                                    </p>
+                                  )}
                                 </div>
                                 <div className="flex items-center gap-1 shrink-0">
                                   {isEditing ? (
@@ -895,7 +1031,34 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                               </div>
                               )}
 
-                              <div className="px-3 pb-2.5 pt-0 flex gap-2">
+                              <div className="px-3 pb-2.5 pt-0 flex gap-2 flex-wrap">
+                                {kaanta.combined_kaanta_parchi_url ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleViewImage(kaanta, 'combined')}
+                                    className="flex-1 min-w-[8rem] flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] rounded-md border border-border bg-background hover:bg-muted/80 transition-colors"
+                                  >
+                                    <ImageIcon className="h-3.5 w-3.5 shrink-0" />
+                                    Combined slip
+                                  </button>
+                                ) : (
+                                  <label className="flex-1 min-w-[8rem] flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] rounded-md border border-dashed border-border cursor-pointer hover:bg-muted/50 transition-colors">
+                                    <Upload className="h-3.5 w-3.5 shrink-0" />
+                                    <input
+                                      type="file"
+                                      accept="image/jpeg,image/png,image/gif"
+                                      className="hidden"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) handleImageUpload(kaanta.id, 'combined', file);
+                                      }}
+                                      disabled={uploadingImage[`${kaanta.id}-combined`]}
+                                    />
+                                    {uploadingImage[`${kaanta.id}-combined`] ? 'Uploading…' : 'Combined slip'}
+                                  </label>
+                                )}
+                                {!kaanta.combined_kaanta_parchi_url && (
+                                  <>
                                 <div className="flex-1 min-w-0">
                                   {kaanta.khaali_kaanta_parchi_url ? (
                                     <button
@@ -950,9 +1113,23 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                     </label>
                                   )}
                                 </div>
+                                  </>
+                                )}
                               </div>
-                              {(kaanta.khaali_kaanta_parchi_url || kaanta.bhara_kaanta_parchi_url) && (
+                              {(kaanta.combined_kaanta_parchi_url ||
+                                kaanta.khaali_kaanta_parchi_url ||
+                                kaanta.bhara_kaanta_parchi_url) && (
                                 <div className="px-3 pb-2.5 pt-0 flex flex-wrap gap-2">
+                                  {kaanta.combined_kaanta_parchi_url && (
+                                    <div className="min-w-[7rem] flex-1 space-y-0.5">
+                                      <p className="text-[10px] font-medium text-muted-foreground">Combined preview</p>
+                                      <UploadedDocumentPreview
+                                        url={kaanta.combined_kaanta_parchi_url}
+                                        compact
+                                        alt="Combined kaanta slip"
+                                      />
+                                    </div>
+                                  )}
                                   {kaanta.khaali_kaanta_parchi_url && (
                                     <div className="min-w-[7rem] flex-1 space-y-0.5">
                                       <p className="text-[10px] font-medium text-muted-foreground">Khaali preview</p>
@@ -996,6 +1173,15 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                             </p>
                           </div>
                         </div>
+
+                        <CombinedKaantaSlipUpload
+                          previewUrl={combinedSlipPreview}
+                          extracting={extractingSlip}
+                          extractionResult={extractionResult}
+                          disabled={loading}
+                          onFileSelected={(file) => void handleCombinedSlipSelected(file)}
+                          onClear={clearCombinedSlip}
+                        />
 
                         {kaantaEntries.map((entry, index) => {
                           const sauda = getSaudaById(entry.sauda_id);
@@ -1077,10 +1263,15 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                   <div>
                                     <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
                                       Weighbridge
+                                      {entry.aiWeightsApplied && (
+                                        <span className="ml-2 normal-case rounded px-1.5 py-0 text-[10px] font-semibold bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30">
+                                          AI
+                                        </span>
+                                      )}
                                     </p>
                                     <div className="grid grid-cols-2 gap-2">
                                       <div>
-                                        <label className="block text-[11px] text-muted-foreground mb-0.5">Full (kg) *</label>
+                                        <label className="block text-[11px] text-muted-foreground mb-0.5">Full / Gross (kg) *</label>
                                         <input
                                           type="number"
                                           step="0.01"
@@ -1094,7 +1285,7 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                           }}
                                           onWheel={(e) => e.currentTarget.blur()}
                                           className={`w-full px-2.5 py-1.5 text-sm border rounded-md bg-background ${
-                                            entryErrors.fullTruckWeight ? 'border-red-500' : 'border-border'
+                                            entryErrors.fullTruckWeight ? 'border-red-500' : aiWeightInputClass(entry)
                                           }`}
                                           placeholder="5000"
                                         />
@@ -1103,7 +1294,7 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                         )}
                                       </div>
                                       <div>
-                                        <label className="block text-[11px] text-muted-foreground mb-0.5">Empty (kg) *</label>
+                                        <label className="block text-[11px] text-muted-foreground mb-0.5">Empty / Tare (kg) *</label>
                                         <input
                                           type="number"
                                           step="0.01"
@@ -1117,7 +1308,7 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                           }}
                                           onWheel={(e) => e.currentTarget.blur()}
                                           className={`w-full px-2.5 py-1.5 text-sm border rounded-md bg-background ${
-                                            entryErrors.emptyTruckWeight ? 'border-red-500' : 'border-border'
+                                            entryErrors.emptyTruckWeight ? 'border-red-500' : aiWeightInputClass(entry)
                                           }`}
                                           placeholder="2000"
                                         />
@@ -1126,7 +1317,33 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                                         )}
                                       </div>
                                     </div>
+                                    {extractionResult?.kaanta_weight != null && entry.aiWeightsApplied && (
+                                      <p className="mt-1.5 text-[10px] text-muted-foreground tabular-nums">
+                                        Net from slip:{' '}
+                                        <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                                          {extractionResult.kaanta_weight} kg
+                                        </span>
+                                        {' '}(preview — saved value is recalculated on create)
+                                      </p>
+                                    )}
                                   </div>
+
+                                  {(entry.ticket_number || entry.parchi_vehicle_number) && (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                                      {entry.ticket_number && (
+                                        <div className="rounded-md border border-border/80 bg-muted/30 px-2 py-1.5">
+                                          <span className="text-muted-foreground">Ticket </span>
+                                          <span className="font-medium">{entry.ticket_number}</span>
+                                        </div>
+                                      )}
+                                      {entry.parchi_vehicle_number && (
+                                        <div className="rounded-md border border-border/80 bg-muted/30 px-2 py-1.5">
+                                          <span className="text-muted-foreground">Slip vehicle </span>
+                                          <span className="font-medium">{entry.parchi_vehicle_number}</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
 
                                   <div>
                                     <label className="block text-[11px] text-muted-foreground mb-0.5">
@@ -1266,7 +1483,7 @@ export function KaantaWeightDialog({ open, onOpenChange, isp, onSuccess }: Kaant
                             </button>
                             <button
                               type="submit"
-                              disabled={loading || filledCount === 0}
+                              disabled={loading || filledCount === 0 || extractingSlip}
                               className="px-3 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
                             >
                               {loading

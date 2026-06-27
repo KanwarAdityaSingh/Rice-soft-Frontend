@@ -11,9 +11,17 @@ import { kycAPI } from './kyc.api';
 export const TRANSPORTER_CREATE_LENIENT_BANK_MESSAGE =
   'Transporter created but bank could not be verified.';
 
+/** Matches backend lenient create when holder name differs from bank snapshot. */
+export const TRANSPORTER_CREATE_LENIENT_BANK_HOLDER_MISMATCH_MESSAGE =
+  'Transporter created but bank account holder name does not match the verification snapshot.';
+
 /** Matches backend lenient update — transporter persisted, bank verification did not complete. */
 export const TRANSPORTER_UPDATE_LENIENT_BANK_MESSAGE =
   'Transporter updated but bank could not be verified.';
+
+/** Matches backend lenient update when holder name differs from bank snapshot. */
+export const TRANSPORTER_UPDATE_LENIENT_BANK_HOLDER_MISMATCH_MESSAGE =
+  'Transporter updated but bank account holder name does not match the verification snapshot.';
 
 export interface GetAllTransportersOptions {
   /** When true, returns active + inactive. Default list is active only. */
@@ -56,6 +64,7 @@ export const transportersAPI = {
     message: string;
     verification_error?: string;
     verification_message?: string;
+    bank_verification_flagged?: boolean;
   }> => {
     const res = await apiService.postEnvelope<Transporter>('/transporters', data);
     return {
@@ -63,6 +72,7 @@ export const transportersAPI = {
       message: res.message ?? '',
       verification_error: res.verification_error,
       verification_message: res.verification_message,
+      bank_verification_flagged: res.bank_verification_flagged,
     };
   },
 
@@ -74,6 +84,7 @@ export const transportersAPI = {
     message: string;
     verification_error?: string;
     verification_message?: string;
+    bank_verification_flagged?: boolean;
   }> => {
     const res = await apiService.putEnvelope<Transporter>(`/transporters/${id}`, data);
     return {
@@ -81,11 +92,12 @@ export const transportersAPI = {
       message: res.message ?? '',
       verification_error: res.verification_error,
       verification_message: res.verification_message,
+      bank_verification_flagged: res.bank_verification_flagged,
     };
   },
 
-  deactivateTransporter: (id: string) => {
-    return apiService.put<Transporter>(`/transporters/${id}`, { is_active: false });
+  deleteTransporter: (id: string) => {
+    return apiService.delete<{ success: boolean; message: string }>(`/transporters/${id}`);
   },
 
   /** Re-run Surepass against stored bank_details and mark verified if valid. */

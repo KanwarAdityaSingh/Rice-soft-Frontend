@@ -1,6 +1,8 @@
 import type { EntityKycVerificationDetails } from '../types/entities';
 import {
+  TRANSPORTER_CREATE_LENIENT_BANK_HOLDER_MISMATCH_MESSAGE,
   TRANSPORTER_CREATE_LENIENT_BANK_MESSAGE,
+  TRANSPORTER_UPDATE_LENIENT_BANK_HOLDER_MISMATCH_MESSAGE,
   TRANSPORTER_UPDATE_LENIENT_BANK_MESSAGE,
 } from '../services/transporters.api';
 
@@ -34,19 +36,31 @@ export function getTransporterSaveAlert(
   message: string,
   verification_error?: string,
   verification_message?: string,
+  options?: {
+    bankVerificationFlagged?: boolean;
+    transporterBankVerificationError?: string | null;
+  },
 ): { alertType: 'success' | 'warning'; alertTitle: string; alertMessage: string } {
-  const lenientMsg = isEdit
-    ? TRANSPORTER_UPDATE_LENIENT_BANK_MESSAGE
-    : TRANSPORTER_CREATE_LENIENT_BANK_MESSAGE;
+  const lenientMessages = isEdit
+    ? [TRANSPORTER_UPDATE_LENIENT_BANK_MESSAGE, TRANSPORTER_UPDATE_LENIENT_BANK_HOLDER_MISMATCH_MESSAGE]
+    : [TRANSPORTER_CREATE_LENIENT_BANK_MESSAGE, TRANSPORTER_CREATE_LENIENT_BANK_HOLDER_MISMATCH_MESSAGE];
+  const trimmedMessage = message.trim();
   const isLenientBank =
-    message.trim() === lenientMsg.trim() || /bank could not be verified/i.test(message);
+    Boolean(options?.bankVerificationFlagged) ||
+    Boolean(verification_error?.trim()) ||
+    lenientMessages.some((m) => trimmedMessage === m.trim()) ||
+    /bank could not be verified|account holder name does not match/i.test(trimmedMessage);
   if (isLenientBank) {
-    const main = message || lenientMsg;
-    const detail = verification_error?.trim();
+    const main = trimmedMessage || lenientMessages[0];
+    const detail =
+      verification_error?.trim() ||
+      options?.transporterBankVerificationError?.trim() ||
+      '';
+    const parts = [main, detail].filter(Boolean);
     return {
       alertType: 'warning',
       alertTitle: isEdit ? 'Transporter Updated' : 'Transporter Created',
-      alertMessage: detail ? `${main}\n\n${detail}` : main,
+      alertMessage: parts.join('\n\n'),
     };
   }
   const defaultSuccess = isEdit

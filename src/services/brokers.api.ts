@@ -85,9 +85,9 @@ export const brokersAPI = {
     };
   },
 
-  // Delete broker
+  // Hard delete broker
   deleteBroker: (id: string) => {
-    return apiService.post<{ success: boolean; message: string }>(`/brokers/deleteBroker/${id}`);
+    return apiService.delete<{ success: boolean; message: string }>(`/brokers/${id}`);
   },
 
   /** Re-run Surepass against stored bank_details and mark verified if valid. */

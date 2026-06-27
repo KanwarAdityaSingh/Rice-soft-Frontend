@@ -49,6 +49,12 @@ import {
   buildTransporterPanAutofill,
 } from '../../../utils/transporterKycAutofill';
 import {
+  applyAadhaarOcrToFlatParty,
+  applyGstOcrToFlatParty,
+  applyPanOcrToFlatParty,
+} from '../../../utils/documentOcrPrefill';
+import { KycDocumentOcrSection } from '../../shared/KycDocumentOcrSection';
+import {
   collectAadhaarAutofillLocks,
   collectLockedFieldsFromSavedKyc,
   collectTransporterAutofillLocks,
@@ -161,6 +167,11 @@ export function TransporterFormModal({
   const isFieldLocked = (key: string) => isTransporterFieldLocked(apiLockedFields, key);
   const lockedClass = (key: string) => (isFieldLocked(key) ? TRANSPORTER_LOCKED_INPUT_CLASS : '');
 
+  const isIdentityVerified = (
+    transportType: 'registered' | 'unregistered' = formData.transport_type,
+  ) =>
+    isVerified || computeTransporterVerifiedFromKyc(transportType, kycVerificationDetails);
+
   const syncVerifiedFromKyc = (
     transportType: 'registered' | 'unregistered',
     kyc: EntityKycVerificationDetails,
@@ -251,7 +262,7 @@ export function TransporterFormModal({
       const savedKyc = transporter.kyc_verification_details ?? {};
       setBankDetailsVerifiedAt(transporter.bank_details_verified_at ?? null);
       setBankVerificationError(transporter.bank_verification_error ?? null);
-      setBankVerifiedInSession(Boolean(transporter.bank_details_verified_at || savedKyc.bank?.verified_at));
+      setBankVerifiedInSession(Boolean(transporter.bank_details_verified_at));
       setApiLockedFields(
         mergeFieldLocks(
           collectLockedFieldsFromSavedKyc(savedKyc, loadedForm),
@@ -747,6 +758,8 @@ export function TransporterFormModal({
         }));
         return;
       }
+      setBankVerifiedInSession(true);
+      setBankVerificationError(null);
     } catch (error: unknown) {
       setApiLockedFields((prev) => {
         const next = new Set(prev);
@@ -836,7 +849,11 @@ export function TransporterFormModal({
           ...rest,
           contact_persons: (formData.contact_persons || []).filter((cp) => !isContactPersonRowEmpty(cp)),
         },
-        { kycVerificationDetails, bankVerifiedInSession, bankDetailsVerifiedAt },
+        {
+          kycVerificationDetails,
+          bankDetailsVerifiedAt,
+          identityVerified: isIdentityVerified(),
+        },
       );
 
       const applySavedTransporter = (saved: Transporter) => {
@@ -853,20 +870,34 @@ export function TransporterFormModal({
       };
 
       if (isEditMode && transporterId) {
-        const { transporter, message, verification_error, verification_message } = await updateTransporter(
-          transporterId,
-          submitData as UpdateTransporterRequest,
-        );
+        const {
+          transporter,
+          message,
+          verification_error,
+          verification_message,
+          bank_verification_flagged,
+        } = await updateTransporter(transporterId, submitData as UpdateTransporterRequest);
         applySavedTransporter(transporter);
-        const alert = getTransporterSaveAlert(true, message, verification_error, verification_message);
+        const alert = getTransporterSaveAlert(true, message, verification_error, verification_message, {
+          bankVerificationFlagged: bank_verification_flagged,
+          transporterBankVerificationError: transporter.bank_verification_error,
+        });
         setAlertType(alert.alertType);
         setAlertTitle(alert.alertTitle);
         setAlertMessage(alert.alertMessage);
       } else {
-        const { transporter, message, verification_error, verification_message } =
-          await createTransporter(submitData);
+        const {
+          transporter,
+          message,
+          verification_error,
+          verification_message,
+          bank_verification_flagged,
+        } = await createTransporter(submitData);
         applySavedTransporter(transporter);
-        const alert = getTransporterSaveAlert(false, message, verification_error, verification_message);
+        const alert = getTransporterSaveAlert(false, message, verification_error, verification_message, {
+          bankVerificationFlagged: bank_verification_flagged,
+          transporterBankVerificationError: transporter.bank_verification_error,
+        });
         setAlertType(alert.alertType);
         setAlertTitle(alert.alertTitle);
         setAlertMessage(alert.alertMessage);
@@ -964,6 +995,95 @@ export function TransporterFormModal({
                           </p>
                         )}
                       </div>
+
+                      {!isVerified && (
+                        <KycDocumentOcrSection
+                          docs={
+                            formData.transport_type === 'registered'
+                              ? ['gst', 'pan']
+                              : ['pan', 'aadhaar']
+                          }
+                          disabled={lookupLoading || loading}
+                          onGstResult={(result) => {
+                            setFormData((prev) => ({
+                              ...prev,
+                              ...applyGstOcrToFlatParty(
+                                {
+                                  business_name: prev.business_name,
+                                  gst_number: prev.gst_number,
+                                  pan_number: prev.pan_number,
+                                  aadhar_number: prev.aadhar_number,
+                                  address: prev.address,
+                                  contact_persons: prev.contact_persons,
+                                },
+                                result,
+                              ),
+                            }));
+                            setErrors((prev) => {
+                              const next = { ...prev };
+                              delete next.gst_number;
+                              delete next.pan_number;
+                              return next;
+                            });
+                          }}
+                          onPanResult={(result) => {
+                            setFormData((prev) => ({
+                              ...prev,
+                              ...applyPanOcrToFlatParty(
+                                {
+                                  business_name: prev.business_name,
+                                  gst_number: prev.gst_number,
+                                  pan_number: prev.pan_number,
+                                  aadhar_number: prev.aadhar_number,
+                                  address: prev.address,
+                                  contact_persons: prev.contact_persons,
+                                },
+                                result,
+                              ),
+                            }));
+                            setErrors((prev) => {
+                              const next = { ...prev };
+                              delete next.pan_number;
+                              return next;
+                            });
+                          }}
+                          onAadhaarResult={(result) => {
+                            setFormData((prev) => ({
+                              ...prev,
+                              ...applyAadhaarOcrToFlatParty(
+                                {
+                                  business_name: prev.business_name,
+                                  gst_number: prev.gst_number,
+                                  pan_number: prev.pan_number,
+                                  aadhar_number: prev.aadhar_number,
+                                  address: prev.address,
+                                  contact_persons: prev.contact_persons,
+                                },
+                                result,
+                              ),
+                            }));
+                            setAadhaarValidated(false);
+                            setAadhaarValidationSummary(null);
+                            setErrors((prev) => {
+                              const next = { ...prev };
+                              delete next.aadhar_number;
+                              return next;
+                            });
+                          }}
+                          onSuccess={(title, message) => {
+                            setAlertType('success');
+                            setAlertTitle(title);
+                            setAlertMessage(message);
+                            setAlertOpen(true);
+                          }}
+                          onError={(title, message) => {
+                            setAlertType('error');
+                            setAlertTitle(title);
+                            setAlertMessage(message);
+                            setAlertOpen(true);
+                          }}
+                        />
+                      )}
 
                       {/* Conditional fields based on transport type */}
                       {formData.transport_type === 'registered' ? (
@@ -1067,10 +1187,9 @@ export function TransporterFormModal({
                             type="text"
                             value={formData.business_name}
                             onChange={(e) => setFormData({ ...formData, business_name: e.target.value })}
-                            readOnly={isFieldLocked('business_name')}
                             className={`w-full px-3 py-2 border rounded-lg bg-background ${
                               errors.business_name ? 'border-red-500' : 'border-border'
-                            } ${lockedClass('business_name')}`}
+                            }`}
                             placeholder="ABC Transport Services"
                           />
                           {errors.business_name && (

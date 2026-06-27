@@ -13,7 +13,7 @@ export interface GetAllVehiclesOptions {
   transporterId?: string;
   /** When true, returns active + inactive. Default list is active only. */
   includeInactive?: boolean;
-  /** When false, returns inactive / soft-deleted only. Ignored if includeInactive is true. */
+  /** When false, returns inactive only. Ignored if includeInactive is true. */
   isActive?: boolean;
   excludeVerificationDetails?: boolean;
 }
@@ -75,7 +75,7 @@ export const vehiclesAPI = {
     return apiService.put<Vehicle>(`/vehicles/${id}`, data);
   },
 
-  // Delete vehicle (soft delete)
+  // Hard delete vehicle (blocked when linked to inward slip passes)
   deleteVehicle: (id: string) => {
     return apiService.delete<{ success: boolean; message: string }>(`/vehicles/${id}`);
   },

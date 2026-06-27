@@ -96,7 +96,6 @@ export function collectGstLookupAutofillLocks(
   if (autofill.gstNumber) locks.add('gst_number');
   if (autofill.panNumber) locks.add('pan_number');
   if (autofill.businessName) {
-    locks.add('business_name');
     locks.add('account_holder_name');
   }
   if (autofill.businessType) locks.add('business_type');
@@ -147,13 +146,11 @@ export function collectLockedFieldsFromSavedVendorKyc(
   if (hasGst) {
     if (form.business_details.gst_number) locks.add('gst_number');
     if (form.business_details.pan_number) locks.add('pan_number');
-    if (form.business_name) locks.add('business_name');
     lockAddressFields(locks, form.address);
     collectContactAutofillLocks(form.contact_persons).forEach((key) => locks.add(key));
     collectVerifiedEmailFieldLocks(form.contact_persons, kyc).forEach((key) => locks.add(key));
   } else if (hasPan) {
     if (form.business_details.pan_number) locks.add('pan_number');
-    if (form.business_name) locks.add('business_name');
     lockAddressFields(locks, form.address);
     collectContactAutofillLocks(form.contact_persons).forEach((key) => locks.add(key));
     collectVerifiedEmailFieldLocks(form.contact_persons, kyc).forEach((key) => locks.add(key));

@@ -1,20 +1,25 @@
-import { useState, useEffect, useRef } from 'react';
-import { salesPartiesAPI } from '../services/salesParties.api';
+import { useState, useEffect, useCallback } from 'react';
+import { salesPartiesAPI, type GetAllSalesPartiesOptions } from '../services/salesParties.api';
 import type { SalesParty, CreateSalesPartyRequest, UpdateSalesPartyRequest } from '../types/entities';
 
-export function useSalesParties() {
+export type UseSalesPartiesOptions = GetAllSalesPartiesOptions;
+
+export function useSalesParties(options: UseSalesPartiesOptions = {}) {
+  const { includeInactive = false, registrationType, isVerified } = options;
   const [salesParties, setSalesParties] = useState<SalesParty[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const initialFetchDone = useRef(false);
 
-  const fetchSalesParties = async () => {
+  const fetchSalesParties = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await salesPartiesAPI.getAll();
-      // Handle both raw array and wrapped { data: [...] } from backend
-      const list = Array.isArray(data) ? data : (data as any)?.data;
+      const data = await salesPartiesAPI.getAll({
+        includeInactive,
+        registrationType,
+        isVerified,
+      });
+      const list = Array.isArray(data) ? data : (data as { data?: SalesParty[] })?.data;
       setSalesParties(Array.isArray(list) ? list : []);
     } catch (err: any) {
       setError(err.message);
@@ -22,41 +27,27 @@ export function useSalesParties() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [includeInactive, registrationType, isVerified]);
 
   useEffect(() => {
-    if (initialFetchDone.current) return;
-    initialFetchDone.current = true;
-    fetchSalesParties();
-  }, []);
+    void fetchSalesParties();
+  }, [fetchSalesParties]);
 
   const createSalesParty = async (data: CreateSalesPartyRequest) => {
-    try {
-      const created = await salesPartiesAPI.create(data);
-      await fetchSalesParties();
-      return created;
-    } catch (err: any) {
-      throw err;
-    }
+    const created = await salesPartiesAPI.create(data);
+    await fetchSalesParties();
+    return created;
   };
 
   const updateSalesParty = async (id: string, data: UpdateSalesPartyRequest) => {
-    try {
-      const updated = await salesPartiesAPI.update(id, data);
-      await fetchSalesParties();
-      return updated;
-    } catch (err: any) {
-      throw err;
-    }
+    const updated = await salesPartiesAPI.update(id, data);
+    await fetchSalesParties();
+    return updated;
   };
 
   const deleteSalesParty = async (id: string) => {
-    try {
-      await salesPartiesAPI.delete(id);
-      setSalesParties((prev) => prev.filter((s) => s.id !== id));
-    } catch (err: any) {
-      throw err;
-    }
+    await salesPartiesAPI.delete(id);
+    setSalesParties((prev) => prev.filter((s) => s.id !== id));
   };
 
   return {

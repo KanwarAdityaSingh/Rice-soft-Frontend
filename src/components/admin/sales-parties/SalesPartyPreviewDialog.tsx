@@ -29,6 +29,16 @@ export function SalesPartyPreviewDialog({ open, onOpenChange, formData, onConfir
     }
   };
 
+  const getRegistrationTypeLabel = (registrationType: string | undefined): string => {
+    if (!registrationType) return 'Registered';
+    return registrationType === 'unregistered' ? 'Unregistered' : 'Registered';
+  };
+
+  const formatAadhaarDisplay = (aadhar: string | null | undefined): string | undefined => {
+    if (!aadhar?.trim()) return undefined;
+    return aadhar.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
+  };
+
   const InfoSection = ({ title, icon: Icon, children }: { title: string; icon: any; children: React.ReactNode }) => (
     <div className="space-y-3">
       <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -89,6 +99,8 @@ export function SalesPartyPreviewDialog({ open, onOpenChange, formData, onConfir
             <div className="space-y-6">
               <InfoSection title="Basic Information" icon={Building2}>
                 <InfoRow label="Business Name" value={formData.business_name} />
+                <InfoRow label="Registration" value={getRegistrationTypeLabel(formData.registration_type)} />
+                <InfoRow label="Aadhaar Number" value={formatAadhaarDisplay(formData.aadhar_number)} />
                 <InfoRow
                   label="Status"
                   value={formData.is_active !== false ? 'Active' : 'Inactive'}

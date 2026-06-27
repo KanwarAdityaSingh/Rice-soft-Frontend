@@ -5,6 +5,7 @@ import { useToast } from '../../shared/Toast';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { PhoneInput } from '../../shared/PhoneInput';
 import { sanitizePhoneList } from '../../../utils/validation';
+import { getAccessToken } from '../../../services/authStorage';
 
 interface SaudaWhatsAppModalProps {
   open: boolean;
@@ -19,7 +20,7 @@ export function SaudaWhatsAppModal({
   saudaId,
   onSuccess,
 }: SaudaWhatsAppModalProps) {
-  const token = localStorage.getItem('auth:token');
+  const token = getAccessToken();
   const { success, error: showError } = useToast();
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [sending, setSending] = useState(false);

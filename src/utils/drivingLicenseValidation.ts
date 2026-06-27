@@ -3,7 +3,9 @@ export const DRIVING_LICENSE_EXAMPLE = 'DL0420110012345';
 export const DRIVING_LICENSE_DISPLAY_EXAMPLE = 'DL04 20110012345';
 
 export const DRIVING_LICENSE_FORMAT_HINT =
-  '2-letter state + 2-digit RTO + 4-digit issue year + 7-digit serial — e.g. DL04 20110012345';
+  '2-letter state + 2-digit RTO + 4-digit issue year + 7-digit serial';
+
+export const DRIVING_LICENSE_FORMAT_EXAMPLE = `e.g. ${DRIVING_LICENSE_DISPLAY_EXAMPLE}`;
 
 export const DRIVING_LICENSE_MAX_LENGTH = 15;
 
@@ -55,7 +57,7 @@ function explainInvalidDrivingLicense(raw: string, normalized: string): string {
     return 'Last 7 characters must be digits (serial number, pad with leading zeros if needed).';
   }
 
-  return `Invalid licence format. Expected: ${DRIVING_LICENSE_FORMAT_HINT}`;
+  return `Invalid licence format. Expected: ${DRIVING_LICENSE_FORMAT_HINT} — ${DRIVING_LICENSE_FORMAT_EXAMPLE}`;
 }
 
 export function getDrivingLicenseValidationError(licenseNumber: string): string | null {

@@ -1,7 +1,10 @@
 // API configuration and base service
 import { sanitizePhoneInput } from '../utils/validation';
+import { clearAuthStorage, getAccessToken, setAccessToken } from './authStorage';
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3000/api';
+export const API_BASE_URL =
+  (import.meta as any).env?.VITE_API_BASE_URL ||
+  ((import.meta as any).env?.DEV ? '/api/v1' : 'http://localhost:3000/api/v1');
 
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -11,6 +14,8 @@ export interface ApiResponse<T = any> {
   verification_error?: string;
   /** True when create/update persisted but bank verification did not pass. */
   bank_verification_flagged?: boolean;
+  /** True when driver was saved but Surepass returned no transport licence DOE. */
+  transport_doe_not_found?: boolean;
   /** Present on vendor-create when verify_bank succeeded (Surepass + markBankDetailsVerified) */
   verification_message?: string;
   timestamp?: string;
@@ -41,7 +46,14 @@ export interface LoginResponse {
   user: UserResponse;
   token: string;
   expires_in: string;
+  /** Refresh token lifetime (httpOnly cookie set by server; not stored client-side). */
+  refresh_expires_in?: string;
   permissions?: PermissionsMap | null;
+}
+
+export interface RefreshTokenResponse {
+  token: string;
+  expires_in: string;
 }
 
 export interface RequestOtpData {
@@ -60,9 +72,23 @@ class ApiError extends Error {
   }
 }
 
+const AUTH_SKIP_REFRESH_ENDPOINTS = new Set([
+  '/auth/loginUser',
+  '/auth/requestOtp',
+  '/auth/verifyOtp',
+  '/auth/refreshToken',
+]);
+
+const AUTH_SKIP_UNAUTHORIZED_REDIRECT = new Set([
+  '/auth/loginUser',
+  '/auth/requestOtp',
+  '/auth/verifyOtp',
+]);
+
 class ApiService {
   private baseURL: string;
   private logoutCallback: (() => void) | null = null;
+  private refreshPromise: Promise<string | null> | null = null;
 
   /** Coalesce identical in-flight GETs (e.g. React Strict Mode double-mount). */
   private inFlightGetByUrl = new Map<string, Promise<ApiResponse<unknown>>>();
@@ -71,24 +97,81 @@ class ApiService {
     this.baseURL = baseURL;
   }
 
-  // Allow AuthProvider to register logout callback
   setLogoutCallback(callback: () => void) {
     this.logoutCallback = callback;
   }
 
-  // Prevent duplicate handling when multiple requests detect invalidation
   private static isHandlingInvalidSession = false;
+
+  inspectSessionFromResponse(data: unknown): void {
+    if (
+      data &&
+      typeof data === 'object' &&
+      (data as ApiResponse).isSessionValid === false
+    ) {
+      this.handleSessionInvalidation();
+    }
+  }
+
+  /** Exchange httpOnly refresh cookie for a new access token. Returns null on failure. */
+  async tryRefreshAccessToken(): Promise<string | null> {
+    if (this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    this.refreshPromise = this.performRefresh();
+    try {
+      return await this.refreshPromise;
+    } finally {
+      this.refreshPromise = null;
+    }
+  }
+
+  private async performRefresh(): Promise<string | null> {
+    try {
+      const response = await fetch(`${this.baseURL}/auth/refreshToken`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const contentType = response.headers.get('content-type') ?? '';
+      if (!contentType.includes('application/json')) {
+        return null;
+      }
+
+      const data = await response.json();
+      this.inspectSessionFromResponse(data);
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const token = (data?.data as RefreshTokenResponse | undefined)?.token;
+      if (!token) {
+        return null;
+      }
+
+      setAccessToken(token);
+      return token;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Reset session-invalidation guard after a fresh login. */
+  resetSessionInvalidationGuard() {
+    ApiService.isHandlingInvalidSession = false;
+  }
 
   private handleSessionInvalidation() {
     if (ApiService.isHandlingInvalidSession) return;
     ApiService.isHandlingInvalidSession = true;
 
-    // Clear auth data from localStorage
-    localStorage.removeItem('auth:token');
-    localStorage.removeItem('auth:user');
-    localStorage.removeItem('auth:permissions');
+    clearAuthStorage();
 
-    // Notify React auth state if registered
     if (this.logoutCallback) {
       try {
         this.logoutCallback();
@@ -97,16 +180,14 @@ class ApiService {
       }
     }
 
-    // Notify UI layer to show custom popup
     try {
       window.dispatchEvent(new CustomEvent('riceops:session-invalid'));
     } catch {
       // ignore
     }
 
-    // Redirect to login (respecting basename if configured)
-    const basename = (import.meta as any).env?.BASE_URL 
-      ? (import.meta as any).env.BASE_URL.replace(/\/$/, '') 
+    const basename = (import.meta as any).env?.BASE_URL
+      ? (import.meta as any).env.BASE_URL.replace(/\/$/, '')
       : '/riceops';
     const loginPath = `${basename}/login`;
 
@@ -118,15 +199,47 @@ class ApiService {
     }, 1500);
   }
 
+  private handleUnauthorized(endpoint: string) {
+    clearAuthStorage();
+
+    if (this.logoutCallback) {
+      try {
+        this.logoutCallback();
+      } catch {
+        // ignore
+      }
+    }
+
+    if (AUTH_SKIP_UNAUTHORIZED_REDIRECT.has(endpoint)) {
+      return;
+    }
+
+    const basename = (import.meta as any).env?.BASE_URL
+      ? (import.meta as any).env.BASE_URL.replace(/\/$/, '')
+      : '/riceops';
+    const loginPath = `${basename}/login`;
+    const currentPath = window.location.pathname;
+
+    if (!currentPath.endsWith('/login') && currentPath !== loginPath) {
+      window.location.href = loginPath;
+    }
+  }
+
+  private shouldSkipTokenRefresh(endpoint: string): boolean {
+    return AUTH_SKIP_REFRESH_ENDPOINTS.has(endpoint);
+  }
+
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    isRetry = false
   ): Promise<ApiResponse<T>> {
     const url = `${this.baseURL}${endpoint}`;
     const method = (options.method ?? 'GET').toUpperCase();
 
-    const execute = async (): Promise<ApiResponse<T>> => {
+    const execute = async (retry: boolean): Promise<ApiResponse<T>> => {
       const config: RequestInit = {
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           ...options.headers,
@@ -134,8 +247,7 @@ class ApiService {
         ...options,
       };
 
-      // Add authorization header if token exists
-      const token = localStorage.getItem('auth:token');
+      const token = getAccessToken();
       if (token) {
         config.headers = {
           ...config.headers,
@@ -147,36 +259,22 @@ class ApiService {
         const response = await fetch(url, config);
         const data = await response.json();
 
-        // Global check: session validity (applies to both success and error responses)
-        if (data?.isSessionValid === false) {
-          this.handleSessionInvalidation();
-        }
+        this.inspectSessionFromResponse(data);
 
         if (!response.ok) {
-          // Handle 401 Unauthorized - session expired or invalid token
-          // Only trigger logout if this is an authenticated request (not login endpoint)
-          if (response.status === 401 && endpoint !== '/auth/loginUser') {
-            // Clear auth data from localStorage
-            localStorage.removeItem('auth:token');
-            localStorage.removeItem('auth:user');
-            localStorage.removeItem('auth:permissions');
-
-            // Call logout callback if registered (to update React state)
-            if (this.logoutCallback) {
-              this.logoutCallback();
+          if (
+            response.status === 401 &&
+            !retry &&
+            !this.shouldSkipTokenRefresh(endpoint)
+          ) {
+            const newToken = await this.tryRefreshAccessToken();
+            if (newToken) {
+              return execute(true);
             }
+          }
 
-            // Redirect to login page (respecting basename if configured)
-            const basename = (import.meta as any).env?.BASE_URL
-              ? (import.meta as any).env.BASE_URL.replace(/\/$/, '')
-              : '/riceops';
-            const loginPath = `${basename}/login`;
-            const currentPath = window.location.pathname;
-
-            // Only redirect if not already on login page
-            if (!currentPath.endsWith('/login') && currentPath !== loginPath) {
-              window.location.href = loginPath;
-            }
+          if (response.status === 401) {
+            this.handleUnauthorized(endpoint);
           }
 
           console.error('API Error:', { url, status: response.status, data });
@@ -193,7 +291,6 @@ class ApiService {
           throw error;
         }
 
-        // Network or other errors
         throw new ApiError(
           'Network error. Please check your connection.',
           0,
@@ -202,24 +299,22 @@ class ApiService {
       }
     };
 
-    if (method === 'GET') {
+    if (method === 'GET' && !isRetry) {
       const existing = this.inFlightGetByUrl.get(url);
       if (existing) {
         return existing as Promise<ApiResponse<T>>;
       }
-      const pending = execute().finally(() => {
+      const pending = execute(false).finally(() => {
         this.inFlightGetByUrl.delete(url);
       }) as Promise<ApiResponse<unknown>>;
       this.inFlightGetByUrl.set(url, pending);
       return pending as Promise<ApiResponse<T>>;
     }
 
-    return execute();
+    return execute(isRetry);
   }
 
-  // Authentication endpoints
   async login(credentials: LoginRequest): Promise<LoginResponse> {
-    console.log('Login request:', { endpoint: '/auth/loginUser', credentials });
     const response = await this.request<LoginResponse>('/auth/loginUser', {
       method: 'POST',
       body: JSON.stringify(credentials),
@@ -227,17 +322,17 @@ class ApiService {
     return response.data;
   }
 
-  // OTP: Request an OTP for a phone number
   async requestOtp(phone: string): Promise<RequestOtpData> {
     const normalizedPhone = sanitizePhoneInput(phone);
     if (normalizedPhone.length !== 10) {
       throw new ApiError('Phone must be 10 digits', 400);
     }
-    const data = await this.post<RequestOtpData>('/auth/requestOtp', { phone: normalizedPhone });
+    const data = await this.post<RequestOtpData>('/auth/requestOtp', {
+      phone: normalizedPhone,
+    });
     return data;
   }
 
-  // OTP: Verify OTP and receive the same LoginResponse as password login
   async verifyOtp(phone: string, otp: string): Promise<LoginResponse> {
     const normalizedPhone = sanitizePhoneInput(phone);
     const normalizedOtp = otp.replace(/\D/g, '').slice(0, 6);
@@ -254,10 +349,24 @@ class ApiService {
     return data;
   }
 
+  async refreshToken(): Promise<RefreshTokenResponse> {
+    const token = await this.tryRefreshAccessToken();
+    if (!token) {
+      throw new ApiError('Unable to refresh session', 401);
+    }
+    return { token, expires_in: '' };
+  }
+
   async logout(): Promise<void> {
-    await this.request('/auth/logout', {
-      method: 'POST',
-    });
+    try {
+      await this.request('/auth/logout', {
+        method: 'POST',
+      });
+    } catch {
+      // Still clear local state when server logout fails
+    } finally {
+      clearAuthStorage();
+    }
   }
 
   async getProfile(): Promise<UserResponse> {
@@ -265,7 +374,6 @@ class ApiService {
     return response.data;
   }
 
-  // Generic methods for other endpoints
   async get<T>(endpoint: string): Promise<T> {
     const response = await this.request<T>(endpoint, {
       method: 'GET',
@@ -281,7 +389,6 @@ class ApiService {
     return response.data;
   }
 
-  /** POST returning full `{ success, data, message }` envelope (e.g. create flows with contextual messages). */
   async postEnvelope<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
     return this.request<T>(endpoint, {
       method: 'POST',

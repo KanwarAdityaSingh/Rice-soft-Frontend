@@ -81,7 +81,13 @@ export interface SurepassVerificationSnapshot {
   mapped?: unknown;
 }
 
-export type PersistableEntityType = 'vendor' | 'broker' | 'transporter' | 'driver' | 'vehicle';
+export type PersistableEntityType =
+  | 'vendor'
+  | 'sales_party'
+  | 'broker'
+  | 'transporter'
+  | 'driver'
+  | 'vehicle';
 
 export interface KycPersistContext {
   entity_type: PersistableEntityType;
@@ -409,11 +415,21 @@ export interface Driver {
   license_expires_at?: string | null;
   /** Alias for license_expires_at in API responses */
   doe?: string | null;
+  transport_license_expires_at?: string | null;
+  /** Alias for transport_license_expires_at in API responses */
+  transport_doe?: string | null;
+  father_or_husband_name?: string | null;
+  state?: string | null;
+  city_name?: string | null;
   profile_image?: string | null;
   vehicle_classes?: string[] | null;
   is_verified: boolean;
   verified_at: string | null;
   verification_details: SurepassVerificationSnapshot | Record<string, unknown> | null;
+  /** Set when Surepass DL verify could not resolve transport licence DOE. */
+  transport_doe_not_found?: boolean;
+  /** Lenient verify warning (e.g. transport DOE missing) from create/update envelope. */
+  verification_error?: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -428,6 +444,10 @@ export interface CreateDriverRequest {
   gender?: string | null;
   date_of_birth?: string | null;
   license_expires_at?: string | null;
+  transport_license_expires_at?: string | null;
+  father_or_husband_name?: string | null;
+  state?: string | null;
+  city_name?: string | null;
   profile_image?: string | null;
   vehicle_classes?: string[] | null;
   is_verified?: boolean;
@@ -448,11 +468,14 @@ export interface DriverVerificationResponse {
   date_of_expiry: string | null;
   /** Alias for date_of_expiry / license_expires_at */
   doe?: string | null;
+  transport_date_of_expiry?: string | null;
+  transport_doe?: string | null;
   /** Gateway may coerce from Surepass JSON */
   age: number | string | null;
   address: string | null;
   pincode?: string | null;
   state?: string | null;
+  city_name?: string | null;
   gender?: string | null;
   blood_group?: string | null;
   vehicle_classes?: string[] | null;
@@ -461,6 +484,115 @@ export interface DriverVerificationResponse {
   surepass_response?: SurepassApiResponse;
   /** Updated driver when verify persists to an existing record */
   driver?: Driver | null;
+}
+
+/** Surepass licence-v2 OCR — extract-only (does not set is_verified). */
+export interface DrivingLicenseOcrResponse {
+  client_id?: string;
+  license_number?: string | null;
+  name?: string | null;
+  full_name?: string | null;
+  dob?: string | null;
+  date_of_birth?: string | null;
+  address?: string | null;
+  pincode?: string | null;
+  state?: string | null;
+  surepass_response?: SurepassApiResponse | Record<string, unknown>;
+  /** Populated when POST /drivers/ocr includes driver_id */
+  driver?: Driver | null;
+}
+
+export interface DrivingLicenseOcrUploadOptions {
+  back?: File;
+  usePdf?: boolean;
+  driverId?: string;
+}
+
+export interface DocumentOcrUploadOptions {
+  usePdf?: boolean;
+}
+
+/** Surepass GST OCR — extract-only. */
+export interface GstOcrResponse {
+  client_id?: string;
+  gstin?: string | null;
+  gst_number?: string | null;
+  confidence?: number | null;
+  document_type?: string | null;
+  standard_document?: boolean | null;
+  business_name?: string | null;
+  legal_name?: string | null;
+  trade_name?: string | null;
+  pan_number?: string | null;
+  address?: string | null;
+  surepass_response?: SurepassApiResponse | Record<string, unknown>;
+}
+
+/** Surepass PAN OCR — extract-only. */
+export interface PanOcrResponse {
+  client_id?: string;
+  pan_number?: string | null;
+  full_name?: string | null;
+  name?: string | null;
+  father_name?: string | null;
+  dob?: string | null;
+  date_of_birth?: string | null;
+  confidences?: Record<string, number>;
+  surepass_response?: SurepassApiResponse | Record<string, unknown>;
+}
+
+/** Surepass Aadhaar OCR — extract-only. */
+export interface AadhaarOcrResponse {
+  client_id?: string;
+  aadhaar_number?: string | null;
+  aadhar_number?: string | null;
+  uid?: string | null;
+  full_name?: string | null;
+  name?: string | null;
+  gender?: string | null;
+  mother_name?: string | null;
+  address?: string | null;
+  dob?: string | null;
+  date_of_birth?: string | null;
+  is_masked?: boolean | null;
+  document_type?: string | null;
+  confidences?: Record<string, number | null>;
+  pincode?: string | null;
+  state?: string | null;
+  surepass_response?: SurepassApiResponse | Record<string, unknown>;
+}
+
+/** Surepass vehicle RC OCR — extract-only. */
+export interface RcOcrResponse {
+  client_id?: string;
+  rc_number?: string | null;
+  registration_number?: string | null;
+  vehicle_number?: string | null;
+  chassis_number?: string | null;
+  engine_number?: string | null;
+  owner_name?: string | null;
+  relative?: string | null;
+  address?: string | null;
+  fuel_used?: string | null;
+  fuel_type?: string | null;
+  date_of_registration?: string | null;
+  registration_validity?: string | null;
+  owner_sr_no?: string | null;
+  state?: string | null;
+  vehicle_weight?: string | null;
+  vehicle_class?: string | null;
+  vehicle_category?: string | null;
+  maker_model?: string | null;
+  maker?: string | null;
+  model?: string | null;
+  registration_date?: string | null;
+  insurance_upto?: string | null;
+  insurance_validity?: string | null;
+  fit_up_to?: string | null;
+  fitness_validity?: string | null;
+  permit_valid_upto?: string | null;
+  permit_validity?: string | null;
+  surepass_response?: SurepassApiResponse | Record<string, unknown>;
 }
 
 export interface CreateTransporterRequest {
@@ -1103,9 +1235,21 @@ export interface RecentActivity {
 }
 
 // Rice Code Types
+export type RiceCategory = 'basmati' | 'non_basmati';
+
+export interface RiceCodeVariantLink {
+  id: string;
+  variant: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface RiceCode {
   rice_code_id: string;
   rice_code_name: string;
+  category: RiceCategory;
+  /** API returns linked rows; create/update accepts variant keys. */
+  variants: RiceCodeVariantLink[] | string[];
   created_at: string;
   updated_at: string;
   created_by: string;
@@ -1115,6 +1259,16 @@ export interface RiceCode {
 export interface RiceType {
   value: string;
   label: string;
+}
+
+/** Rice length catalog row from GET /riceLengths/getAllRiceLengths */
+export interface RiceLengthRecord {
+  id: string;
+  code: string;
+  name: string;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
 }
 
 // Pincode Lookup Types
@@ -1159,9 +1313,14 @@ export type RiceLength = 'dubar' | 'tibar' | 'wand';
 export interface Sauda {
   id: string;
   sauda_type: 'exgodown' | 'for';
+  rice_category?: RiceCategory | null;
   rice_code_id?: string | null;
   rice_type?: string | null;
-  /** Grade / length (nullable until set) */
+  /** FK to rice_lengths.id */
+  rice_length_id?: string | null;
+  rice_length_code?: string | null;
+  rice_length_name?: string | null;
+  /** @deprecated use rice_length_id — kept for legacy responses */
   rice_length?: RiceLength | null;
   rate: number;
   broker_id?: string | null;
@@ -1186,6 +1345,7 @@ export interface Sauda {
 
 export interface CreateSaudaRequest {
   sauda_type: 'exgodown' | 'for';
+  rice_category?: RiceCategory | null;
   rice_code_id?: string | null;
   rice_type?: string | null;
   rate: number;
@@ -1203,11 +1363,14 @@ export interface CreateSaudaRequest {
   status?: 'draft' | 'active' | 'completed' | 'cancelled';
   is_dana_required?: boolean; // Optional, defaults to true if not provided
   sauda_date?: string | null; // Date of the sauda in YYYY-MM-DD format
+  rice_length_id?: string | null;
+  /** @deprecated use rice_length_id */
   rice_length?: RiceLength | null;
 }
 
 export interface UpdateSaudaRequest {
   sauda_type?: 'exgodown' | 'for';
+  rice_category?: RiceCategory | null;
   rice_code_id?: string | null;
   rice_type?: string | null;
   rate?: number;
@@ -1225,6 +1388,8 @@ export interface UpdateSaudaRequest {
   status?: 'draft' | 'active' | 'completed' | 'cancelled';
   is_dana_required?: boolean;
   sauda_date?: string | null; // Date of the sauda in YYYY-MM-DD format
+  rice_length_id?: string | null;
+  /** @deprecated use rice_length_id */
   rice_length?: RiceLength | null;
 }
 
@@ -1233,6 +1398,8 @@ export interface SaudaFilters {
   status?: 'draft' | 'active' | 'completed' | 'cancelled';
   sauda_type?: 'exgodown' | 'for';
   purchaser_id?: string;
+  rice_code_id?: string;
+  rice_type?: string;
 }
 
 // Inward Slip Pass Types
@@ -1282,6 +1449,28 @@ export interface InwardSlipPass {
  */
 export type BagType = 'jute' | 'pp' | 'bopp_laminated' | 'non_woven' | 'vacuum_pouch';
 
+export interface KaantaVehicleCheck {
+  checked: boolean;
+  isp_vehicle_number: string | null;
+  parchi_vehicle_number: string | null;
+  matches: boolean | null;
+  mismatch_flagged: boolean;
+}
+
+export interface KaantaWeightExtraction {
+  full_truck_weight: number | null;
+  empty_truck_weight: number | null;
+  kaanta_weight: number | null;
+  vehicle_number: string | null;
+  ticket_number: string | null;
+  needs_review: boolean;
+  validation: {
+    weights_extracted: boolean;
+    net_matches_gross_minus_tare: boolean | null;
+  };
+  vehicle_check: KaantaVehicleCheck;
+}
+
 export interface Kaanta {
   id: string;
   kaanta_id: string;
@@ -1297,6 +1486,10 @@ export interface Kaanta {
   bag_type: BagType;
   khaali_kaanta_parchi_url?: string | null;
   bhara_kaanta_parchi_url?: string | null;
+  combined_kaanta_parchi_url?: string | null;
+  ticket_number?: string | null;
+  parchi_vehicle_number?: string | null;
+  vehicle_number_mismatch?: boolean;
   created_at: string;
   updated_at: string;
   created_by?: string;
@@ -1312,6 +1505,8 @@ export interface CreateKaantaRequest {
   bag_weight: number;
   no_of_bags: number;
   bag_type: BagType;
+  ticket_number?: string;
+  parchi_vehicle_number?: string;
 }
 
 export interface UpdateKaantaRequest {
@@ -1321,6 +1516,8 @@ export interface UpdateKaantaRequest {
   bag_weight?: number;
   no_of_bags?: number;
   bag_type?: BagType;
+  ticket_number?: string | null;
+  parchi_vehicle_number?: string | null;
 }
 
 export interface CreateInwardSlipPassRequest {

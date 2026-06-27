@@ -1,5 +1,16 @@
 import { createContext, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiService, ApiError } from '../services/api'
+import {
+  clearAuthStorage,
+  getAccessToken,
+  getStoredUser,
+  migrateLegacyAuthStorage,
+  setAccessToken,
+  setStoredPermissions,
+  setStoredUser,
+} from '../services/authStorage'
+import { setPermissions } from '../utils/permissions'
+import type { PermissionsMap } from '../types/entities'
 
 interface UserProfile {
   id: string
@@ -32,6 +43,17 @@ export const AuthContext = createContext<AuthContextValue>({
   error: null,
 })
 
+function persistLoginSession(response: {
+  token: string
+  user: UserProfile
+  permissions?: PermissionsMap | null
+}) {
+  apiService.resetSessionInvalidationGuard()
+  setAccessToken(response.token)
+  setStoredUser(response.user)
+  setStoredPermissions(response.permissions ?? null)
+  setPermissions(response.permissions ?? null)
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null)
@@ -40,69 +62,81 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(() => {
     setUser(null)
-    localStorage.removeItem('auth:token')
-    localStorage.removeItem('auth:user')
-    localStorage.removeItem('auth:permissions')
+    setPermissions(null)
+    clearAuthStorage()
+    apiService.logout().catch(() => {})
   }, [])
 
   useEffect(() => {
-    // Register logout callback with API service for 401 handling
-    apiService.setLogoutCallback(logout)
-  }, [logout])
+    apiService.setLogoutCallback(() => {
+      setUser(null)
+      setPermissions(null)
+      clearAuthStorage()
+    })
+  }, [])
 
   useEffect(() => {
-    // Initialize auth from storage or fetch profile with token
+    let cancelled = false
+
     const init = async () => {
       setIsLoading(true)
-      try {
-        const userData = localStorage.getItem('auth:user')
-        const token = localStorage.getItem('auth:token')
+      migrateLegacyAuthStorage()
 
-        if (userData) {
-          try {
-            setUser(JSON.parse(userData))
-          } catch {
-            localStorage.removeItem('auth:user')
-          }
-        } else if (token) {
-          try {
-            const profile = await apiService.getProfile()
-            localStorage.setItem('auth:user', JSON.stringify(profile))
-            setUser(profile)
-          } catch (e) {
-            // Invalid/expired token
-            localStorage.removeItem('auth:token')
-            localStorage.removeItem('auth:user')
+      try {
+        const cachedUser = getStoredUser<UserProfile>()
+        const token = getAccessToken()
+
+        if (cancelled) return
+
+        if (!token) {
+          // Tab has no session — do not silently restore from refresh cookie (banking-style).
+          clearAuthStorage()
+          setPermissions(null)
+          setUser(null)
+          return
+        }
+
+        if (cachedUser && !cancelled) {
+          setUser(cachedUser)
+        }
+
+        try {
+          const profile = await apiService.getProfile()
+          if (cancelled) return
+          setStoredUser(profile)
+          setUser(profile)
+        } catch (err) {
+          if (cancelled) return
+          if (err instanceof ApiError && err.status === 401) {
+            clearAuthStorage()
+            setPermissions(null)
             setUser(null)
           }
-        } else {
-          setUser(null)
         }
       } finally {
-        setIsLoading(false)
+        if (!cancelled) {
+          setIsLoading(false)
+        }
       }
     }
+
     void init()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const login = useCallback(async (username: string, password: string) => {
     setIsLoading(true)
     setError(null)
-    
+
     try {
       const response = await apiService.login({ username, password })
-      
-      // Store token and user data in localStorage
-      localStorage.setItem('auth:token', response.token)
-      localStorage.setItem('auth:user', JSON.stringify(response.user))
-      try {
-        localStorage.setItem('auth:permissions', JSON.stringify(response.permissions ?? null))
-      } catch {}
-      
+      persistLoginSession(response)
       setUser(response.user)
     } catch (error) {
       let errorMessage = 'Login failed. Please try again.'
-      
+
       if (error instanceof ApiError) {
         if (error.status === 401) {
           errorMessage = 'Invalid username or password'
@@ -114,7 +148,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else if (error instanceof Error) {
         errorMessage = error.message
       }
-      
+
       setError(errorMessage)
       throw error
     } finally {
@@ -127,17 +161,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setError(null)
     try {
       const response = await apiService.verifyOtp(phone, otp)
-      localStorage.setItem('auth:token', response.token)
-      localStorage.setItem('auth:user', JSON.stringify(response.user))
-      try {
-        localStorage.setItem('auth:permissions', JSON.stringify(response.permissions ?? null))
-      } catch {}
+      persistLoginSession(response)
       setUser(response.user)
     } catch (error) {
       let errorMessage = 'Login failed. Please try again.'
       if (error instanceof ApiError) {
         if (error.status === 401) {
-          // Specific OTP-related errors are handled by caller UI; surface message too
           errorMessage = error.data?.error || 'Invalid OTP'
         } else if (error.status === 429) {
           errorMessage = error.message || 'Too many requests. Please try again later.'
@@ -156,14 +185,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  const value = useMemo(() => ({ 
-    user, 
-    login, 
-    loginWithOtp,
-    logout, 
-    isLoading, 
-    error 
-  }), [user, login, loginWithOtp, logout, isLoading, error])
-  
+  const value = useMemo(
+    () => ({
+      user,
+      login,
+      loginWithOtp,
+      logout,
+      isLoading,
+      error,
+    }),
+    [user, login, loginWithOtp, logout, isLoading, error]
+  )
+
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

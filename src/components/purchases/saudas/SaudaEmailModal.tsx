@@ -4,6 +4,7 @@ import { X, Mail, Send, Loader2, Plus, Trash2, FileText, AlertCircle } from 'luc
 import { useToast } from '../../shared/Toast';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { saudasAPI } from '../../../services/saudas.api';
+import { getAccessToken } from '../../../services/authStorage';
 
 interface SaudaEmailModalProps {
   open: boolean;
@@ -18,7 +19,7 @@ export function SaudaEmailModal({
   saudaId,
   onSuccess,
 }: SaudaEmailModalProps) {
-  const token = localStorage.getItem('auth:token');
+  const token = getAccessToken();
   const { success, error: showError } = useToast();
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [sending, setSending] = useState(false);

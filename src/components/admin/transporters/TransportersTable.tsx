@@ -6,7 +6,7 @@ import { EmptyState } from '../shared/EmptyState';
 import { ActionButtons } from '../shared/ActionButtons';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
-import { Truck, Car, ExternalLink, Shield } from 'lucide-react';
+import { Truck, Car, ExternalLink, Shield, AlertTriangle } from 'lucide-react';
 import { useTransporters } from '../../../hooks/useTransporters';
 import { useVehicles } from '../../../hooks/useVehicles';
 import { TransporterFormModal } from './TransporterFormModal';
@@ -19,16 +19,10 @@ import { formatTransporterVerifiedAt } from '../../../utils/transporterVerificat
 import type { Transporter, InwardSlipPass } from '../../../types/entities';
 
 export function TransportersTable() {
-  const [verificationFilter, setVerificationFilter] = useState<string | undefined>();
-  const [bankVerifyFilter, setBankVerifyFilter] = useState<string | undefined>();
-  const isVerifiedParam =
-    verificationFilter === 'verified' ? true : verificationFilter === 'unverified' ? false : undefined;
-  const bankVerifiedParam =
-    bankVerifyFilter === 'verified' ? true : bankVerifyFilter === 'unverified' ? false : undefined;
+  const [statusFilter, setStatusFilter] = useState<string | undefined>('active');
+  const [registrationFilter, setRegistrationFilter] = useState<string | undefined>();
   const { transporters, loading, deleteTransporter, refetch } = useTransporters({
-    includeInactive: false,
-    isVerified: isVerifiedParam,
-    bankVerified: bankVerifiedParam,
+    includeInactive: statusFilter !== 'active',
   });
   const { vehicles, refetch: refetchVehicles } = useVehicles();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -230,10 +224,22 @@ export function TransportersTable() {
           ) ||
           cp.emails?.some(email => email && email.toLowerCase().includes(searchQuery.toLowerCase()))
         ));
+
+      const matchesStatus = statusFilter
+        ? statusFilter === 'active'
+          ? transporter.is_active
+          : !transporter.is_active
+        : true;
+
+      const matchesRegistration = registrationFilter
+        ? registrationFilter === 'registered'
+          ? transporter.transport_type === 'registered'
+          : transporter.transport_type === 'unregistered'
+        : true;
       
-      return matchesSearch;
+      return matchesSearch && matchesStatus && matchesRegistration;
     });
-  }, [transporters, searchQuery]);
+  }, [transporters, searchQuery, statusFilter, registrationFilter]);
 
   return (
     <div>
@@ -247,22 +253,22 @@ export function TransportersTable() {
         </div>
         <div className="flex gap-2 flex-wrap items-center">
           <FilterDropdown
-            label="KYC"
+            label="Status"
             options={[
-              { label: 'Verified', value: 'verified' },
-              { label: 'Unverified', value: 'unverified' },
+              { label: 'Active', value: 'active' },
+              { label: 'Inactive', value: 'inactive' },
             ]}
-            value={verificationFilter}
-            onChange={setVerificationFilter}
+            value={statusFilter}
+            onChange={setStatusFilter}
           />
           <FilterDropdown
-            label="Bank"
+            label="Registration"
             options={[
-              { label: 'Verified', value: 'verified' },
-              { label: 'Not verified', value: 'unverified' },
+              { label: 'Registered', value: 'registered' },
+              { label: 'Unregistered', value: 'unregistered' },
             ]}
-            value={bankVerifyFilter}
-            onChange={setBankVerifyFilter}
+            value={registrationFilter}
+            onChange={setRegistrationFilter}
           />
           <button
             onClick={() => setCreateModalOpen(true)}
@@ -307,6 +313,7 @@ export function TransportersTable() {
                   const primaryEmail = primaryContact?.emails?.[0] || 'N/A';
                   
                   return (
+                    <>
                     <tr key={transporter.id} className="border-b border-border/60 hover:bg-muted/30 transition-colors">
                       <td className="py-3 px-4 text-sm font-medium">
                         <div className="flex items-center gap-2">
@@ -314,6 +321,14 @@ export function TransportersTable() {
                           {transporter.is_verified && (
                             <span title="Verified" className="inline-flex">
                               <Shield className="h-3.5 w-3.5 text-emerald-500 shrink-0" aria-hidden />
+                            </span>
+                          )}
+                          {!transporter.bank_details_verified_at && transporter.bank_verification_error?.trim() && (
+                            <span
+                              className="whitespace-nowrap px-2 py-0.5 rounded-md text-[10px] bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30"
+                              title={transporter.bank_verification_error.trim()}
+                            >
+                              Bank check failed
                             </span>
                           )}
                         </div>
@@ -388,15 +403,6 @@ export function TransportersTable() {
                               setEditModalOpen(true);
                             }}
                             onDelete={async () => {
-                              if (transporter.is_verified) {
-                                setAlertType('warning');
-                                setAlertTitle('Cannot Delete Transporter');
-                                setAlertMessage(
-                                  `"${transporter.business_name}" is verified and cannot be deleted.`,
-                                );
-                                setAlertOpen(true);
-                                return;
-                              }
                               if (isTransporterInUse(transporter.id)) {
                                 const ispNames = await getISPNamesForTransporter(transporter.id);
                                 const ispCount = ispNames.length;
@@ -416,6 +422,20 @@ export function TransportersTable() {
                         </div>
                       </td>
                     </tr>
+                    {!transporter.bank_details_verified_at && transporter.bank_verification_error?.trim() && (
+                      <tr key={`${transporter.id}-bank-error`} className="border-b border-border/60">
+                        <td colSpan={9} className="px-4 pb-3 pt-0">
+                          <div
+                            className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100 flex gap-2 min-w-0"
+                            role="status"
+                          >
+                            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" aria-hidden />
+                            <p className="min-w-0 break-words leading-snug">{transporter.bank_verification_error.trim()}</p>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </>
                   );
                 })}
               </tbody>
@@ -430,17 +450,6 @@ export function TransportersTable() {
         onOpenChange={setDeleteDialogOpen}
         onConfirm={async () => {
           if (selectedTransporter) {
-            if (selectedTransporter.is_verified) {
-              setDeleteDialogOpen(false);
-              setAlertType('warning');
-              setAlertTitle('Cannot Delete Transporter');
-              setAlertMessage(
-                `"${selectedTransporter.business_name}" is verified and cannot be deleted.`,
-              );
-              setAlertOpen(true);
-              setSelectedTransporter(null);
-              return;
-            }
             try {
               await deleteTransporter(selectedTransporter.id);
               setDeleteDialogOpen(false);
@@ -470,9 +479,10 @@ export function TransportersTable() {
             }
           }
         }}
-        title="Deactivate Transporter"
-        description={`Are you sure you want to deactivate "${selectedTransporter?.business_name}"? It will be hidden from the list but can be included again with inactive records.`}
-        confirmText="Deactivate"
+        title="Delete Transporter"
+        description={`Delete transporter "${selectedTransporter?.business_name}"? This permanently removes the record and cannot be undone.`}
+        confirmText="Delete"
+        variant="danger"
       />
 
       <AlertDialog

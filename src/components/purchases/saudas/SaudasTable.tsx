@@ -12,6 +12,8 @@ import { Package, Eye, MoreVertical, Edit2, Trash2, UtensilsCrossed, Wheat, Mail
 import { useSaudas } from '../../../hooks/useSaudas';
 import { useVendors } from '../../../hooks/useVendors';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
+import { riceLengthsAPI } from '../../../services/riceLengths.api';
+import { toRiceLengthLabelOptions } from '../../../utils/riceLengthModule';
 import { paymentAdvicesAPI } from '../../../services/paymentAdvices.api';
 import { inwardSlipPassesAPI } from '../../../services/inwardSlipPasses.api';
 import { kaantasAPI } from '../../../services/kaantas.api';
@@ -101,12 +103,12 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
         const [codes, types, lengths] = await Promise.all([
           riceCodesAPI.getAllRiceCodes(),
           riceCodesAPI.getRiceTypes(),
-          riceCodesAPI.getRiceLengths(),
+          riceLengthsAPI.getAllRiceLengths(),
         ]);
         if (!cancelled) {
           setRiceCodes(codes);
           setRiceTypes(types);
-          setRiceLengths(lengths);
+          setRiceLengths(toRiceLengthLabelOptions(lengths));
         }
       } catch (error) {
         console.error('Failed to fetch rice codes / types / lengths:', error);

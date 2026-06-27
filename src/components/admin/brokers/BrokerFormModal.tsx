@@ -29,9 +29,11 @@ import {
   buildSurepassSnapshot,
   brokerPersist,
   isEmailVerifiedInKyc,
+  isEntityBankVerified,
   mergeEntityKycSnapshot,
   persistAadhaarValidationSnapshot,
   persistBankVerificationSnapshot,
+  resolveEntityBankVerifiedAt,
 } from '../../../utils/kycVerification';
 import {
   applyAadhaarStateToAddress,
@@ -54,6 +56,12 @@ import {
 import { verifyAutofilledEmails, isVerifiedEmailInput, VERIFIED_EMAIL_INPUT_CLASS } from '../../../utils/emailVerification';
 import { canVerifyBankAccountLookup, getBankAccountHolderNameMismatchError, mapBankVerifyToBankDetails } from '../../../utils/bankVerification';
 import { assertEntityNotDuplicateBeforeVerification } from '../../../utils/entityDuplicateCheck';
+import {
+  applyAadhaarOcrToNestedParty,
+  applyGstOcrToNestedParty,
+  applyPanOcrToNestedParty,
+} from '../../../utils/documentOcrPrefill';
+import { KycDocumentOcrSection } from '../../shared/KycDocumentOcrSection';
 import {
   BROKER_CREATE_LENIENT_BANK_MESSAGE,
   BROKER_UPDATE_LENIENT_BANK_MESSAGE,
@@ -295,8 +303,18 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
   const [aadhaarValidationSummary, setAadhaarValidationSummary] = useState<string | null>(null);
   const [kycVerificationDetails, setKycVerificationDetails] = useState<EntityKycVerificationDetails>({});
   const [bankDetailsVerifiedAt, setBankDetailsVerifiedAt] = useState<string | null>(null);
+  const [bankVerifiedInSession, setBankVerifiedInSession] = useState(false);
   const [bankVerificationError, setBankVerificationError] = useState<string | null>(null);
   const brokerPersistContext = brokerPersist(brokerId);
+  const displayBankVerifiedAt = resolveEntityBankVerifiedAt(
+    bankDetailsVerifiedAt,
+    kycVerificationDetails,
+  );
+  const showBankVerified = isEntityBankVerified(
+    bankDetailsVerifiedAt,
+    kycVerificationDetails,
+    bankVerifiedInSession,
+  );
   const [gstAutoFilledFields, setGstAutoFilledFields] = useState<Set<string>>(new Set());
   /** Snapshot from server — in edit, GST/PAN cannot be changed (same pattern as VendorFormModal). */
   const [originalGstNumber, setOriginalGstNumber] = useState('');
@@ -327,6 +345,7 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
       setAadhaarValidationSummary(null);
       setKycVerificationDetails({});
       setBankDetailsVerifiedAt(null);
+      setBankVerifiedInSession(false);
       setBankVerificationError(null);
       return;
     }
@@ -339,6 +358,7 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
         setFormData(brokerEntityToForm(b));
         setKycVerificationDetails(b.kyc_verification_details ?? {});
         setBankDetailsVerifiedAt(b.bank_details_verified_at ?? null);
+        setBankVerifiedInSession(Boolean(b.bank_details_verified_at));
         setBankVerificationError(b.bank_verification_error ?? null);
         const gst = (b.business_details?.gst_number ?? '').trim();
         const pan = (b.business_details?.pan_number ?? '').trim();
@@ -427,6 +447,8 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
         }));
         return;
       }
+      setBankVerifiedInSession(true);
+      setBankVerificationError(null);
     } catch (error: unknown) {
       setErrors((prev) => ({
         ...prev,
@@ -687,7 +709,6 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
       const autofill = buildEnrichedGstLookupAutofill(result);
       const autoFilledFields = new Set(gstAutoFilledFields);
 
-      if (autofill.businessName) autoFilledFields.add('business_name');
       if (autofill.gstNumber) autoFilledFields.add('gst_number');
       if (autofill.panNumber) autoFilledFields.add('pan_number');
       if (autofill.businessType) autoFilledFields.add('business_type');
@@ -797,7 +818,7 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
         const cleanedFormData = cleanBrokerFormPayload(formData);
         const updatePayload = buildEntitySavePayload(cleanedFormData, {
           kycVerificationDetails,
-          bankVerifiedInSession: false,
+          bankDetailsVerifiedAt,
         });
         const { message, verification_error, verification_message } = await updateBroker(
           brokerId,
@@ -883,7 +904,7 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
 
       const createPayload = buildEntitySavePayload(cleanedFormData, {
         kycVerificationDetails,
-        bankVerifiedInSession: false,
+        bankDetailsVerifiedAt,
       });
 
       const { message, verification_error, verification_message } = await createBroker(createPayload);
@@ -999,6 +1020,63 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
                     </p>
                   </div>
 
+                  <KycDocumentOcrSection
+                    docs={
+                      formData.business_details.business_type === 'individual'
+                        ? ['pan', 'aadhaar']
+                        : ['gst', 'pan']
+                    }
+                    disabled={lookupLoading || loading}
+                    onGstResult={(result) => {
+                      setFormData((prev) => ({
+                        ...prev,
+                        ...applyGstOcrToNestedParty(prev, result),
+                      }));
+                      setErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.gst_number;
+                        delete next.pan_number;
+                        return next;
+                      });
+                    }}
+                    onPanResult={(result) => {
+                      setFormData((prev) => ({
+                        ...prev,
+                        ...applyPanOcrToNestedParty(prev, result),
+                      }));
+                      setErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.pan_number;
+                        return next;
+                      });
+                    }}
+                    onAadhaarResult={(result) => {
+                      setFormData((prev) => ({
+                        ...prev,
+                        ...applyAadhaarOcrToNestedParty(prev, result),
+                      }));
+                      setAadhaarValidated(false);
+                      setAadhaarValidationSummary(null);
+                      setErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.aadhaar_number;
+                        return next;
+                      });
+                    }}
+                    onSuccess={(title, message) => {
+                      setAlertType('success');
+                      setAlertTitle(title);
+                      setAlertMessage(message);
+                      setAlertOpen(true);
+                    }}
+                    onError={(title, message) => {
+                      setAlertType('error');
+                      setAlertTitle(title);
+                      setAlertMessage(message);
+                      setAlertOpen(true);
+                    }}
+                  />
+
                   {/* GST Number - shown for company */}
                   {formData.business_details.business_type !== 'individual' && (
                     <div>
@@ -1106,7 +1184,7 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
                       value={formData.business_name}
                       onChange={(e) => setFormData({ ...formData, business_name: e.target.value })}
                       className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary read-only:cursor-not-allowed"
-                      readOnly={isEdit || gstAutoFilledFields.has('business_name')}
+                      readOnly={isEdit}
                     />
                     {errors.business_name && <p className="mt-1 text-xs text-red-600">{errors.business_name}</p>}
                   </div>
@@ -1437,16 +1515,20 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
               {/* Step 3: Bank Details */}
               {step === 3 && (
                 <div className="space-y-4">
-                  {bankDetailsVerifiedAt && (
+                  {showBankVerified && (
                     <span
                       className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400"
-                      title={`Bank verified ${new Date(bankDetailsVerifiedAt).toLocaleString('en-IN')}`}
+                      title={
+                        displayBankVerifiedAt
+                          ? `Bank verified ${new Date(displayBankVerifiedAt).toLocaleString('en-IN')}`
+                          : 'Bank verified in this session — save to persist'
+                      }
                     >
                       <Shield className="h-3.5 w-3.5" />
                       Bank verified
                     </span>
                   )}
-                  {!bankDetailsVerifiedAt && bankVerificationError?.trim() && (
+                  {!showBankVerified && bankVerificationError?.trim() && (
                     <p className="text-xs text-amber-700 dark:text-amber-300 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2">
                       {bankVerificationError.trim()}
                     </p>

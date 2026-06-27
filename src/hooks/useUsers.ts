@@ -1,33 +1,38 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { usersAPI } from '../services/users.api';
 import type { User, CreateUserRequest, UpdateUserRequest } from '../types/entities';
 
-export function useUsers() {
+export interface UseUsersOptions {
+  /** When true, returns active + inactive. Default list is active only. */
+  includeInactive?: boolean;
+}
+
+export function useUsers(options?: UseUsersOptions) {
+  const includeInactive = options?.includeInactive ?? false;
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     setLoading(true);
-      setError(null);
+    setError(null);
     try {
-      const data = await usersAPI.getAllUsers();
+      const data = await usersAPI.getAllUsers(includeInactive);
       setUsers(data);
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [includeInactive]);
 
   useEffect(() => {
-    fetchUsers();
-  }, []);
+    void fetchUsers();
+  }, [fetchUsers]);
 
   const createUser = async (data: CreateUserRequest) => {
     try {
       const newUser = await usersAPI.createUser(data);
-      // Refetch all users to ensure we have the latest data from the server
       await fetchUsers();
       return newUser;
     } catch (err: any) {
@@ -38,7 +43,7 @@ export function useUsers() {
   const updateUser = async (id: string, data: UpdateUserRequest) => {
     try {
       const updatedUser = await usersAPI.updateUser(id, data);
-      setUsers(users.map((u) => (u.id === id ? updatedUser : u)));
+      setUsers((prev) => prev.map((u) => (u.id === id ? updatedUser : u)));
       return updatedUser;
     } catch (err: any) {
       throw err;
@@ -48,7 +53,7 @@ export function useUsers() {
   const deleteUser = async (id: string) => {
     try {
       await usersAPI.deleteUser(id);
-      setUsers(users.filter((u) => u.id !== id));
+      setUsers((prev) => prev.filter((u) => u.id !== id));
     } catch (err: any) {
       throw err;
     }

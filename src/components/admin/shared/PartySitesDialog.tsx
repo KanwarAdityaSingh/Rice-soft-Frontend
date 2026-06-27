@@ -75,7 +75,12 @@ export function PartySitesDialog({
   };
 
   const label = kind === 'vendor' ? 'purchase party' : 'sales party';
-  const title = `Extra sites — ${partyName.trim() || partyId.slice(0, 8)}`;
+  const addSiteActionLabel =
+    kind === 'sales_party' ? 'Additional delivery address' : 'Add dispatch address';
+  const title =
+    kind === 'sales_party'
+      ? `Delivery addresses — ${partyName.trim() || partyId.slice(0, 8)}`
+      : `Extra sites — ${partyName.trim() || partyId.slice(0, 8)}`;
 
   const formatAddress = (a: SiteRow['address']) =>
     [a.street, a.city, a.state, a.pincode, a.country].filter(Boolean).join(', ');
@@ -90,7 +95,9 @@ export function PartySitesDialog({
               <div>
                 <Dialog.Title className="text-lg font-semibold pr-8">{title}</Dialog.Title>
                 <p className="text-sm text-muted-foreground mt-0.5">
-                  Additional locations for this {label}. Primary address is on the {label} card.
+                  {kind === 'sales_party'
+                    ? 'Additional delivery locations for this sales party. Primary address is on the sales party card.'
+                    : `Additional locations for this ${label}. Primary address is on the ${label} card.`}
                 </p>
               </div>
               <Dialog.Close className="rounded-lg p-1.5 hover:bg-muted shrink-0">
@@ -106,8 +113,8 @@ export function PartySitesDialog({
               ) : sites.length === 0 ? (
                 <EmptyState
                   icon={MapPin}
-                  title="No extra sites"
-                  description="Use “Add site” on the card to record another address."
+                  title={kind === 'sales_party' ? 'No delivery addresses' : 'No extra sites'}
+                  description={`Use “${addSiteActionLabel}” on the card to record another address.`}
                 />
               ) : (
                 <div className="overflow-x-auto rounded-xl border border-border">
@@ -193,10 +200,12 @@ export function PartySitesDialog({
           if (!o) setDeleteSite(null);
         }}
         onConfirm={handleDelete}
-        title="Remove site"
+        title={kind === 'sales_party' ? 'Remove delivery address' : 'Remove site'}
         description={
           deleteSite
-            ? `Soft-delete this site (${deleteSite.label})? You can add it again later if needed.`
+            ? kind === 'sales_party'
+              ? `Soft-delete this delivery address (${deleteSite.label})? You can add it again later if needed.`
+              : `Soft-delete this site (${deleteSite.label})? You can add it again later if needed.`
             : ''
         }
         confirmText="Remove"

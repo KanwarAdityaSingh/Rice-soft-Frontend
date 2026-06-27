@@ -1,20 +1,34 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { SearchBar } from '../../admin/shared/SearchBar';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { EmptyState } from '../../admin/shared/EmptyState';
 import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
 import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
-import { FileText, Scale, Package, Eye, MoreVertical, Edit2, Trash2, Receipt, FileCheck, ClipboardList, Route } from 'lucide-react';
+import {
+  FileText,
+  Scale,
+  Package,
+  Eye,
+  MoreVertical,
+  Edit2,
+  Trash2,
+  Receipt,
+  FileCheck,
+  ClipboardList,
+  Route,
+  AlertTriangle,
+} from 'lucide-react';
 import { useInwardSlipPasses } from '../../../hooks/useInwardSlipPasses';
 import { useVehicleMap } from '../../../hooks/useVehicles';
+import { kaantasAPI } from '../../../services/kaantas.api';
 import { InwardSlipPassFormModal } from './InwardSlipPassFormModal';
 import { InwardSlipPassPreviewDialog } from './InwardSlipPassPreviewDialog';
 import { KaantaWeightDialog } from './KaantaWeightDialog';
 import { LinkedLotsDialog } from './LinkedLotsDialog';
 import { GodownFilterSelect } from '../../shared/GodownFilterSelect';
 import { useGodowns } from '../../../hooks/useGodowns';
-import type { InwardSlipPass } from '../../../types/entities';
+import type { InwardSlipPass, Kaanta } from '../../../types/entities';
 
 type ISPRowActionsProps = {
   isp: InwardSlipPass;
@@ -191,6 +205,30 @@ export function InwardSlipPassesTable() {
 
   const [documentViewerOpen, setDocumentViewerOpen] = useState(false);
   const [viewerDocuments, setViewerDocuments] = useState<DocumentInfo[]>([]);
+  const [kaantas, setKaantas] = useState<Kaanta[]>([]);
+
+  const fetchKaantas = useCallback(async () => {
+    try {
+      const data = await kaantasAPI.getAllKaantas(undefined, undefined, godownFilter);
+      setKaantas(data);
+    } catch {
+      setKaantas([]);
+    }
+  }, [godownFilter]);
+
+  useEffect(() => {
+    fetchKaantas();
+  }, [fetchKaantas]);
+
+  const ispVehicleMismatchById = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const kaanta of kaantas) {
+      if (kaanta.vehicle_number_mismatch && kaanta.inward_slip_pass_id && !map.has(kaanta.inward_slip_pass_id)) {
+        map.set(kaanta.inward_slip_pass_id, kaanta.parchi_vehicle_number ?? null);
+      }
+    }
+    return map;
+  }, [kaantas]);
 
   const handleViewDocuments = (docs: DocumentInfo[]) => {
     setViewerDocuments(docs);
@@ -259,7 +297,24 @@ export function InwardSlipPassesTable() {
                     {isp.party_name}
                   </td>
                   <td className="py-2.5 px-3 whitespace-nowrap">{godownName(isp.godown_id)}</td>
-                  <td className="py-2.5 px-3 whitespace-nowrap">{getVehicleNumber(isp.vehicle_id)}</td>
+                  <td className="py-2.5 px-3 whitespace-nowrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span>{getVehicleNumber(isp.vehicle_id)}</span>
+                      {ispVehicleMismatchById.has(isp.id) && (
+                        <span
+                          className="inline-flex items-center gap-1 px-1.5 py-0 rounded-md text-[10px] bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30"
+                          title={
+                            ispVehicleMismatchById.get(isp.id)
+                              ? `Slip vehicle ${ispVehicleMismatchById.get(isp.id)} does not match ISP vehicle ${getVehicleNumber(isp.vehicle_id)}`
+                              : `Kaanta slip vehicle does not match ISP vehicle ${getVehicleNumber(isp.vehicle_id)}`
+                          }
+                        >
+                          <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden />
+                          Vehicle mismatch
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td className="py-2.5 px-3 whitespace-nowrap">{new Date(isp.date).toLocaleDateString()}</td>
                   <td className="py-2.5 px-3 text-right whitespace-nowrap">
                     {isp.transportation_cost != null ? `₹${isp.transportation_cost.toFixed(2)}` : '—'}
@@ -341,7 +396,10 @@ export function InwardSlipPassesTable() {
         open={kaantaWeightOpen}
         onOpenChange={setKaantaWeightOpen}
         isp={kaantaWeightISP}
-        onSuccess={refetch}
+        onSuccess={() => {
+          refetch();
+          fetchKaantas();
+        }}
       />
 
       <LinkedLotsDialog open={linkedLotsOpen} onOpenChange={setLinkedLotsOpen} isp={linkedLotsISP} godownId={godownFilter} />

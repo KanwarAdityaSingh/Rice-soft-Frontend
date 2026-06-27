@@ -16,6 +16,8 @@ import {
 } from '../../../utils/gstLookupAutofill';
 import { verifyAutofilledEmails, isVerifiedEmailInput, rememberVerifiedEmail, VERIFIED_EMAIL_INPUT_CLASS } from '../../../utils/emailVerification';
 import { assertEntityNotDuplicateBeforeVerification } from '../../../utils/entityDuplicateCheck';
+import { applyGstOcrToSimpleEntity } from '../../../utils/documentOcrPrefill';
+import { KycDocumentOcrSection } from '../../shared/KycDocumentOcrSection';
 import { sanitizePhoneList } from '../../../utils/phoneFormatting';
 
 function isValidGoogleMapsLink(value: string | null | undefined): boolean {
@@ -324,6 +326,42 @@ export function GodownFormModal({ open, onOpenChange, godownId }: GodownFormModa
                   />
                   {errors.name && <p className="text-xs text-destructive mt-1">{errors.name}</p>}
                 </div>
+
+                <KycDocumentOcrSection
+                  docs={['gst']}
+                  disabled={lookupLoading || loading}
+                  onGstResult={(result) => {
+                    setForm((prev) => ({
+                      ...prev,
+                      ...applyGstOcrToSimpleEntity(
+                        {
+                          name: prev.name,
+                          gst_number: prev.gst_number,
+                          address: prev.address ?? emptyAddress(),
+                          contact_persons: prev.contact_persons,
+                        },
+                        result,
+                      ),
+                    }));
+                    setErrors((prev) => {
+                      const next = { ...prev };
+                      delete next.gst_number;
+                      return next;
+                    });
+                  }}
+                  onSuccess={(title, message) => {
+                    setAlertType('success');
+                    setAlertTitle(title);
+                    setAlertMessage(message);
+                    setAlertOpen(true);
+                  }}
+                  onError={(title, message) => {
+                    setAlertType('error');
+                    setAlertTitle(title);
+                    setAlertMessage(message);
+                    setAlertOpen(true);
+                  }}
+                />
 
                 <div>
                   <label className="block text-xs font-medium mb-1">GST</label>

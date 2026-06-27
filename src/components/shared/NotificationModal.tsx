@@ -7,7 +7,9 @@ import { floorNetPayable } from '../../utils/money';
 import { PhoneInput } from './PhoneInput';
 import { sanitizePhoneList } from '../../utils/validation';
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3000/api';
+import { API_BASE_URL } from '../../services/api';
+import { authenticatedFetch } from '../../services/authenticatedFetch';
+import { getAccessToken } from '../../services/authStorage';
 
 interface NotificationPreview {
   email?: {
@@ -53,7 +55,7 @@ export function NotificationModal({
   initialTab = 'email',
   onSuccess,
 }: NotificationModalProps) {
-  const token = localStorage.getItem('auth:token');
+  const token = getAccessToken();
   const { success, error: showError } = useToast();
   const [activeTab, setActiveTab] = useState<'email' | 'whatsapp'>(initialTab);
   const [loadingPreview, setLoadingPreview] = useState(false);
@@ -90,19 +92,18 @@ export function NotificationModal({
       let preview: NotificationPreview;
 
       if (type === 'sauda' && entityId) {
-        const response = await fetch(`${API_BASE_URL}/saudas/${entityId}/notification-preview`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const response = await authenticatedFetch(
+          `${API_BASE_URL}/saudas/${entityId}/notification-preview`
+        );
         const result = await response.json();
         if (result.status !== 'success') {
           throw new Error(result.message || 'Failed to load preview');
         }
         preview = result.data;
       } else if (type === 'payment-advice' && paymentAdviceData) {
-        const response = await fetch(`${API_BASE_URL}/payment-advices/preview`, {
+        const response = await authenticatedFetch(`${API_BASE_URL}/payment-advices/preview`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -185,9 +186,8 @@ export function NotificationModal({
         throw new Error('Invalid configuration');
       }
 
-      const response = await fetch(url, {
+      const response = await authenticatedFetch(url, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
 
@@ -253,9 +253,8 @@ export function NotificationModal({
         throw new Error('Invalid configuration');
       }
 
-      const response = await fetch(url, {
+      const response = await authenticatedFetch(url, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
 

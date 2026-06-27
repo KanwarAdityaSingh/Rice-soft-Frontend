@@ -5,7 +5,38 @@ import type {
   CreateDriverRequest,
   UpdateDriverRequest,
   DriverVerificationResponse,
+  DrivingLicenseOcrResponse,
+  DrivingLicenseOcrUploadOptions,
 } from '../types/entities';
+import { postDrivingLicenseOcr } from './licenseOcr.api';
+
+/** Matches backend success message when driver is created with transport DOE missing. */
+export const DRIVER_CREATE_LENIENT_TRANSPORT_DOE_MESSAGE = 'Driver created successfully';
+
+export type DriverSaveResult = {
+  driver: Driver;
+  message: string;
+  verification_error?: string;
+  transport_doe_not_found?: boolean;
+};
+
+function mapDriverEnvelope(res: {
+  data: Driver;
+  message?: string;
+  verification_error?: string;
+  transport_doe_not_found?: boolean;
+}): DriverSaveResult {
+  return {
+    driver: {
+      ...res.data,
+      transport_doe_not_found: res.transport_doe_not_found ?? res.data.transport_doe_not_found,
+      verification_error: res.verification_error ?? res.data.verification_error ?? null,
+    },
+    message: res.message ?? '',
+    verification_error: res.verification_error,
+    transport_doe_not_found: res.transport_doe_not_found,
+  };
+}
 
 export interface GetAllDriversOptions {
   /** When true, returns active + inactive. Default list is active only. */
@@ -47,7 +78,10 @@ export const driversAPI = {
   getDriverByLicense: (licenseNumber: string) =>
     apiService.get<Driver>(`/drivers/by-license/${encodeURIComponent(licenseNumber)}`),
 
-  createDriver: (data: CreateDriverRequest) => apiService.post<Driver>('/drivers', data),
+  createDriver: async (data: CreateDriverRequest): Promise<DriverSaveResult> => {
+    const res = await apiService.postEnvelope<Driver>('/drivers', data);
+    return mapDriverEnvelope(res);
+  },
 
   /** Lookup-only or auto-update when driver_id / matching licence exists */
   verifyDriver: (idNumber: string, dob?: string, driverId?: string) =>
@@ -65,8 +99,14 @@ export const driversAPI = {
     });
   },
 
-  updateDriver: (id: string, data: UpdateDriverRequest) =>
-    apiService.put<Driver>(`/drivers/${id}`, data),
+  /** Licence OCR prefill — optional driver_id persists fields without setting is_verified. */
+  ocrDriver: (front: File, options?: DrivingLicenseOcrUploadOptions): Promise<DrivingLicenseOcrResponse> =>
+    postDrivingLicenseOcr('/drivers/ocr', front, options),
+
+  updateDriver: async (id: string, data: UpdateDriverRequest): Promise<DriverSaveResult> => {
+    const res = await apiService.putEnvelope<Driver>(`/drivers/${id}`, data);
+    return mapDriverEnvelope(res);
+  },
 
   deleteDriver: (id: string) =>
     apiService.delete<{ success: boolean; message: string }>(`/drivers/${id}`),

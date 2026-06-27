@@ -26,9 +26,9 @@ export const salesmenAPI = {
     return apiService.post<Salesman>(`/salesmen/updateSalesman/${id}`, data);
   },
 
-  // Delete salesman
+  // Hard delete salesman
   deleteSalesman: (id: string) => {
-    return apiService.post<{ success: boolean; message: string }>(`/salesmen/deleteSalesman/${id}`);
+    return apiService.delete<{ success: boolean; message: string }>(`/salesmen/${id}`);
   },
 };
 

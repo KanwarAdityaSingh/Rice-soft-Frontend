@@ -8,7 +8,7 @@ export const getRiceTypeLabel = (
   return riceType ? riceType.label : value;
 };
 
-/** Same shape as rice types — from GET /riceCodes/getRiceLengths */
+/** Resolves legacy rice length codes or rice_length_id against label options. */
 export const getRiceLengthLabel = (
   value: string | null | undefined,
   riceLengths: Array<{ value: string; label: string }>
