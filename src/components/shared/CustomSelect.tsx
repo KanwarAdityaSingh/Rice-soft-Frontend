@@ -1,6 +1,6 @@
 import * as Select from '@radix-ui/react-select';
 import { ChevronDown, Check } from 'lucide-react';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 
 interface Option {
   value: string;
@@ -17,6 +17,12 @@ interface CustomSelectProps {
   allowClear?: boolean;
   clearLabel?: string;
   openUpward?: boolean;
+  /** Label used when `value` is set but not yet present in `options` (edit hydration). */
+  valueLabel?: string | null;
+}
+
+function fallbackLabel(value: string): string {
+  return value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export function CustomSelect({
@@ -28,7 +34,8 @@ export function CustomSelect({
   className = '',
   allowClear = false,
   clearLabel = 'None',
-  openUpward = false
+  openUpward = false,
+  valueLabel = null,
 }: CustomSelectProps) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [shouldOpenUp, setShouldOpenUp] = useState(openUpward);
@@ -37,7 +44,7 @@ export function CustomSelect({
   useEffect(() => {
     // Only use auto-detection on mobile devices and when openUpward is not explicitly set
     const isMobile = window.innerWidth < 768;
-    
+
     if (!openUpward && triggerRef.current && isOpen && isMobile) {
       const checkPosition = () => {
         if (triggerRef.current) {
@@ -70,18 +77,30 @@ export function CustomSelect({
     onChange(newValue === '__clear__' ? null : newValue);
   };
 
-  const displayOptions = allowClear ? [
-    { value: '__clear__', label: clearLabel },
-    ...options.filter((o) => o.value != null && o.value !== ''),
-  ] : options.filter((o) => o.value != null && o.value !== '');
+  const displayOptions = useMemo(() => {
+    const base = options.filter((o) => o.value != null && o.value !== '');
+    const withClear = allowClear
+      ? [{ value: '__clear__', label: clearLabel }, ...base]
+      : base;
+    if (value != null && value !== '' && !withClear.some((o) => o.value === value)) {
+      return [
+        ...withClear,
+        {
+          value,
+          label: valueLabel?.trim() || fallbackLabel(value),
+        },
+      ];
+    }
+    return withClear;
+  }, [options, allowClear, clearLabel, value, valueLabel]);
 
   const hasValidValue =
     value != null && value !== '' && displayOptions.some((o) => o.value === value);
 
   return (
-    <Select.Root 
-      value={hasValidValue ? value! : undefined} 
-      onValueChange={handleValueChange} 
+    <Select.Root
+      value={hasValidValue ? value! : undefined}
+      onValueChange={handleValueChange}
       disabled={disabled}
       onOpenChange={setIsOpen}
     >
@@ -116,7 +135,7 @@ export function CustomSelect({
                 <Select.ItemIndicator className="absolute left-2">
                   <Check className="h-4 w-4" />
                 </Select.ItemIndicator>
-                <Select.ItemText className="truncate">{option.label}</Select.ItemText>
+                <Select.ItemText>{option.label}</Select.ItemText>
               </Select.Item>
             ))}
           </Select.Viewport>

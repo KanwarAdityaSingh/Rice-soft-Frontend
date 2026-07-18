@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState, useEffect, useRef } from 'react';
-import { X, Car, Loader2, Check, RefreshCw, Plus, ChevronDown, Search, ExternalLink } from 'lucide-react';
+import { X, Car, Loader2, Check, RefreshCw, Plus, ChevronDown, Search } from 'lucide-react';
 import { vehiclesAPI } from '../../../services/vehicles.api';
 import { useTransporters } from '../../../hooks/useTransporters';
 import { AlertDialog } from '../../shared/AlertDialog';
@@ -13,11 +13,11 @@ import {
 } from '../../../utils/kycVerification';
 import { mapRcFullToVehicleForm } from '../../../utils/rcFullMapping';
 import { getUserFacingApiErrorMessage } from '../../../utils/errorHandler';
-import { getDirectoryTransportersPagePath } from '../../../utils/appRoutes';
 import { kycAPI } from '../../../services/kyc.api';
 import { mapRcOcrToVehicleForm } from '../../../utils/documentOcrFields';
 import { DOCUMENT_OCR_FILE_HINT } from '../../../utils/documentOcr';
 import { DocumentOcrUpload } from '../../shared/DocumentOcrUpload';
+import { TransporterFormModal } from '../transporters/TransporterFormModal';
 import {
   getVehicleNumberValidationError,
   sanitizeVehicleNumberInput,
@@ -29,11 +29,14 @@ interface VehicleFormModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   vehicleId?: string | null;
+  /** Raise z-index when opened above another modal */
+  nested?: boolean;
 }
 
-export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormModalProps) {
+export function VehicleFormModal({ open, onOpenChange, vehicleId, nested = false }: VehicleFormModalProps) {
   const { transporters, refetch: refetchTransporters, loading: loadingTransporters } = useTransporters();
   const isEditMode = !!vehicleId;
+  const [transporterFormOpen, setTransporterFormOpen] = useState(false);
 
   const [formData, setFormData] = useState<CreateVehicleRequest>({
     vehicle_number: '',
@@ -354,8 +357,8 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
     <>
       <Dialog.Root open={open} onOpenChange={onOpenChange}>
         <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" />
-          <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-[95vw] sm:w-[90vw] md:w-full max-w-2xl translate-x-[-50%] translate-y-[-50%]">
+          <Dialog.Overlay className={`fixed inset-0 bg-black/60 backdrop-blur-sm ${nested ? 'z-[100]' : 'z-40'}`} />
+          <Dialog.Content className={`fixed left-[50%] top-[50%] w-[95vw] sm:w-[90vw] md:w-full max-w-2xl translate-x-[-50%] translate-y-[-50%] ${nested ? 'z-[110]' : 'z-50'}`}>
             <div className="glass rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
@@ -378,7 +381,7 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                   {!formData.is_verified && (
                     <DocumentOcrUpload
                       title="Scan vehicle RC (OCR)"
-                      hint={`Upload the RC document image or PDF. Prefills registration details — use Fetch RC for full validation. ${DOCUMENT_OCR_FILE_HINT}.`}
+                      hint={`Upload a clear photo or scan of the RC. Prefills registration details — use Fetch RC for full validation. ${DOCUMENT_OCR_FILE_HINT}.`}
                       scanning={scanningRcOcr}
                       disabled={fetchingRc || loading}
                       onScan={(file) => void handleRcOcrScan(file)}
@@ -556,12 +559,10 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
                       <div className="flex items-center gap-1.5 shrink-0">
                         <button
                           type="button"
-                          onClick={() =>
-                            window.open(getDirectoryTransportersPagePath({ create: true }), '_blank', 'noopener,noreferrer')
-                          }
+                          onClick={() => setTransporterFormOpen(true)}
                           className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/30 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted/50 transition-colors"
                         >
-                          <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                          <Plus className="h-3.5 w-3.5 shrink-0" />
                           Add Transporter
                         </button>
                         <button
@@ -666,6 +667,16 @@ export function VehicleFormModal({ open, onOpenChange, vehicleId }: VehicleFormM
         type={alertType}
         title={alertTitle}
         message={alertMessage}
+      />
+
+      <TransporterFormModal
+        open={transporterFormOpen}
+        onOpenChange={(next) => {
+          setTransporterFormOpen(next);
+          if (!next) void refetchTransporters();
+        }}
+        nested
+        elevate={nested}
       />
     </>
   );

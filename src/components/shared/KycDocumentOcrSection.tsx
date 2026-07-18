@@ -23,13 +23,13 @@ const OCR_COPY: Record<
   },
   pan: {
     title: 'Scan PAN card (OCR)',
-    hint: `Upload the PAN card image or PDF. Prefills PAN and name — use Verify for full validation. ${DOCUMENT_OCR_FILE_HINT}.`,
+    hint: `Upload a clear photo or scan of the PAN card. Prefills PAN and name — use Verify for full validation. ${DOCUMENT_OCR_FILE_HINT}.`,
     success: 'PAN card scanned',
     failure: 'Could not read PAN card',
   },
   aadhaar: {
     title: 'Scan Aadhaar card (OCR)',
-    hint: `Upload the Aadhaar card image or PDF. Prefills Aadhaar number and name — use Verify for full validation. ${DOCUMENT_OCR_FILE_HINT}.`,
+    hint: `Upload a clear photo or scan of the Aadhaar card front. Prefills Aadhaar number and name — use Verify for full validation. ${DOCUMENT_OCR_FILE_HINT}.`,
     success: 'Aadhaar card scanned',
     failure: 'Could not read Aadhaar card',
   },
@@ -58,7 +58,6 @@ export function KycDocumentOcrSection({
 
   const runScan = async (doc: KycOcrDocumentType, file: File) => {
     const copy = OCR_COPY[doc];
-    const usePdf = file.type === 'application/pdf';
 
     setScanning(doc);
     try {
@@ -69,7 +68,7 @@ export function KycDocumentOcrSection({
         return;
       }
       if (doc === 'pan') {
-        const result = await kycAPI.ocrPan(file, { usePdf });
+        const result = await kycAPI.ocrPan(file);
         onPanResult?.(result);
         onSuccess(copy.success, buildPanMessage(result));
         return;

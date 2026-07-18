@@ -84,6 +84,10 @@ export function CreditNoteDetailModal({
                   <span className="text-muted-foreground">Date</span>
                   <p className="font-medium">{creditNote.credit_note_date}</p>
                 </div>
+                <div>
+                  <span className="text-muted-foreground">Financial year</span>
+                  <p className="font-medium">{creditNote.financial_year ?? '–'}</p>
+                </div>
                 {creditNote.reason && (
                   <div className="col-span-2">
                     <span className="text-muted-foreground">Reason</span>

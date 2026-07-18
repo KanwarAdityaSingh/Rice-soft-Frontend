@@ -1,6 +1,6 @@
 import { API_BASE_URL, apiService } from './api';
 import { authenticatedFetchEnvelopeData } from './authenticatedFetch';
-import type { InwardSlipPass, CreateInwardSlipPassRequest, UpdateInwardSlipPassRequest } from '../types/entities';
+import type { InwardSlipPass, CreateInwardSlipPassRequest, UpdateInwardSlipPassRequest, OtherBill } from '../types/entities';
 
 export const inwardSlipPassesAPI = {
   getAllInwardSlipPasses: (sauda_id?: string, godown_id?: string) => {
@@ -27,14 +27,17 @@ export const inwardSlipPassesAPI = {
     return apiService.post<InwardSlipPass>(`/inward-slip-passes/${id}/status`, { status });
   },
 
-  uploadOtherBill: async (id: string, name: string, file: File) => {
+  uploadOtherBill: async (id: string, name: string, file: File): Promise<{ bill: OtherBill }> => {
     const formData = new FormData();
     formData.append('name', name.trim());
     formData.append('file', file);
-    return authenticatedFetchEnvelopeData(`${API_BASE_URL}/inward-slip-passes/${id}/upload-other-bill`, {
-      method: 'POST',
-      body: formData,
-    });
+    return authenticatedFetchEnvelopeData<{ bill: OtherBill }>(
+      `${API_BASE_URL}/inward-slip-passes/${id}/upload-other-bill`,
+      {
+        method: 'POST',
+        body: formData,
+      }
+    );
   },
 
   deleteOtherBill: async (id: string, billUrl: string) => {

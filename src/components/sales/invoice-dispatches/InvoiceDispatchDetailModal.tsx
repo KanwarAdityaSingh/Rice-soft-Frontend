@@ -15,19 +15,88 @@ import { useInvoiceDispatches } from '../../../hooks/useInvoiceDispatches';
 import { useTransporters } from '../../../hooks/useTransporters';
 import { useVehicleMap } from '../../../hooks/useVehicles';
 import { usePackaging } from '../../../hooks/usePackaging';
+import { useProducts } from '../../../hooks/useProducts';
 import { inventoryAPI } from '../../../services/inventory.api';
 import { salesSaudasAPI } from '../../../services/salesSaudas.api';
 import { salesPartySitesAPI } from '../../../services/salesPartySites.api';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { toast } from '../../../utils/toast';
+import {
+  extractApiErrorMessage,
+  getComplianceProviderLabel,
+  isMastersIndiaMockPayload,
+} from '../../../utils/mastersIndiaSales';
+import QRCode from 'qrcode';
 import { useGodowns } from '../../../hooks/useGodowns';
-import type { InvoiceDispatch, EInvoice, EWayBill, CreateEWayBillRequest } from '../../../types/sales';
+import type {
+  InvoiceDispatch,
+  SalesSauda,
+  EInvoice,
+  EWayBill,
+  CreateEWayBillRequest,
+} from '../../../types/sales';
 import type { SalesPartySite } from '../../../types/entities';
 import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
+import { BillShipToAddresses } from '../shared/BillShipToAddresses';
+import { UploadedDocumentPreview } from '../../shared/UploadedDocumentPreview';
 
-function nicPayloadIsMock(payload: unknown): boolean {
-  if (payload == null || typeof payload !== 'object') return false;
-  return (payload as { mock?: boolean }).mock === true;
+const BILTI_ACCEPT = 'image/jpeg,image/png,image/gif,application/pdf,.pdf';
+const BILTI_MAX_BYTES = 10 * 1024 * 1024;
+
+function validateBiltiFile(file: File): string | null {
+  const okType =
+    /^(image\/jpeg|image\/png|image\/gif|application\/pdf)$/i.test(file.type) ||
+    /\.(jpe?g|png|gif|pdf)$/i.test(file.name);
+  if (!okType) return 'Bilti must be a JPEG, PNG, GIF, or PDF';
+  if (file.size > BILTI_MAX_BYTES) return 'Bilti file must be 10MB or smaller';
+  return null;
+}
+
+function ComplianceProviderBadge({ payload, provider }: { payload?: unknown; provider?: string | null }) {
+  const isMock = provider === 'mock' || isMastersIndiaMockPayload(payload);
+  const label = isMock ? 'Mock' : provider ? getComplianceProviderLabel({ provider }) : getComplianceProviderLabel(payload);
+  return (
+    <span
+      className={`rounded px-2 py-0.5 text-xs font-medium ${
+        isMock
+          ? 'bg-amber-500/20 text-amber-800 dark:text-amber-200'
+          : 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300'
+      }`}
+    >
+      {label}
+    </span>
+  );
+}
+
+function EInvoiceQrDisplay({ content }: { content: string }) {
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void QRCode.toDataURL(content, { width: 160, margin: 1 })
+      .then((url) => {
+        if (!cancelled) setDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setDataUrl(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [content]);
+
+  if (dataUrl) {
+    return (
+      <img
+        src={dataUrl}
+        alt="E-invoice QR code"
+        className="h-40 w-40 rounded border bg-white p-1"
+      />
+    );
+  }
+  return (
+    <p className="font-mono text-xs break-all text-muted-foreground">{content}</p>
+  );
 }
 
 function formatPartySiteLabel(site: SalesPartySite): string {
@@ -51,12 +120,26 @@ export function InvoiceDispatchDetailModal({
   onSuccess,
   getProductName,
 }: InvoiceDispatchDetailModalProps) {
-  const { getById, patch, confirm, getEInvoice, getEWayBills, generateEInvoice, generateEWayBill } =
-    useInvoiceDispatches();
+  const {
+    getById,
+    patch,
+    confirm,
+    uploadBilti,
+    getEInvoice,
+    getEWayBills,
+    generateEInvoice,
+    generateEWayBill,
+  } = useInvoiceDispatches();
   const { transporters } = useTransporters();
   const { getVehicleNumber } = useVehicleMap();
   const { packaging } = usePackaging();
+  const { products } = useProducts();
   const { godowns } = useGodowns(true);
+
+  const getProductHsn = useCallback(
+    (productId: string) => products.find((p) => p.id === productId)?.hsn_code?.trim() || '',
+    [products]
+  );
 
   const [dispatch, setDispatch] = useState<InvoiceDispatch | null>(null);
   const [loading, setLoading] = useState(false);
@@ -66,23 +149,81 @@ export function InvoiceDispatchDetailModal({
   const [fgiByProduct, setFgiByProduct] = useState<Record<string, number>>({});
   const [loadingFgi, setLoadingFgi] = useState(false);
 
+  const [linkedSauda, setLinkedSauda] = useState<SalesSauda | null>(null);
   const [partySites, setPartySites] = useState<SalesPartySite[]>([]);
   const [loadingSites, setLoadingSites] = useState(false);
   const [patchDeliverySiteId, setPatchDeliverySiteId] = useState('');
   const [patchLrNumber, setPatchLrNumber] = useState('');
-  const [patchTcsAmount, setPatchTcsAmount] = useState('');
+  // const [patchTcsAmount, setPatchTcsAmount] = useState('');
   const [savingPatch, setSavingPatch] = useState(false);
+  const [uploadingBilti, setUploadingBilti] = useState(false);
 
   const [eWayVehicleNumber, setEWayVehicleNumber] = useState('');
   const [eWayDistanceKm, setEWayDistanceKm] = useState('');
   const [eWayRoute, setEWayRoute] = useState('');
   const [eWayTransporterId, setEWayTransporterId] = useState<string>('');
+  const [eWayLrNumber, setEWayLrNumber] = useState('');
   const [eWayAdvancedOpen, setEWayAdvancedOpen] = useState(false);
+
+  useEffect(() => {
+    if (!dispatch || dispatch.status !== 'confirmed') return;
+    setEWayVehicleNumber((prev) => {
+      if (prev.trim()) return prev;
+      return dispatch.vehicle_id ? getVehicleNumber(dispatch.vehicle_id) || '' : '';
+    });
+    setEWayDistanceKm((prev) => {
+      if (prev.trim()) return prev;
+      return dispatch.distance_km != null ? String(dispatch.distance_km) : '';
+    });
+    setEWayRoute((prev) => {
+      if (prev.trim()) return prev;
+      return dispatch.route_description?.trim() || '';
+    });
+    setEWayTransporterId((prev) => prev || dispatch.transporter_id || '');
+    setEWayLrNumber((prev) => {
+      if (prev.trim()) return prev;
+      return dispatch.lr_number?.trim() || '';
+    });
+    if (!dispatch.vehicle_id) setEWayAdvancedOpen(true);
+  }, [
+    dispatch?.id,
+    dispatch?.status,
+    dispatch?.vehicle_id,
+    dispatch?.distance_km,
+    dispatch?.route_description,
+    dispatch?.transporter_id,
+    dispatch?.lr_number,
+    getVehicleNumber,
+  ]);
+
+  const resolvedEWayVehicle = useCallback((): string => {
+    const override = eWayVehicleNumber.trim();
+    if (override) return override;
+    if (dispatch?.vehicle_id) return getVehicleNumber(dispatch.vehicle_id) || '';
+    return '';
+  }, [dispatch?.vehicle_id, eWayVehicleNumber, getVehicleNumber]);
+
+  const godownGstin =
+    dispatch?.godown_id != null
+      ? godowns.find((g) => g.id === dispatch.godown_id)?.gst_number?.trim() || null
+      : null;
+
+  const validateEWayGenerate = (): boolean => {
+    if (!resolvedEWayVehicle()) {
+      toast.error(
+        'Vehicle required',
+        'Set a verified vehicle on the dispatch or enter a vehicle number under e-way overrides.',
+      );
+      setEWayAdvancedOpen(true);
+      return false;
+    }
+    return true;
+  };
 
   const buildEWayBody = useCallback((): CreateEWayBillRequest => {
     const body: CreateEWayBillRequest = {};
-    const v = eWayVehicleNumber.trim();
-    if (v) body.vehicle_number = v;
+    const v = resolvedEWayVehicle();
+    if (v) body.vehicle_number = v.toUpperCase();
     const dk = eWayDistanceKm.trim();
     if (dk !== '') {
       const n = Number(dk);
@@ -91,8 +232,10 @@ export function InvoiceDispatchDetailModal({
     const r = eWayRoute.trim();
     if (r) body.route = r;
     if (eWayTransporterId) body.transporter_id = eWayTransporterId;
+    const lr = eWayLrNumber.trim();
+    if (lr) body.lr_number = lr;
     return body;
-  }, [eWayVehicleNumber, eWayDistanceKm, eWayRoute, eWayTransporterId]);
+  }, [eWayDistanceKm, eWayRoute, eWayTransporterId, eWayLrNumber, resolvedEWayVehicle]);
 
   useEffect(() => {
     if (open && dispatchId) {
@@ -119,15 +262,16 @@ export function InvoiceDispatchDetailModal({
     if (!dispatch) return;
     setPatchDeliverySiteId(dispatch.delivery_site_id ?? '');
     setPatchLrNumber(dispatch.lr_number ?? '');
-    setPatchTcsAmount(
-      dispatch.tcs_amount != null && !Number.isNaN(Number(dispatch.tcs_amount))
-        ? String(dispatch.tcs_amount)
-        : ''
-    );
-  }, [dispatch?.id, dispatch?.delivery_site_id, dispatch?.lr_number, dispatch?.tcs_amount]);
+    // setPatchTcsAmount(
+    //   dispatch.tcs_amount != null && !Number.isNaN(Number(dispatch.tcs_amount))
+    //     ? String(dispatch.tcs_amount)
+    //     : ''
+    // );
+  }, [dispatch?.id, dispatch?.delivery_site_id, dispatch?.lr_number /*, dispatch?.tcs_amount */]);
 
   useEffect(() => {
     if (!open || !dispatch?.sales_sauda_id) {
+      setLinkedSauda(null);
       setPartySites([]);
       return;
     }
@@ -136,8 +280,10 @@ export function InvoiceDispatchDetailModal({
     salesSaudasAPI
       .getById(dispatch.sales_sauda_id)
       .then((sauda) => {
-        if (cancelled || !sauda?.sales_party_id) {
-          if (!cancelled) setPartySites([]);
+        if (cancelled) return Promise.resolve(null);
+        setLinkedSauda(sauda);
+        if (!sauda?.sales_party_id) {
+          setPartySites([]);
           return Promise.resolve(null);
         }
         return salesPartySitesAPI.list(sauda.sales_party_id);
@@ -146,7 +292,10 @@ export function InvoiceDispatchDetailModal({
         if (!cancelled && sites && Array.isArray(sites)) setPartySites(sites);
       })
       .catch(() => {
-        if (!cancelled) setPartySites([]);
+        if (!cancelled) {
+          setLinkedSauda(null);
+          setPartySites([]);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoadingSites(false);
@@ -190,26 +339,52 @@ export function InvoiceDispatchDetailModal({
       .finally(() => setLoadingFgi(false));
   }, [open, dispatch?.id, dispatch?.godown_id, dispatch?.status, dispatch?.lines?.length]);
 
+  const biltiPreviewUrl =
+    dispatch?.bilti_image_url?.trim() || dispatch?.bilti_pdf_url?.trim() || null;
+
+  const handleBiltiUpload = async (file: File | null) => {
+    if (!dispatch || !file) return;
+    const err = validateBiltiFile(file);
+    if (err) {
+      toast.error('Invalid bilti', err);
+      return;
+    }
+    setUploadingBilti(true);
+    try {
+      await uploadBilti(dispatch.id, file);
+      const updated = await getById(dispatch.id);
+      setDispatch(updated);
+      toast.success('Bilti uploaded', 'Document saved on this dispatch.');
+      onSuccess?.();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Bilti upload failed';
+      toast.error('Error', msg);
+    } finally {
+      setUploadingBilti(false);
+    }
+  };
+
   const handleSavePatch = async () => {
     if (!dispatch) return;
     const nextSite = patchDeliverySiteId.trim() || null;
     const nextLr = patchLrNumber.trim() || null;
-    const tcsTrim = patchTcsAmount.trim();
-    let nextTcs: number | null = null;
-    if (tcsTrim !== '') {
-      const n = Number(tcsTrim);
-      if (Number.isNaN(n)) {
-        toast.error('Validation', 'TCS amount must be a valid number');
-        return;
-      }
-      nextTcs = n;
-    }
+    // TCS amount temporarily hidden from invoice dispatch UI
+    // const tcsTrim = patchTcsAmount.trim();
+    // let nextTcs: number | null = null;
+    // if (tcsTrim !== '') {
+    //   const n = Number(tcsTrim);
+    //   if (Number.isNaN(n)) {
+    //     toast.error('Validation', 'TCS amount must be a valid number');
+    //     return;
+    //   }
+    //   nextTcs = n;
+    // }
     setSavingPatch(true);
     try {
       await patch(dispatch.id, {
         delivery_site_id: nextSite,
         lr_number: nextLr,
-        tcs_amount: nextTcs,
+        // tcs_amount: nextTcs,
       });
       const updated = await getById(dispatch.id);
       setDispatch(updated);
@@ -225,16 +400,17 @@ export function InvoiceDispatchDetailModal({
 
   const runAction = async (
     key: string,
-    fn: () => Promise<unknown>
+    fn: () => Promise<unknown>,
+    successToast?: { title: string; description?: string } | ((result: unknown) => { title: string; description?: string }),
   ) => {
     setActionLoading(key);
     try {
-      await fn();
-      if (key === 'confirm') {
-        toast.success(
-          'Dispatch confirmed',
-          'Inventory has been deducted.'
-        );
+      const result = await fn();
+      if (successToast) {
+        const msg = typeof successToast === 'function' ? successToast(result) : successToast;
+        toast.success(msg.title, msg.description);
+      } else if (key === 'confirm') {
+        toast.success('Dispatch confirmed', 'Inventory has been deducted.');
       }
       const updated = await getById(dispatchId!);
       setDispatch(updated);
@@ -249,8 +425,7 @@ export function InvoiceDispatchDetailModal({
       onSuccess?.();
     } catch (e) {
       console.error(e);
-      const msg = e instanceof Error ? e.message : 'Action failed';
-      toast.error('Error', msg);
+      toast.error('Error', extractApiErrorMessage(e, 'Action failed'));
     } finally {
       setActionLoading(null);
     }
@@ -286,8 +461,13 @@ export function InvoiceDispatchDetailModal({
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <span className="text-muted-foreground">Internal invoice #</span>
+                  <span className="text-muted-foreground">Invoice No.</span>
                   <p className="font-medium">{dispatch.internal_invoice_number}</p>
+                  {dispatch.financial_year ? (
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      FY {dispatch.financial_year}
+                    </p>
+                  ) : null}
                 </div>
                 <div>
                   <span className="text-muted-foreground">Status</span>
@@ -298,7 +478,7 @@ export function InvoiceDispatchDetailModal({
                   <p className="font-medium">{dispatch.dispatch_date}</p>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Dispatch from godown</span>
+                  <span className="text-muted-foreground">Dispatch from</span>
                   <p className="font-medium">
                     {dispatch.godown_id
                       ? godowns.find((g) => g.id === dispatch.godown_id)?.name ?? dispatch.godown_id
@@ -309,9 +489,17 @@ export function InvoiceDispatchDetailModal({
                   <span className="text-muted-foreground">Party</span>
                   <p className="font-medium">{dispatch.party_name}</p>
                 </div>
-                <div className="col-span-2">
-                  <span className="text-muted-foreground">Address</span>
-                  <p className="font-medium">{dispatch.party_address ?? '–'}</p>
+                <div className="col-span-2 rounded-md border border-border/50 bg-muted/10 p-3">
+                  <BillShipToAddresses
+                    billingAddress={linkedSauda?.billing_address}
+                    deliveryAddress={linkedSauda?.delivery_address}
+                    billingFallbackText={dispatch.party_address}
+                  />
+                  {!linkedSauda?.billing_address &&
+                    !linkedSauda?.delivery_address &&
+                    !dispatch.party_address && (
+                      <p className="text-xs text-muted-foreground">No bill/ship addresses.</p>
+                    )}
                 </div>
                 <div>
                   <span className="text-muted-foreground">GST</span>
@@ -321,13 +509,62 @@ export function InvoiceDispatchDetailModal({
                   <span className="text-muted-foreground">PAN</span>
                   <p className="font-medium">{dispatch.party_pan_number ?? '–'}</p>
                 </div>
+                {dispatch.usp?.trim() && (
+                  <div className="col-span-2">
+                    <span className="text-muted-foreground">USP</span>
+                    <p className="font-medium whitespace-pre-wrap">{dispatch.usp}</p>
+                  </div>
+                )}
                 <div>
                   <span className="text-muted-foreground">Transporter</span>
                   <p className="font-medium">{transporterName(dispatch.transporter_id)}</p>
                 </div>
                 <div>
+                  <span className="text-muted-foreground">LR number</span>
+                  <p className="font-medium">{dispatch.lr_number?.trim() || '–'}</p>
+                </div>
+                <div className="col-span-2 space-y-2 rounded-md border border-border/50 bg-muted/10 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-muted-foreground text-sm">Bilti</span>
+                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50">
+                      {uploadingBilti ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : null}
+                      {biltiPreviewUrl ? 'Replace bilti' : 'Upload bilti'}
+                      <input
+                        type="file"
+                        accept={BILTI_ACCEPT}
+                        className="sr-only"
+                        disabled={uploadingBilti}
+                        onChange={(e) => {
+                          void handleBiltiUpload(e.target.files?.[0] || null);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <p className="text-xs text-muted-foreground">JPEG, PNG, GIF, or PDF — max 10MB</p>
+                  {biltiPreviewUrl ? (
+                    <UploadedDocumentPreview url={biltiPreviewUrl} compact alt="Bilti" />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No bilti uploaded</p>
+                  )}
+                </div>
+                <div>
                   <span className="text-muted-foreground">Vehicle</span>
                   <p className="font-medium">{dispatch.vehicle_id ? getVehicleNumber(dispatch.vehicle_id) : '–'}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Transportation cost</span>
+                  <p className="font-medium">
+                    {dispatch.transportation_cost != null &&
+                    !Number.isNaN(Number(dispatch.transportation_cost))
+                      ? `₹ ${Number(dispatch.transportation_cost).toLocaleString('en-IN', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}`
+                      : '–'}
+                  </p>
                 </div>
                 {dispatch.distance_km != null && (
                   <div>
@@ -344,11 +581,23 @@ export function InvoiceDispatchDetailModal({
               </div>
 
               <div className="rounded-lg border border-dashed border-border/70 bg-muted/15 p-3 space-y-3 text-sm">
-                <div className="font-medium text-foreground">LR, TCS & ship-to</div>
+                <div className="font-medium text-foreground">LR & ship-to</div>
                 <p className="text-xs text-muted-foreground">
-                  Optional overrides for NIC e-invoice / e-way. Same as bill-to if ship-to is cleared.
+                  Optional overrides for Masters India e-invoice / e-way bill. Same as bill-to if ship-to is cleared.
                 </p>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                      LR number
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                      value={patchLrNumber}
+                      onChange={(e) => setPatchLrNumber(e.target.value)}
+                      placeholder="Transporter LR / doc no."
+                    />
+                  </div>
                   <div className="sm:col-span-2">
                     <label className="mb-1 block text-xs font-medium text-muted-foreground">
                       Ship-to site
@@ -370,19 +619,7 @@ export function InvoiceDispatchDetailModal({
                       <p className="mt-1 text-xs text-muted-foreground">Loading sites…</p>
                     )}
                   </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                      LR number
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
-                      value={patchLrNumber}
-                      onChange={(e) => setPatchLrNumber(e.target.value)}
-                      placeholder="Transporter LR / doc no."
-                    />
-                  </div>
-                  <div>
+                  {/* <div>
                     <label className="mb-1 block text-xs font-medium text-muted-foreground">
                       TCS amount
                     </label>
@@ -394,7 +631,7 @@ export function InvoiceDispatchDetailModal({
                       onChange={(e) => setPatchTcsAmount(e.target.value)}
                       placeholder="Optional"
                     />
-                  </div>
+                  </div> */}
                 </div>
                 <button
                   type="button"
@@ -403,7 +640,7 @@ export function InvoiceDispatchDetailModal({
                   className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-muted hover:bg-muted/80 disabled:opacity-50"
                 >
                   {savingPatch && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Save LR / TCS / ship-to
+                  Save LR / ship-to
                 </button>
               </div>
 
@@ -415,6 +652,7 @@ export function InvoiceDispatchDetailModal({
                       <thead>
                         <tr className="bg-muted/50 border-b">
                           <th className="text-left p-2 font-medium">Product</th>
+                          <th className="text-left p-2 font-medium">HSN</th>
                           <th className="text-left p-2 font-medium">Bag</th>
                           <th className="text-right p-2 font-medium">Qty</th>
                           <th className="text-right p-2 font-medium">Rate</th>
@@ -422,9 +660,18 @@ export function InvoiceDispatchDetailModal({
                         </tr>
                       </thead>
                       <tbody>
-                        {dispatch.lines.map((l) => (
+                        {dispatch.lines.map((l) => {
+                          const hsn = getProductHsn(l.product_id);
+                          return (
                           <tr key={l.id} className="border-b last:border-0">
                             <td className="p-2">{getProductName(l.product_id)}</td>
+                            <td className="p-2">
+                              {hsn ? (
+                                <span className="tabular-nums">{hsn}</span>
+                              ) : (
+                                <span className="text-amber-700 dark:text-amber-300">Missing</span>
+                              )}
+                            </td>
                             <td className="p-2">{getPackagingLabel(l.packaging_id)}</td>
                             <td className="p-2 text-right">
                               {l.quantity} {l.quantity_unit}
@@ -432,7 +679,8 @@ export function InvoiceDispatchDetailModal({
                             <td className="p-2 text-right">{l.rate}</td>
                             <td className="p-2 text-right">{l.amount}</td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -486,14 +734,40 @@ export function InvoiceDispatchDetailModal({
                   )}
                 </div>
               )}
+              {dispatch.status === 'confirmed' && (
+                <div className="rounded-lg border border-border/60 bg-muted/15 p-3 text-sm">
+                  <h4 className="mb-2 font-medium">Masters India prerequisites</h4>
+                  <ul className="space-y-1 text-xs text-muted-foreground">
+                    <li className={dispatch.status === 'confirmed' ? 'text-foreground' : ''}>
+                      Dispatch confirmed
+                    </li>
+                    <li className={godownGstin ? 'text-foreground' : 'text-amber-700 dark:text-amber-300'}>
+                      Godown GSTIN: {godownGstin || 'Missing — add GSTIN on godown master'}
+                    </li>
+                    <li className={dispatch.party_gst_number ? 'text-foreground' : 'text-amber-700 dark:text-amber-300'}>
+                      Party GSTIN: {dispatch.party_gst_number || 'Missing'}
+                    </li>
+                    <li className={resolvedEWayVehicle() ? 'text-foreground' : 'text-amber-700 dark:text-amber-300'}>
+                      Vehicle for e-way: {resolvedEWayVehicle() || 'Required before generate'}
+                    </li>
+                    <li className={eInvoice?.irn ? 'text-foreground' : 'text-muted-foreground'}>
+                      E-invoice IRN: {eInvoice?.irn ? 'Generated' : 'Not generated yet'}
+                    </li>
+                  </ul>
+                </div>
+              )}
               {dispatch.status === 'confirmed' && eInvoice !== undefined && (
                 <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
                   <h4 className="text-sm font-medium mb-2 flex flex-wrap items-center gap-2">
-                    <FileDigit className="h-4 w-4" /> E-Invoice
-                    {eInvoice != null && nicPayloadIsMock(eInvoice.government_response_payload) && (
-                      <span className="rounded bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-200">
-                        Mock NIC
-                      </span>
+                    <FileDigit className="h-4 w-4" /> E-Invoice (Masters India)
+                    {eInvoice != null && (
+                      <ComplianceProviderBadge
+                        provider={eInvoice.provider}
+                        payload={eInvoice.government_response_payload}
+                      />
+                    )}
+                    {eInvoice?.status && (
+                      <span className="rounded bg-muted px-2 py-0.5 text-xs capitalize">{eInvoice.status}</span>
                     )}
                   </h4>
                   {eInvoice == null ? (
@@ -521,14 +795,16 @@ export function InvoiceDispatchDetailModal({
                         )}
                         {eInvoice.qr_code_content && (
                           <div className="col-span-2">
-                            <span className="text-muted-foreground">QR content</span>
-                            <p className="font-mono text-xs break-all mt-0.5">{eInvoice.qr_code_content}</p>
+                            <span className="text-muted-foreground">Signed QR</span>
+                            <div className="mt-2">
+                              <EInvoiceQrDisplay content={eInvoice.qr_code_content} />
+                            </div>
                           </div>
                         )}
                       </div>
                       <details className="text-xs">
                         <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-                          Government response (audit)
+                          Masters India response (audit)
                         </summary>
                         <pre className="mt-2 max-h-28 overflow-auto rounded border bg-background/80 p-2 font-mono">
                           {JSON.stringify(eInvoice.government_response_payload, null, 2)}
@@ -541,7 +817,7 @@ export function InvoiceDispatchDetailModal({
               {dispatch.status === 'confirmed' && (
                 <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
                   <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                    <Truck className="h-4 w-4" /> E-Way Bill(s)
+                    <Truck className="h-4 w-4" /> E-Way Bill(s) — Masters India
                   </h4>
                   {eWayBills.length === 0 ? (
                     <p className="text-sm text-muted-foreground">None yet. Generate below (vehicle on dispatch or in overrides).</p>
@@ -550,11 +826,7 @@ export function InvoiceDispatchDetailModal({
                       {eWayBills.map((ewb) => (
                         <div key={ewb.id} className="rounded border bg-background/60 p-2 text-sm">
                           <div className="mb-1 flex flex-wrap items-center gap-2">
-                            {nicPayloadIsMock(ewb.payload) && (
-                              <span className="rounded bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-200">
-                                Mock NIC
-                              </span>
-                            )}
+                            <ComplianceProviderBadge provider={ewb.provider} payload={ewb.payload} />
                             {ewb.print_url && (
                               <a
                                 href={ewb.print_url}
@@ -628,7 +900,12 @@ export function InvoiceDispatchDetailModal({
                     onClick={() => setEWayAdvancedOpen((o) => !o)}
                     className="flex w-full items-center justify-between rounded-lg border border-border/60 bg-muted/25 px-3 py-2 text-left text-sm font-medium hover:bg-muted/40"
                   >
-                    E-way overrides (vehicle, distance, route, transporter)
+                    E-way overrides (vehicle, distance, route, transporter, LR)
+                    {resolvedEWayVehicle() && (
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">
+                        Vehicle: {resolvedEWayVehicle()}
+                      </span>
+                    )}
                     <ChevronDown
                       className={`h-4 w-4 shrink-0 transition-transform ${eWayAdvancedOpen ? 'rotate-180' : ''}`}
                     />
@@ -683,6 +960,22 @@ export function InvoiceDispatchDetailModal({
                           placeholder="Optional"
                         />
                       </div>
+                      <div className="sm:col-span-2">
+                        <label className="mb-1 block text-xs text-muted-foreground">
+                          LR number (transporter document)
+                        </label>
+                        <input
+                          type="text"
+                          className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                          value={eWayLrNumber}
+                          onChange={(e) => setEWayLrNumber(e.target.value)}
+                          placeholder={
+                            dispatch.lr_number?.trim()
+                              ? `Default: ${dispatch.lr_number.trim()}`
+                              : 'Optional override for e-way'
+                          }
+                        />
+                      </div>
                     </div>
                   )}
                   <div className="flex flex-wrap gap-2">
@@ -690,23 +983,47 @@ export function InvoiceDispatchDetailModal({
                       type="button"
                       disabled={!!actionLoading}
                       onClick={() =>
-                        runAction('e-invoice', () => generateEInvoice(dispatch.id))
+                        runAction(
+                          'e-invoice',
+                          () => generateEInvoice(dispatch.id),
+                          (result) => {
+                            const einv = result as EInvoice;
+                            return {
+                              title: 'E-Invoice generated',
+                              description: einv.irn
+                                ? `IRN ${einv.irn.slice(0, 24)}…`
+                                : 'Masters India accepted the request.',
+                            };
+                          },
+                        )
                       }
                       className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-muted hover:bg-muted/80 disabled:opacity-50"
                     >
                       {actionLoading === 'e-invoice' && (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       )}
-                      <FileDigit className="h-4 w-4" /> Generate E-Invoice
+                      <FileDigit className="h-4 w-4" />
+                      {eInvoice?.irn ? 'Regenerate E-Invoice' : 'Generate E-Invoice'}
                     </button>
                     <button
                       type="button"
                       disabled={!!actionLoading}
-                      onClick={() =>
-                        runAction('e-way', () =>
-                          generateEWayBill(dispatch.id, { body: buildEWayBody() })
-                        )
-                      }
+                      onClick={() => {
+                        if (!validateEWayGenerate()) return;
+                        void runAction(
+                          'e-way',
+                          () => generateEWayBill(dispatch.id, { body: buildEWayBody() }),
+                          (result) => {
+                            const ewb = result as EWayBill;
+                            return {
+                              title: 'E-Way bill generated',
+                              description: ewb.eway_bill_number
+                                ? `EWB ${ewb.eway_bill_number}`
+                                : 'Masters India accepted the request.',
+                            };
+                          },
+                        );
+                      }}
                       className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-muted hover:bg-muted/80 disabled:opacity-50"
                     >
                       {actionLoading === 'e-way' && (
@@ -721,10 +1038,11 @@ export function InvoiceDispatchDetailModal({
                         onClick={() => {
                           if (
                             !window.confirm(
-                              'Regenerate e-way bill? This calls NIC again with force=true and may add another e-way row.'
+                              'Regenerate e-way bill? This calls Masters India again with force=true and may add another e-way row.'
                             )
                           )
                             return;
+                          if (!validateEWayGenerate()) return;
                           void runAction('e-way-force', () =>
                             generateEWayBill(dispatch.id, {
                               force: true,

@@ -10,6 +10,10 @@ import { InvoiceDispatchDetailModal } from './InvoiceDispatchDetailModal';
 import { useProducts } from '../../../hooks/useProducts';
 import { GodownFilterSelect } from '../../shared/GodownFilterSelect';
 import { useGodowns } from '../../../hooks/useGodowns';
+import {
+  buildFinancialYearApiFilterOptions,
+  getCurrentFinancialYearApiValue,
+} from '../../../utils/financialYear';
 import type { InvoiceDispatchStatus } from '../../../types/sales';
 
 interface InvoiceDispatchesTableProps {
@@ -24,10 +28,14 @@ const statusOptions: { value: string; label: string }[] = [
 export function InvoiceDispatchesTable({ onRefreshRef }: InvoiceDispatchesTableProps = {}) {
   const [statusFilter, setStatusFilter] = useState<InvoiceDispatchStatus | ''>('');
   const [godownFilter, setGodownFilter] = useState<string | undefined>();
+  const [financialYearFilter, setFinancialYearFilter] = useState<string | undefined>(
+    () => getCurrentFinancialYearApiValue(),
+  );
   const { godowns } = useGodowns(true);
   const { invoiceDispatches, loading, refetch } = useInvoiceDispatches({
     status: statusFilter || undefined,
     godown_id: godownFilter,
+    financial_year: financialYearFilter,
   });
   const { products } = useProducts();
 
@@ -40,6 +48,11 @@ export function InvoiceDispatchesTable({ onRefreshRef }: InvoiceDispatchesTableP
   useEffect(() => {
     if (onRefreshRef) onRefreshRef.current = refetch;
   }, [refetch, onRefreshRef]);
+
+  const financialYearOptions = useMemo(
+    () => buildFinancialYearApiFilterOptions(invoiceDispatches.map((d) => d.financial_year)),
+    [invoiceDispatches],
+  );
 
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase();
@@ -71,6 +84,12 @@ export function InvoiceDispatchesTable({ onRefreshRef }: InvoiceDispatchesTableP
           placeholder="Search by invoice #, party, date..."
         />
         <FilterDropdown
+          label="Financial year"
+          options={financialYearOptions}
+          value={financialYearFilter}
+          onChange={setFinancialYearFilter}
+        />
+        <FilterDropdown
           label="Status"
           value={statusFilter || undefined}
           options={statusOptions}
@@ -84,14 +103,19 @@ export function InvoiceDispatchesTable({ onRefreshRef }: InvoiceDispatchesTableP
           <EmptyState
             icon={FileText}
             title="No invoice dispatches"
-            description="Create an invoice dispatch from a finalized sales order."
+            description={
+              financialYearFilter
+                ? `No invoice dispatches found for ${financialYearOptions.find((o) => o.value === financialYearFilter)?.label ?? financialYearFilter}. Try another financial year or adjust filters.`
+                : 'Create an invoice dispatch from a finalized sales order.'
+            }
           />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="text-left p-3 font-medium">Invoice #</th>
+                  <th className="text-left p-3 font-medium">Invoice No.</th>
+                  <th className="text-left p-3 font-medium">FY</th>
                   <th className="text-left p-3 font-medium">Godown</th>
                   <th className="text-left p-3 font-medium">Party</th>
                   <th className="text-left p-3 font-medium">Status</th>
@@ -103,6 +127,7 @@ export function InvoiceDispatchesTable({ onRefreshRef }: InvoiceDispatchesTableP
                 {filtered.map((d) => (
                   <tr key={d.id} className="border-b hover:bg-muted/30">
                     <td className="p-3">{d.internal_invoice_number}</td>
+                    <td className="p-3 text-muted-foreground">{d.financial_year ?? '–'}</td>
                     <td className="p-3 text-muted-foreground">{godownName(d.godown_id)}</td>
                     <td className="p-3">{d.party_name}</td>
                     <td className="p-3">

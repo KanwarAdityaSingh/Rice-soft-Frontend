@@ -1,11 +1,11 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useEffect, useMemo, useState } from 'react';
-import { X, Car, Check, RefreshCw, ChevronDown, ExternalLink } from 'lucide-react';
+import { X, Car, Check, RefreshCw, ChevronDown, Plus } from 'lucide-react';
 import { vehiclesAPI } from '../../../services/vehicles.api';
 import { useVehicles } from '../../../hooks/useVehicles';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { AlertDialog } from '../../shared/AlertDialog';
-import { getDirectoryVehiclesPagePath } from '../../../utils/appRoutes';
+import { VehicleFormModal } from '../vehicles/VehicleFormModal';
 import { getUserFacingApiErrorMessage } from '../../../utils/errorHandler';
 
 interface TransporterLinkVehiclesDialogProps {
@@ -30,6 +30,7 @@ export function TransporterLinkVehiclesDialog({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [initialIds, setInitialIds] = useState<string[]>([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [vehicleFormOpen, setVehicleFormOpen] = useState(false);
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
 
@@ -183,12 +184,10 @@ export function TransporterLinkVehiclesDialog({
                     </div>
                     <button
                       type="button"
-                      onClick={() =>
-                        window.open(getDirectoryVehiclesPagePath({ create: true }), '_blank', 'noopener,noreferrer')
-                      }
+                      onClick={() => setVehicleFormOpen(true)}
                       className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors"
                     >
-                      <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                      <Plus className="h-3.5 w-3.5 shrink-0" />
                       Add Vehicle
                     </button>
                     {selectedIds.length > 0 && (
@@ -246,6 +245,15 @@ export function TransporterLinkVehiclesDialog({
         type="error"
         title="Error"
         message={alertMessage}
+      />
+
+      <VehicleFormModal
+        open={vehicleFormOpen}
+        onOpenChange={(next) => {
+          setVehicleFormOpen(next);
+          if (!next) void refetchVehicles();
+        }}
+        nested
       />
     </>
   );

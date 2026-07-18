@@ -6,7 +6,12 @@ import { AlertDialog } from '../../shared/AlertDialog';
 import { useProducts } from '../../../hooks/useProducts';
 import { productsAPI } from '../../../services/products.api';
 import { HOLDING_CAPACITIES } from '../../../constants/packaging';
+import { DateInputWithSteppers } from '../../shared/DateInputWithSteppers';
 import type { CreateProductRequest, UpdateProductRequest, ProductRateInput } from '../../../types/entities';
+
+function todayIsoDate(): string {
+  return new Date().toISOString().split('T')[0];
+}
 
 const RICE_TYPES = [
   { value: 'raw_basmati', label: 'Raw Basmati' },
@@ -27,13 +32,19 @@ export function ProductFormModal({ open, onOpenChange, productId }: ProductFormM
     name: '',
     description: '',
     brand: '',
+    hsn_code: null,
     rice_type: null,
   });
   const [brands, setBrands] = useState<Array<{ value: string; label: string }>>([]);
+  const [hsnCodes, setHsnCodes] = useState<Array<{ value: string; label: string }>>([]);
   const [loadingBrands, setLoadingBrands] = useState(false);
+  const [loadingHsnCodes, setLoadingHsnCodes] = useState(false);
   const brandsFetchedRef = useRef(false);
+  const hsnCodesFetchedRef = useRef(false);
   /** Rate rows: (holding_capacity, rate) per bag size. Saved via PUT /products/:id/rates after create/update. */
   const [rateRows, setRateRows] = useState<ProductRateInput[]>([]);
+  /** YYYY-MM-DD for the rates batch (required by API when saving rates) */
+  const [ratesEffectiveDate, setRatesEffectiveDate] = useState(todayIsoDate);
   const [loadingRates, setLoadingRates] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -42,15 +53,14 @@ export function ProductFormModal({ open, onOpenChange, productId }: ProductFormM
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
 
-  // Fetch brands when modal opens (only once per modal session)
+  // Fetch brands + HSN codes when modal opens (once per modal session)
   useEffect(() => {
     if (!open) {
-      // Reset when modal closes
       brandsFetchedRef.current = false;
+      hsnCodesFetchedRef.current = false;
       return;
     }
-    
-    // Only fetch once per modal open
+
     if (!brandsFetchedRef.current) {
       brandsFetchedRef.current = true;
       const fetchBrands = async () => {
@@ -64,7 +74,24 @@ export function ProductFormModal({ open, onOpenChange, productId }: ProductFormM
           setLoadingBrands(false);
         }
       };
-      fetchBrands();
+      void fetchBrands();
+    }
+
+    if (!hsnCodesFetchedRef.current) {
+      hsnCodesFetchedRef.current = true;
+      const fetchHsnCodes = async () => {
+        setLoadingHsnCodes(true);
+        try {
+          const data = await productsAPI.getHsnCodes();
+          setHsnCodes(Array.isArray(data) ? data : []);
+        } catch (error) {
+          console.error('Failed to fetch HSN codes:', error);
+          setHsnCodes([]);
+        } finally {
+          setLoadingHsnCodes(false);
+        }
+      };
+      void fetchHsnCodes();
     }
   }, [open]);
 
@@ -76,23 +103,39 @@ export function ProductFormModal({ open, onOpenChange, productId }: ProductFormM
           name: product.name,
           description: product.description || '',
           brand: product.brand || '',
+          hsn_code: product.hsn_code || null,
           rice_type: product.rice_type || null,
         });
       }
     } else if (open) {
-      setFormData({ name: '', description: '', brand: '', rice_type: null });
+      setFormData({ name: '', description: '', brand: '', hsn_code: null, rice_type: null });
       setRateRows([]);
+      setRatesEffectiveDate(todayIsoDate());
     }
   }, [productId, open, products]);
 
   // Load product rates when editing
   useEffect(() => {
-    if (!open || !productId) return;
+    if (!open || !productId) {
+      if (open && !productId) setRatesEffectiveDate(todayIsoDate());
+      return;
+    }
     setLoadingRates(true);
     productsAPI
       .getProductRates(productId)
-      .then((list) => setRateRows(list.map((r) => ({ holding_capacity: r.holding_capacity, rate: r.rate }))))
-      .catch(() => setRateRows([]))
+      .then((list) => {
+        setRateRows(list.map((r) => ({ holding_capacity: r.holding_capacity, rate: Number(r.rate) })));
+        const latest = list
+          .map((r) => r.effective_date)
+          .filter((d): d is string => !!d)
+          .sort()
+          .at(-1);
+        setRatesEffectiveDate(latest || todayIsoDate());
+      })
+      .catch(() => {
+        setRateRows([]);
+        setRatesEffectiveDate(todayIsoDate());
+      })
       .finally(() => setLoadingRates(false));
   }, [open, productId]);
 
@@ -100,6 +143,18 @@ export function ProductFormModal({ open, onOpenChange, productId }: ProductFormM
     const newErrors: Record<string, string> = {};
     if (!formData.name.trim()) {
       newErrors.name = 'Product name is required';
+    }
+    if (formData.hsn_code) {
+      const allowed = new Set(hsnCodes.map((c) => c.value));
+      if (allowed.size > 0 && !allowed.has(formData.hsn_code)) {
+        newErrors.hsn_code = 'Select a valid HSN code';
+      }
+    }
+    const hasRates = rateRows.some(
+      (r) => HOLDING_CAPACITIES.includes(r.holding_capacity) && Number.isFinite(Number(r.rate))
+    );
+    if (hasRates && !ratesEffectiveDate) {
+      newErrors.rates_effective_date = 'Effective date is required when saving rates';
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -134,15 +189,19 @@ export function ProductFormModal({ open, onOpenChange, productId }: ProductFormM
 
     setLoading(true);
     try {
+      const payload = {
+        ...formData,
+        hsn_code: formData.hsn_code?.trim() || null,
+      };
       let resolvedId = productId;
       if (productId) {
-        await updateProduct(productId, formData as UpdateProductRequest);
+        await updateProduct(productId, payload as UpdateProductRequest);
         resolvedId = productId;
         setAlertType('success');
         setAlertTitle('Product Updated');
         setAlertMessage('Product has been updated successfully.');
       } else {
-        const created = await createProduct(formData);
+        const created = await createProduct(payload);
         resolvedId = created.id;
         setAlertType('success');
         setAlertTitle('Product Created');
@@ -151,8 +210,11 @@ export function ProductFormModal({ open, onOpenChange, productId }: ProductFormM
       const validRates = rateRows.filter(
         (r) => HOLDING_CAPACITIES.includes(r.holding_capacity) && Number.isFinite(Number(r.rate))
       );
-      if (resolvedId) {
-        await productsAPI.setProductRates(resolvedId, { rates: validRates });
+      if (resolvedId && validRates.length > 0) {
+        await productsAPI.setProductRates(resolvedId, {
+          effective_date: ratesEffectiveDate,
+          rates: validRates,
+        });
       }
       setAlertOpen(true);
       setTimeout(() => {
@@ -189,21 +251,48 @@ export function ProductFormModal({ open, onOpenChange, productId }: ProductFormM
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Brand</label>
-                  <select
-                    value={formData.brand || ''}
-                    onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
-                    className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
-                    disabled={loadingBrands}
-                  >
-                    <option value="">Select a brand (optional)</option>
-                    {brands.map((brand) => (
-                      <option key={brand.value} value={brand.value}>
-                        {brand.label}
-                      </option>
-                    ))}
-                  </select>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Brand</label>
+                    <select
+                      value={formData.brand || ''}
+                      onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                      className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                      disabled={loadingBrands}
+                    >
+                      <option value="">Select a brand (optional)</option>
+                      {brands.map((brand) => (
+                        <option key={brand.value} value={brand.value}>
+                          {brand.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">HSN code</label>
+                    <select
+                      value={formData.hsn_code || ''}
+                      onChange={(e) => {
+                        setFormData({
+                          ...formData,
+                          hsn_code: e.target.value || null,
+                        });
+                        if (errors.hsn_code) setErrors({ ...errors, hsn_code: '' });
+                      }}
+                      className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                      disabled={loadingHsnCodes}
+                    >
+                      <option value="">Select HSN code (optional)</option>
+                      {hsnCodes.map((code) => (
+                        <option key={code.value} value={code.value}>
+                          {code.label}
+                        </option>
+                      ))}
+                    </select>
+                    {errors.hsn_code && (
+                      <p className="mt-1 text-sm text-destructive">{errors.hsn_code}</p>
+                    )}
+                  </div>
                 </div>
 
                 <div>
@@ -258,7 +347,37 @@ export function ProductFormModal({ open, onOpenChange, productId }: ProductFormM
                   </div>
                   <p className="text-xs text-muted-foreground mb-3">
                     Optional. Used to suggest rate in sales sauda when product and bag are selected.
+                    Saving writes history for the chosen effective date (same day overwrites that day’s line).
                   </p>
+                  {(rateRows.length > 0 || loadingRates) && (
+                    <div className="mb-3 max-w-xs">
+                      <label className="block text-xs font-medium mb-1">
+                        Effective date <span className="text-red-500">*</span>
+                      </label>
+                      <DateInputWithSteppers
+                        className="w-full"
+                        inputClassName="py-2 text-sm"
+                        invalid={Boolean(errors.rates_effective_date)}
+                        value={ratesEffectiveDate}
+                        onChange={(v) => {
+                          setRatesEffectiveDate(v);
+                          if (errors.rates_effective_date) {
+                            setErrors((prev) => {
+                              const next = { ...prev };
+                              delete next.rates_effective_date;
+                              return next;
+                            });
+                          }
+                        }}
+                      />
+                      {errors.rates_effective_date && (
+                        <p className="mt-1 text-xs text-destructive">{errors.rates_effective_date}</p>
+                      )}
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Current rates update only if this date is on or after the existing rate date.
+                      </p>
+                    </div>
+                  )}
                   <div className="grid grid-cols-3 gap-3">
                     {rateRows.map((row, idx) => (
                       <div key={idx} className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2">

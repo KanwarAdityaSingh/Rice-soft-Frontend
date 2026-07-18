@@ -55,6 +55,16 @@ export function formatCompletionPercentage(completion_percentage: number | null)
   return `${completion_percentage.toFixed(2)}%`;
 }
 
+/** Workflow completed or fully delivered (100%+ received). */
+export function isSaudaCompleted(sauda: {
+  status?: string | null;
+  completion_percentage?: number | null;
+}): boolean {
+  if (sauda.status === 'completed') return true;
+  if (sauda.completion_percentage != null && sauda.completion_percentage >= 100) return true;
+  return false;
+}
+
 /**
  * Format weight display with received and expected
  */
@@ -80,6 +90,19 @@ export function calculateRemainingWeight(
     return null; // No limit if quantity not set
   }
   return Math.max(0, quantity - received_until_now);
+}
+
+export function formatKgQuantity(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '—';
+  return `${value.toLocaleString('en-IN', { maximumFractionDigits: 2 })} kg`;
+}
+
+export function formatSaudaPendingQuantity(
+  quantity: number | null | undefined,
+  receivedUntilNow: number,
+): string {
+  const pending = calculateRemainingWeight(quantity, receivedUntilNow);
+  return formatKgQuantity(pending);
 }
 
 /**

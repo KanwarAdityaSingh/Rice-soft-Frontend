@@ -14,6 +14,7 @@ interface UseInvoiceDispatchesParams {
   sales_sauda_id?: string;
   status?: InvoiceDispatchStatus;
   godown_id?: string;
+  financial_year?: string;
 }
 
 export function useInvoiceDispatches(params?: UseInvoiceDispatchesParams) {
@@ -29,6 +30,7 @@ export function useInvoiceDispatches(params?: UseInvoiceDispatchesParams) {
         sales_sauda_id: params?.sales_sauda_id,
         status: params?.status,
         godown_id: params?.godown_id,
+        financial_year: params?.financial_year,
       });
       setList(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -37,7 +39,7 @@ export function useInvoiceDispatches(params?: UseInvoiceDispatchesParams) {
     } finally {
       setLoading(false);
     }
-  }, [params?.sales_sauda_id, params?.status, params?.godown_id]);
+  }, [params?.sales_sauda_id, params?.status, params?.godown_id, params?.financial_year]);
 
   useEffect(() => {
     fetchList();
@@ -90,6 +92,12 @@ export function useInvoiceDispatches(params?: UseInvoiceDispatchesParams) {
     []
   );
 
+  const uploadBilti = useCallback(async (id: string, file: File) => {
+    const result = await invoiceDispatchesAPI.uploadBilti(id, file);
+    await fetchList();
+    return result;
+  }, [fetchList]);
+
   return {
     invoiceDispatches: list,
     loading,
@@ -99,6 +107,7 @@ export function useInvoiceDispatches(params?: UseInvoiceDispatchesParams) {
     create,
     patch,
     confirm,
+    uploadBilti,
     getEInvoice,
     getEWayBills,
     generateEInvoice,

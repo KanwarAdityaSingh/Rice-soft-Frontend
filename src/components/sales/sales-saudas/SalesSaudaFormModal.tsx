@@ -1,19 +1,62 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { useState, useEffect, useRef } from 'react';
-import { X, Plus, Trash2, Loader2 } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { X, Plus, Trash2, Loader2, RefreshCw } from 'lucide-react';
 import { useSalesSaudasData } from './SalesSaudasDataContext';
+import { useSalesmen } from '../../../hooks/useSalesmen';
 import { salesSaudasAPI } from '../../../services/salesSaudas.api';
+import { salesPartiesAPI } from '../../../services/salesParties.api';
+import { salesPartySitesAPI } from '../../../services/salesPartySites.api';
 import { productsAPI } from '../../../services/products.api';
 import { packagingAPI } from '../../../services/packaging.api';
-import type { Packaging } from '../../../types/entities';
+import type { Packaging, SalesParty, SalesPartySite, VendorAddress } from '../../../types/entities';
 import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { DateInputWithSteppers } from '../../shared/DateInputWithSteppers';
+import { SalesmanFormModal } from '../../admin/salesmen/SalesmanFormModal';
 import { toast } from '../../../utils/toast';
+import { formatVendorAddress } from '../../../utils/saudaDisplay';
 import type {
   CreateSalesSaudaRequest,
+  SalesSaudaAddress,
   SalesSaudaLineInput,
+  SalesSaudaType,
 } from '../../../types/sales';
+import {
+  isSalesSaudaType,
+  SALES_SAUDA_TYPE_OPTIONS,
+} from '../../../constants/sales-sauda-types';
+
+function cloneAddress(address: VendorAddress | null | undefined): SalesSaudaAddress | null {
+  if (!address) return null;
+  return {
+    street: address.street?.trim() ?? '',
+    city: address.city?.trim() ?? '',
+    state: address.state?.trim() ?? '',
+    pincode: address.pincode?.trim() ?? '',
+    country: address.country?.trim() ?? '',
+  };
+}
+
+function addressesEqual(
+  a: SalesSaudaAddress | null | undefined,
+  b: SalesSaudaAddress | null | undefined,
+): boolean {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return (
+    (a.street?.trim() ?? '') === (b.street?.trim() ?? '') &&
+    (a.city?.trim() ?? '') === (b.city?.trim() ?? '') &&
+    (a.state?.trim() ?? '') === (b.state?.trim() ?? '') &&
+    (a.pincode?.trim() ?? '') === (b.pincode?.trim() ?? '') &&
+    (a.country?.trim() ?? '') === (b.country?.trim() ?? '')
+  );
+}
+
+function formatSiteLabel(site: SalesPartySite): string {
+  const name = site.name?.trim();
+  const line = formatVendorAddress(site.address);
+  return name ? `${name}${line ? ` · ${line}` : ''}` : line || site.id.slice(0, 8);
+}
 
 interface SalesSaudaFormModalProps {
   open: boolean;
@@ -50,10 +93,13 @@ export function SalesSaudaFormModal({
   onSuccess,
 }: SalesSaudaFormModalProps) {
   const { salesParties, products } = useSalesSaudasData();
+  const { salesmen, refetch: refetchSalesmen, loading: loadingSalesmen } = useSalesmen();
   const isEdit = !!saudaId;
-  const salesPartyOptions = salesParties;
+  /** Party loaded by id when the selected sauda's party is missing from the list */
+  const [extraSalesParty, setExtraSalesParty] = useState<SalesParty | null>(null);
 
   const [brands, setBrands] = useState<Array<{ value: string; label: string }>>([]);
+  const [saudaTypeOptions, setSaudaTypeOptions] = useState(SALES_SAUDA_TYPE_OPTIONS);
   const [selectedBrand, setSelectedBrand] = useState<string>('');
   /** Packaging options per product_id; loaded on demand when user selects a product */
   const [packagingByProduct, setPackagingByProduct] = useState<Record<string, Packaging[]>>({});
@@ -62,30 +108,93 @@ export function SalesSaudaFormModal({
     sales_party_id: '',
     status: 'draft',
     sauda_date: new Date().toISOString().split('T')[0],
+    sauda_type: '' as SalesSaudaType,
+    salesman_id: null,
+    billing_address: null,
+    delivery_address: null,
     payment_terms: null,
     lines: [defaultLine()],
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [loadingSauda, setLoadingSauda] = useState(false);
+  const [salesmanFormOpen, setSalesmanFormOpen] = useState(false);
+  const [deliverySites, setDeliverySites] = useState<SalesPartySite[]>([]);
+  const [loadingDeliverySites, setLoadingDeliverySites] = useState(false);
+  const [deliverySameAsBilling, setDeliverySameAsBilling] = useState(true);
+  const [selectedDeliverySiteId, setSelectedDeliverySiteId] = useState('');
+  /**
+   * When set, the next sales_party_id sync hydrates from these saved addresses
+   * instead of resetting to the party primary address.
+   */
+  const pendingHydratedAddressesRef = useRef<{
+    billing: SalesSaudaAddress | null;
+    delivery: SalesSaudaAddress | null;
+  } | null>(null);
   /** Line index → true when rate was autofilled from suggested-rate API (rate input disabled). */
   const [rateAutofilledForLine, setRateAutofilledForLine] = useState<Record<number, boolean>>({});
+
+  const salesPartyOptions = useMemo(() => {
+    const byId = new Map<string, SalesParty>();
+    for (const p of salesParties) byId.set(p.id, p);
+    if (extraSalesParty) byId.set(extraSalesParty.id, extraSalesParty);
+    return Array.from(byId.values()).sort((a, b) =>
+      (a.business_name || '').localeCompare(b.business_name || '', undefined, {
+        sensitivity: 'base',
+      })
+    );
+  }, [salesParties, extraSalesParty]);
 
   const selectedSalesParty = formData.sales_party_id
     ? salesPartyOptions.find((s) => s.id === formData.sales_party_id)
     : null;
 
+  const hasAdditionalDeliveryAddresses = deliverySites.length > 0;
+
+  /** Active salesmen, plus the currently assigned one if inactive */
+  const salesmanOptions = useMemo(() => {
+    const active = salesmen.filter((s) => s.is_active);
+    const currentId = formData.salesman_id;
+    if (!currentId || active.some((s) => s.id === currentId)) return active;
+    const current = salesmen.find((s) => s.id === currentId);
+    return current ? [...active, current] : active;
+  }, [salesmen, formData.salesman_id]);
+
+  const loadDeliverySites = useCallback(async (salesPartyId: string) => {
+    setLoadingDeliverySites(true);
+    try {
+      const sites = await salesPartySitesAPI.list(salesPartyId);
+      const active = (Array.isArray(sites) ? sites : []).filter((s) => s.is_active !== false);
+      setDeliverySites(active);
+      return active;
+    } catch {
+      setDeliverySites([]);
+      return [] as SalesPartySite[];
+    } finally {
+      setLoadingDeliverySites(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (open && saudaId) {
       loadSauda();
     } else if (open && !saudaId) {
+      pendingHydratedAddressesRef.current = null;
+      setExtraSalesParty(null);
       setFormData({
         sales_party_id: '',
         status: 'draft',
         sauda_date: new Date().toISOString().split('T')[0],
+        sauda_type: '' as SalesSaudaType,
+        salesman_id: null,
+        billing_address: null,
+        delivery_address: null,
         payment_terms: null,
         lines: [defaultLine()],
       });
+      setDeliverySites([]);
+      setDeliverySameAsBilling(true);
+      setSelectedDeliverySiteId('');
       setErrors({});
       setRateAutofilledForLine({});
     }
@@ -95,8 +204,90 @@ export function SalesSaudaFormModal({
     if (!open) {
       setPackagingByProduct({});
       requestedProductIds.current = new Set();
+      setDeliverySites([]);
+      setSelectedDeliverySiteId('');
+      setExtraSalesParty(null);
     }
   }, [open]);
+
+  // If the selected party isn't in the shared list, fetch it so the dropdown shows a name
+  useEffect(() => {
+    if (!open || !formData.sales_party_id) return;
+    if (salesParties.some((p) => p.id === formData.sales_party_id)) {
+      setExtraSalesParty(null);
+      return;
+    }
+    if (extraSalesParty?.id === formData.sales_party_id) return;
+    let cancelled = false;
+    void salesPartiesAPI
+      .getById(formData.sales_party_id)
+      .then((party) => {
+        if (!cancelled) setExtraSalesParty(party);
+      })
+      .catch(() => {
+        if (!cancelled) setExtraSalesParty(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, formData.sales_party_id, salesParties, extraSalesParty?.id]);
+
+  // When sales party changes: set billing from party address; load additional delivery sites
+  useEffect(() => {
+    if (!open || !formData.sales_party_id) {
+      if (!formData.sales_party_id) {
+        setDeliverySites([]);
+        setSelectedDeliverySiteId('');
+      }
+      return;
+    }
+
+    let cancelled = false;
+    const partyId = formData.sales_party_id;
+    const hydrated = pendingHydratedAddressesRef.current;
+    pendingHydratedAddressesRef.current = null;
+
+    const syncAddressesForParty = async () => {
+      const sites = await loadDeliverySites(partyId);
+      if (cancelled) return;
+
+      const partyBilling = cloneAddress(
+        salesPartyOptions.find((p) => p.id === partyId)?.address
+      );
+
+      if (hydrated) {
+        const billing = hydrated.billing ?? partyBilling;
+        const delivery = hydrated.delivery;
+        const same = !delivery || addressesEqual(billing, delivery);
+        setFormData((prev) => ({
+          ...prev,
+          billing_address: billing,
+          delivery_address: same ? billing : delivery,
+        }));
+        setDeliverySameAsBilling(same);
+        if (!same && delivery) {
+          const match = sites.find((s) => addressesEqual(cloneAddress(s.address), delivery));
+          setSelectedDeliverySiteId(match?.id ?? '');
+        } else {
+          setSelectedDeliverySiteId('');
+        }
+        return;
+      }
+
+      setFormData((prev) => ({
+        ...prev,
+        billing_address: partyBilling,
+        delivery_address: partyBilling,
+      }));
+      setDeliverySameAsBilling(true);
+      setSelectedDeliverySiteId('');
+    };
+
+    void syncAddressesForParty();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, formData.sales_party_id, loadDeliverySites, salesPartyOptions]);
 
   useEffect(() => {
     if (open) {
@@ -104,6 +295,21 @@ export function SalesSaudaFormModal({
         .getBrands()
         .then(setBrands)
         .catch(() => setBrands([]));
+      salesSaudasAPI
+        .getTypes()
+        .then((opts) => {
+          if (Array.isArray(opts) && opts.length > 0) {
+            setSaudaTypeOptions(
+              opts.map((o) => ({
+                value: o.value as SalesSaudaType,
+                label: o.label,
+              }))
+            );
+          } else {
+            setSaudaTypeOptions(SALES_SAUDA_TYPE_OPTIONS);
+          }
+        })
+        .catch(() => setSaudaTypeOptions(SALES_SAUDA_TYPE_OPTIONS));
     }
   }, [open]);
 
@@ -134,11 +340,19 @@ export function SalesSaudaFormModal({
     setLoadingSauda(true);
     try {
       const s = await salesSaudasAPI.getById(saudaId);
+      const billing = cloneAddress(s.billing_address);
+      const delivery = cloneAddress(s.delivery_address);
+      pendingHydratedAddressesRef.current = { billing, delivery };
       setFormData({
         sales_party_id: s.sales_party_id,
         status: 'draft',
         sauda_date: s.sauda_date,
+        sauda_type: isSalesSaudaType(s.sauda_type) ? s.sauda_type : ('' as SalesSaudaType),
+        salesman_id: s.salesman_id ?? null,
+        billing_address: billing,
+        delivery_address: delivery,
         payment_terms: s.payment_terms ?? null,
+        notes: s.notes ?? null,
         lines:
           s.lines?.map((l) => ({
             product_id: l.product_id,
@@ -158,6 +372,37 @@ export function SalesSaudaFormModal({
     } finally {
       setLoadingSauda(false);
     }
+  };
+
+  const handleDeliverySameAsBillingChange = (checked: boolean) => {
+    setDeliverySameAsBilling(checked);
+    if (checked) {
+      setSelectedDeliverySiteId('');
+      setFormData((prev) => ({
+        ...prev,
+        delivery_address: cloneAddress(prev.billing_address),
+      }));
+      return;
+    }
+    const firstSite = deliverySites[0];
+    if (firstSite) {
+      setSelectedDeliverySiteId(firstSite.id);
+      setFormData((prev) => ({
+        ...prev,
+        delivery_address: cloneAddress(firstSite.address),
+      }));
+    }
+  };
+
+  const handleDeliverySiteChange = (siteId: string) => {
+    setSelectedDeliverySiteId(siteId);
+    const site = deliverySites.find((s) => s.id === siteId);
+    if (!site) return;
+    setDeliverySameAsBilling(false);
+    setFormData((prev) => ({
+      ...prev,
+      delivery_address: cloneAddress(site.address),
+    }));
   };
 
   const addLine = () => {
@@ -312,9 +557,15 @@ export function SalesSaudaFormModal({
     const e: Record<string, string> = {};
     if (!formData.sales_party_id) e.sales_party_id = 'Select a sales party';
     if (!formData.sauda_date) e.sauda_date = 'Date is required';
+    if (!isSalesSaudaType(formData.sauda_type)) e.sauda_type = 'Select sauda type (EX or FOR)';
+    if (hasAdditionalDeliveryAddresses && !deliverySameAsBilling && !selectedDeliverySiteId) {
+      e.delivery_address = 'Select a delivery address or use same as billing';
+    }
     if (formData.payment_terms !== null && formData.payment_terms !== undefined) {
       if (!Number.isInteger(formData.payment_terms) || formData.payment_terms < 0) {
         e.payment_terms = 'Payment terms must be a whole number of days (>= 0)';
+      } else if (formData.payment_terms > 90) {
+        e.payment_terms = 'Payment terms cannot exceed 90 days';
       }
     }
     const lines = formData.lines ?? [];
@@ -363,10 +614,18 @@ export function SalesSaudaFormModal({
         formData.lines?.filter(
           (l) => l.product_id && ((Number(l.quantity) || 0) > 0 || (Number(l.packet_count) || 0) > 0)
         ) ?? [];
+      const billing = cloneAddress(formData.billing_address);
+      const delivery = deliverySameAsBilling
+        ? cloneAddress(billing)
+        : cloneAddress(formData.delivery_address);
       const payload = {
         sales_party_id: formData.sales_party_id,
         status: formData.status,
         sauda_date: formData.sauda_date,
+        sauda_type: formData.sauda_type,
+        salesman_id: formData.salesman_id || null,
+        billing_address: billing,
+        delivery_address: delivery,
         payment_terms:
           formData.payment_terms === null || formData.payment_terms === undefined
             ? null
@@ -409,6 +668,7 @@ export function SalesSaudaFormModal({
   };
 
   return (
+    <>
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" />
@@ -447,24 +707,70 @@ export function SalesSaudaFormModal({
                   <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/60 pb-1">
                     Party & date
                   </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-medium text-foreground mb-1">Sales Party</label>
                       <select
                         className="w-full rounded-md border border-input bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                         value={formData.sales_party_id}
-                        onChange={(e) => setFormData((p) => ({ ...p, sales_party_id: e.target.value }))}
+                        onChange={(e) => {
+                          pendingHydratedAddressesRef.current = null;
+                          setFormData((p) => ({ ...p, sales_party_id: e.target.value }));
+                        }}
                       >
                         <option value="">Select sales party</option>
                         {salesPartyOptions.map((s) => (
                           <option key={s.id} value={s.id}>
-                            {s.business_name}
+                            {s.business_name?.trim() || 'Unnamed party'}
+                            {s.is_active === false ? ' (inactive)' : ''}
                           </option>
                         ))}
                       </select>
                       {errors.sales_party_id && (
                         <p className="mt-1 text-xs text-destructive">{errors.sales_party_id}</p>
                       )}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-foreground mb-1">
+                        Salesman <span className="text-muted-foreground font-normal">(optional)</span>
+                      </label>
+                      <div className="flex gap-1">
+                        <select
+                          className="min-w-0 flex-1 rounded-md border border-input bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                          value={formData.salesman_id ?? ''}
+                          onChange={(e) =>
+                            setFormData((p) => ({
+                              ...p,
+                              salesman_id: e.target.value || null,
+                            }))
+                          }
+                        >
+                          <option value="">None</option>
+                          {salesmanOptions.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                              {!s.is_active ? ' (inactive)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => void refetchSalesmen()}
+                          disabled={loadingSalesmen}
+                          className="flex-shrink-0 rounded-md border border-border bg-background p-2 hover:bg-muted transition-colors disabled:opacity-50"
+                          title="Refresh salesmen"
+                        >
+                          <RefreshCw className={`h-3.5 w-3.5 ${loadingSalesmen ? 'animate-spin' : ''}`} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSalesmanFormOpen(true)}
+                          className="flex-shrink-0 rounded-md border border-border bg-background p-2 hover:bg-muted transition-colors"
+                          title="Add salesman"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-foreground mb-1">Sauda Date</label>
@@ -481,11 +787,37 @@ export function SalesSaudaFormModal({
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-foreground mb-1">
+                        Sauda type
+                      </label>
+                      <select
+                        className="w-full rounded-md border border-input bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                        value={formData.sauda_type || ''}
+                        onChange={(e) =>
+                          setFormData((p) => ({
+                            ...p,
+                            sauda_type: e.target.value as SalesSaudaType,
+                          }))
+                        }
+                      >
+                        <option value="">Select type</option>
+                        {saudaTypeOptions.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                      {errors.sauda_type && (
+                        <p className="mt-1 text-xs text-destructive">{errors.sauda_type}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-foreground mb-1">
                         Payment Terms (days)
                       </label>
                       <input
                         type="number"
                         min={0}
+                        max={90}
                         step={1}
                         className="w-full rounded-md border border-input bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                         value={formData.payment_terms ?? ''}
@@ -495,10 +827,10 @@ export function SalesSaudaFormModal({
                             payment_terms:
                               e.target.value === ''
                                 ? null
-                                : Math.max(0, Math.floor(Number(e.target.value))),
+                                : Math.min(90, Math.max(0, Math.floor(Number(e.target.value)))),
                           }))
                         }
-                        placeholder="e.g. 30"
+                        placeholder="e.g. 30 (max 90)"
                       />
                       {errors.payment_terms && (
                         <p className="mt-1 text-xs text-destructive">{errors.payment_terms}</p>
@@ -508,25 +840,15 @@ export function SalesSaudaFormModal({
                 </section>
 
                 {selectedSalesParty && (
-                  <section className="rounded-md border border-border/60 bg-muted/15 p-3 space-y-2">
+                  <section className="rounded-md border border-border/60 bg-muted/15 p-3 space-y-3">
                     <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                       Sales party details
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                       <div className="sm:col-span-2 rounded-md border border-border/40 bg-muted/30 px-2.5 py-2">
-                        <p className="text-[11px] font-medium text-muted-foreground">Address</p>
+                        <p className="text-[11px] font-medium text-muted-foreground">Billing address</p>
                         <p className="mt-0.5 text-foreground">
-                          {selectedSalesParty.address
-                            ? [
-                                selectedSalesParty.address.street,
-                                selectedSalesParty.address.city,
-                                selectedSalesParty.address.state,
-                                selectedSalesParty.address.pincode,
-                                selectedSalesParty.address.country,
-                              ]
-                                .filter(Boolean)
-                                .join(', ') || '–'
-                            : '–'}
+                          {formatVendorAddress(formData.billing_address ?? selectedSalesParty.address) || '–'}
                         </p>
                       </div>
                       <div className="rounded-md border border-border/40 bg-muted/30 px-2.5 py-2">
@@ -538,6 +860,59 @@ export function SalesSaudaFormModal({
                         <p className="mt-0.5 text-foreground">{selectedSalesParty.business_details?.pan_number ?? '–'}</p>
                       </div>
                     </div>
+
+                    {(hasAdditionalDeliveryAddresses || loadingDeliverySites) && (
+                      <div className="space-y-2 rounded-md border border-border/40 bg-background/60 p-2.5">
+                        <p className="text-[11px] font-medium text-muted-foreground">Delivery address</p>
+                        {loadingDeliverySites ? (
+                          <p className="text-xs text-muted-foreground">Loading delivery addresses…</p>
+                        ) : (
+                          <>
+                            <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
+                              <input
+                                type="checkbox"
+                                className="rounded border-input"
+                                checked={deliverySameAsBilling}
+                                onChange={(e) => handleDeliverySameAsBillingChange(e.target.checked)}
+                              />
+                              Delivery address same as billing address
+                            </label>
+                            {!deliverySameAsBilling && (
+                              <div>
+                                <label className="mb-1 block text-[11px] font-medium text-muted-foreground">
+                                  Select additional delivery address
+                                </label>
+                                <select
+                                  className="w-full rounded-md border border-input bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                  value={selectedDeliverySiteId}
+                                  onChange={(e) => handleDeliverySiteChange(e.target.value)}
+                                >
+                                  <option value="">Select delivery address</option>
+                                  {deliverySites.map((site) => (
+                                    <option key={site.id} value={site.id}>
+                                      {formatSiteLabel(site)}
+                                    </option>
+                                  ))}
+                                </select>
+                                {formData.delivery_address && (
+                                  <p className="mt-1.5 text-xs text-foreground">
+                                    {formatVendorAddress(formData.delivery_address) || '–'}
+                                  </p>
+                                )}
+                                {errors.delivery_address && (
+                                  <p className="mt-1 text-xs text-destructive">{errors.delivery_address}</p>
+                                )}
+                              </div>
+                            )}
+                            {deliverySameAsBilling && (
+                              <p className="text-xs text-muted-foreground">
+                                {formatVendorAddress(formData.billing_address) || '–'}
+                              </p>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
                   </section>
                 )}
 
@@ -851,5 +1226,14 @@ export function SalesSaudaFormModal({
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+
+    <SalesmanFormModal
+      open={salesmanFormOpen}
+      onOpenChange={(next) => {
+        setSalesmanFormOpen(next);
+        if (!next) void refetchSalesmen();
+      }}
+    />
+    </>
   );
 }

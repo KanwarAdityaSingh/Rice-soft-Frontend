@@ -89,17 +89,20 @@ export const kycAPI = {
     postDrivingLicenseOcr(`${BASE}/driving-license/ocr`, front, options),
 
   /** Surepass GST OCR (extract only). */
-  ocrGstin: (file: File) => postDocumentOcr<GstOcrResponse>(`${BASE}/gstin/ocr`, file),
+  ocrGstin: (file: File, options?: DocumentOcrUploadOptions) =>
+    postDocumentOcr<GstOcrResponse>(`${BASE}/gstin/ocr`, file, options),
 
   /** Surepass PAN OCR (extract only). */
   ocrPan: (file: File, options?: DocumentOcrUploadOptions) =>
     postDocumentOcr<PanOcrResponse>(`${BASE}/pan/ocr`, file, options),
 
   /** Surepass Aadhaar OCR (extract only). */
-  ocrAadhaar: (file: File) => postDocumentOcr<AadhaarOcrResponse>(`${BASE}/aadhaar/ocr`, file),
+  ocrAadhaar: (file: File, options?: DocumentOcrUploadOptions) =>
+    postDocumentOcr<AadhaarOcrResponse>(`${BASE}/aadhaar/ocr`, file, options),
 
   /** Surepass vehicle RC OCR (extract only). */
-  ocrRc: (file: File) => postDocumentOcr<RcOcrResponse>(`${BASE}/rc/ocr`, file),
+  ocrRc: (file: File, options?: DocumentOcrUploadOptions) =>
+    postDocumentOcr<RcOcrResponse>(`${BASE}/rc/ocr`, file, options),
 
   /** Surepass email deliverability check */
   verifyEmail: (email: string, persist?: KycPersistContext) => {

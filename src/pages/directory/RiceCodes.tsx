@@ -151,7 +151,7 @@ export default function RiceCodesPage() {
       if (variant) codeSaudas = filterSaudasByRiceType(codeSaudas, variant)
       if (length) {
         const lengthRecord = riceLengths.find((row) => row.id === length)
-        codeSaudas = filterSaudasByRiceLength(codeSaudas, length, lengthRecord?.code)
+        codeSaudas = filterSaudasByRiceLength(codeSaudas, length, lengthRecord?.name)
       }
       return codeSaudas
     },
@@ -200,16 +200,14 @@ export default function RiceCodesPage() {
   const lengthFilterOptions = useMemo(() => {
     if (!hierarchyRiceCodeId || !categoryFilter || !variantFilter) return []
     const baseSaudas = getSaudasForRiceCode(hierarchyRiceCodeId, categoryFilter, variantFilter)
-    const options: { key: string; label: string; count: number; totalQty: number }[] = []
+    const options: { key: string; label: string; count: number }[] = []
 
     for (const length of riceLengths.filter((row) => row.is_active)) {
-      const lengthSaudas = filterSaudasByRiceLength(baseSaudas, length.id, length.code)
-      const totalQty = lengthSaudas.reduce((sum, sauda) => sum + (sauda.quantity ?? 0), 0)
+      const lengthSaudas = filterSaudasByRiceLength(baseSaudas, length.id, length.name)
       options.push({
         key: length.id,
         label: length.name,
         count: lengthSaudas.length,
-        totalQty,
       })
     }
 
@@ -219,7 +217,6 @@ export default function RiceCodesPage() {
         key: '__unset_rice_length__',
         label: 'Unspecified length',
         count: unsetSaudas.length,
-        totalQty: unsetSaudas.reduce((sum, sauda) => sum + (sauda.quantity ?? 0), 0),
       })
     }
 
@@ -630,7 +627,7 @@ export default function RiceCodesPage() {
                             selected ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-muted text-muted-foreground'
                           }`}
                         >
-                          {option.count} {Math.round(option.totalQty)}
+                          {option.count}
                         </span>
                       </button>
                     )

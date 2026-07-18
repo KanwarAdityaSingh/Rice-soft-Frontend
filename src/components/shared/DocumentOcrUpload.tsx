@@ -55,7 +55,7 @@ export function DocumentOcrUpload({
 
   const handleScan = () => {
     if (!file) {
-      setLocalError('Choose a document image or PDF first.');
+      setLocalError('Choose a document image first.');
       return;
     }
     const error = validateDocumentOcrFile(file);
@@ -106,7 +106,7 @@ export function DocumentOcrUpload({
         className="w-full flex items-center justify-center gap-2 rounded-lg border border-dashed border-border px-3 py-3 text-xs hover:bg-muted/40 disabled:opacity-50"
       >
         <Upload className="h-4 w-4 shrink-0" />
-        {file ? file.name : `Choose image or PDF (${DOCUMENT_OCR_FILE_HINT})`}
+        {file ? file.name : `Choose image (${DOCUMENT_OCR_FILE_HINT})`}
       </button>
 
       {preview && (

@@ -9,6 +9,7 @@ import type {
 interface UseCreditNotesParams {
   invoice_dispatch_id?: string;
   status?: CreditNoteStatus;
+  financial_year?: string;
 }
 
 export function useCreditNotes(params?: UseCreditNotesParams) {
@@ -28,7 +29,7 @@ export function useCreditNotes(params?: UseCreditNotesParams) {
     } finally {
       setLoading(false);
     }
-  }, [params?.invoice_dispatch_id, params?.status]);
+  }, [params?.invoice_dispatch_id, params?.status, params?.financial_year]);
 
   useEffect(() => {
     fetchList();

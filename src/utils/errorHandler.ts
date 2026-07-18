@@ -20,6 +20,14 @@ const KNOWN_API_ERROR_MESSAGES: Array<{ match: RegExp; message: string }> = [
     message: 'This GST number is already registered to another record.',
   },
   {
+    match: /aadhaar number already exists|aadhar number already exists|aadhaar already exists|aadhar already exists/i,
+    message: 'This Aadhaar number is already registered to another record.',
+  },
+  {
+    match: /transporter.*(already exists|duplicate)|already.*transporter/i,
+    message: 'This transporter is already registered. Use a different GST/PAN/Aadhaar or edit the existing transporter.',
+  },
+  {
     match: /violates foreign key constraint.*vehicle|vehicle.*violates foreign key|inward_slip_pass.*vehicle_id|vehicle_id.*inward_slip_pass/i,
     message:
       'This vehicle cannot be deleted because it is linked to inward slip passes or other records. Remove those links first.',

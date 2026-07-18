@@ -28,7 +28,20 @@ function formatRateInrPlain(rate: number): string {
   return `Rs. ${n.toFixed(2)}`;
 }
 
-/** Timestamp suited to Helvetica / Western encoding. */
+/** Effective date (YYYY-MM-DD) for PDF. */
+function formatEffectiveDateForPdf(iso: string | null | undefined): string {
+  if (!iso) return '-';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toISOString().slice(0, 10);
+  } catch {
+    return iso;
+  }
+}
+
+/** Saved-at timestamp suited to Helvetica / Western encoding. */
 function formatWhenForPdf(iso: string): string {
   try {
     const d = new Date(iso);
@@ -80,11 +93,19 @@ export function downloadProductRateHistoryPdf(
   y += 8;
   doc.setTextColor(0);
 
-  const head = [['When (local)', 'Bag (kg)', 'Rate (INR)']];
-  const body = points.map((row) => [
-    formatWhenForPdf(row.created_at),
+  const sorted = [...points].sort((a, b) => {
+    const da = a.effective_date || '';
+    const db = b.effective_date || '';
+    if (da !== db) return da < db ? -1 : 1;
+    return (a.created_at || '').localeCompare(b.created_at || '');
+  });
+
+  const head = [['Effective date', 'Bag (kg)', 'Rate (INR)', 'Saved at']];
+  const body = sorted.map((row) => [
+    formatEffectiveDateForPdf(row.effective_date),
     String(row.holding_capacity),
     formatRateInrPlain(Number(row.rate)),
+    formatWhenForPdf(row.created_at),
   ]);
 
   autoTable(doc, {
@@ -107,9 +128,10 @@ export function downloadProductRateHistoryPdf(
       halign: 'center',
     },
     columnStyles: {
-      0: { cellWidth: pageInnerW * 0.46, halign: 'left' },
-      1: { cellWidth: pageInnerW * 0.18, halign: 'right' },
-      2: { cellWidth: pageInnerW * 0.36, halign: 'right' },
+      0: { cellWidth: pageInnerW * 0.24, halign: 'left' },
+      1: { cellWidth: pageInnerW * 0.16, halign: 'right' },
+      2: { cellWidth: pageInnerW * 0.24, halign: 'right' },
+      3: { cellWidth: pageInnerW * 0.36, halign: 'left' },
     },
   });
 

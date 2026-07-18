@@ -6,18 +6,51 @@ import { saudasAPI } from '../../../services/saudas.api';
 import { useVendors } from '../../../hooks/useVendors';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { riceCodesAPI, type CreateRiceCodeRequest } from '../../../services/riceCodes.api';
-import { riceLengthsAPI } from '../../../services/riceLengths.api';
+import { riceLengthsAPI, type CreateRiceLengthRequest } from '../../../services/riceLengths.api';
 import { RiceCodeFormModal } from '../../admin/rice-codes/RiceCodeFormModal';
+import { RiceLengthFormModal } from '../../admin/rice-codes/RiceLengthFormModal';
+import { VendorFormModal } from '../../admin/vendors/VendorFormModal';
+import { BrokerFormModal } from '../../admin/brokers/BrokerFormModal';
 import { vendorsAPI } from '../../../services/vendors.api';
 import { CustomSelect } from '../../shared/CustomSelect';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
-import { DateInputWithSteppers, toIsoDateString } from '../../shared/DateInputWithSteppers';
+import { DateInputWithSteppers, shiftIsoDate, toIsoDateString } from '../../shared/DateInputWithSteppers';
 import { NotificationModal } from '../../shared/NotificationModal';
 import { isAdmin } from '../../../utils/permissions';
+import { getRiceCategoryLabel, formatRiceCategoryFallback } from '../../../utils/riceCategory';
+import { formatVendorAddress } from '../../../utils/saudaDisplay';
+import { prepareSaudaPdfDownload, saudaLikeFromFormData } from '../../../utils/saudaPdfData';
+import { downloadSaudaPurchaseOrderPdf } from '../../../utils/saudaPdfPrint';
+import { getRiceCodeVariantKeys } from '../../../utils/riceCodeVariants';
+import {
+  buildSaudaParametersPayload,
+  formatSaudaAvgGrainLengthDisplay,
+  formatSaudaWhitenessDisplay,
+  saudaParametersFromSauda,
+  SAUDA_AVG_GRAIN_LENGTH_MAX,
+  SAUDA_AVG_GRAIN_LENGTH_MIN,
+  SAUDA_WHITENESS_MAX,
+  SAUDA_WHITENESS_MIN,
+  validateSaudaAvgGrainLength,
+  validateSaudaWhiteness,
+  processSaudaDecimalFieldInput,
+} from '../../../utils/saudaParameters';
+import {
+  cashDiscountMaxForType,
+  SAUDA_MAX_BAGS,
+  SAUDA_MAX_RATE,
+  validateSaudaBrokerCommission,
+  validateSaudaCashDiscount,
+  validateSaudaNoOfBags,
+  validateSaudaQuantity,
+  validateSaudaRate,
+  type SaudaWeightUnit,
+} from '../../../utils/saudaFormLimits';
 import type {
   CreateSaudaRequest,
   UpdateSaudaRequest,
+  RiceCategory,
   RiceCode,
   RiceLengthRecord,
   RiceType,
@@ -44,25 +77,60 @@ interface SaudaFormModalProps {
   onSuccess?: () => void;
 }
 
+const SAUDA_BAG_WEIGHT_KG_OPTIONS = [50, 55] as const;
+
+function unitToKgFactor(unit: SaudaWeightUnit): number {
+  return unit === 'kg' ? 1 : unit === 'quintal' ? 100 : 1000;
+}
+
+function quantityFromBags(
+  noOfBags: number | null | undefined,
+  bagWeightKg: number | null | undefined,
+  unit: SaudaWeightUnit,
+): number | null {
+  if (noOfBags == null || bagWeightKg == null || noOfBags <= 0) return null;
+  const totalKg = noOfBags * bagWeightKg;
+  return parseFloat((totalKg / unitToKgFactor(unit)).toFixed(4));
+}
+
+function applyBagFieldPatch(
+  prev: CreateSaudaRequest,
+  patch: Partial<Pick<CreateSaudaRequest, 'no_of_bags' | 'bag_weight'>>,
+  unit: SaudaWeightUnit,
+): CreateSaudaRequest {
+  const next = { ...prev, ...patch };
+  const autoQty = quantityFromBags(next.no_of_bags, next.bag_weight, unit);
+  if (autoQty != null) {
+    next.quantity = autoQty;
+  }
+  return next;
+}
+
 export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: SaudaFormModalProps) {
   const { createSauda, updateSauda } = useSaudas();
   const { vendors, refetch: refetchVendors, loading: loadingVendors } = useVendors();
   const { brokers, refetch: refetchBrokers, loading: loadingBrokers } = useBrokers();
   const isEditMode = !!saudaId;
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
-  const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
+  const [riceCategories, setRiceCategories] = useState<RiceType[]>([
+    { value: 'basmati', label: 'Basmati' },
+    { value: 'non_basmati', label: 'Non Basmati' },
+  ]);
+  const [categoryVariants, setCategoryVariants] = useState<RiceType[]>([]);
   const [riceLengths, setRiceLengths] = useState<RiceLengthRecord[]>([]);
   const [loadingRiceCodes, setLoadingRiceCodes] = useState(false);
-  const [loadingRiceTypes, setLoadingRiceTypes] = useState(false);
+  const [loadingCategoryVariants, setLoadingCategoryVariants] = useState(false);
   const [loadingRiceLengths, setLoadingRiceLengths] = useState(false);
   const [unit, setUnit] = useState<'kg' | 'quintal' | 'ton'>('kg');
   const [brokerCommissionUnit, setBrokerCommissionUnit] = useState<'kg' | 'quintal' | 'ton'>('kg');
   const [defaultRecipient, setDefaultRecipient] = useState<DefaultRecipient | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
-  /** Original sauda_date when editing — non-admins may keep an existing backdate but not pick a new one. */
+  /** Original sauda_date when editing — expands the ±3 day window so non-admins can keep it unchanged. */
   const loadedSaudaDateRef = useRef<string | null>(null);
+  const loadedSaudaMetaRef = useRef<{ id?: string; display_id?: string | null }>({});
   const [formData, setFormData] = useState<CreateSaudaRequest>({
     sauda_type: 'exgodown',
+    rice_category: null,
     rice_code_id: null,
     rice_type: null,
     rice_length_id: null,
@@ -74,6 +142,8 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
     cash_discount: null,
     cash_discount_type: 'rupees',
     quantity: null,
+    no_of_bags: null,
+    bag_weight: null,
     estimated_delivery_time: null,
     cooked_rice_image_url: null,
     uncooked_rice_image_url: null,
@@ -98,16 +168,26 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
   const [notificationInitialTab, setNotificationInitialTab] = useState<'email' | 'whatsapp'>('email');
   const [createdSaudaId, setCreatedSaudaId] = useState<string | null>(null);
   const [riceCodeFormOpen, setRiceCodeFormOpen] = useState(false);
+  const [riceLengthFormOpen, setRiceLengthFormOpen] = useState(false);
+  const [vendorFormOpen, setVendorFormOpen] = useState(false);
+  const [brokerFormOpen, setBrokerFormOpen] = useState(false);
+  const [parameterFields, setParameterFields] = useState({
+    whiteness: '',
+    average_grain_length: '',
+  });
 
   const todayIso = useMemo(() => toIsoDateString(new Date()), [open]);
 
-  const saudaDateMin = useMemo((): string | undefined => {
-    if (isAdmin()) return undefined;
+  const saudaDateBounds = useMemo((): { min?: string; max?: string } => {
+    if (isAdmin()) return {};
+    let min = shiftIsoDate(todayIso, -3);
+    let max = shiftIsoDate(todayIso, 3);
     const loaded = loadedSaudaDateRef.current;
-    if (isEditMode && loaded && loaded < todayIso) {
-      return loaded;
+    if (isEditMode && loaded) {
+      if (loaded < min) min = loaded;
+      if (loaded > max) max = loaded;
     }
-    return todayIso;
+    return { min, max };
   }, [isEditMode, todayIso, formData.sauda_date]);
   const refetchRiceCodes = useCallback(async () => {
     setLoadingRiceCodes(true);
@@ -126,8 +206,69 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
     setRiceCodes((prev) =>
       [...prev, created].sort((a, b) => a.rice_code_name.localeCompare(b.rice_code_name)),
     );
-    setFormData((prev) => ({ ...prev, rice_code_id: created.rice_code_id }));
+    setFormData((prev) => ({
+      ...prev,
+      rice_category: created.category,
+      rice_code_id: created.rice_code_id,
+      rice_type: null,
+    }));
     return created;
+  };
+
+  const riceCodesForCategory = useMemo(() => {
+    if (!formData.rice_category) return [];
+    return riceCodes
+      .filter((rc) => rc.category === formData.rice_category)
+      .sort((a, b) => a.rice_code_name.localeCompare(b.rice_code_name));
+  }, [riceCodes, formData.rice_category]);
+
+  const selectedRiceCode = useMemo(
+    () => riceCodes.find((rc) => rc.rice_code_id === formData.rice_code_id) ?? null,
+    [riceCodes, formData.rice_code_id],
+  );
+
+  const variantOptionsForForm = useMemo(() => {
+    const allowedKeys = getRiceCodeVariantKeys(selectedRiceCode?.variants);
+    const base =
+      !allowedKeys.length
+        ? categoryVariants
+        : categoryVariants.filter((v) => new Set(allowedKeys).has(v.value));
+    // Keep saved variant visible while category variant catalog is still loading
+    if (
+      formData.rice_type &&
+      !base.some((v) => v.value === formData.rice_type)
+    ) {
+      return [
+        ...base,
+        {
+          value: formData.rice_type,
+          label: formData.rice_type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+        },
+      ];
+    }
+    return base;
+  }, [selectedRiceCode, categoryVariants, formData.rice_type]);
+
+  const handleCategoryChange = (value: string | null) => {
+    setFormData((prev) => ({
+      ...prev,
+      rice_category: (value as RiceCategory) || null,
+      rice_code_id: null,
+      rice_type: null,
+    }));
+  };
+
+  const handleRiceCodeChange = (value: string | null) => {
+    setFormData((prev) => {
+      const code = riceCodes.find((rc) => rc.rice_code_id === value);
+      const allowed = new Set(getRiceCodeVariantKeys(code?.variants));
+      const keepType = prev.rice_type && allowed.has(prev.rice_type) ? prev.rice_type : null;
+      return {
+        ...prev,
+        rice_code_id: value,
+        rice_type: keepType,
+      };
+    });
   };
 
   useEffect(() => {
@@ -150,51 +291,112 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
     if (open) {
       void refetchRiceCodes();
       fetchDefaultRecipient();
+      void (async () => {
+        try {
+          const cats = await riceCodesAPI.getRiceCategories();
+          setRiceCategories(cats);
+        } catch {
+          setRiceCategories([
+            { value: 'basmati', label: 'Basmati' },
+            { value: 'non_basmati', label: 'Non Basmati' },
+          ]);
+        }
+      })();
     }
   }, [open, refetchRiceCodes]);
 
   useEffect(() => {
-    const fetchRiceTypes = async () => {
-      setLoadingRiceTypes(true);
-      try {
-        const data = await riceCodesAPI.getRiceTypes();
-        setRiceTypes(data);
-      } catch (error) {
-        console.error('Failed to fetch rice types:', error);
-      } finally {
-        setLoadingRiceTypes(false);
-      }
-    };
-    if (open) {
-      fetchRiceTypes();
+    if (!open || !formData.rice_category) {
+      setCategoryVariants([]);
+      setLoadingCategoryVariants(false);
+      return;
     }
-  }, [open]);
+    let cancelled = false;
+    setLoadingCategoryVariants(true);
+    riceCodesAPI
+      .getRiceVariants(formData.rice_category)
+      .then((data) => {
+        if (!cancelled) setCategoryVariants(data);
+      })
+      .catch((error) => {
+        console.error('Failed to fetch category variants:', error);
+        if (!cancelled) setCategoryVariants([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCategoryVariants(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, formData.rice_category]);
+
+  const refetchRiceLengths = useCallback(async () => {
+    setLoadingRiceLengths(true);
+    try {
+      const data = await riceLengthsAPI.getAllRiceLengths();
+      setRiceLengths(data);
+    } catch (error) {
+      console.error('Failed to fetch rice lengths:', error);
+    } finally {
+      setLoadingRiceLengths(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const fetchRiceLengths = async () => {
-      setLoadingRiceLengths(true);
-      try {
-        const data = await riceLengthsAPI.getAllRiceLengths();
-        setRiceLengths(data);
-      } catch (error) {
-        console.error('Failed to fetch rice lengths:', error);
-      } finally {
-        setLoadingRiceLengths(false);
-      }
-    };
     if (open) {
-      fetchRiceLengths();
+      void refetchRiceLengths();
     }
-  }, [open]);
+  }, [open, refetchRiceLengths]);
+
+  const handleCreateRiceLength = async (data: CreateRiceLengthRequest) => {
+    const created = await riceLengthsAPI.createRiceLength(data);
+    setRiceLengths((prev) =>
+      [...prev, created].sort((a, b) => a.name.localeCompare(b.name)),
+    );
+    setFormData((prev) => ({ ...prev, rice_length_id: created.id }));
+    return created;
+  };
 
   const loadSaudaData = async () => {
     if (!saudaId) return;
     setLoadingSauda(true);
     try {
-      const sauda = await saudasAPI.getSaudaById(saudaId);
+      const [sauda, codes] = await Promise.all([
+        saudasAPI.getSaudaById(saudaId),
+        riceCodesAPI.getAllRiceCodes(),
+      ]);
+      let matchedCode = codes.find((rc) => rc.rice_code_id === sauda.rice_code_id) ?? null;
+      let nextCodes = codes;
+      if (!matchedCode && sauda.rice_code_id) {
+        matchedCode = await riceCodesAPI.getRiceCodeById(sauda.rice_code_id);
+        if (matchedCode) {
+          nextCodes = [...codes, matchedCode].sort((a, b) =>
+            a.rice_code_name.localeCompare(b.rice_code_name),
+          );
+        }
+      }
+      setRiceCodes(nextCodes);
+      const riceCategory =
+        sauda.rice_category ?? matchedCode?.category ?? null;
+      // Prefetch variants so edit form does not stick on "Loading..."
+      if (riceCategory) {
+        try {
+          const variants = await riceCodesAPI.getRiceVariants(riceCategory);
+          setCategoryVariants(variants);
+          setLoadingCategoryVariants(false);
+        } catch {
+          setCategoryVariants([]);
+          setLoadingCategoryVariants(false);
+        }
+      } else {
+        setCategoryVariants([]);
+        setLoadingCategoryVariants(false);
+      }
       loadedSaudaDateRef.current = sauda.sauda_date || null;
+      loadedSaudaMetaRef.current = { id: sauda.id, display_id: sauda.display_id ?? null };
       setFormData({
         sauda_type: sauda.sauda_type,
+        rice_category: riceCategory,
         rice_code_id: sauda.rice_code_id || null,
         rice_type: sauda.rice_type || null,
         rice_length_id: sauda.rice_length_id ?? null,
@@ -205,7 +407,9 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
         broker_commission_type: sauda.broker_commission_type || 'percentage',
         cash_discount: sauda.cash_discount || null,
         cash_discount_type: sauda.cash_discount_type || 'rupees',
-        quantity: sauda.quantity || null,
+        quantity: sauda.quantity ?? null,
+        no_of_bags: sauda.no_of_bags ?? null,
+        bag_weight: sauda.bag_weight ?? null,
         estimated_delivery_time: sauda.estimated_delivery_time || null,
         cooked_rice_image_url: sauda.cooked_rice_image_url || null,
         uncooked_rice_image_url: sauda.uncooked_rice_image_url || null,
@@ -213,6 +417,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
         is_dana_required: sauda.is_dana_required ?? true, // Default to true if not set
         sauda_date: sauda.sauda_date || new Date().toISOString().split('T')[0],
       });
+      setParameterFields(saudaParametersFromSauda(sauda));
       setErrors({});
       setPendingFiles({
         cooked_rice_image: null,
@@ -232,8 +437,10 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
 
   const resetForm = () => {
     loadedSaudaDateRef.current = null;
+    loadedSaudaMetaRef.current = {};
     setFormData({
       sauda_type: 'exgodown',
+      rice_category: null,
       rice_code_id: null,
       rice_type: null,
       rice_length_id: null,
@@ -245,6 +452,8 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
       cash_discount: null,
       cash_discount_type: 'rupees',
       quantity: null,
+      no_of_bags: null,
+      bag_weight: null,
       estimated_delivery_time: null,
       cooked_rice_image_url: null,
       uncooked_rice_image_url: null,
@@ -252,6 +461,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
       is_dana_required: true, // Default to true
       sauda_date: new Date().toISOString().split('T')[0], // Default to today's date
     });
+    setParameterFields({ whiteness: '', average_grain_length: '' });
     setErrors({});
     setUnit('kg');
     setBrokerCommissionUnit('kg');
@@ -275,47 +485,60 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
       newErrors.sauda_type = 'Sauda type must be one of: exgodown, for';
     }
     
+    if (!formData.rice_category) {
+      newErrors.rice_category = 'Category is required';
+    }
+
     if (!formData.rice_type) {
-      newErrors.rice_type = 'Rice type is required';
+      newErrors.rice_type = 'Variant is required';
     }
     
     if (formData.rate === undefined || formData.rate === null || isNaN(formData.rate)) {
       newErrors.rate = 'Rate is required';
-    } else if (formData.rate < 0) {
-      newErrors.rate = 'Rate must be 0 or greater';
+    } else {
+      const rateError = validateSaudaRate(formData.rate);
+      if (rateError) newErrors.rate = rateError;
     }
     
     if (!formData.purchaser_id || formData.purchaser_id.trim() === '') {
       newErrors.purchaser_id = 'Vendor (purchaser) is required';
     }
 
-    // Optional fields with constraints
-    if (formData.broker_commission != null) {
-      if (formData.broker_commission < 0) {
-        newErrors.broker_commission = 'Broker commission cannot be negative';
-      } else if (formData.broker_commission_type === 'percentage' && formData.broker_commission > 100) {
-        newErrors.broker_commission = 'Broker commission percentage must be between 0 and 100';
-      }
-    }
-    if (formData.cash_discount != null) {
-      if (formData.cash_discount < 0) {
-        newErrors.cash_discount = 'Cash discount cannot be negative';
-      } else if (formData.cash_discount_type === 'percentage' && formData.cash_discount > 100) {
-        newErrors.cash_discount = 'Cash discount percentage must be between 0 and 100';
-      }
-    }
-    if (formData.quantity != null && formData.quantity < 0) {
-      newErrors.quantity = 'Quantity cannot be negative';
+    const brokerCommissionError = validateSaudaBrokerCommission(
+      formData.broker_commission,
+      formData.broker_commission_type,
+    );
+    if (brokerCommissionError) newErrors.broker_commission = brokerCommissionError;
+
+    const cashDiscountError = validateSaudaCashDiscount(
+      formData.cash_discount,
+      formData.cash_discount_type,
+    );
+    if (cashDiscountError) newErrors.cash_discount = cashDiscountError;
+
+    const quantityError = validateSaudaQuantity(formData.quantity, unit);
+    if (quantityError) newErrors.quantity = quantityError;
+
+    const bagsError = validateSaudaNoOfBags(formData.no_of_bags);
+    if (bagsError) newErrors.no_of_bags = bagsError;
+    if (formData.no_of_bags != null && formData.bag_weight == null) {
+      newErrors.bag_weight = 'Bag weight is required when number of bags is entered';
+    } else if (
+      formData.bag_weight != null &&
+      !SAUDA_BAG_WEIGHT_KG_OPTIONS.includes(formData.bag_weight as (typeof SAUDA_BAG_WEIGHT_KG_OPTIONS)[number])
+    ) {
+      newErrors.bag_weight = 'Bag weight must be 50 or 55 kg';
     }
     // Validate notes max length (API contract: max 1000 chars)
     if (formData.notes != null && formData.notes.length > 1000) {
       newErrors.notes = 'Notes cannot exceed 1000 characters';
     }
     
-    // Validate rice_type against API contract allowed values
-    const allowedRiceTypes = ['basmati', 'non_basmati', 'parboiled', 'raw', 'raw_basmati', 'steam_basmati', 'white_sella', 'golden_sella'];
-    if (formData.rice_type && !allowedRiceTypes.includes(formData.rice_type)) {
-      newErrors.rice_type = 'Invalid rice type';
+    if (
+      formData.rice_type &&
+      !variantOptionsForForm.some((row) => row.value === formData.rice_type)
+    ) {
+      newErrors.rice_type = 'Invalid variant for selected rice code';
     }
     if (
       formData.rice_length_id != null &&
@@ -324,12 +547,24 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
       newErrors.rice_length_id = 'Invalid rice length';
     }
 
-    if (!isAdmin() && formData.sauda_date && formData.sauda_date < todayIso) {
-      const loaded = loadedSaudaDateRef.current;
-      const keepingExistingBackdate =
-        isEditMode && loaded && loaded < todayIso && formData.sauda_date === loaded;
-      if (!keepingExistingBackdate) {
-        newErrors.sauda_date = 'Only administrators can set a sauda date in the past';
+    const whitenessError = validateSaudaWhiteness(parameterFields.whiteness);
+    if (whitenessError) {
+      newErrors.whiteness = whitenessError;
+    }
+
+    const avgGrainLengthError = validateSaudaAvgGrainLength(
+      parameterFields.average_grain_length,
+    );
+    if (avgGrainLengthError) {
+      newErrors.average_grain_length = avgGrainLengthError;
+    }
+
+    if (!isAdmin() && formData.sauda_date) {
+      const { min, max } = saudaDateBounds;
+      if (min && formData.sauda_date < min) {
+        newErrors.sauda_date = 'Sauda date cannot be more than 3 days in the past';
+      } else if (max && formData.sauda_date > max) {
+        newErrors.sauda_date = 'Sauda date cannot be more than 3 days in the future';
       }
     }
 
@@ -391,9 +626,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
       }
       const result = await uploadFn(uploadSaudaId, file);
       setUploadSuccess(prev => ({ ...prev, [field]: true }));
-      // Update form data with the new image URL
-      // The API returns { url: string } or the URL might be in result.url
-      const imageUrl = result?.url || (typeof result === 'string' ? result : null);
+      const imageUrl = result.url;
       if (field === 'cooked_rice_image' && imageUrl) {
         setFormData(prev => ({ ...prev, cooked_rice_image_url: imageUrl }));
       } else if (field === 'uncooked_rice_image' && imageUrl) {
@@ -446,8 +679,14 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
       }
       
       // Clean and prepare data according to API contract
+      const parameters = buildSaudaParametersPayload(
+        parameterFields.whiteness,
+        parameterFields.average_grain_length,
+      );
+
       const cleanedData: CreateSaudaRequest | UpdateSaudaRequest = {
         sauda_type: formData.sauda_type,
+        rice_category: formData.rice_category ?? null,
         rice_type: formData.rice_type || null,
         rice_length_id: formData.rice_length_id ?? null,
         rice_code_id: formData.rice_code_id || null,
@@ -459,12 +698,15 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
         cash_discount: formData.cash_discount != null ? parseFloat(formData.cash_discount.toFixed(2)) : null, // API contract: precision 2 decimal places
         cash_discount_type: formData.cash_discount_type || 'rupees',
         quantity: formData.quantity != null ? parseFloat(((formData.quantity as number) * f).toFixed(2)) : null, // API contract: precision 2 decimal places
+        no_of_bags: formData.no_of_bags ?? null,
+        bag_weight: formData.bag_weight != null ? parseFloat(formData.bag_weight.toFixed(2)) : null,
         estimated_delivery_time: formData.estimated_delivery_time != null ? Math.floor(formData.estimated_delivery_time) : null, // API contract: integer
         cooked_rice_image_url: formData.cooked_rice_image_url || null,
         uncooked_rice_image_url: formData.uncooked_rice_image_url || null,
         notes: formData.notes?.trim() || null, // Convert empty string to null
         is_dana_required: formData.is_dana_required ?? true,
         sauda_date: formData.sauda_date || null, // Date in YYYY-MM-DD format
+        ...(parameters ? { parameters } : {}),
       };
       
       // Add status only if provided (optional field)
@@ -512,6 +754,65 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
 
   const sellerVendors = vendors.filter(v => v.type === 'seller' || v.type === 'both');
 
+  const selectedVendor = useMemo(
+    () =>
+      formData.purchaser_id
+        ? vendors.find((v) => v.id === formData.purchaser_id) ?? null
+        : null,
+    [formData.purchaser_id, vendors],
+  );
+
+  const formatVendorDetail = (value: string | null | undefined) =>
+    value?.trim() ? value.trim() : '—';
+
+  const formatVendorRegistrationLabel = (
+    registrationType: 'registered' | 'unregistered' | undefined,
+  ) => (registrationType === 'unregistered' ? 'Unregistered' : 'Registered');
+
+  const blockInvalidDecimalKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (['e', 'E', '+', '-'].includes(e.key)) {
+      e.preventDefault();
+    }
+  };
+
+  const handleWhitenessInput = (raw: string) => {
+    const { value, error, reject } = processSaudaDecimalFieldInput(
+      raw,
+      SAUDA_WHITENESS_MAX,
+      validateSaudaWhiteness,
+    );
+    if (reject) {
+      setErrors((prev) => ({
+        ...prev,
+        whiteness:
+          error ||
+          `Whiteness (W) must be between ${SAUDA_WHITENESS_MIN} and ${SAUDA_WHITENESS_MAX}`,
+      }));
+      return;
+    }
+    setParameterFields((prev) => ({ ...prev, whiteness: value }));
+    setErrors((prev) => ({ ...prev, whiteness: error }));
+  };
+
+  const handleAvgGrainLengthInput = (raw: string) => {
+    const { value, error, reject } = processSaudaDecimalFieldInput(
+      raw,
+      SAUDA_AVG_GRAIN_LENGTH_MAX,
+      validateSaudaAvgGrainLength,
+    );
+    if (reject) {
+      setErrors((prev) => ({
+        ...prev,
+        average_grain_length:
+          error ||
+          `Avg grain length must be between ${SAUDA_AVG_GRAIN_LENGTH_MIN} and ${SAUDA_AVG_GRAIN_LENGTH_MAX} mm`,
+      }));
+      return;
+    }
+    setParameterFields((prev) => ({ ...prev, average_grain_length: value }));
+    setErrors((prev) => ({ ...prev, average_grain_length: error }));
+  };
+
   // Helper functions for preview
   const getRiceCodeName = (riceCodeId: string | null) => {
     if (!riceCodeId) return '-';
@@ -521,8 +822,8 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
 
   const getRiceTypeName = (riceType: string | null) => {
     if (!riceType) return '-';
-    const type = riceTypes.find(rt => rt.value === riceType);
-    return type ? type.label : riceType;
+    const type = categoryVariants.find((rt) => rt.value === riceType);
+    return type ? type.label : riceType.replace(/_/g, ' ');
   };
 
   const getRiceLengthName = (riceLengthId: string | null | undefined) => {
@@ -553,133 +854,49 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
   };
 
   // PDF Download function
-  const handleDownloadPDF = () => {
-    if (!previewRef.current) return;
-    
-    try {
-      const printContent = previewRef.current.innerHTML;
-      const printWindow = window.open('', '_blank');
-      if (!printWindow) {
-        alert('Please allow popups to download the PDF');
-        return;
-      }
+  const handleDownloadPDF = async () => {
+    if (!defaultRecipient) return;
 
-      printWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <title>Sauda Details</title>
-            <meta charset="UTF-8">
-            <style>
-              * { margin: 0; padding: 0; box-sizing: border-box; }
-              body { 
-                font-family: 'Arial', 'Helvetica', sans-serif; 
-                padding: 30px;
-                background: white;
-                color: black;
-                font-size: 14px;
-                line-height: 1.6;
+    const vendorName = getVendorName(formData.purchaser_id);
+    try {
+      const saudaLike = saudaLikeFromFormData(
+        formData,
+        parameterFields,
+        saudaId
+          ? { id: saudaId, display_id: loadedSaudaMetaRef.current.display_id ?? null }
+          : undefined,
+        unit,
+        brokerCommissionUnit,
+      );
+      const { pdfData, filename } = await prepareSaudaPdfDownload(
+        {
+          sauda: saudaLike,
+          vendors,
+          brokers,
+          riceCodes,
+          riceTypes: categoryVariants.length > 0 ? categoryVariants : riceCategories,
+          riceLengths,
+          company: {
+            name: defaultRecipient.name,
+            address: defaultRecipient.address,
+            llpin: defaultRecipient.llpin,
+          },
+        },
+        {
+          sauda: saudaId
+            ? {
+                id: saudaId,
+                display_id: loadedSaudaMetaRef.current.display_id ?? null,
+                sauda_date: formData.sauda_date,
+                purchaser_id: formData.purchaser_id,
               }
-              .preview-container {
-                max-width: 700px;
-                margin: 0 auto;
-                border: 2px solid #333;
-                padding: 25px;
-                background: white;
-              }
-              .header { 
-                text-align: center; 
-                border-bottom: 2px dashed #333; 
-                padding-bottom: 15px; 
-                margin-bottom: 20px; 
-              }
-              .header h2 { font-size: 22px; margin-bottom: 8px; font-weight: bold; }
-              .header h3 { font-size: 18px; margin-bottom: 8px; font-weight: bold; }
-              .header p { font-size: 12px; color: #666; margin: 4px 0; }
-              .section { margin-bottom: 18px; }
-              .section-title { 
-                font-weight: bold; 
-                border-bottom: 1px solid #333; 
-                padding-bottom: 8px; 
-                margin-bottom: 12px; 
-                font-size: 16px;
-              }
-              .row { 
-                display: flex; 
-                justify-content: space-between; 
-                padding: 8px 0; 
-              }
-              .label { color: #666; font-size: 13px; }
-              .value { font-weight: bold; text-align: right; font-size: 14px; }
-              .highlight { 
-                background: #f5f5f5; 
-                padding: 15px; 
-                border-radius: 4px; 
-                text-align: center; 
-                margin-top: 20px;
-              }
-              .highlight .amount { font-size: 24px; font-weight: bold; }
-              .footer { 
-                text-align: center; 
-                border-top: 2px dashed #333; 
-                padding-top: 15px; 
-                margin-top: 20px; 
-                font-size: 11px; 
-                color: #666; 
-              }
-              @media print {
-                body { padding: 15px; }
-                .preview-container { border: none; padding: 20px; }
-                @page { margin: 1cm; }
-              }
-            </style>
-          </head>
-          <body>
-            <div class="preview-container">
-              ${printContent}
-            </div>
-            <script>
-              (function() {
-                var printWindow = window;
-                var closed = false;
-                
-                function closeWindow() {
-                  if (!closed && printWindow && !printWindow.closed) {
-                    closed = true;
-                    try {
-                      printWindow.close();
-                    } catch (e) {
-                      // Ignore errors when closing
-                    }
-                  }
-                }
-                
-                // Use onafterprint event if available (more reliable)
-                if (printWindow.matchMedia) {
-                  var mediaQueryList = printWindow.matchMedia('print');
-                  mediaQueryList.addEventListener('change', function(mql) {
-                    if (!mql.matches) {
-                      // Print dialog was closed
-                      setTimeout(closeWindow, 100);
-                    }
-                  });
-                }
-                
-                // Fallback: use onafterprint event
-                printWindow.onafterprint = function() {
-                  setTimeout(closeWindow, 100);
-                };
-                
-                // Trigger print after a short delay
-                setTimeout(function() {
-                  printWindow.print();
-                }, 250);
-              })();
-            </script>
-          </body>
-        </html>
-      `);
-      printWindow.document.close();
+            : null,
+          saudaDate: formData.sauda_date,
+          partyName: vendorName !== '-' ? vendorName : undefined,
+          vendors,
+        },
+      );
+      await downloadSaudaPurchaseOrderPdf(pdfData, filename);
     } catch (error) {
       console.error('Error generating PDF:', error);
       alert('Failed to generate PDF. Please try again.');
@@ -717,7 +934,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                     <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b border-border pb-1">
                       Basic Info
                     </h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
                         <label className="block text-xs font-medium mb-0.5">
                           Sauda Type <span className="text-red-500">*</span>
@@ -734,33 +951,68 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                       </div>
 
                       <div>
-                        <label className="block text-xs font-medium mb-0.5">Rice Code</label>
-                        <div className="flex gap-1">
-                          {loadingRiceCodes ? (
-                            <div className="flex-1 min-w-0 rounded-md border border-border bg-background/60 px-2 py-1.5 text-sm flex items-center gap-2">
-                              <LoadingSpinner size="sm" />
-                              <span className="text-muted-foreground text-xs">Loading...</span>
-                            </div>
-                          ) : (
-                            <select
-                              value={formData.rice_code_id || ''}
-                              onChange={(e) =>
-                                setFormData({ ...formData, rice_code_id: e.target.value || null })
-                              }
-                              className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md bg-background truncate"
-                            >
-                              <option value="">Select</option>
-                              {riceCodes.map((riceCode) => (
-                                <option key={riceCode.rice_code_id} value={riceCode.rice_code_id}>
-                                  {riceCode.rice_code_name}
-                                </option>
-                              ))}
-                            </select>
-                          )}
+                        <label className="block text-xs font-medium mb-0.5">
+                          1 · Category <span className="text-red-500">*</span>
+                        </label>
+                        <div className={errors.rice_category ? 'border border-red-500 rounded-md' : ''}>
+                          <CustomSelect
+                            value={formData.rice_category || null}
+                            onChange={handleCategoryChange}
+                            options={riceCategories.map((cat) => ({
+                              value: cat.value,
+                              label: cat.label,
+                            }))}
+                            valueLabel={
+                              formData.rice_category
+                                ? formatRiceCategoryFallback(formData.rice_category)
+                                : null
+                            }
+                            placeholder="Basmati or Non Basmati"
+                            allowClear={false}
+                          />
+                        </div>
+                        {errors.rice_category && (
+                          <p className="text-xs text-red-500 mt-0.5">{errors.rice_category}</p>
+                        )}
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs font-medium mb-0.5">2 · Rice Code</label>
+                        <div className="flex gap-1.5">
+                          <div className="min-w-0 flex-1">
+                            {loadingRiceCodes && !formData.rice_code_id ? (
+                              <div className="w-full rounded-md border border-border bg-background/60 px-2 py-1.5 text-sm flex items-center gap-2 min-h-[38px]">
+                                <LoadingSpinner size="sm" />
+                                <span className="text-muted-foreground text-xs">Loading...</span>
+                              </div>
+                            ) : (
+                              <CustomSelect
+                                value={formData.rice_code_id || null}
+                                onChange={handleRiceCodeChange}
+                                options={riceCodesForCategory.map((riceCode) => ({
+                                  value: riceCode.rice_code_id,
+                                  label: riceCode.rice_code_name,
+                                }))}
+                                valueLabel={
+                                  selectedRiceCode?.rice_code_name ||
+                                  riceCodes.find((rc) => rc.rice_code_id === formData.rice_code_id)
+                                    ?.rice_code_name
+                                }
+                                placeholder={
+                                  formData.rice_category
+                                    ? 'Select rice code'
+                                    : 'Select category first'
+                                }
+                                allowClear={true}
+                                clearLabel="None"
+                                disabled={!formData.rice_category}
+                              />
+                            )}
+                          </div>
                           <button
                             type="button"
                             onClick={() => void refetchRiceCodes()}
-                            disabled={loadingRiceCodes}
+                            disabled={loadingRiceCodes || !formData.rice_category}
                             className="flex-shrink-0 p-1.5 border border-border rounded-md bg-background hover:bg-muted transition-colors disabled:opacity-50"
                             title="Refresh"
                           >
@@ -769,7 +1021,8 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                           <button
                             type="button"
                             onClick={() => setRiceCodeFormOpen(true)}
-                            className="flex-shrink-0 p-1.5 border border-border rounded-md bg-background hover:bg-muted transition-colors"
+                            disabled={!formData.rice_category}
+                            className="flex-shrink-0 p-1.5 border border-border rounded-md bg-background hover:bg-muted transition-colors disabled:opacity-50"
                             title="Add new rice code"
                           >
                             <Plus className="h-3.5 w-3.5" />
@@ -779,9 +1032,9 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
 
                       <div>
                         <label className="block text-xs font-medium mb-0.5">
-                          Rice Type <span className="text-red-500">*</span>
+                          3 · Variant <span className="text-red-500">*</span>
                         </label>
-                        {loadingRiceTypes ? (
+                        {loadingCategoryVariants && !formData.rice_type ? (
                           <div className="w-full rounded-md border border-border bg-background/60 px-2 py-1.5 text-sm flex items-center gap-2">
                             <LoadingSpinner size="sm" />
                             <span className="text-muted-foreground text-xs">Loading...</span>
@@ -791,46 +1044,135 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                             <CustomSelect
                               value={formData.rice_type || null}
                               onChange={(value) => setFormData({ ...formData, rice_type: value || null })}
-                              options={riceTypes.map((riceType) => ({
+                              options={variantOptionsForForm.map((riceType) => ({
                                 value: riceType.value,
-                                label: riceType.label
+                                label: riceType.label,
                               }))}
-                              placeholder="Select"
+                              placeholder={
+                                !formData.rice_category
+                                  ? 'Select category first'
+                                  : !formData.rice_code_id
+                                    ? 'Select rice code first'
+                                    : variantOptionsForForm.length
+                                      ? 'Select variant'
+                                      : 'No variants for this code'
+                              }
                               allowClear={false}
+                              disabled={
+                                !formData.rice_category ||
+                                !formData.rice_code_id ||
+                                (variantOptionsForForm.length === 0 && !formData.rice_type)
+                              }
                             />
                           </div>
+                        )}
+                        {errors.rice_type && (
+                          <p className="text-xs text-red-500 mt-0.5">{errors.rice_type}</p>
                         )}
                       </div>
 
                       <div>
-                        <label className="block text-xs font-medium mb-0.5">Rice Length</label>
-                        {loadingRiceLengths ? (
-                          <div className="w-full rounded-md border border-border bg-background/60 px-2 py-1.5 text-sm flex items-center gap-2">
-                            <LoadingSpinner size="sm" />
-                            <span className="text-muted-foreground text-xs">Loading...</span>
+                        <label className="block text-xs font-medium mb-0.5">4 · Rice Length</label>
+                        <div className="flex gap-1.5">
+                          <div className="min-w-0 flex-1">
+                            {loadingRiceLengths ? (
+                              <div className="w-full rounded-md border border-border bg-background/60 px-2 py-1.5 text-sm flex items-center gap-2 min-h-[38px]">
+                                <LoadingSpinner size="sm" />
+                                <span className="text-muted-foreground text-xs">Loading...</span>
+                              </div>
+                            ) : (
+                              <div className={errors.rice_length_id ? 'border border-red-500 rounded-md' : ''}>
+                                <CustomSelect
+                                  value={formData.rice_length_id ?? null}
+                                  onChange={(value) =>
+                                    setFormData({
+                                      ...formData,
+                                      rice_length_id: value || null,
+                                    })
+                                  }
+                                  options={riceLengths.map((r) => ({
+                                    value: r.id,
+                                    label: r.name,
+                                  }))}
+                                  placeholder="Optional"
+                                  allowClear={true}
+                                  clearLabel="None"
+                                />
+                              </div>
+                            )}
                           </div>
-                        ) : (
-                          <div className={errors.rice_length_id ? 'border border-red-500 rounded-md' : ''}>
-                            <CustomSelect
-                              value={formData.rice_length_id ?? null}
-                              onChange={(value) =>
-                                setFormData({
-                                  ...formData,
-                                  rice_length_id: value || null,
-                                })
-                              }
-                              options={riceLengths.map((r) => ({
-                                value: r.id,
-                                label: r.name,
-                              }))}
-                              placeholder="Optional"
-                              allowClear={true}
-                              clearLabel="None"
-                            />
-                          </div>
-                        )}
+                          <button
+                            type="button"
+                            onClick={() => void refetchRiceLengths()}
+                            disabled={loadingRiceLengths}
+                            className="flex-shrink-0 p-1.5 border border-border rounded-md bg-background hover:bg-muted transition-colors disabled:opacity-50"
+                            title="Refresh"
+                          >
+                            <RefreshCw className={`h-3.5 w-3.5 ${loadingRiceLengths ? 'animate-spin' : ''}`} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRiceLengthFormOpen(true)}
+                            className="flex-shrink-0 p-1.5 border border-border rounded-md bg-background hover:bg-muted transition-colors"
+                            title="Add rice length"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                         {errors.rice_length_id && (
                           <p className="text-xs text-red-500 mt-0.5">{errors.rice_length_id}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium mb-0.5">Whiteness (W)</label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          autoComplete="off"
+                          value={parameterFields.whiteness}
+                          onChange={(e) => handleWhitenessInput(e.target.value)}
+                          onKeyDown={blockInvalidDecimalKey}
+                          onBlur={(e) => {
+                            const err = validateSaudaWhiteness(e.target.value);
+                            if (err) {
+                              setErrors((prev) => ({ ...prev, whiteness: err }));
+                              setParameterFields((prev) => ({ ...prev, whiteness: '' }));
+                            }
+                          }}
+                          className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background ${
+                            errors.whiteness ? 'border-red-500' : 'border-border'
+                          }`}
+                          placeholder={`${SAUDA_WHITENESS_MIN} – ${SAUDA_WHITENESS_MAX} W`}
+                        />
+                        {errors.whiteness && (
+                          <p className="text-xs text-red-500 mt-0.5">{errors.whiteness}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium mb-0.5">Avg Grain Length (mm)</label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          autoComplete="off"
+                          value={parameterFields.average_grain_length}
+                          onChange={(e) => handleAvgGrainLengthInput(e.target.value)}
+                          onKeyDown={blockInvalidDecimalKey}
+                          onBlur={(e) => {
+                            const err = validateSaudaAvgGrainLength(e.target.value);
+                            if (err) {
+                              setErrors((prev) => ({ ...prev, average_grain_length: err }));
+                              setParameterFields((prev) => ({ ...prev, average_grain_length: '' }));
+                            }
+                          }}
+                          className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background ${
+                            errors.average_grain_length ? 'border-red-500' : 'border-border'
+                          }`}
+                          placeholder={`${SAUDA_AVG_GRAIN_LENGTH_MIN} – ${SAUDA_AVG_GRAIN_LENGTH_MAX} mm`}
+                        />
+                        {errors.average_grain_length && (
+                          <p className="text-xs text-red-500 mt-0.5">{errors.average_grain_length}</p>
                         )}
                       </div>
                     </div>
@@ -840,12 +1182,15 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                         className="w-full"
                         inputClassName="py-1.5 text-sm"
                         value={formData.sauda_date || ''}
-                        min={saudaDateMin}
+                        min={saudaDateBounds.min}
+                        max={saudaDateBounds.max}
                         invalid={Boolean(errors.sauda_date)}
                         onChange={(v) => {
                           const next = v || null;
-                          if (!isAdmin() && next && saudaDateMin && next < saudaDateMin) {
-                            return;
+                          if (!isAdmin() && next) {
+                            const { min, max } = saudaDateBounds;
+                            if (min && next < min) return;
+                            if (max && next > max) return;
                           }
                           setFormData({ ...formData, sauda_date: next });
                           if (errors.sauda_date) {
@@ -855,7 +1200,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                       />
                       {!isAdmin() && (
                         <p className="text-[11px] text-muted-foreground mt-0.5">
-                          Past dates can only be set by an administrator.
+                          Date must be within 3 days of today. Administrators can set any date.
                         </p>
                       )}
                       {errors.sauda_date && (
@@ -869,6 +1214,108 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                     <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b border-border pb-1">
                       Pricing & Quantity
                     </h3>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-medium mb-0.5">No. of Bags</label>
+                        <input
+                          type="number"
+                          step="1"
+                          min="0"
+                          max={SAUDA_MAX_BAGS}
+                          value={formData.no_of_bags ?? ''}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            if (raw === '') {
+                              setFormData((prev) => applyBagFieldPatch(prev, { no_of_bags: null }, unit));
+                              setErrors({ ...errors, no_of_bags: '', quantity: '', bag_weight: '' });
+                              return;
+                            }
+                            const value = parseInt(raw, 10);
+                            const bagsError = validateSaudaNoOfBags(value);
+                            if (bagsError) {
+                              setErrors({ ...errors, no_of_bags: bagsError });
+                              return;
+                            }
+                            setFormData((prev) => {
+                              const next = applyBagFieldPatch(prev, { no_of_bags: value }, unit);
+                              const qtyError = validateSaudaQuantity(next.quantity, unit);
+                              if (qtyError) {
+                                setErrors((err) => ({
+                                  ...err,
+                                  no_of_bags: `Too many bags — ${qtyError.charAt(0).toLowerCase()}${qtyError.slice(1)}`,
+                                  quantity: qtyError,
+                                }));
+                                return prev;
+                              }
+                              setErrors((err) => ({ ...err, no_of_bags: '', quantity: '' }));
+                              return next;
+                            });
+                          }}
+                          className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background ${
+                            errors.no_of_bags ? 'border-red-500' : 'border-border'
+                          }`}
+                          placeholder="Optional"
+                        />
+                        {errors.no_of_bags && (
+                          <p className="text-xs text-red-500 mt-0.5">{errors.no_of_bags}</p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-0.5">
+                          Bag Weight (kg)
+                          {formData.no_of_bags != null ? (
+                            <span className="text-red-500"> *</span>
+                          ) : (
+                            <span className="text-muted-foreground text-xs font-normal"> (Optional)</span>
+                          )}
+                        </label>
+                        <select
+                          value={formData.bag_weight ?? ''}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            if (raw === '') {
+                              setFormData((prev) => applyBagFieldPatch(prev, { bag_weight: null }, unit));
+                              setErrors({ ...errors, bag_weight: '' });
+                              return;
+                            }
+                            const value = parseInt(raw, 10);
+                            setFormData((prev) => {
+                              const next = applyBagFieldPatch(prev, { bag_weight: value }, unit);
+                              const qtyError = validateSaudaQuantity(next.quantity, unit);
+                              if (qtyError) {
+                                setErrors((err) => ({
+                                  ...err,
+                                  bag_weight: `Bag count exceeds limit — ${qtyError.charAt(0).toLowerCase()}${qtyError.slice(1)}`,
+                                  quantity: qtyError,
+                                }));
+                                return prev;
+                              }
+                              setErrors((err) => ({ ...err, bag_weight: '', quantity: '' }));
+                              return next;
+                            });
+                          }}
+                          className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background ${
+                            errors.bag_weight ? 'border-red-500' : 'border-border'
+                          }`}
+                        >
+                          <option value="">{formData.no_of_bags != null ? 'Select' : 'Optional'}</option>
+                          {formData.bag_weight != null &&
+                            !SAUDA_BAG_WEIGHT_KG_OPTIONS.includes(
+                              formData.bag_weight as (typeof SAUDA_BAG_WEIGHT_KG_OPTIONS)[number],
+                            ) && (
+                              <option value={formData.bag_weight}>{formData.bag_weight} kg</option>
+                            )}
+                          {SAUDA_BAG_WEIGHT_KG_OPTIONS.map((kg) => (
+                            <option key={kg} value={kg}>
+                              {kg} kg
+                            </option>
+                          ))}
+                        </select>
+                        {errors.bag_weight && (
+                          <p className="text-xs text-red-500 mt-0.5">{errors.bag_weight}</p>
+                        )}
+                      </div>
+                    </div>
                     <div className="grid grid-cols-3 gap-2">
                       <div>
                         <label className="block text-xs font-medium mb-0.5">
@@ -878,18 +1325,24 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                           type="number"
                           step="0.01"
                           min="0"
+                          max={SAUDA_MAX_RATE}
                           value={formData.rate || ''}
                           onChange={(e) => {
-                            const value = parseFloat(e.target.value);
-                            if (value < 0) {
-                              setErrors({ ...errors, rate: 'Negative values not allowed' });
+                            const raw = e.target.value;
+                            if (raw === '') {
                               setFormData({ ...formData, rate: 0 });
-                            } else {
-                              setFormData({ ...formData, rate: (value >= 0 && !isNaN(value)) ? value : 0 });
-                              if (errors.rate === 'Negative values not allowed') {
-                                setErrors({ ...errors, rate: '' });
-                              }
+                              setErrors({ ...errors, rate: '' });
+                              return;
                             }
+                            const value = parseFloat(raw);
+                            if (Number.isNaN(value)) return;
+                            const rateError = validateSaudaRate(value);
+                            if (rateError) {
+                              setErrors({ ...errors, rate: rateError });
+                              return;
+                            }
+                            setFormData({ ...formData, rate: value });
+                            setErrors({ ...errors, rate: '' });
                           }}
                           className={`w-full px-2 py-1.5 text-sm border rounded-md bg-background ${
                             errors.rate ? 'border-red-500' : 'border-border'
@@ -899,6 +1352,24 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                         {errors.rate && (
                           <p className="text-xs text-red-500 mt-0.5">{errors.rate}</p>
                         )}
+                        <label
+                          htmlFor="is_dana_required"
+                          className="mt-1.5 flex items-center gap-1.5 cursor-pointer"
+                          title="If checked, dana deduction (300gm per quintal) applies in payment advice for this sauda."
+                        >
+                          <input
+                            type="checkbox"
+                            id="is_dana_required"
+                            checked={formData.is_dana_required ?? true}
+                            onChange={(e) =>
+                              setFormData({ ...formData, is_dana_required: e.target.checked })
+                            }
+                            className="h-3 w-3 shrink-0 rounded border-border text-primary focus:ring-primary"
+                          />
+                          <span className="text-[10px] text-muted-foreground leading-none">
+                            Dana required
+                          </span>
+                        </label>
                       </div>
 
                       <div>
@@ -910,17 +1381,25 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                             min="0"
                             value={formData.quantity || ''}
                             onChange={(e) => {
-                              const value = parseFloat(e.target.value);
-                              if (isNaN(value) || value === 0) {
+                              const raw = e.target.value;
+                              if (raw === '') {
                                 setFormData({ ...formData, quantity: null });
                                 setErrors({ ...errors, quantity: '' });
-                              } else if (value < 0) {
-                                setErrors({ ...errors, quantity: 'Negative values not allowed' });
-                                setFormData({ ...formData, quantity: null });
-                              } else {
-                                setFormData({ ...formData, quantity: value });
-                                setErrors({ ...errors, quantity: '' });
+                                return;
                               }
+                              const value = parseFloat(raw);
+                              if (Number.isNaN(value) || value === 0) {
+                                setFormData({ ...formData, quantity: null });
+                                setErrors({ ...errors, quantity: '' });
+                                return;
+                              }
+                              const qtyError = validateSaudaQuantity(value, unit);
+                              if (qtyError) {
+                                setErrors({ ...errors, quantity: qtyError });
+                                return;
+                              }
+                              setFormData({ ...formData, quantity: value });
+                              setErrors({ ...errors, quantity: '' });
                             }}
                             className={`flex-1 min-w-0 px-2 py-1.5 text-sm border rounded-md bg-background ${
                               errors.quantity ? 'border-red-500' : 'border-border'
@@ -930,20 +1409,39 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                           <select
                             value={unit}
                             onChange={(e) => {
-                              const newUnit = e.target.value as 'kg' | 'quintal' | 'ton';
-                              const factor = (u: 'kg' | 'quintal' | 'ton') => (u === 'kg' ? 1 : u === 'quintal' ? 100 : 1000);
-                              const currentFactor = factor(unit);
-                              const nextFactor = factor(newUnit);
+                              const newUnit = e.target.value as SaudaWeightUnit;
+                              const currentFactor = unitToKgFactor(unit);
+                              const nextFactor = unitToKgFactor(newUnit);
                               const rate = formData.rate || 0;
-                              const quantity = formData.quantity;
+                              const bagsQty = quantityFromBags(formData.no_of_bags, formData.bag_weight, newUnit);
                               const convertedRate = (rate / currentFactor) * nextFactor;
-                              const convertedQty = quantity != null ? (quantity * currentFactor) / nextFactor : null;
+                              let convertedQty: number | null;
+                              if (bagsQty != null) {
+                                convertedQty = bagsQty;
+                              } else {
+                                const quantity = formData.quantity;
+                                convertedQty =
+                                  quantity != null
+                                    ? parseFloat(((quantity * currentFactor) / nextFactor).toFixed(4))
+                                    : null;
+                              }
                               setFormData({
                                 ...formData,
                                 rate: Number.isFinite(convertedRate) ? parseFloat(convertedRate.toFixed(4)) : 0,
-                                quantity: convertedQty != null && Number.isFinite(convertedQty) ? parseFloat(convertedQty.toFixed(4)) : null,
+                                quantity:
+                                  convertedQty != null && Number.isFinite(convertedQty) ? convertedQty : null,
                               });
                               setUnit(newUnit);
+                              const qtyError =
+                                convertedQty != null ? validateSaudaQuantity(convertedQty, newUnit) : null;
+                              const rateError = validateSaudaRate(
+                                Number.isFinite(convertedRate) ? convertedRate : 0,
+                              );
+                              setErrors((err) => ({
+                                ...err,
+                                quantity: qtyError ?? '',
+                                rate: rateError ?? '',
+                              }));
                             }}
                             className="w-16 px-1 py-1.5 text-xs border border-border rounded-md bg-background"
                           >
@@ -964,22 +1462,31 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                             type="number"
                             step="0.01"
                             min="0"
-                            max={formData.cash_discount_type === 'percentage' ? 100 : undefined}
+                            max={cashDiscountMaxForType(formData.cash_discount_type)}
                             value={formData.cash_discount || ''}
                             onChange={(e) => {
-                              const value = parseFloat(e.target.value);
-                              if (isNaN(value) || value === 0) {
+                              const raw = e.target.value;
+                              if (raw === '') {
                                 setFormData({ ...formData, cash_discount: null });
                                 setErrors({ ...errors, cash_discount: '' });
-                              } else if (value < 0) {
-                                setErrors({ ...errors, cash_discount: 'Negative values not allowed' });
-                                setFormData({ ...formData, cash_discount: null });
-                              } else {
-                                const maxValue = formData.cash_discount_type === 'percentage' ? 100 : undefined;
-                                const clampedValue = maxValue !== undefined ? Math.min(Math.max(value, 0), maxValue) : Math.max(value, 0);
-                                setFormData({ ...formData, cash_discount: clampedValue > 0 ? clampedValue : null });
-                                setErrors({ ...errors, cash_discount: '' });
+                                return;
                               }
+                              const value = parseFloat(raw);
+                              if (Number.isNaN(value) || value === 0) {
+                                setFormData({ ...formData, cash_discount: null });
+                                setErrors({ ...errors, cash_discount: '' });
+                                return;
+                              }
+                              const discountError = validateSaudaCashDiscount(
+                                value,
+                                formData.cash_discount_type,
+                              );
+                              if (discountError) {
+                                setErrors({ ...errors, cash_discount: discountError });
+                                return;
+                              }
+                              setFormData({ ...formData, cash_discount: value });
+                              setErrors({ ...errors, cash_discount: '' });
                             }}
                             className={`flex-1 min-w-0 px-2 py-1.5 text-sm border rounded-md bg-background ${
                               errors.cash_discount ? 'border-red-500' : 'border-border'
@@ -988,7 +1495,15 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                           />
                           <select
                             value={formData.cash_discount_type || 'rupees'}
-                            onChange={(e) => setFormData({ ...formData, cash_discount_type: e.target.value as CashDiscountType })}
+                            onChange={(e) => {
+                              const newType = e.target.value as CashDiscountType;
+                              const discountError = validateSaudaCashDiscount(
+                                formData.cash_discount,
+                                newType,
+                              );
+                              setFormData({ ...formData, cash_discount_type: newType });
+                              setErrors({ ...errors, cash_discount: discountError ?? '' });
+                            }}
                             className="w-12 px-1 py-1.5 text-xs border border-border rounded-md bg-background"
                           >
                             <option value="rupees">₹</option>
@@ -1039,17 +1554,16 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                           </button>
                           <button
                             type="button"
-                            onClick={() => {
-                              const basename = (import.meta as any).env?.BASE_URL ? (import.meta as any).env.BASE_URL.replace(/\/$/, '') : '/riceops';
-                              const vendorUrl = `${window.location.origin}${basename}/directory/vendors`;
-                              window.open(vendorUrl, '_blank');
-                            }}
+                            onClick={() => setVendorFormOpen(true)}
                             className="flex-shrink-0 p-1.5 border border-border rounded-md bg-background hover:bg-muted transition-colors"
                             title="Add New"
                           >
                             <Plus className="h-3.5 w-3.5" />
                           </button>
                         </div>
+                        {errors.purchaser_id && (
+                          <p className="text-xs text-red-500 mt-0.5">{errors.purchaser_id}</p>
+                        )}
                       </div>
 
                       <div>
@@ -1080,11 +1594,7 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                           </button>
                           <button
                             type="button"
-                            onClick={() => {
-                              const basename = (import.meta as any).env?.BASE_URL ? (import.meta as any).env.BASE_URL.replace(/\/$/, '') : '/riceops';
-                              const brokerUrl = `${window.location.origin}${basename}/directory/brokers`;
-                              window.open(brokerUrl, '_blank');
-                            }}
+                            onClick={() => setBrokerFormOpen(true)}
                             className="flex-shrink-0 p-1.5 border border-border rounded-md bg-background hover:bg-muted transition-colors"
                             title="Add New"
                           >
@@ -1104,31 +1614,42 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                           type="number"
                           step="0.01"
                           min="0"
-                          max={formData.broker_commission_type === 'percentage' ? 100 : undefined}
-                          value={formData.broker_commission || ''}
+                          value={formData.broker_commission ?? ''}
                           onChange={(e) => {
-                            const value = parseFloat(e.target.value);
-                            if (isNaN(value) || value === 0) {
+                            const raw = e.target.value;
+                            if (raw === '') {
                               setFormData({ ...formData, broker_commission: null });
                               setErrors({ ...errors, broker_commission: '' });
-                            } else if (value < 0) {
-                              setErrors({ ...errors, broker_commission: 'Negative values not allowed' });
-                              setFormData({ ...formData, broker_commission: null });
-                            } else {
-                              const maxValue = formData.broker_commission_type === 'percentage' ? 100 : undefined;
-                              const clampedValue = maxValue !== undefined ? Math.min(Math.max(value, 0), maxValue) : Math.max(value, 0);
-                              setFormData({ ...formData, broker_commission: clampedValue > 0 ? clampedValue : null });
-                              setErrors({ ...errors, broker_commission: '' });
+                              return;
                             }
+                            const value = parseFloat(raw);
+                            if (Number.isNaN(value)) return;
+                            const commissionError = validateSaudaBrokerCommission(
+                              value === 0 ? null : value,
+                              formData.broker_commission_type,
+                            );
+                            setFormData({
+                              ...formData,
+                              broker_commission: value === 0 ? null : value,
+                            });
+                            setErrors({ ...errors, broker_commission: commissionError ?? '' });
                           }}
-                          className={`flex-1 min-w-0 px-2 py-1.5 text-sm border rounded-md bg-background ${
+                          className={`min-w-0 flex-1 px-2 py-1.5 text-sm border rounded-md bg-background ${
                             errors.broker_commission ? 'border-red-500' : 'border-border'
                           }`}
                           placeholder="0"
                         />
                         <select
                           value={formData.broker_commission_type || 'percentage'}
-                          onChange={(e) => setFormData({ ...formData, broker_commission_type: e.target.value as BrokerCommissionType })}
+                          onChange={(e) => {
+                            const newType = e.target.value as BrokerCommissionType;
+                            const commissionError = validateSaudaBrokerCommission(
+                              formData.broker_commission,
+                              newType,
+                            );
+                            setFormData({ ...formData, broker_commission_type: newType });
+                            setErrors({ ...errors, broker_commission: commissionError ?? '' });
+                          }}
                           className="flex-shrink-0 w-14 px-1 py-1.5 text-xs border border-border rounded-md bg-background"
                         >
                           <option value="percentage">%</option>
@@ -1147,6 +1668,9 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                           </select>
                         )}
                       </div>
+                      {errors.broker_commission && (
+                        <p className="text-xs text-red-500 mt-0.5">{errors.broker_commission}</p>
+                      )}
                     </div>
                   </div>
 
@@ -1163,26 +1687,6 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                       rows={2}
                       maxLength={1000}
                     />
-                  </div>
-
-                  {/* Section: Dana Required */}
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        id="is_dana_required"
-                        checked={formData.is_dana_required ?? true}
-                        onChange={(e) => setFormData({ ...formData, is_dana_required: e.target.checked })}
-                        className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
-                      />
-                      <label htmlFor="is_dana_required" className="text-xs font-medium cursor-pointer">
-                        Is Dana Required
-                      </label>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground pl-6">
-                      If checked, dana deduction (300gm per quintal) will be calculated in payment advice for this sauda. 
-                      If unchecked, no dana deduction will be applied.
-                    </p>
                   </div>
 
                   {/* Section: Rice Images */}
@@ -1383,16 +1887,37 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                             <span className="font-semibold">{formData.sauda_type === 'exgodown' ? 'Ex Godown' : 'FOR'}</span>
                           </div>
                           <div className="flex justify-between">
+                            <span className="text-muted-foreground">Category:</span>
+                            <span className="font-semibold">
+                              {formData.rice_category
+                                ? getRiceCategoryLabel(formData.rice_category, riceCategories) ||
+                                  formatRiceCategoryFallback(formData.rice_category)
+                                : '—'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
                             <span className="text-muted-foreground">Rice Code:</span>
                             <span className="font-semibold">{getRiceCodeName(formData.rice_code_id ?? null)}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-muted-foreground">Rice Type:</span>
+                            <span className="text-muted-foreground">Variant:</span>
                             <span className="font-semibold">{getRiceTypeName(formData.rice_type ?? null)}</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Rice Length:</span>
                             <span className="font-semibold">{getRiceLengthName(formData.rice_length_id)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Whiteness (W):</span>
+                            <span className="font-semibold">
+                              {formatSaudaWhitenessDisplay(parameterFields.whiteness)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Avg Grain Length (mm):</span>
+                            <span className="font-semibold">
+                              {formatSaudaAvgGrainLengthDisplay(parameterFields.average_grain_length)}
+                            </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Date:</span>
@@ -1417,6 +1942,18 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                             <span className="text-muted-foreground">Quantity:</span>
                             <span className="font-semibold">{formData.quantity?.toFixed(2) || '-'} {unit}</span>
                           </div>
+                          {formData.no_of_bags != null && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">No. of Bags:</span>
+                              <span className="font-semibold">{formData.no_of_bags}</span>
+                            </div>
+                          )}
+                          {formData.bag_weight != null && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Bag Weight:</span>
+                              <span className="font-semibold">{formData.bag_weight.toFixed(2)} kg</span>
+                            </div>
+                          )}
                           {formData.cash_discount && (
                             <div className="flex justify-between">
                               <span className="text-muted-foreground">Cash Discount:</span>
@@ -1438,6 +1975,37 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
                             <span className="text-muted-foreground">Vendor:</span>
                             <span className="font-semibold">{getVendorName(formData.purchaser_id)}</span>
                           </div>
+                          {selectedVendor && (
+                            <>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Registration:</span>
+                                <span className="font-semibold">
+                                  {formatVendorRegistrationLabel(selectedVendor.registration_type)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">GST:</span>
+                                <span className="font-semibold font-mono tabular-nums">
+                                  {formatVendorDetail(selectedVendor.business_details?.gst_number)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">PAN:</span>
+                                <span className="font-semibold font-mono tabular-nums">
+                                  {formatVendorDetail(selectedVendor.business_details?.pan_number)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between gap-2">
+                                <span className="text-muted-foreground shrink-0">Party Address:</span>
+                                <span
+                                  className="font-semibold text-right max-w-[65%]"
+                                  title={formatVendorAddress(selectedVendor.address) || undefined}
+                                >
+                                  {formatVendorAddress(selectedVendor.address) || '—'}
+                                </span>
+                              </div>
+                            </>
+                          )}
                           {formData.broker_id && (
                             <>
                               <div className="flex justify-between">
@@ -1505,6 +2073,34 @@ export function SaudaFormModal({ open, onOpenChange, saudaId, onSuccess }: Sauda
         open={riceCodeFormOpen}
         onOpenChange={setRiceCodeFormOpen}
         onCreate={handleCreateRiceCode}
+        defaultCategory={formData.rice_category ?? undefined}
+        nested
+      />
+
+      <RiceLengthFormModal
+        open={riceLengthFormOpen}
+        onOpenChange={setRiceLengthFormOpen}
+        onCreate={handleCreateRiceLength}
+        onUpdate={(id, data) => riceLengthsAPI.updateRiceLength(id, data)}
+      />
+
+      <VendorFormModal
+        open={vendorFormOpen}
+        onOpenChange={(open) => {
+          setVendorFormOpen(open);
+          if (!open) void refetchVendors();
+        }}
+        defaultType="seller"
+        lockType
+        nested
+      />
+
+      <BrokerFormModal
+        open={brokerFormOpen}
+        onOpenChange={(open) => {
+          setBrokerFormOpen(open);
+          if (!open) void refetchBrokers();
+        }}
         nested
       />
 

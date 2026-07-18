@@ -10,7 +10,9 @@ export default function SalesSaudasPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const tableRefreshRef = useRef<(() => void) | null>(null);
 
-  const { salesParties, loading: salesPartiesLoading } = useSalesParties();
+  const { salesParties, loading: salesPartiesLoading } = useSalesParties({
+    includeInactive: true,
+  });
   const { products, loading: productsLoading } = useProducts();
 
   const handleSuccess = () => {

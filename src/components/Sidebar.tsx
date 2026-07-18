@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Store, UserCheck, UserCircle, ChevronRight, ChevronDown, Settings, LogOut, X, Sprout, ShoppingCart, Package, FileText, CreditCard, Truck, Car, IdCard, BookOpen, FlaskConical, Box, TrendingUp, ShoppingBag, Receipt, FileDigit, ScrollText, StickyNote, Warehouse, History, type LucideIcon } from 'lucide-react'
+import { Store, UserCheck, UserCircle, ChevronRight, ChevronDown, Settings, LogOut, X, Sprout, ShoppingCart, Package, FileText, CreditCard, Truck, Car, IdCard, BookOpen, FlaskConical, Box, TrendingUp, ShoppingBag, Receipt, FileDigit, ScrollText, StickyNote, Warehouse, History, Ticket, type LucideIcon } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { canRead, isCustomUser, getPermissions } from '../utils/permissions'
 import type { PermissionsEntityKey } from '../types/entities'
@@ -136,6 +136,13 @@ export function Sidebar({ collapsedDefault = true, mobileOpen = false, onMobileC
         { to: '/sales/invoice-dispatches', label: 'Invoice Dispatches', icon: FileDigit, key: null },
         { to: '/sales/inventory-ledger', label: 'Inventory Ledger', icon: ScrollText, key: null },
         { to: '/sales/credit-notes', label: 'Credit Notes', icon: StickyNote, key: null },
+      ],
+    },
+    {
+      id: 'coupons',
+      title: 'Coupons',
+      items: [
+        { to: '/coupons', label: 'Coupon Studio', icon: Ticket, key: null },
       ],
     },
   ]

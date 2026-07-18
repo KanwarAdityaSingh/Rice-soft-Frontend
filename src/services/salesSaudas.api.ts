@@ -9,13 +9,23 @@ import type {
 const BASE = '/sales-saudas';
 
 export const salesSaudasAPI = {
-  list: (params?: { sales_party_id?: string; status?: SalesSaudaStatus }) => {
+  list: (params?: {
+    sales_party_id?: string;
+    status?: SalesSaudaStatus;
+    /** Indian FY label e.g. "2025-2026" */
+    financial_year?: string;
+  }) => {
     const search = new URLSearchParams();
     if (params?.sales_party_id) search.set('sales_party_id', params.sales_party_id);
     if (params?.status) search.set('status', params.status);
+    if (params?.financial_year) search.set('financial_year', params.financial_year);
     const q = search.toString();
     return apiService.get<SalesSauda[]>(q ? `${BASE}?${q}` : BASE);
   },
+
+  /** GET /sales-saudas/types — same shape as product brands/HSN options */
+  getTypes: () =>
+    apiService.get<Array<{ value: string; label: string }>>(`${BASE}/types`),
 
   getById: (id: string) => apiService.get<SalesSauda>(`${BASE}/${id}`),
 

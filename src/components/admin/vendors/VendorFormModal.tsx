@@ -78,6 +78,8 @@ interface VendorFormModalProps {
   vendorId?: string | null;
   defaultType?: 'purchaser' | 'seller' | 'both';
   lockType?: boolean;
+  /** Raise z-index when opened above another modal */
+  nested?: boolean;
 }
 
 // Helper function to convert ALL CAPS text to Title Case
@@ -105,7 +107,7 @@ const toTitleCase = (str: string | undefined | null): string => {
     .join(' ');
 };
 
-export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, lockType = false }: VendorFormModalProps) {
+export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, lockType = false, nested = false }: VendorFormModalProps) {
   const { createVendor, updateVendor } = useVendors();
   const navigate = useNavigate();
   const isEditMode = !!vendorId;
@@ -1183,8 +1185,8 @@ export function VendorFormModal({ open, onOpenChange, vendorId, defaultType, loc
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
-        <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-full max-w-3xl translate-x-[-50%] translate-y-[-50%]">
+        <Dialog.Overlay className={`fixed inset-0 bg-black/50 backdrop-blur-sm ${nested ? 'z-[100]' : 'z-40'}`} />
+        <Dialog.Content className={`fixed left-[50%] top-[50%] w-full max-w-3xl translate-x-[-50%] translate-y-[-50%] ${nested ? 'z-[110]' : 'z-50'}`}>
           <div className="glass rounded-2xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <Dialog.Title className="text-xl font-semibold">

@@ -8,6 +8,10 @@ import { FileText, Eye } from 'lucide-react';
 import { useCreditNotes } from '../../../hooks/useCreditNotes';
 import { useProducts } from '../../../hooks/useProducts';
 import { CreditNoteDetailModal } from './CreditNoteDetailModal';
+import {
+  buildFinancialYearApiFilterOptions,
+  getCurrentFinancialYearApiValue,
+} from '../../../utils/financialYear';
 import type { CreditNoteStatus } from '../../../types/sales';
 
 interface CreditNotesTableProps {
@@ -21,8 +25,12 @@ const statusOptions: { value: string; label: string }[] = [
 
 export function CreditNotesTable({ onRefreshRef }: CreditNotesTableProps = {}) {
   const [statusFilter, setStatusFilter] = useState<CreditNoteStatus | ''>('');
+  const [financialYearFilter, setFinancialYearFilter] = useState<string | undefined>(
+    () => getCurrentFinancialYearApiValue(),
+  );
   const { creditNotes, loading, refetch } = useCreditNotes({
     status: statusFilter || undefined,
+    financial_year: financialYearFilter,
   });
   const { products } = useProducts();
 
@@ -32,6 +40,11 @@ export function CreditNotesTable({ onRefreshRef }: CreditNotesTableProps = {}) {
   useEffect(() => {
     if (onRefreshRef) onRefreshRef.current = refetch;
   }, [refetch, onRefreshRef]);
+
+  const financialYearOptions = useMemo(
+    () => buildFinancialYearApiFilterOptions(creditNotes.map((cn) => cn.financial_year)),
+    [creditNotes],
+  );
 
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase();
@@ -63,6 +76,12 @@ export function CreditNotesTable({ onRefreshRef }: CreditNotesTableProps = {}) {
           placeholder="Search by credit note #, date, reason..."
         />
         <FilterDropdown
+          label="Financial year"
+          options={financialYearOptions}
+          value={financialYearFilter}
+          onChange={setFinancialYearFilter}
+        />
+        <FilterDropdown
           label="Status"
           value={statusFilter || undefined}
           options={statusOptions}
@@ -75,7 +94,11 @@ export function CreditNotesTable({ onRefreshRef }: CreditNotesTableProps = {}) {
           <EmptyState
             icon={FileText}
             title="No credit notes"
-            description="Create a credit note against a confirmed invoice dispatch."
+            description={
+              financialYearFilter
+                ? `No credit notes found for ${financialYearOptions.find((o) => o.value === financialYearFilter)?.label ?? financialYearFilter}. Try another financial year or adjust filters.`
+                : 'Create a credit note against a confirmed invoice dispatch.'
+            }
           />
         ) : (
           <div className="overflow-x-auto">
@@ -83,6 +106,7 @@ export function CreditNotesTable({ onRefreshRef }: CreditNotesTableProps = {}) {
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className="text-left p-3 font-medium">Credit note #</th>
+                  <th className="text-left p-3 font-medium">FY</th>
                   <th className="text-left p-3 font-medium">Status</th>
                   <th className="text-left p-3 font-medium">Date</th>
                   <th className="text-left p-3 font-medium">Reason</th>
@@ -93,6 +117,7 @@ export function CreditNotesTable({ onRefreshRef }: CreditNotesTableProps = {}) {
                 {filtered.map((cn) => (
                   <tr key={cn.id} className="border-b hover:bg-muted/30">
                     <td className="p-3">{cn.credit_note_number}</td>
+                    <td className="p-3 text-muted-foreground">{cn.financial_year ?? '–'}</td>
                     <td className="p-3">
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${

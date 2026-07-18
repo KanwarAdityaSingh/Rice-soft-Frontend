@@ -44,7 +44,7 @@ export const saudasAPI = {
   uploadCookedRiceImage: async (id: string, file: File) => {
     const formData = new FormData();
     formData.append('file', file);
-    return authenticatedFetchEnvelopeData(`${API_BASE_URL}/saudas/${id}/upload-cooked-rice-image`, {
+    return authenticatedFetchEnvelopeData<{ url: string }>(`${API_BASE_URL}/saudas/${id}/upload-cooked-rice-image`, {
       method: 'POST',
       body: formData,
     });
@@ -53,7 +53,7 @@ export const saudasAPI = {
   uploadUncookedRiceImage: async (id: string, file: File) => {
     const formData = new FormData();
     formData.append('file', file);
-    return authenticatedFetchEnvelopeData(`${API_BASE_URL}/saudas/${id}/upload-uncooked-rice-image`, {
+    return authenticatedFetchEnvelopeData<{ url: string }>(`${API_BASE_URL}/saudas/${id}/upload-uncooked-rice-image`, {
       method: 'POST',
       body: formData,
     });

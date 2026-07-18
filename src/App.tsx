@@ -39,6 +39,25 @@ import SalesSaudasPage from './pages/sales/SalesSaudas'
 import InvoiceDispatchesPage from './pages/sales/InvoiceDispatches'
 import InventoryLedgerPage from './pages/sales/InventoryLedger'
 import CreditNotesPage from './pages/sales/CreditNotes'
+import { CouponLayout } from './layouts/CouponLayout'
+import CouponDashboard from './pages/coupons/CouponDashboard'
+import CouponBatchesPage from './pages/coupons/CouponBatches'
+import CouponBatchDetailPage from './pages/coupons/CouponBatchDetail'
+import CouponInventoryPage from './pages/coupons/CouponInventory'
+import PendingPayoutsPage from './pages/coupons/PendingPayouts'
+import RedemptionsPage from './pages/coupons/Redemptions'
+import RedemptionDetailPage from './pages/coupons/RedemptionDetail'
+import RedeemersPage from './pages/coupons/Redeemers'
+import PromotionRulesPage from './pages/coupons/PromotionRules'
+import PromotionRuleEditorPage from './pages/coupons/PromotionRuleEditor'
+import FraudInvestigationPage from './pages/coupons/FraudInvestigation'
+import CouponSettingsPage from './pages/coupons/CouponSettings'
+import CouponLookupPage from './pages/coupons/CouponLookup'
+import AnalyticsTrendsPage from './pages/coupons/analytics/AnalyticsTrends'
+import AnalyticsBatchesPage from './pages/coupons/analytics/AnalyticsBatches'
+import AnalyticsPayoutsPage from './pages/coupons/analytics/AnalyticsPayouts'
+import AnalyticsLeaderboardPage from './pages/coupons/analytics/AnalyticsLeaderboard'
+import AnalyticsRulesPage from './pages/coupons/analytics/AnalyticsRules'
 
 export default function App() {
   // Global error handler
@@ -405,6 +424,33 @@ function AnimatedRoutes() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/coupons"
+          element={
+            <ProtectedRoute>
+              <CouponLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<CouponDashboard />} />
+          <Route path="analytics/trends" element={<AnalyticsTrendsPage />} />
+          <Route path="analytics/batches" element={<AnalyticsBatchesPage />} />
+          <Route path="analytics/payouts" element={<AnalyticsPayoutsPage />} />
+          <Route path="analytics/leaderboard" element={<AnalyticsLeaderboardPage />} />
+          <Route path="analytics/rules" element={<AnalyticsRulesPage />} />
+          <Route path="batches" element={<CouponBatchesPage />} />
+          <Route path="batches/:batchId" element={<CouponBatchDetailPage />} />
+          <Route path="inventory" element={<CouponInventoryPage />} />
+          <Route path="lookup" element={<CouponLookupPage />} />
+          <Route path="pending-payouts" element={<PendingPayoutsPage />} />
+          <Route path="redemptions" element={<RedemptionsPage />} />
+          <Route path="redemptions/:id" element={<RedemptionDetailPage />} />
+          <Route path="redeemers" element={<RedeemersPage />} />
+          <Route path="rules" element={<PromotionRulesPage />} />
+          <Route path="rules/:ruleId" element={<PromotionRuleEditorPage />} />
+          <Route path="fraud" element={<FraudInvestigationPage />} />
+          <Route path="settings" element={<CouponSettingsPage />} />
+        </Route>
       </Routes>
     </AnimatePresence>
   );

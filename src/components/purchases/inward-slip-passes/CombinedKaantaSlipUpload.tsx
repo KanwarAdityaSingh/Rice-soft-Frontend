@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { AlertTriangle, Loader2, ScanLine, Upload, X } from 'lucide-react';
 import type { KaantaWeightExtraction } from '../../../types/entities';
 import {
@@ -27,6 +27,7 @@ export function CombinedKaantaSlipUpload({
   onClear,
 }: CombinedKaantaSlipUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [showPreview, setShowPreview] = useState(false);
   const vehicleWarning = extractionResult ? formatKaantaVehicleMismatchWarning(extractionResult) : null;
   const reviewWarning = extractionResult ? formatKaantaNeedsReviewWarning(extractionResult) : null;
 
@@ -69,11 +70,18 @@ export function CombinedKaantaSlipUpload({
 
       {previewUrl ? (
         <div className="flex gap-3 items-start">
-          <img
-            src={previewUrl}
-            alt="Combined kaanta slip preview"
-            className="h-20 w-20 rounded-md border border-border object-cover shrink-0"
-          />
+          <button
+            type="button"
+            onClick={() => setShowPreview(true)}
+            className="shrink-0 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+            title="Click to view full image"
+          >
+            <img
+              src={previewUrl}
+              alt="Combined kaanta slip preview"
+              className="h-20 w-20 rounded-md border border-border object-cover cursor-zoom-in transition-opacity hover:opacity-90"
+            />
+          </button>
           <div className="min-w-0 flex-1 space-y-2">
             {extracting ? (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -162,6 +170,30 @@ export function CombinedKaantaSlipUpload({
         >
           <ScanLine className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" aria-hidden />
           <p className="min-w-0 leading-snug">{reviewWarning}</p>
+        </div>
+      )}
+
+      {showPreview && previewUrl && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setShowPreview(false)}
+        >
+          <button
+            type="button"
+            onClick={() => setShowPreview(false)}
+            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 text-white hover:bg-white/20"
+            title="Close preview"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <img
+            src={previewUrl}
+            alt="Combined kaanta slip full preview"
+            className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
       )}
     </div>

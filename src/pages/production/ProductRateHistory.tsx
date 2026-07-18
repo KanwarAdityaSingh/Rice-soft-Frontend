@@ -16,7 +16,7 @@ export default function ProductRateHistoryPage() {
               <span className="text-gradient">Product Rate History</span>
             </h1>
             <p className="mt-1 sm:mt-2 text-sm sm:text-base text-muted-foreground">
-              Audit trail of selling rates by product and bag size, with optional date range and capacity filters.
+              Rate history by effective date and bag size — chart and table use the business date you chose when saving rates.
             </p>
           </div>
         </div>

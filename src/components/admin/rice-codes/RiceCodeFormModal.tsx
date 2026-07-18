@@ -16,6 +16,7 @@ interface RiceCodeFormModalProps {
   onCreate?: (data: CreateRiceCodeRequest) => Promise<RiceCode>;
   onUpdate?: (id: string, data: UpdateRiceCodeRequest) => Promise<RiceCode>;
   nested?: boolean;
+  defaultCategory?: RiceCategory;
 }
 
 export function RiceCodeFormModal({
@@ -25,6 +26,7 @@ export function RiceCodeFormModal({
   onCreate,
   onUpdate,
   nested = false,
+  defaultCategory,
 }: RiceCodeFormModalProps) {
   const hook = useRiceCodes();
   const createRiceCode = onCreate || hook.createRiceCode;
@@ -97,12 +99,12 @@ export function RiceCodeFormModal({
     } else {
       setFormData({
         rice_code_name: '',
-        category: 'basmati',
+        category: defaultCategory ?? 'basmati',
         variants: [],
       });
     }
     setErrors({});
-  }, [riceCode, open]);
+  }, [riceCode, open, defaultCategory]);
 
   const toggleVariant = (value: string) => {
     setFormData((prev) => {

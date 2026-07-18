@@ -1,12 +1,52 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { History, Download } from 'lucide-react';
+import {
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { EmptyState } from '../../admin/shared/EmptyState';
 import { useProducts } from '../../../hooks/useProducts';
 import { productsAPI } from '../../../services/products.api';
 import { HOLDING_CAPACITIES } from '../../../constants/packaging';
-import type { ProductRateHistoryResponse } from '../../../types/entities';
+import type { ProductRateHistoryPoint, ProductRateHistoryResponse } from '../../../types/entities';
 import { downloadProductRateHistoryPdf } from '../../../utils/productRateHistoryPdf';
+
+const CHART_COLORS = ['#0f766e', '#b45309', '#1d4ed8', '#be123c', '#7c3aed', '#047857'];
+
+function formatEffectiveDate(iso: string | null | undefined): string {
+  if (!iso) return '–';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    const [y, m, d] = iso.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  }
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function sortByEffectiveDate(points: ProductRateHistoryPoint[]): ProductRateHistoryPoint[] {
+  return [...points].sort((a, b) => {
+    const da = a.effective_date || '';
+    const db = b.effective_date || '';
+    if (da !== db) return da < db ? -1 : 1;
+    return (a.created_at || '').localeCompare(b.created_at || '');
+  });
+}
 
 export function ProductRateHistoryTable() {
   const { products, loading: productsLoading } = useProducts();
@@ -51,7 +91,27 @@ export function ProductRateHistoryTable() {
     void load();
   }, [productId, holdingFilter, fromDate, toDate, load]);
 
-  const points = data?.points ?? [];
+  const points = useMemo(
+    () => sortByEffectiveDate(data?.points ?? []),
+    [data?.points]
+  );
+
+  const chartSeries = useMemo(() => {
+    const capacities = [
+      ...new Set(points.map((p) => Number(p.holding_capacity))),
+    ].sort((a, b) => a - b);
+    const byDate = new Map<string, Record<string, number | string>>();
+    for (const p of points) {
+      const key = p.effective_date || p.created_at.slice(0, 10);
+      const row = byDate.get(key) ?? { date: key };
+      row[`c${p.holding_capacity}`] = Number(p.rate);
+      byDate.set(key, row);
+    }
+    const rows = [...byDate.values()].sort((a, b) =>
+      String(a.date).localeCompare(String(b.date))
+    );
+    return { capacities, rows };
+  }, [points]);
 
   const handleDownloadPdf = () => {
     if (!data || points.length === 0) return;
@@ -59,8 +119,8 @@ export function ProductRateHistoryTable() {
     filtersSummary.push(holdingFilter ? `Bag size: ${holdingFilter} kg only` : 'Bag size: all');
     filtersSummary.push(
       fromDate || toDate
-        ? `Date filter: ${fromDate || '-'} to ${toDate || '-'}`
-        : 'Date filter: none (all loaded history)'
+        ? `Effective date filter: ${fromDate || '-'} to ${toDate || '-'}`
+        : 'Effective date filter: none (all loaded history)'
     );
     downloadProductRateHistoryPdf(points, {
       productName: data.product.name,
@@ -106,7 +166,9 @@ export function ProductRateHistoryTable() {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">From</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">
+              Effective from
+            </label>
             <input
               type="date"
               className="rounded-lg border bg-background px-3 py-2 text-sm"
@@ -117,7 +179,9 @@ export function ProductRateHistoryTable() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">To</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">
+              Effective to
+            </label>
             <input
               type="date"
               className="rounded-lg border bg-background px-3 py-2 text-sm"
@@ -154,13 +218,59 @@ export function ProductRateHistoryTable() {
         </div>
       )}
 
+      {data && productId && !loading && chartSeries.rows.length > 0 && (
+        <div className="rounded-xl border bg-card p-4">
+          <h3 className="text-sm font-medium mb-3">Rate over effective date</h3>
+          <div className="h-[280px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartSeries.rows} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(v) => formatEffectiveDate(String(v))}
+                />
+                <YAxis
+                  tick={{ fontSize: 11 }}
+                  width={56}
+                  tickFormatter={(v) => `₹${Number(v).toLocaleString('en-IN')}`}
+                />
+                <Tooltip
+                  labelFormatter={(v) => `Effective: ${formatEffectiveDate(String(v))}`}
+                  formatter={(value, name) => [
+                    `₹${Number(value).toLocaleString('en-IN', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}`,
+                    String(name),
+                  ]}
+                />
+                <Legend />
+                {chartSeries.capacities.map((kg, i) => (
+                  <Line
+                    key={kg}
+                    type="monotone"
+                    dataKey={`c${kg}`}
+                    name={`${kg} kg`}
+                    stroke={CHART_COLORS[i % CHART_COLORS.length]}
+                    strokeWidth={2}
+                    dot={{ r: 3 }}
+                    connectNulls
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-xl border bg-card overflow-hidden">
         {!productId ? (
           <div className="py-8">
             <EmptyState
               icon={History}
               title="Choose a product"
-              description="Select a product above to load rate change history for all bag sizes or a specific holding capacity."
+              description="Select a product above to load rate history by effective date for all bag sizes or a specific holding capacity."
             />
           </div>
         ) : loading ? (
@@ -172,7 +282,7 @@ export function ProductRateHistoryTable() {
             <EmptyState
               icon={History}
               title="No history rows"
-              description="No rate changes match the current filters. Try widening the date range or clearing the bag size filter."
+              description="No rate changes match the current filters. Try widening the effective date range or clearing the bag size filter."
             />
           </div>
         ) : (
@@ -180,20 +290,29 @@ export function ProductRateHistoryTable() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="text-left p-3 font-medium">When</th>
+                  <th className="text-left p-3 font-medium">Effective date</th>
                   <th className="text-right p-3 font-medium">Bag (kg)</th>
                   <th className="text-right p-3 font-medium">Rate (₹)</th>
+                  <th className="text-left p-3 font-medium">Saved at</th>
                 </tr>
               </thead>
               <tbody>
                 {points.map((row) => (
                   <tr key={row.id} className="border-b hover:bg-muted/30">
-                    <td className="p-3 text-muted-foreground whitespace-nowrap">
-                      {new Date(row.created_at).toLocaleString()}
+                    <td className="p-3 font-medium whitespace-nowrap">
+                      {formatEffectiveDate(row.effective_date)}
                     </td>
                     <td className="p-3 text-right tabular-nums font-medium">{row.holding_capacity}</td>
                     <td className="p-3 text-right tabular-nums">
-                      ₹{Number(row.rate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ₹
+                      {Number(row.rate).toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </td>
+                    <td className="p-3 text-muted-foreground whitespace-nowrap text-xs">
+                      {new Date(row.created_at).toLocaleString()}
+                      {row.created_by_full_name ? ` · ${row.created_by_full_name}` : ''}
                     </td>
                   </tr>
                 ))}
@@ -205,11 +324,10 @@ export function ProductRateHistoryTable() {
 
       {data && productId && !loading && points.length > 0 && (
         <p className="text-xs text-muted-foreground">
-          Showing {points.length} row{points.length === 1 ? '' : 's'} for <span className="font-medium text-foreground">{data.product.name}</span>
+          Showing {points.length} row{points.length === 1 ? '' : 's'} for{' '}
+          <span className="font-medium text-foreground">{data.product.name}</span>
           {holdingFilter ? ` · ${holdingFilter} kg only` : ''}
-          {fromDate || toDate
-            ? ` · ${fromDate || '…'} → ${toDate || '…'}`
-            : ''}
+          {fromDate || toDate ? ` · effective ${fromDate || '…'} → ${toDate || '…'}` : ''}
         </p>
       )}
     </div>

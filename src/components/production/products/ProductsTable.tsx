@@ -85,6 +85,12 @@ export function ProductsTable() {
                     <span className="font-medium">{product.brand}</span>
                   </div>
                 )}
+                {product.hsn_code && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">HSN:</span>
+                    <span className="font-medium">{product.hsn_code}</span>
+                  </div>
+                )}
                 {product.rice_type && (
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Rice Type:</span>
@@ -107,6 +113,12 @@ export function ProductsTable() {
                         .map((r) => (
                           <span key={r.holding_capacity} className="font-medium tabular-nums">
                             {r.holding_capacity} kg → ₹{Number(r.rate).toLocaleString()}
+                            {r.effective_date ? (
+                              <span className="text-muted-foreground font-normal">
+                                {' '}
+                                ({r.effective_date})
+                              </span>
+                            ) : null}
                           </span>
                         ))}
                     </div>

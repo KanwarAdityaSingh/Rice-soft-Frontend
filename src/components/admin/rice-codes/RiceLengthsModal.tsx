@@ -108,7 +108,6 @@ export function RiceLengthsModal({ open, onOpenChange }: RiceLengthsModalProps) 
                             </span>
                           )}
                         </div>
-                        <div className="text-xs text-muted-foreground mt-0.5">Code: {item.code}</div>
                       </div>
                       {isAdmin() && (
                         <ActionButtons

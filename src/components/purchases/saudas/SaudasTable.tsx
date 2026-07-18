@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { SearchBar } from '../../admin/shared/SearchBar';
@@ -8,22 +8,32 @@ import { EmptyState } from '../../admin/shared/EmptyState';
 import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
-import { Package, Eye, MoreVertical, Edit2, Trash2, UtensilsCrossed, Wheat, Mail, MessageCircle, Copy, Check, Ban, CheckCircle2, X, List } from 'lucide-react';
+import { Package, Eye, MoreVertical, Edit2, Trash2, UtensilsCrossed, Wheat, Mail, MessageCircle, Copy, Check, Ban, CheckCircle2, X, Link2 } from 'lucide-react';
 import { useSaudas } from '../../../hooks/useSaudas';
 import { useVendors } from '../../../hooks/useVendors';
+import { useBrokers } from '../../../hooks/useBrokers';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { riceLengthsAPI } from '../../../services/riceLengths.api';
+import { vendorsAPI } from '../../../services/vendors.api';
+import { brokersAPI } from '../../../services/brokers.api';
 import { toRiceLengthLabelOptions } from '../../../utils/riceLengthModule';
 import { paymentAdvicesAPI } from '../../../services/paymentAdvices.api';
 import { inwardSlipPassesAPI } from '../../../services/inwardSlipPasses.api';
 import { kaantasAPI } from '../../../services/kaantas.api';
 import { getRiceTypeLabel, getRiceLengthLabel } from '../../../utils/riceType';
-import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
-import { getSaudaSerialNumber, formatSaudaIdShort } from '../../../utils/saudaSerial';
+import { formatKgQuantity, formatSaudaPendingQuantity, isSaudaCompleted } from '../../../utils/saudaCompletion';
+import { sortSaudasByDateAsc } from '../../../utils/saudaSerial';
+import {
+  buildFinancialYearFilterOptions,
+  getCurrentFinancialYearKey,
+  isIsoDateInFinancialYear,
+} from '../../../utils/financialYear';
 import { saudaToUpdatePayload } from '../../../utils/saudaPayload';
+import { getSaudaBrokerName, getSaudaPurchaserName, getSaudaRiceCodeName, getSaudaRiceCategoryLabel, formatSaudaTypeLabel } from '../../../utils/saudaDisplay';
+import { formatSaudaAvgGrainLengthDisplay, formatSaudaWhitenessDisplay } from '../../../utils/saudaParameters';
 import { SaudaFormModal } from './SaudaFormModal';
+import { SaudaCard } from './SaudaCard';
 import { SaudaPreviewDialog } from './SaudaPreviewDialog';
-import { SaudaWorkflowStatusBadge } from './SaudaWorkflowStatusBadge';
 import { SaudaEmailModal } from './SaudaEmailModal';
 import { SaudaWhatsAppModal } from './SaudaWhatsAppModal';
 import type {
@@ -40,17 +50,34 @@ interface SaudasTableProps {
   onRefreshRef?: React.MutableRefObject<(() => void) | null>;
 }
 
+type SaudaCompletionFilter = 'incomplete' | 'completed' | 'cancelled';
+
+const SAUDA_COMPLETION_FILTER_OPTIONS: { label: string; value: SaudaCompletionFilter }[] = [
+  { label: 'Incomplete sauda', value: 'incomplete' },
+  { label: 'Complete sauda', value: 'completed' },
+  { label: 'Cancelled sauda', value: 'cancelled' },
+];
+
 export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
-  const [typeFilter, setTypeFilter] = useState<string | undefined>();
-  const [showCancelledOnly, setShowCancelledOnly] = useState(false);
-  /** Default: unfiltered `GET /saudas`. `?status=cancelled` only after clicking “Show cancelled saudas”. */
+  const [financialYearFilter, setFinancialYearFilter] = useState<string | undefined>(
+    () => getCurrentFinancialYearKey(),
+  );
+  const [completionFilter, setCompletionFilter] = useState<SaudaCompletionFilter>('incomplete');
+  /** Cancelled list uses API filter; incomplete/complete filter client-side on full list. */
   const listFilters = useMemo<SaudaFilters | undefined>(() => {
-    if (showCancelledOnly) return { status: 'cancelled' };
+    if (completionFilter === 'cancelled') return { status: 'cancelled' };
     return undefined;
-  }, [showCancelledOnly]);
+  }, [completionFilter]);
 
   const { saudas, loading, deleteSauda, refetch, updateSaudaStatus } = useSaudas(listFilters);
-  const { vendors } = useVendors();
+  const { vendors } = useVendors({ includeInactive: true });
+  const { brokers } = useBrokers({ includeInactive: true });
+  const [vendorNameById, setVendorNameById] = useState<Record<string, string>>({});
+  const [brokerNameById, setBrokerNameById] = useState<Record<string, string>>({});
+  const [riceCodeNameById, setRiceCodeNameById] = useState<Record<string, string>>({});
+  const fetchedVendorIdsRef = useRef(new Set<string>());
+  const fetchedBrokerIdsRef = useRef(new Set<string>());
+  const fetchedRiceCodeIdsRef = useRef(new Set<string>());
 
   // Expose refetch function to parent via ref
   useEffect(() => {
@@ -91,7 +118,6 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
   const [alertType, setAlertType] = useState<'success' | 'error' | 'warning' | 'info'>('warning');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
-  const [copiedSaudaId, setCopiedSaudaId] = useState<string | null>(null);
   /** Opens dialog with full kaanta / PA identifiers (ISP slip numbers only, no UUIDs). */
   const [usageDetailSaudaId, setUsageDetailSaudaId] = useState<string | null>(null);
   const [copiedUsageToken, setCopiedUsageToken] = useState<string | null>(null);
@@ -139,25 +165,173 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
     fetchUsageData();
   }, []);
 
-  const getRiceCodeName = (riceCodeId: string | null | undefined): string => {
-    if (!riceCodeId) return '';
-    const riceCode = riceCodes.find((rc) => rc.rice_code_id === riceCodeId);
-    return riceCode ? riceCode.rice_code_name : '';
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadMissingPartyNames = async () => {
+      const vendorIds = [
+        ...new Set(
+          saudas
+            .map((sauda) => sauda.purchaser_id)
+            .filter((id): id is string => !!id)
+            .filter(
+              (id) =>
+                !vendors.some((vendor) => vendor.id === id) &&
+                !fetchedVendorIdsRef.current.has(id),
+            ),
+        ),
+      ];
+      const brokerIds = [
+        ...new Set(
+          saudas
+            .map((sauda) => sauda.broker_id)
+            .filter((id): id is string => !!id)
+            .filter(
+              (id) =>
+                !brokers.some((broker) => broker.id === id) &&
+                !fetchedBrokerIdsRef.current.has(id),
+            ),
+        ),
+      ];
+
+      for (const id of vendorIds) fetchedVendorIdsRef.current.add(id);
+      for (const id of brokerIds) fetchedBrokerIdsRef.current.add(id);
+
+      const [vendorRows, brokerRows] = await Promise.all([
+        Promise.all(
+          vendorIds.map(async (id) => {
+            try {
+              const vendor = await vendorsAPI.getVendorById(id);
+              return [id, vendor.business_name] as const;
+            } catch {
+              return [id, ''] as const;
+            }
+          }),
+        ),
+        Promise.all(
+          brokerIds.map(async (id) => {
+            try {
+              const broker = await brokersAPI.getBrokerById(id);
+              return [id, broker.business_name] as const;
+            } catch {
+              return [id, ''] as const;
+            }
+          }),
+        ),
+      ]);
+
+      if (cancelled) return;
+
+      setVendorNameById((prev) => {
+        const next = { ...prev };
+        for (const [id, name] of vendorRows) {
+          if (name && !next[id]) next[id] = name;
+        }
+        return next;
+      });
+      setBrokerNameById((prev) => {
+        const next = { ...prev };
+        for (const [id, name] of brokerRows) {
+          if (name && !next[id]) next[id] = name;
+        }
+        return next;
+      });
+    };
+
+    void loadMissingPartyNames();
+    return () => {
+      cancelled = true;
+    };
+  }, [saudas, vendors, brokers]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadMissingRiceCodeNames = async () => {
+      const riceCodeIds = [
+        ...new Set(
+          saudas
+            .map((sauda) => sauda.rice_code_id)
+            .filter((id): id is string => !!id)
+            .filter(
+              (id) =>
+                !riceCodes.some((rc) => rc.rice_code_id === id) &&
+                !fetchedRiceCodeIdsRef.current.has(id),
+            ),
+        ),
+      ];
+
+      for (const id of riceCodeIds) fetchedRiceCodeIdsRef.current.add(id);
+
+      const rows = await Promise.all(
+        riceCodeIds.map(async (id) => {
+          try {
+            const riceCode = await riceCodesAPI.getRiceCodeById(id);
+            return [id, riceCode?.rice_code_name ?? ''] as const;
+          } catch {
+            return [id, ''] as const;
+          }
+        }),
+      );
+
+      if (cancelled) return;
+
+      setRiceCodeNameById((prev) => {
+        const next = { ...prev };
+        for (const [id, name] of rows) {
+          if (name && !next[id]) next[id] = name;
+        }
+        return next;
+      });
+    };
+
+    void loadMissingRiceCodeNames();
+    return () => {
+      cancelled = true;
+    };
+  }, [saudas, riceCodes]);
+
+  const getPurchaserName = (sauda: Sauda): string =>
+    getSaudaPurchaserName(sauda, vendors, vendorNameById);
+
+  const getBrokerName = (sauda: Sauda): string =>
+    getSaudaBrokerName(sauda, brokers, brokerNameById);
+
+  const getRiceCodeName = (sauda: Sauda): string =>
+    getSaudaRiceCodeName(sauda, riceCodes, riceCodeNameById);
+
+  const getSaudaRiceLengthLabel = (sauda: Sauda): string => {
+    if (sauda.rice_length_name?.trim()) return sauda.rice_length_name.trim();
+    if (sauda.rice_length_id) {
+      const label = getRiceLengthLabel(sauda.rice_length_id, riceLengths);
+      if (label) return label;
+    }
+    return getRiceLengthLabel(sauda.rice_length, riceLengths);
   };
 
-  const getPurchaserName = (purchaserId: string | null | undefined): string => {
-    if (!purchaserId) return '';
-    const purchaser = vendors.find((v) => v.id === purchaserId);
-    return purchaser ? purchaser.business_name : '';
+  const formatSaudaDate = (sauda: Sauda): string => {
+    const opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long', year: 'numeric' };
+    if (sauda.sauda_date) {
+      return new Date(`${sauda.sauda_date}T00:00:00`).toLocaleDateString('en-IN', opts);
+    }
+    if (sauda.created_at) {
+      return new Date(sauda.created_at).toLocaleDateString('en-IN', opts);
+    }
+    return '—';
+  };
+
+  const formatSaudaWeight = (sauda: Sauda): string => {
+    if (sauda.quantity == null) return '—';
+    return formatKgQuantity(sauda.quantity);
   };
 
   const getSaudaDisplayName = (sauda: Sauda): string => {
     const parts: string[] = [];
     
-    const purchaserName = getPurchaserName(sauda.purchaser_id);
+    const purchaserName = getPurchaserName(sauda);
     if (purchaserName) parts.push(purchaserName);
     
-    const riceCodeName = getRiceCodeName(sauda.rice_code_id);
+    const riceCodeName = getRiceCodeName(sauda);
     if (riceCodeName) parts.push(riceCodeName);
     
     const riceTypeLabel = getRiceTypeLabel(sauda.rice_type, riceTypes);
@@ -208,6 +382,15 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
     return { counts, paymentAdviceLabels, ispRows, kaantaRows };
   };
 
+  const getLinkedUsageTotal = (saudaId: string) => {
+    const { paymentAdvices, isps, kaantas } = getSaudaUsageCounts(saudaId);
+    return paymentAdvices + isps + kaantas;
+  };
+
+  const openLinkedUsageDialog = (saudaId: string) => {
+    setUsageDetailSaudaId(saudaId);
+  };
+
   // Get usage details for a sauda (for delete warning)
   const getSaudaUsageDetails = async (saudaId: string): Promise<{
     paymentAdvices: string[];
@@ -238,16 +421,6 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
     setDocumentViewerOpen(true);
   };
 
-  const copySaudaIdToClipboard = async (fullId: string) => {
-    try {
-      await navigator.clipboard.writeText(fullId);
-      setCopiedSaudaId(fullId);
-      setTimeout(() => setCopiedSaudaId(null), 2000);
-    } catch (err) {
-      console.error('Failed to copy sauda id:', err);
-    }
-  };
-
   const copyUsageSnippet = async (token: string, text: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -258,55 +431,66 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
     }
   };
 
+  const financialYearOptions = useMemo(
+    () => buildFinancialYearFilterOptions(saudas),
+    [saudas],
+  );
+
   const filtered = useMemo(() => {
-    return saudas.filter((s) => {
-      if (typeFilter && s.sauda_type !== typeFilter) return false;
+    const rows = saudas.filter((s) => {
+      if (completionFilter === 'cancelled') {
+        if (s.status !== 'cancelled') return false;
+      } else if (completionFilter === 'completed') {
+        if (s.status === 'cancelled' || !isSaudaCompleted(s)) return false;
+      } else {
+        if (s.status === 'cancelled' || isSaudaCompleted(s)) return false;
+      }
+      if (financialYearFilter && !isIsoDateInFinancialYear(s.sauda_date, financialYearFilter)) {
+        return false;
+      }
       const q = searchQuery.toLowerCase();
       const displayName = getSaudaDisplayName(s).toLowerCase();
-      const purchaserName = getPurchaserName(s.purchaser_id).toLowerCase();
-      const riceCodeName = getRiceCodeName(s.rice_code_id).toLowerCase();
+      const purchaserName = getPurchaserName(s).toLowerCase();
+      const riceCodeName = getRiceCodeName(s).toLowerCase();
       const riceTypeLabel = getRiceTypeLabel(s.rice_type, riceTypes).toLowerCase();
-      const riceLengthLabel = getRiceLengthLabel(s.rice_length, riceLengths).toLowerCase();
+      const riceLengthLabel = getSaudaRiceLengthLabel(s).toLowerCase();
+      const brokerName = getBrokerName(s).toLowerCase();
       const matchesSearch =
         displayName.includes(q) ||
         purchaserName.includes(q) ||
         riceCodeName.includes(q) ||
         riceTypeLabel.includes(q) ||
         riceLengthLabel.includes(q) ||
+        brokerName.includes(q) ||
         s.id.toLowerCase().includes(q);
 
       return matchesSearch;
     });
-  }, [saudas, typeFilter, searchQuery, riceCodes, riceTypes, riceLengths, vendors]);
+    return sortSaudasByDateAsc(rows);
+  }, [saudas, completionFilter, financialYearFilter, searchQuery, riceCodes, riceTypes, riceLengths, vendors, brokers, vendorNameById, brokerNameById, riceCodeNameById]);
 
   return (
     <div>
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <div className="flex-1 min-w-0">
-          <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search by purchaser, rice code, type or ID..." />
+          <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search by purchaser, rice code, or type..." />
         </div>
         <div className="flex flex-wrap gap-2 items-end justify-end sm:justify-start">
           <FilterDropdown
-            label="Type"
-            options={[
-              { label: 'Ex Godown', value: 'exgodown' },
-              { label: 'FOR', value: 'for' },
-            ]}
-            value={typeFilter}
-            onChange={setTypeFilter}
+            label="Financial year"
+            options={financialYearOptions}
+            value={financialYearFilter}
+            onChange={setFinancialYearFilter}
           />
-          <button
-            type="button"
-            aria-pressed={showCancelledOnly}
-            onClick={() => setShowCancelledOnly((v) => !v)}
-            className={`rounded-xl px-3 py-2 text-sm font-medium border transition-colors whitespace-nowrap ${
-              showCancelledOnly
-                ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                : 'bg-background border-border hover:bg-muted/60 text-foreground'
-            }`}
-          >
-            {showCancelledOnly ? 'Showing cancelled only' : 'Show cancelled saudas'}
-          </button>
+          <FilterDropdown
+            label="Status"
+            options={SAUDA_COMPLETION_FILTER_OPTIONS}
+            value={completionFilter}
+            onChange={(value) =>
+              setCompletionFilter((value as SaudaCompletionFilter | undefined) ?? 'incomplete')
+            }
+            hideAllOption
+          />
         </div>
       </div>
 
@@ -317,661 +501,219 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
           icon={Package}
           title="No saudas found"
           description={
-            showCancelledOnly
-              ? 'No cancelled saudas match your search or type filter.'
-              : 'Create your first sauda or adjust filters.'
+            completionFilter === 'cancelled'
+              ? 'No cancelled saudas match your search or filters.'
+              : completionFilter === 'completed'
+                ? 'No completed saudas match your search or filters.'
+                : financialYearFilter
+                ? `No saudas found for ${financialYearOptions.find((o) => o.value === financialYearFilter)?.label ?? financialYearFilter}. Try another financial year or adjust filters.`
+                : 'Create your first sauda or adjust filters.'
           }
         />
       ) : (
-        <>
-          {/* Desktop Table View */}
-          <div className="hidden lg:block overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left py-3 px-4 text-sm font-semibold">S. No.</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold">ID</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold">Type</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold">Sauda Details</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold">Date</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold">Rate</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold">Quantity/Received</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold">
-                    Status
-                    {showCancelledOnly && (
-                      <span className="block text-[10px] font-normal text-muted-foreground mt-0.5">Workflow</span>
-                    )}
-                  </th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold">Broker Comm</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold">Cash Discount</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold">Usage</th>
-                  <th className="text-right py-3 px-4 text-sm font-semibold">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((s) => {
-                  const serial = getSaudaSerialNumber(s.id, saudas);
-                  const usage = getSaudaUsageDisplay(s.id);
-                  const usageParts: string[] = [];
-                  if (usage.counts.paymentAdvices > 0) {
-                    usageParts.push(`${usage.counts.paymentAdvices} PA`);
-                  }
-                  if (usage.counts.isps > 0) {
-                    usageParts.push(`${usage.counts.isps} ISP`);
-                  }
-                  if (usage.counts.kaantas > 0) {
-                    usageParts.push(`${usage.counts.kaantas} Kaanta`);
-                  }
-                  
-                  return (
-                    <tr key={s.id} className="border-b border-border/60 hover:bg-muted/30 transition-colors">
-                      <td className="py-3 px-4 text-sm tabular-nums text-muted-foreground">
-                        {serial ?? '—'}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="text-[9px] leading-none font-mono text-muted-foreground tabular-nums" title={s.id}>
-                            {formatSaudaIdShort(s.id)}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void copySaudaIdToClipboard(s.id);
-                            }}
-                            className="p-1 shrink-0 rounded hover:bg-muted/50 transition-colors"
-                            title="Copy full sauda ID"
-                            aria-label="Copy sauda ID"
+        <div className="grid gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+          {filtered.map((s, rowIndex) => {
+            const serial = rowIndex + 1;
+            const riceLengthLabel = getSaudaRiceLengthLabel(s);
+            const whitenessLabel = formatSaudaWhitenessDisplay(s.parameters?.whiteness);
+            const avgGrainLengthLabel = formatSaudaAvgGrainLengthDisplay(
+              s.parameters?.average_grain_length,
+            );
+            const linkedCount = getLinkedUsageTotal(s.id);
+            return (
+              <SaudaCard
+                key={s.id}
+                partyName={getPurchaserName(s)}
+                saudaDate={formatSaudaDate(s)}
+                riceCategoryLabel={getSaudaRiceCategoryLabel(s, riceCodes)}
+                riceTypeLabel={getRiceTypeLabel(s.rice_type, riceTypes)}
+                riceCodeName={getRiceCodeName(s)}
+                riceLengthLabel={riceLengthLabel || null}
+                whitenessLabel={whitenessLabel !== '—' ? whitenessLabel : null}
+                avgGrainLengthLabel={avgGrainLengthLabel !== '—' ? avgGrainLengthLabel : null}
+                weightLabel={formatSaudaWeight(s)}
+                noOfBags={s.no_of_bags ?? null}
+                bagWeightLabel={s.bag_weight != null ? formatKgQuantity(s.bag_weight) : null}
+                rateLabel={`₹${(s.rate ?? 0).toFixed(2)}`}
+                saudaTypeLabel={formatSaudaTypeLabel(s.sauda_type)}
+                brokerName={getBrokerName(s)}
+                receivedLabel={formatKgQuantity(s.received_until_now)}
+                pendingLabel={formatSaudaPendingQuantity(s.quantity, s.received_until_now)}
+                actions={
+                  <>
+                    <button
+                      onClick={() => {
+                        setPreviewSauda(s);
+                        setPreviewSerial(serial);
+                        setPreviewOpen(true);
+                      }}
+                      className="rounded-lg p-2 text-primary transition-colors hover:bg-primary/15"
+                      title="View Preview"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedSaudaForNotification(s.id);
+                        setEmailModalOpen(true);
+                      }}
+                      className="rounded-lg p-2 text-red-500 transition-colors hover:bg-red-500/10"
+                      title="Send Email"
+                    >
+                      <Mail className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedSaudaForNotification(s.id);
+                        setWhatsappModalOpen(true);
+                      }}
+                      className="rounded-lg p-2 text-emerald-500 transition-colors hover:bg-emerald-500/10"
+                      title="Send WhatsApp"
+                    >
+                      <MessageCircle className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => openLinkedUsageDialog(s.id)}
+                      className={`relative rounded-lg p-2 transition-colors ${
+                        linkedCount > 0
+                          ? 'text-sky-600 hover:bg-sky-500/10'
+                          : 'text-muted-foreground hover:bg-muted/80'
+                      }`}
+                      title={
+                        linkedCount > 0
+                          ? `View ${linkedCount} linked record${linkedCount === 1 ? '' : 's'} (ISP, payment advice, kaanta)`
+                          : 'View linked records (ISP, payment advice, kaanta)'
+                      }
+                    >
+                      <Link2 className="h-4 w-4" />
+                      {linkedCount > 0 && (
+                        <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-sky-600 px-1 text-[10px] font-bold text-white">
+                          {linkedCount > 9 ? '9+' : linkedCount}
+                        </span>
+                      )}
+                    </button>
+                    <DropdownMenu.Root>
+                      <DropdownMenu.Trigger asChild>
+                        <button className="rounded-lg p-2 transition-colors hover:bg-muted/80">
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
+                      </DropdownMenu.Trigger>
+                      <DropdownMenu.Portal>
+                        <DropdownMenu.Content
+                          className="glass min-w-[10rem] rounded-xl p-1 shadow-lg z-50"
+                          sideOffset={8}
+                          align="end"
+                        >
+                          <DropdownMenu.Label className="px-3 py-1.5 text-xs text-muted-foreground font-medium">
+                            View Images
+                          </DropdownMenu.Label>
+                          <DropdownMenu.Item
+                            className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+                              s.cooked_rice_image_url
+                                ? 'hover:bg-accent hover:text-accent-foreground text-amber-600'
+                                : 'text-muted-foreground/50 cursor-not-allowed'
+                            }`}
+                            disabled={!s.cooked_rice_image_url}
+                            onSelect={() => s.cooked_rice_image_url && handleViewDocuments([{ url: s.cooked_rice_image_url, label: 'Cooked Rice Sample', type: 'image' }])}
                           >
-                            {copiedSaudaId === s.id ? (
-                              <Check className="h-3.5 w-3.5 text-green-600" />
-                            ) : (
-                              <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                            )}
-                          </button>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-sm">
-                        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{s.sauda_type}</span>
-                      </td>
-                      <td className="py-3 px-4 text-sm">
-                        <div className="font-medium">{getSaudaDisplayName(s)}</div>
-                      </td>
-                      <td className="py-3 px-4 text-sm">
-                        {s.sauda_date 
-                          ? new Date(s.sauda_date + 'T00:00:00').toLocaleDateString('en-IN')
-                          : new Date(s.created_at).toLocaleDateString('en-IN')}
-                      </td>
-                      <td className="py-3 px-4 text-sm">₹{(s.rate ?? 0).toFixed(2)}</td>
-                      <td className="py-3 px-4 text-sm">
-                        {s.quantity ? (
-                          <div className="flex items-center gap-2">
-                            <span>{formatWeightDisplay(s.received_until_now, s.quantity)}</span>
-                            {s.completion_percentage !== null && (
-                              <span className={`text-xs px-1.5 py-0.5 rounded-full ${getCompletionStatus(s.completion_percentage).bgColor} ${getCompletionStatus(s.completion_percentage).color}`}>
-                                {formatCompletionPercentage(s.completion_percentage)}
+                            <UtensilsCrossed className="h-4 w-4" /> Cooked Rice
+                            {!s.cooked_rice_image_url && <span className="ml-auto text-[10px]">N/A</span>}
+                          </DropdownMenu.Item>
+                          <DropdownMenu.Item
+                            className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+                              s.uncooked_rice_image_url
+                                ? 'hover:bg-accent hover:text-accent-foreground text-amber-600'
+                                : 'text-muted-foreground/50 cursor-not-allowed'
+                            }`}
+                            disabled={!s.uncooked_rice_image_url}
+                            onSelect={() => s.uncooked_rice_image_url && handleViewDocuments([{ url: s.uncooked_rice_image_url, label: 'Uncooked Rice Sample', type: 'image' }])}
+                          >
+                            <Wheat className="h-4 w-4" /> Uncooked Rice
+                            {!s.uncooked_rice_image_url && <span className="ml-auto text-[10px]">N/A</span>}
+                          </DropdownMenu.Item>
+                          <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                          <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                          <DropdownMenu.Item
+                            className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+                            onSelect={() => openLinkedUsageDialog(s.id)}
+                          >
+                            <Link2 className="h-4 w-4" />
+                            Linked records
+                            {linkedCount > 0 && (
+                              <span className="ml-auto rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700 dark:text-sky-300">
+                                {linkedCount}
                               </span>
                             )}
-                          </div>
-                        ) : s.received_until_now > 0 ? (
-                          <span>{s.received_until_now.toFixed(2)} kg</span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-sm min-w-[120px]">
-                        <div className="flex flex-col gap-1.5">
-                          <SaudaWorkflowStatusBadge status={s.status} />
-                          {s.completion_percentage !== null && (
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${getCompletionStatus(s.completion_percentage).bgColor} ${getCompletionStatus(s.completion_percentage).color} border ${getCompletionStatus(s.completion_percentage).borderColor}`}>
-                              {getCompletionStatus(s.completion_percentage).label}
-                            </span>
-                          )}
-                          {(s.is_dana_required ?? true) ? (
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700 whitespace-nowrap">
-                              Dana Required
-                            </span>
-                          ) : (
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700 whitespace-nowrap">
-                              Dana Not Required
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-sm">
-                        {s.broker_commission != null ? (
-                          <span>
-                            {s.broker_commission_type === 'rupees' 
-                              ? `₹${s.broker_commission.toFixed(2)}` 
-                              : s.broker_commission_type === 'weight'
-                              ? `₹${s.broker_commission.toFixed(2)}/Kg`
-                              : `${s.broker_commission}%`}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-sm">
-                        {s.cash_discount != null ? (
-                          <span>
-                            {s.cash_discount_type === 'percentage' 
-                              ? `${s.cash_discount}%` 
-                              : `₹${s.cash_discount.toFixed(2)}`}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-sm">
-                        {usageParts.length > 0 ? (
-                          <div className="space-y-1 text-xs text-amber-600 dark:text-amber-400 max-w-[18rem]">
-                            <div className="flex flex-wrap items-center justify-between gap-1.5">
-                              <span>{usageParts.join(', ')}</span>
-                              <button
-                                type="button"
-                                onClick={() => setUsageDetailSaudaId(s.id)}
-                                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-amber-500/35 bg-amber-500/5 text-amber-800 hover:bg-amber-500/15 dark:text-amber-200"
-                                title="Full usage (payment advices, ISPs, kaanta IDs)"
-                                aria-label="Full usage details"
-                              >
-                                <List className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                            {usage.paymentAdviceLabels.map((label, i) => (
-                              <div
-                                key={`pa-${i}-${label}`}
-                                className="font-mono text-[10px] text-amber-700/90 dark:text-amber-300/85"
-                                title={label}
-                              >
-                                PA: {label}
-                              </div>
-                            ))}
-                            {usage.ispRows.map((isp) => (
-                              <div
-                                key={isp.id}
-                                className="text-[10px] text-amber-700/90 dark:text-amber-300/85"
-                              >
-                                ISP: {isp.slipNumber}
-                              </div>
-                            ))}
-                            {usage.kaantaRows.map((k, idx) => (
-                              <div
-                                key={k.rowId}
-                                className="text-[10px] text-amber-700/90 dark:text-amber-300/85"
-                              >
-                                {usage.kaantaRows.length > 1 ? `Kaanta ${idx + 1}` : 'Kaanta'}
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => {
-                              setPreviewSauda(s);
-                              setPreviewSerial(serial ?? null);
-                              setPreviewOpen(true);
-                            }}
-                            className="p-1.5 text-primary hover:bg-primary/10 rounded-md transition-colors"
-                            title="View Preview"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
-                          
-                          <button
-                            onClick={() => {
-                              setSelectedSaudaForNotification(s.id);
-                              setEmailModalOpen(true);
-                            }}
-                            className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
-                            title="Send Email"
-                          >
-                            <Mail className="h-4 w-4" />
-                          </button>
-                          
-                          <button
-                            onClick={() => {
-                              setSelectedSaudaForNotification(s.id);
-                              setWhatsappModalOpen(true);
-                            }}
-                            className="p-1.5 text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-md transition-colors"
-                            title="Send WhatsApp"
-                          >
-                            <MessageCircle className="h-4 w-4" />
-                          </button>
-                          
-                          <DropdownMenu.Root>
-                            <DropdownMenu.Trigger asChild>
-                              <button className="rounded-lg p-2 hover:bg-muted transition-colors">
-                                <MoreVertical className="h-4 w-4" />
-                              </button>
-                            </DropdownMenu.Trigger>
-                            <DropdownMenu.Portal>
-                              <DropdownMenu.Content
-                                className="glass min-w-[10rem] rounded-xl p-1 shadow-lg z-50"
-                                sideOffset={8}
-                                align="end"
-                              >
-                                <DropdownMenu.Label className="px-3 py-1.5 text-xs text-muted-foreground font-medium">
-                                  View Images
-                                </DropdownMenu.Label>
-                                <DropdownMenu.Item
-                                  className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
-                                    s.cooked_rice_image_url 
-                                      ? 'hover:bg-accent hover:text-accent-foreground text-amber-600' 
-                                      : 'text-muted-foreground/50 cursor-not-allowed'
-                                  }`}
-                                  disabled={!s.cooked_rice_image_url}
-                                  onSelect={() => s.cooked_rice_image_url && handleViewDocuments([{ url: s.cooked_rice_image_url, label: 'Cooked Rice Sample', type: 'image' }])}
-                                >
-                                  <UtensilsCrossed className="h-4 w-4" /> Cooked Rice
-                                  {!s.cooked_rice_image_url && <span className="ml-auto text-[10px]">N/A</span>}
-                                </DropdownMenu.Item>
-                                <DropdownMenu.Item
-                                  className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
-                                    s.uncooked_rice_image_url 
-                                      ? 'hover:bg-accent hover:text-accent-foreground text-amber-600' 
-                                      : 'text-muted-foreground/50 cursor-not-allowed'
-                                  }`}
-                                  disabled={!s.uncooked_rice_image_url}
-                                  onSelect={() => s.uncooked_rice_image_url && handleViewDocuments([{ url: s.uncooked_rice_image_url, label: 'Uncooked Rice Sample', type: 'image' }])}
-                                >
-                                  <Wheat className="h-4 w-4" /> Uncooked Rice
-                                  {!s.uncooked_rice_image_url && <span className="ml-auto text-[10px]">N/A</span>}
-                                </DropdownMenu.Item>
-                                <DropdownMenu.Separator className="my-1 h-px bg-border" />
-                                
-                                <DropdownMenu.Item
-                                  className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
-                                  onSelect={() => {
-                                    setSelectedSaudaId(s.id);
-                                    setEditModalOpen(true);
-                                  }}
-                                >
-                                  <Edit2 className="h-4 w-4" /> Edit
-                                </DropdownMenu.Item>
-                                {s.status !== 'cancelled' &&
-                                  s.status !== 'completed' &&
-                                  (s.completion_percentage === null || s.completion_percentage < 100) && (
-                                    <DropdownMenu.Item
-                                      className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/30"
-                                      onSelect={() => {
-                                        setSaudaToComplete(s);
-                                        setCompleteDialogOpen(true);
-                                      }}
-                                    >
-                                      <CheckCircle2 className="h-4 w-4" /> Complete Sauda
-                                    </DropdownMenu.Item>
-                                  )}
-                                {s.status !== 'cancelled' && (
-                                  <DropdownMenu.Item
-                                    className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950/30"
-                                    onSelect={() => {
-                                      setSaudaToCancel(s);
-                                      setCancelDialogOpen(true);
-                                    }}
-                                  >
-                                    <Ban className="h-4 w-4" /> Cancel Sauda
-                                  </DropdownMenu.Item>
-                                )}
-                                <DropdownMenu.Item
-                                  className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-                                  onSelect={async () => {
-                                    if (isSaudaInUse(s.id)) {
-                                      const usage = await getSaudaUsageDetails(s.id);
-                                      const parts: string[] = [];
-                                      
-                                      if (usage.paymentAdvices.length > 0) {
-                                        parts.push(`Payment Advices (${usage.paymentAdvices.length}):\n${usage.paymentAdvices.map((pa, i) => `${i + 1}. ${pa}`).join('\n')}`);
-                                      }
-                                      if (usage.isps.length > 0) {
-                                        parts.push(`Inward Slip Passes (${usage.isps.length}):\n${usage.isps.map((isp, i) => `${i + 1}. ${isp}`).join('\n')}`);
-                                      }
-                                      if (usage.kaantas.length > 0) {
-                                        parts.push(`Kaantas (${usage.kaantas.length}):\n${usage.kaantas.map((k, i) => `${i + 1}. ${k}`).join('\n')}`);
-                                      }
-                                      
-                                      setAlertType('warning');
-                                      setAlertTitle('Cannot Delete Sauda');
-                                      setAlertMessage(`This sauda is currently used in:\n\n${parts.join('\n\n')}\n\nPlease remove it from all related records before deleting.`);
-                                      setAlertOpen(true);
-                                      return;
-                                    }
-                                    setSelectedSauda(s);
-                                    setDeleteDialogOpen(true);
-                                  }}
-                                >
-                                  <Trash2 className="h-4 w-4" /> Delete
-                                </DropdownMenu.Item>
-                              </DropdownMenu.Content>
-                            </DropdownMenu.Portal>
-                          </DropdownMenu.Root>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Mobile Card View */}
-          <div className="lg:hidden grid gap-4 grid-cols-1 sm:grid-cols-2">
-          {filtered.map((s) => {
-            const serial = getSaudaSerialNumber(s.id, saudas);
-            return (
-            <article
-              key={s.id}
-              className="group rounded-2xl p-4 bg-gradient-to-br from-background to-muted/40 border border-border/60 hover:border-primary/40 transition-all duration-300 shadow-sm hover:shadow-md"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shadow-inner">
-                    <Package className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{s.sauda_type}</div>
-                    <h3 className="text-sm font-semibold leading-tight">
-                      {getSaudaDisplayName(s)}
-                    </h3>
-                    <div className="text-xs text-muted-foreground mt-0.5">
-                      S. No. <span className="font-semibold text-foreground tabular-nums">{serial ?? '—'}</span>
-                    </div>
-                    <div className="text-[9px] leading-tight font-mono text-muted-foreground mt-0.5 flex items-center gap-1.5 flex-wrap" title={s.id}>
-                      <span className="tabular-nums">ID: {formatSaudaIdShort(s.id)}</span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void copySaudaIdToClipboard(s.id);
-                        }}
-                        className="p-0.5 rounded hover:bg-muted/50 transition-colors inline-flex"
-                        title="Copy full sauda ID"
-                        aria-label="Copy sauda ID"
-                      >
-                        {copiedSaudaId === s.id ? (
-                          <Check className="h-3 w-3 text-green-600" />
-                        ) : (
-                          <Copy className="h-3 w-3 text-muted-foreground" />
-                        )}
-                      </button>
-                    </div>
-                    <div className="text-xs text-muted-foreground">Rate: ₹{(s.rate ?? 0).toFixed(2)}</div>
-                    <div className="text-xs text-muted-foreground">
-                      Date: {s.sauda_date 
-                        ? new Date(s.sauda_date + 'T00:00:00').toLocaleDateString('en-IN')
-                        : new Date(s.created_at).toLocaleDateString('en-IN')}
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <SaudaWorkflowStatusBadge status={s.status} />
-                      {s.completion_percentage !== null && (
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full ${getCompletionStatus(s.completion_percentage).bgColor} ${getCompletionStatus(s.completion_percentage).color} border ${getCompletionStatus(s.completion_percentage).borderColor}`}>
-                          {getCompletionStatus(s.completion_percentage).label}
-                        </span>
-                      )}
-                      {(s.is_dana_required ?? true) ? (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700">
-                          Dana Required
-                        </span>
-                      ) : (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-700">
-                          Dana Not Required
-                        </span>
-                      )}
-                      </div>
-                  </div>
-                </div>
-              </div>
-              <div className="mt-3 grid gap-1.5 text-xs">
-                {s.quantity && (
-                  <div className="inline-flex items-center gap-2">
-                    <span className="text-muted-foreground w-20">Quantity:</span>
-                    <span className="font-medium">{formatWeightDisplay(s.received_until_now, s.quantity)}</span>
-                    {s.completion_percentage !== null && (
-                      <span className={`text-xs px-1.5 py-0.5 rounded-full ${getCompletionStatus(s.completion_percentage).bgColor} ${getCompletionStatus(s.completion_percentage).color}`}>
-                        {formatCompletionPercentage(s.completion_percentage)}
-                      </span>
-                    )}
-                  </div>
-                )}
-                {!s.quantity && s.received_until_now > 0 && (
-                  <div className="inline-flex items-center gap-2">
-                    <span className="text-muted-foreground w-20">Received:</span>
-                    <span className="font-medium">{s.received_until_now.toFixed(2)} kg</span>
-                  </div>
-                )}
-                {s.broker_commission != null && (
-                  <div className="inline-flex items-center gap-2">
-                    <span className="text-muted-foreground w-20">Broker Comm:</span>
-                    <span className="font-medium">
-                      {s.broker_commission_type === 'rupees' 
-                        ? `₹${s.broker_commission.toFixed(2)}` 
-                        : s.broker_commission_type === 'weight'
-                        ? `₹${s.broker_commission.toFixed(2)}/Kg`
-                        : `${s.broker_commission}%`}
-                    </span>
-                  </div>
-                )}
-                {s.cash_discount != null && (
-                  <div className="inline-flex items-center gap-2">
-                    <span className="text-muted-foreground w-20">Cash Discount:</span>
-                    <span className="font-medium">
-                      {s.cash_discount_type === 'percentage' 
-                        ? `${s.cash_discount}%` 
-                        : `₹${s.cash_discount.toFixed(2)}`}
-                    </span>
-                  </div>
-                )}
-              </div>
-              <div className="mt-3 flex flex-wrap items-start justify-between gap-2">
-                {isSaudaInUse(s.id) ? (() => {
-                  const usageDisp = getSaudaUsageDisplay(s.id);
-                  const parts: string[] = [];
-                  if (usageDisp.counts.paymentAdvices > 0) {
-                    parts.push(`${usageDisp.counts.paymentAdvices} payment advice${usageDisp.counts.paymentAdvices !== 1 ? 's' : ''}`);
-                  }
-                  if (usageDisp.counts.isps > 0) {
-                    parts.push(`${usageDisp.counts.isps} ISP${usageDisp.counts.isps !== 1 ? 's' : ''}`);
-                  }
-                  if (usageDisp.counts.kaantas > 0) {
-                    parts.push(`${usageDisp.counts.kaantas} kaanta${usageDisp.counts.kaantas !== 1 ? 's' : ''}`);
-                  }
-                  return (
-                    <div className="min-w-0 flex-1 space-y-1 text-xs text-amber-600 dark:text-amber-400">
-                      <div className="flex flex-wrap items-center justify-between gap-1.5">
-                        <span>Used in {parts.join(', ')}</span>
-                        <button
-                          type="button"
-                          onClick={() => setUsageDetailSaudaId(s.id)}
-                          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-amber-500/35 bg-amber-500/5 text-amber-800 hover:bg-amber-500/15 dark:text-amber-200"
-                          title="Full usage (payment advices, ISPs, kaanta IDs)"
-                          aria-label="Full usage details"
-                        >
-                          <List className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                      {usageDisp.paymentAdviceLabels.map((label, i) => (
-                        <div
-                          key={`m-pa-${i}-${label}`}
-                          className="font-mono text-[10px] text-amber-700/90 dark:text-amber-300/85 break-all"
-                          title={label}
-                        >
-                          PA: {label}
-                        </div>
-                      ))}
-                      {usageDisp.ispRows.map((isp) => (
-                        <div
-                          key={isp.id}
-                          className="text-[10px] text-amber-700/90 dark:text-amber-300/85 break-all"
-                        >
-                          ISP: {isp.slipNumber}
-                        </div>
-                      ))}
-                      {usageDisp.kaantaRows.map((k, idx) => (
-                        <div
-                          key={k.rowId}
-                          className="text-[10px] text-amber-700/90 dark:text-amber-300/85"
-                        >
-                          {usageDisp.kaantaRows.length > 1 ? `Kaanta ${idx + 1}` : 'Kaanta'}
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })() : <div className="flex-1" />}
-                <div className="flex shrink-0 items-center justify-end gap-1">
-                <button
-                  onClick={() => {
-                    setPreviewSauda(s);
-                    setPreviewSerial(serial ?? null);
-                    setPreviewOpen(true);
-                  }}
-                  className="p-1.5 text-primary hover:bg-primary/10 rounded-md transition-colors"
-                  title="View Preview"
-                >
-                  <Eye className="h-4 w-4" />
-                </button>
-                
-                {/* Notification buttons */}
-                <button
-                  onClick={() => {
-                    setSelectedSaudaForNotification(s.id);
-                    setEmailModalOpen(true);
-                  }}
-                  className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
-                  title="Send Email"
-                >
-                  <Mail className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedSaudaForNotification(s.id);
-                    setWhatsappModalOpen(true);
-                  }}
-                  className="p-1.5 text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-md transition-colors"
-                  title="Send WhatsApp"
-                >
-                  <MessageCircle className="h-4 w-4" />
-                </button>
-                
-                {/* Custom dropdown with view options */}
-                <DropdownMenu.Root>
-                  <DropdownMenu.Trigger asChild>
-                    <button className="rounded-lg p-2 hover:bg-muted transition-colors">
-                      <MoreVertical className="h-4 w-4" />
-                    </button>
-                  </DropdownMenu.Trigger>
-                  <DropdownMenu.Portal>
-                    <DropdownMenu.Content
-                      className="glass min-w-[10rem] rounded-xl p-1 shadow-lg z-50"
-                      sideOffset={8}
-                      align="end"
-                    >
-                      {/* View Images Section - Always visible */}
-                      <DropdownMenu.Label className="px-3 py-1.5 text-xs text-muted-foreground font-medium">
-                        View Images
-                      </DropdownMenu.Label>
-                      <DropdownMenu.Item
-                        className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
-                          s.cooked_rice_image_url 
-                            ? 'hover:bg-accent hover:text-accent-foreground text-amber-600' 
-                            : 'text-muted-foreground/50 cursor-not-allowed'
-                        }`}
-                        disabled={!s.cooked_rice_image_url}
-                        onSelect={() => s.cooked_rice_image_url && handleViewDocuments([{ url: s.cooked_rice_image_url, label: 'Cooked Rice Sample', type: 'image' }])}
-                      >
-                        <UtensilsCrossed className="h-4 w-4" /> Cooked Rice
-                        {!s.cooked_rice_image_url && <span className="ml-auto text-[10px]">N/A</span>}
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item
-                        className={`flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm ${
-                          s.uncooked_rice_image_url 
-                            ? 'hover:bg-accent hover:text-accent-foreground text-amber-600' 
-                            : 'text-muted-foreground/50 cursor-not-allowed'
-                        }`}
-                        disabled={!s.uncooked_rice_image_url}
-                        onSelect={() => s.uncooked_rice_image_url && handleViewDocuments([{ url: s.uncooked_rice_image_url, label: 'Uncooked Rice Sample', type: 'image' }])}
-                      >
-                        <Wheat className="h-4 w-4" /> Uncooked Rice
-                        {!s.uncooked_rice_image_url && <span className="ml-auto text-[10px]">N/A</span>}
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Separator className="my-1 h-px bg-border" />
-                      
-                      {/* Edit/Delete Actions */}
-                      <DropdownMenu.Item
-                        className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
-                        onSelect={() => {
-                          setSelectedSaudaId(s.id);
-                          setEditModalOpen(true);
-                        }}
-                      >
-                        <Edit2 className="h-4 w-4" /> Edit
-                      </DropdownMenu.Item>
-                      {s.status !== 'cancelled' &&
-                        s.status !== 'completed' &&
-                        (s.completion_percentage === null || s.completion_percentage < 100) && (
-                          <DropdownMenu.Item
-                            className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/30"
-                            onSelect={() => {
-                              setSaudaToComplete(s);
-                              setCompleteDialogOpen(true);
-                            }}
-                          >
-                            <CheckCircle2 className="h-4 w-4" /> Complete Sauda
                           </DropdownMenu.Item>
-                        )}
-                      {s.status !== 'cancelled' && (
-                        <DropdownMenu.Item
-                          className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950/30"
-                          onSelect={() => {
-                            setSaudaToCancel(s);
-                            setCancelDialogOpen(true);
-                          }}
-                        >
-                          <Ban className="h-4 w-4" /> Cancel Sauda
-                        </DropdownMenu.Item>
-                      )}
-                      <DropdownMenu.Item
-                        className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-                        onSelect={async () => {
-                          if (isSaudaInUse(s.id)) {
-                            const usage = await getSaudaUsageDetails(s.id);
-                            const parts: string[] = [];
-                            
-                            if (usage.paymentAdvices.length > 0) {
-                              parts.push(`Payment Advices (${usage.paymentAdvices.length}):\n${usage.paymentAdvices.map((pa, i) => `${i + 1}. ${pa}`).join('\n')}`);
-                            }
-                            if (usage.isps.length > 0) {
-                              parts.push(`Inward Slip Passes (${usage.isps.length}):\n${usage.isps.map((isp, i) => `${i + 1}. ${isp}`).join('\n')}`);
-                            }
-                            if (usage.kaantas.length > 0) {
-                              parts.push(`Kaantas (${usage.kaantas.length}):\n${usage.kaantas.map((k, i) => `${i + 1}. ${k}`).join('\n')}`);
-                            }
-                            
-                            setAlertType('warning');
-                            setAlertTitle('Cannot Delete Sauda');
-                            setAlertMessage(`This sauda is currently used in:\n\n${parts.join('\n\n')}\n\nPlease remove it from all related records before deleting.`);
-                            setAlertOpen(true);
-                            return;
-                          }
-                          setSelectedSauda(s);
-                          setDeleteDialogOpen(true);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" /> Delete
-                      </DropdownMenu.Item>
-                    </DropdownMenu.Content>
-                  </DropdownMenu.Portal>
-                </DropdownMenu.Root>
-                </div>
-              </div>
-            </article>
-          );
+                          <DropdownMenu.Item
+                            className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+                            onSelect={() => {
+                              setSelectedSaudaId(s.id);
+                              setEditModalOpen(true);
+                            }}
+                          >
+                            <Edit2 className="h-4 w-4" /> Edit
+                          </DropdownMenu.Item>
+                          {s.status !== 'cancelled' &&
+                            s.status !== 'completed' &&
+                            (s.completion_percentage === null || s.completion_percentage < 100) && (
+                              <DropdownMenu.Item
+                                className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/30"
+                                onSelect={() => {
+                                  setSaudaToComplete(s);
+                                  setCompleteDialogOpen(true);
+                                }}
+                              >
+                                <CheckCircle2 className="h-4 w-4" /> Complete Sauda
+                              </DropdownMenu.Item>
+                            )}
+                          {s.status !== 'cancelled' && (
+                            <DropdownMenu.Item
+                              className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950/30"
+                              onSelect={() => {
+                                setSaudaToCancel(s);
+                                setCancelDialogOpen(true);
+                              }}
+                            >
+                              <Ban className="h-4 w-4" /> Cancel Sauda
+                            </DropdownMenu.Item>
+                          )}
+                          <DropdownMenu.Item
+                            className="flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                            onSelect={async () => {
+                              if (isSaudaInUse(s.id)) {
+                                const usage = await getSaudaUsageDetails(s.id);
+                                const parts: string[] = [];
+                                if (usage.paymentAdvices.length > 0) {
+                                  parts.push(`Payment Advices (${usage.paymentAdvices.length}):\n${usage.paymentAdvices.map((pa, i) => `${i + 1}. ${pa}`).join('\n')}`);
+                                }
+                                if (usage.isps.length > 0) {
+                                  parts.push(`Inward Slip Passes (${usage.isps.length}):\n${usage.isps.map((isp, i) => `${i + 1}. ${isp}`).join('\n')}`);
+                                }
+                                if (usage.kaantas.length > 0) {
+                                  parts.push(`Kaantas (${usage.kaantas.length}):\n${usage.kaantas.map((k, i) => `${i + 1}. ${k}`).join('\n')}`);
+                                }
+                                setAlertType('warning');
+                                setAlertTitle('Cannot Delete Sauda');
+                                setAlertMessage(`This sauda is currently used in:\n\n${parts.join('\n\n')}\n\nPlease remove it from all related records before deleting.`);
+                                setAlertOpen(true);
+                                return;
+                              }
+                              setSelectedSauda(s);
+                              setDeleteDialogOpen(true);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" /> Delete
+                          </DropdownMenu.Item>
+                        </DropdownMenu.Content>
+                      </DropdownMenu.Portal>
+                    </DropdownMenu.Root>
+                  </>
+                }
+              />
+            );
           })}
         </div>
-        </>
       )}
 
       <Dialog.Root
@@ -985,9 +727,9 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
           <Dialog.Content className="fixed left-1/2 top-1/2 z-[70] flex max-h-[min(85vh,40rem)] w-[min(92vw,28rem)] flex-col -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-background p-4 shadow-2xl">
             <div className="flex items-start justify-between gap-2 border-b border-border pb-3">
               <div className="min-w-0 pr-2">
-                <Dialog.Title className="text-base font-semibold">Linked usage</Dialog.Title>
+                <Dialog.Title className="text-base font-semibold">Linked records</Dialog.Title>
                 <Dialog.Description className="mt-1 text-xs text-muted-foreground">
-                  Full payment advice and kaanta identifiers. ISP slip numbers only (no ISP UUIDs).
+                  Inward slip passes, payment advices, and kaantas linked to this sauda.
                 </Dialog.Description>
                 {usageDetailSaudaId && (() => {
                   const sd = saudas.find((x) => x.id === usageDetailSaudaId);
@@ -1014,8 +756,17 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                 (() => {
                   const u = getSaudaUsageDisplay(usageDetailSaudaId);
                   const sid = usageDetailSaudaId;
+                  const hasAny =
+                    u.paymentAdviceLabels.length > 0 ||
+                    u.ispRows.length > 0 ||
+                    u.kaantaRows.length > 0;
                   return (
                     <div className="space-y-6 text-sm">
+                      {!hasAny && (
+                        <p className="rounded-lg border border-dashed border-border bg-muted/20 px-3 py-6 text-center text-sm text-muted-foreground">
+                          This sauda is not linked to any inward slip pass, payment advice, or kaanta yet.
+                        </p>
+                      )}
                       {u.paymentAdviceLabels.length > 0 && (
                         <section>
                           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -1071,9 +822,9 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                             {u.kaantaRows.map((k, idx) => (
                               <li
                                 key={k.rowId}
-                                className="space-y-2 rounded-md border border-border/60 bg-muted/20 p-2.5"
+                                className="rounded-md border border-border/60 bg-muted/20 p-2.5"
                               >
-                                <div className="text-[10px] font-medium text-muted-foreground">
+                                <div className="mb-1.5 text-[10px] font-medium text-muted-foreground">
                                   {u.kaantaRows.length > 1 ? `Kaanta ${idx + 1}` : 'Kaanta'}
                                 </div>
                                 <div className="flex items-start justify-between gap-2 font-mono text-[11px] leading-relaxed break-all">
@@ -1088,24 +839,6 @@ export function SaudasTable({ onRefreshRef }: SaudasTableProps = {}) {
                                     onClick={() => void copyUsageSnippet(`${sid}-kid-${k.rowId}`, k.kaantaId)}
                                   >
                                     {copiedUsageToken === `${sid}-kid-${k.rowId}` ? (
-                                      <Check className="h-3.5 w-3.5 text-green-600" />
-                                    ) : (
-                                      <Copy className="h-3.5 w-3.5" />
-                                    )}
-                                  </button>
-                                </div>
-                                <div className="flex items-start justify-between gap-2 font-mono text-[11px] leading-relaxed break-all">
-                                  <span>
-                                    <span className="text-muted-foreground">Row ID: </span>
-                                    {k.rowId}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    className="shrink-0 rounded p-1 text-primary hover:bg-primary/10"
-                                    aria-label="Copy row UUID"
-                                    onClick={() => void copyUsageSnippet(`${sid}-rid-${k.rowId}`, k.rowId)}
-                                  >
-                                    {copiedUsageToken === `${sid}-rid-${k.rowId}` ? (
                                       <Check className="h-3.5 w-3.5 text-green-600" />
                                     ) : (
                                       <Copy className="h-3.5 w-3.5" />

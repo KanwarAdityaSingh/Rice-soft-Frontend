@@ -8,9 +8,12 @@ import { vendorsAPI } from '../../../services/vendors.api';
 import { useVendors } from '../../../hooks/useVendors';
 import { useBrokers } from '../../../hooks/useBrokers';
 import { getRiceTypeLabel, getRiceLengthLabel } from '../../../utils/riceType';
+import { getSaudaRiceCategoryLabel } from '../../../utils/saudaDisplay';
+import { buildSaudaPdfViewModel, prepareSaudaPdfDownload } from '../../../utils/saudaPdfData';
+import { downloadSaudaPurchaseOrderPdf } from '../../../utils/saudaPdfPrint';
+import { formatSaudaAvgGrainLengthDisplay, formatSaudaWhitenessDisplay } from '../../../utils/saudaParameters';
 import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
 import { SaudaWorkflowStatusBadge } from './SaudaWorkflowStatusBadge';
-import { formatSaudaIdShort } from '../../../utils/saudaSerial';
 import { DocumentViewerModal, type DocumentInfo } from '../../shared/DocumentViewerModal';
 import type { Sauda, RiceCode, RiceType } from '../../../types/entities';
 
@@ -100,131 +103,27 @@ export function SaudaPreviewDialog({ open, onOpenChange, sauda, serialNumber }: 
     setDocumentViewerOpen(true);
   };
 
-  const handleDownloadPDF = () => {
-    if (!previewRef.current) return;
-    
-    try {
-      const printContent = previewRef.current.innerHTML;
-      const printWindow = window.open('', '_blank');
-      if (!printWindow) {
-        alert('Please allow popups to download the PDF');
-        return;
-      }
+  const handleDownloadPDF = async () => {
+    if (!sauda || !defaultRecipient) return;
 
-      printWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <title>Sauda Details - ${serialNumber != null ? `S. No. ${serialNumber}` : sauda?.id ?? ''}</title>
-            <meta charset="UTF-8">
-            <style>
-              * { margin: 0; padding: 0; box-sizing: border-box; }
-              body { 
-                font-family: 'Arial', 'Helvetica', sans-serif; 
-                padding: 30px; 
-                background: white; 
-                color: black; 
-                font-size: 14px;
-                line-height: 1.6;
-              }
-              .preview-container { 
-                max-width: 700px; 
-                margin: 0 auto; 
-                border: 2px solid #333; 
-                padding: 25px;
-                background: white;
-              }
-              .header { 
-                text-align: center; 
-                border-bottom: 2px dashed #333; 
-                padding-bottom: 15px; 
-                margin-bottom: 20px; 
-              }
-              .header h2 { font-size: 22px; margin-bottom: 8px; font-weight: bold; }
-              .header h3 { font-size: 18px; margin-bottom: 8px; font-weight: bold; }
-              .header p { font-size: 12px; color: #666; margin: 4px 0; }
-              .section { margin-bottom: 18px; }
-              .section-title { 
-                font-weight: bold; 
-                border-bottom: 1px solid #333; 
-                padding-bottom: 8px; 
-                margin-bottom: 12px; 
-                font-size: 16px;
-              }
-              .row { 
-                display: flex; 
-                justify-content: space-between; 
-                padding: 8px 0; 
-              }
-              .label { color: #666; font-size: 13px; }
-              .value { font-weight: bold; text-align: right; font-size: 14px; }
-              .highlight { 
-                background: #f5f5f5; 
-                padding: 15px; 
-                border-radius: 4px; 
-                text-align: center; 
-                margin-top: 20px; 
-              }
-              .highlight .amount { font-size: 24px; font-weight: bold; }
-              .footer { 
-                text-align: center; 
-                border-top: 2px dashed #333; 
-                padding-top: 15px; 
-                margin-top: 20px; 
-                font-size: 11px; 
-                color: #666; 
-              }
-              @media print { 
-                body { padding: 15px; } 
-                .preview-container { border: none; padding: 20px; }
-                @page { margin: 1cm; }
-              }
-            </style>
-          </head>
-          <body>
-            <div class="preview-container">${printContent}</div>
-            <script>
-              (function() {
-                var printWindow = window;
-                var closed = false;
-                
-                function closeWindow() {
-                  if (!closed && printWindow && !printWindow.closed) {
-                    closed = true;
-                    try {
-                      printWindow.close();
-                    } catch (e) {
-                      // Ignore errors when closing
-                    }
-                  }
-                }
-                
-                // Use onafterprint event if available (more reliable)
-                if (printWindow.matchMedia) {
-                  var mediaQueryList = printWindow.matchMedia('print');
-                  mediaQueryList.addEventListener('change', function(mql) {
-                    if (!mql.matches) {
-                      // Print dialog was closed
-                      setTimeout(closeWindow, 100);
-                    }
-                  });
-                }
-                
-                // Fallback: use onafterprint event
-                printWindow.onafterprint = function() {
-                  setTimeout(closeWindow, 100);
-                };
-                
-                // Trigger print after a short delay
-                setTimeout(function() {
-                  printWindow.print();
-                }, 250);
-              })();
-            </script>
-          </body>
-        </html>
-      `);
-      printWindow.document.close();
+    try {
+      const { pdfData, filename } = await prepareSaudaPdfDownload(
+        {
+          sauda,
+          serialNumber,
+          vendors,
+          brokers,
+          riceCodes,
+          riceTypes,
+          company: {
+            name: defaultRecipient.name,
+            address: defaultRecipient.address,
+            llpin: defaultRecipient.llpin,
+          },
+        },
+        { sauda, serialNumber, vendors },
+      );
+      await downloadSaudaPurchaseOrderPdf(pdfData, filename);
     } catch (error) {
       console.error('Error generating PDF:', error);
       alert('Failed to generate PDF. Please try again.');
@@ -284,16 +183,16 @@ export function SaudaPreviewDialog({ open, onOpenChange, sauda, serialNumber }: 
                     <span className="font-semibold tabular-nums">{serialNumber}</span>
                   </div>
                 )}
-                <div className="mb-2 text-left">
-                  <span className="text-muted-foreground">ID: </span>
-                  <span className="font-mono text-[9px] tabular-nums tracking-tight" title={sauda.id}>
-                    {formatSaudaIdShort(sauda.id)}
-                  </span>
-                </div>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Sauda Type:</span>
                     <span className="font-semibold">{sauda.sauda_type === 'exgodown' ? 'Ex Godown' : 'FOR'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Category:</span>
+                    <span className="font-semibold">
+                      {getSaudaRiceCategoryLabel(sauda, riceCodes) || '—'}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Rice Code:</span>
@@ -307,6 +206,18 @@ export function SaudaPreviewDialog({ open, onOpenChange, sauda, serialNumber }: 
                     <span className="text-muted-foreground">Rice Length:</span>
                     <span className="font-semibold">
                       {getRiceLengthLabel(sauda.rice_length, riceLengths) || '—'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Whiteness (W):</span>
+                    <span className="font-semibold">
+                      {formatSaudaWhitenessDisplay(sauda.parameters?.whiteness)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Avg Grain Length (mm):</span>
+                    <span className="font-semibold">
+                      {formatSaudaAvgGrainLengthDisplay(sauda.parameters?.average_grain_length)}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -332,6 +243,18 @@ export function SaudaPreviewDialog({ open, onOpenChange, sauda, serialNumber }: 
                     <span className="text-muted-foreground">Expected Quantity:</span>
                     <span className="font-semibold">{sauda.quantity?.toFixed(2) || '-'} kg</span>
                   </div>
+                  {sauda.no_of_bags != null && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">No. of Bags:</span>
+                      <span className="font-semibold">{sauda.no_of_bags}</span>
+                    </div>
+                  )}
+                  {sauda.bag_weight != null && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Bag Weight:</span>
+                      <span className="font-semibold">{sauda.bag_weight.toFixed(2)} kg</span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Received Weight:</span>
                     <span className="font-semibold">{sauda.received_until_now.toFixed(2)} kg</span>

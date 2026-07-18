@@ -10,9 +10,9 @@ import { useGodowns } from '../../../hooks/useGodowns';
 import type { CreatePackagingRequest, UpdatePackagingRequest, PacketType } from '../../../types/entities';
 import { EMPTY_BAG_GST_PERCENT, HOLDING_CAPACITIES } from '../../../constants/packaging';
 import { PACKAGING_PACKET_TYPE_OPTIONS } from '../../../constants/bagAndPacketTypes';
-import { getPackagingVendorsNewWindowUrl } from '../../../utils/appRoutes';
 import { computeEmptyBagReceiptSnapshot, packagingHasAnyEmptyBagSnapshot } from '../../../utils/empty-bag-cost';
 import { EmptyBagSnapshotDisplay } from './EmptyBagSnapshotDisplay';
+import { PackagingVendorFormModal } from '../packaging-vendors/PackagingVendorFormModal';
 import { UploadedDocumentPreview } from '../../shared/UploadedDocumentPreview';
 
 interface PackagingFormModalProps {
@@ -95,6 +95,7 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
   const [packagingBillFile, setPackagingBillFile] = useState<File | null>(null);
   /** Populated after bill upload on create so preview shows before the modal closes. */
   const [justUploadedPackagingBillUrl, setJustUploadedPackagingBillUrl] = useState<string | null>(null);
+  const [packagingVendorFormOpen, setPackagingVendorFormOpen] = useState(false);
   useEffect(() => {
     if (packagingId && open) {
       const pkg = packaging.find((p) => p.id === packagingId);
@@ -140,7 +141,7 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
     }
   }, [packagingId, open, packaging]);
 
-  /** After adding a vendor in another tab, refetch when this window regains focus. */
+  /** Keep packaging vendor list fresh while this modal is open. */
   useEffect(() => {
     if (!open) return;
     const onFocus = () => {
@@ -614,21 +615,12 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
                         <p className={fieldHintClass}>Supplier for this packaging line.</p>
                         <button
                           type="button"
-                          onClick={() =>
-                            window.open(
-                              getPackagingVendorsNewWindowUrl(),
-                              '_blank',
-                              'noopener,noreferrer'
-                            )
-                          }
+                          onClick={() => setPackagingVendorFormOpen(true)}
                           className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl border border-dashed border-primary/40 bg-primary/5 px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
                         >
                           <Plus className="h-4 w-4 shrink-0" />
                           Add packaging vendor
                         </button>
-                        <p className="text-[11px] text-muted-foreground/90">
-                          Opens Packaging Vendors in a new tab. Add a vendor there if needed, then return here and select it (list refreshes when this tab is focused).
-                        </p>
                       </div>
                       <div>
                         <label className="mb-1.5 block text-sm font-medium text-foreground">Ordered weight (kg)</label>
@@ -841,6 +833,20 @@ export function PackagingFormModal({ open, onOpenChange, packagingId }: Packagin
         type={alertType}
         title={alertTitle}
         message={alertMessage}
+      />
+
+      <PackagingVendorFormModal
+        open={packagingVendorFormOpen}
+        onOpenChange={setPackagingVendorFormOpen}
+        onVendorCreated={(vendor) => {
+          void refetchPackagingVendors();
+          setFormData((prev) => ({ ...prev, packaging_vendor_id: vendor.id }));
+          setErrors((prev) => {
+            const next = { ...prev };
+            delete next.packaging_vendor_id;
+            return next;
+          });
+        }}
       />
     </>
   );

@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { SearchBar } from '../../admin/shared/SearchBar';
+import { FilterDropdown } from '../../admin/shared/FilterDropdown';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { EmptyState } from '../../admin/shared/EmptyState';
 import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
@@ -16,6 +17,11 @@ import { PaymentAdviceFormModal } from './PaymentAdviceFormModal';
 import { PaymentAdvicePreviewDialog } from './PaymentAdvicePreviewDialog';
 import { PaymentAdviceEmailModal } from './PaymentAdviceEmailModal';
 import { PaymentAdviceWhatsAppModal } from './PaymentAdviceWhatsAppModal';
+import {
+  formatFinancialYearLabel,
+  getCurrentFinancialYearKey,
+  resolvePaymentAdviceFinancialYearKey,
+} from '../../../utils/financialYear';
 import type { PaymentAdvice, RiceCode, RiceType, Sauda, InwardSlipPass } from '../../../types/entities';
 
 export function PaymentAdvicesTable() {
@@ -29,6 +35,9 @@ export function PaymentAdvicesTable() {
   const [riceTypes, setRiceTypes] = useState<RiceType[]>([]);
   
   const [searchQuery, setSearchQuery] = useState('');
+  const [financialYearFilter, setFinancialYearFilter] = useState<string | undefined>(
+    () => getCurrentFinancialYearKey(),
+  );
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedPA, setSelectedPA] = useState<PaymentAdvice | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -47,8 +56,7 @@ export function PaymentAdvicesTable() {
   const [selectedPAForNotification, setSelectedPAForNotification] = useState<PaymentAdvice | null>(null);
 
   const handleViewPaymentSlip = (pa: PaymentAdvice) => {
-    // Handle both possible field names from backend
-    const slipUrl = (pa as any).payment_slip_image_url || pa.payment_slip_url;
+    const slipUrl = pa.payment_slip_image_url || pa.payment_slip_url;
     if (slipUrl) {
       const isPdf = slipUrl.toLowerCase().includes('.pdf');
       setViewerDocument({ 
@@ -61,7 +69,7 @@ export function PaymentAdvicesTable() {
   };
 
   const hasPaymentSlip = (pa: PaymentAdvice): boolean => {
-    return !!((pa as any).payment_slip_image_url || pa.payment_slip_url);
+    return !!(pa.payment_slip_image_url || pa.payment_slip_url);
   };
 
   useEffect(() => {
@@ -124,23 +132,55 @@ export function PaymentAdvicesTable() {
           icon: FileText
         };
       }
-      return { type: 'ISP', label: 'Unknown ISP', icon: FileText };
+      return {
+        type: 'ISP',
+        label: pa.bill_number ? `Bill ${pa.bill_number}` : pa.transaction_id || 'ISP',
+        icon: FileText,
+      };
     }
     return { type: '-', label: 'Not linked', icon: CreditCard };
   };
 
+  const saudaDateById = useMemo(
+    () => new Map(saudas.map((s) => [s.id, s.sauda_date])),
+    [saudas],
+  );
+
+  const ispDateById = useMemo(
+    () => new Map(inwardSlipPasses.map((isp) => [isp.id, isp.date])),
+    [inwardSlipPasses],
+  );
+
+  const financialYearOptions = useMemo(() => {
+    const keys = new Set<string>();
+    keys.add(getCurrentFinancialYearKey());
+    for (const pa of paymentAdvices) {
+      const key = resolvePaymentAdviceFinancialYearKey(pa, saudaDateById, ispDateById);
+      if (key) keys.add(key);
+    }
+    return [...keys]
+      .sort((a, b) => b.localeCompare(a))
+      .map((value) => ({ value, label: formatFinancialYearLabel(value) }));
+  }, [paymentAdvices, saudaDateById, ispDateById]);
+
   const filtered = useMemo(() => {
     return paymentAdvices.filter((pa) => {
+      if (financialYearFilter) {
+        const fyKey = resolvePaymentAdviceFinancialYearKey(pa, saudaDateById, ispDateById);
+        if (fyKey !== financialYearFilter) return false;
+      }
+
       const q = searchQuery.toLowerCase();
       const linkInfo = getLinkDisplay(pa);
       const matchesSearch =
         pa.transaction_id?.toLowerCase().includes(q) ||
+        pa.bill_number?.toLowerCase().includes(q) ||
         pa.id.toLowerCase().includes(q) ||
         linkInfo.label.toLowerCase().includes(q);
 
       return matchesSearch;
     });
-  }, [paymentAdvices, searchQuery, saudas, inwardSlipPasses, riceCodes, riceTypes]);
+  }, [paymentAdvices, financialYearFilter, searchQuery, saudas, inwardSlipPasses, riceCodes, riceTypes, saudaDateById, ispDateById]);
 
   return (
     <div>
@@ -148,7 +188,13 @@ export function PaymentAdvicesTable() {
         <div className="flex-1 min-w-0">
           <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search by transaction ID, sauda, or ISP..." />
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-end justify-end sm:justify-start">
+          <FilterDropdown
+            label="Financial year"
+            options={financialYearOptions}
+            value={financialYearFilter}
+            onChange={setFinancialYearFilter}
+          />
           <button
             onClick={() => setCreateOpen(true)}
             className="btn-primary rounded-xl inline-flex items-center justify-center gap-2 px-4 py-2"
@@ -161,7 +207,15 @@ export function PaymentAdvicesTable() {
       {loading ? (
         <div className="flex justify-center py-20"><LoadingSpinner /></div>
       ) : filtered.length === 0 ? (
-        <EmptyState icon={CreditCard} title="No payment advices found" description="Create your first payment advice or adjust filters." />
+        <EmptyState
+          icon={CreditCard}
+          title="No payment advices found"
+          description={
+            financialYearFilter
+              ? `No payment advices found for ${financialYearOptions.find((o) => o.value === financialYearFilter)?.label ?? financialYearFilter}. Try another financial year or adjust filters.`
+              : 'Create your first payment advice or adjust filters.'
+          }
+        />
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full">

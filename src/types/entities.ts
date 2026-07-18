@@ -1264,7 +1264,6 @@ export interface RiceType {
 /** Rice length catalog row from GET /riceLengths/getAllRiceLengths */
 export interface RiceLengthRecord {
   id: string;
-  code: string;
   name: string;
   is_active: boolean;
   created_at?: string;
@@ -1310,15 +1309,27 @@ export type BrokerCommissionType = 'rupees' | 'percentage' | 'weight';
 // Sauda Types — `rice_length` matches backend enum: dubar | tibar | wand
 export type RiceLength = 'dubar' | 'tibar' | 'wand';
 
+/** Optional quality specs on a purchase sauda (whiteness / avg grain length only). */
+export interface SaudaParameters {
+  id?: string;
+  whiteness?: string | null;
+  average_grain_length?: string | null;
+}
+
+export type SaudaParametersInput = Pick<SaudaParameters, 'whiteness' | 'average_grain_length'>;
+
 export interface Sauda {
   id: string;
+  /** Short display id from API e.g. "E805" */
+  display_id?: string | null;
   sauda_type: 'exgodown' | 'for';
   rice_category?: RiceCategory | null;
   rice_code_id?: string | null;
+  rice_code_name?: string | null;
+  rice_code?: { rice_code_id?: string; rice_code_name?: string | null } | null;
   rice_type?: string | null;
   /** FK to rice_lengths.id */
   rice_length_id?: string | null;
-  rice_length_code?: string | null;
   rice_length_name?: string | null;
   /** @deprecated use rice_length_id — kept for legacy responses */
   rice_length?: RiceLength | null;
@@ -1329,10 +1340,16 @@ export interface Sauda {
   cash_discount?: number | null;
   cash_discount_type?: CashDiscountType;
   quantity?: number | null;
+  no_of_bags?: number | null;
+  bag_weight?: number | null;
   received_until_now: number;
   completion_percentage: number | null;
   estimated_delivery_time?: number | null;
   purchaser_id: string;
+  purchaser_name?: string | null;
+  purchaser?: { id: string; business_name: string } | null;
+  broker_name?: string | null;
+  broker?: { id: string; business_name: string } | null;
   cooked_rice_image_url?: string | null;
   uncooked_rice_image_url?: string | null;
   status: 'draft' | 'active' | 'completed' | 'cancelled';
@@ -1341,6 +1358,7 @@ export interface Sauda {
   sauda_date?: string | null; // Date of the sauda in YYYY-MM-DD format
   created_at: string;
   updated_at: string;
+  parameters?: SaudaParameters | null;
 }
 
 export interface CreateSaudaRequest {
@@ -1356,6 +1374,8 @@ export interface CreateSaudaRequest {
   cash_discount?: number | null;
   cash_discount_type?: CashDiscountType;
   quantity?: number | null;
+  no_of_bags?: number | null;
+  bag_weight?: number | null;
   estimated_delivery_time?: number | null;
   cooked_rice_image_url?: string | null;
   uncooked_rice_image_url?: string | null;
@@ -1366,6 +1386,7 @@ export interface CreateSaudaRequest {
   rice_length_id?: string | null;
   /** @deprecated use rice_length_id */
   rice_length?: RiceLength | null;
+  parameters?: SaudaParametersInput | null;
 }
 
 export interface UpdateSaudaRequest {
@@ -1381,6 +1402,8 @@ export interface UpdateSaudaRequest {
   cash_discount?: number | null;
   cash_discount_type?: CashDiscountType;
   quantity?: number | null;
+  no_of_bags?: number | null;
+  bag_weight?: number | null;
   estimated_delivery_time?: number | null;
   cooked_rice_image_url?: string | null;
   uncooked_rice_image_url?: string | null;
@@ -1391,6 +1414,7 @@ export interface UpdateSaudaRequest {
   rice_length_id?: string | null;
   /** @deprecated use rice_length_id */
   rice_length?: RiceLength | null;
+  parameters?: SaudaParametersInput | null;
 }
 
 export interface SaudaFilters {
@@ -1851,20 +1875,23 @@ export interface PaymentAdvice {
   sauda_id?: string | null;
   // Link to an ISP for payment (covers all saudas in that ISP)
   inward_slip_pass_id?: string | null;
-  payer_id: string;
-  recipient_id: string;
+  payer_id?: string | null;
+  recipient_id?: string | null;
   amount: number;
   net_payable: number;
   date_of_payment: string;
   status: 'pending' | 'completed' | 'failed';
   transaction_id?: string | null;
   payment_slip_url?: string | null;
+  payment_slip_image_url?: string | null;
   bill_number?: string | null; // Purchase bill number from ISP
   bill_weight?: number | null; // Sum of said_sent_weight from kaantas
   kanta_weight?: number | null; // Sum of kaanta_weight from kaantas
   dana_deduction?: number | null; // 300g per Qtl of said_sent; whole kg (ceil)
   final_weight?: number | null; // kaanta_weight - dana_deduction
   charges: Charge[];
+  financial_year?: string | null;
+  calculation_policy_id?: 'legacy_fy' | 'current_fy' | string | null;
   created_at: string;
   updated_at: string;
 }
@@ -2033,6 +2060,8 @@ export interface Product {
   name: string;
   description: string | null;
   brand: string | null;
+  /** Optional HSN code from GET /products/hsn-codes (e.g. "1006") */
+  hsn_code?: string | null;
   rice_type: string | null;
   /** Rates by holding capacity (kg). Returned by list/get product APIs. */
   rates?: ProductRateInput[];
@@ -2044,6 +2073,7 @@ export interface CreateProductRequest {
   name: string;
   description?: string;
   brand?: string;
+  hsn_code?: string | null;
   rice_type?: string | null;
 }
 
@@ -2051,6 +2081,7 @@ export interface UpdateProductRequest {
   name?: string;
   description?: string;
   brand?: string;
+  hsn_code?: string | null;
   rice_type?: string | null;
 }
 
@@ -2060,6 +2091,8 @@ export interface ProductRate {
   product_id: string;
   holding_capacity: number;
   rate: number;
+  /** YYYY-MM-DD — date this current rate became effective (migration 175) */
+  effective_date?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -2070,6 +2103,8 @@ export interface ProductRateInput {
 }
 
 export interface SetProductRatesRequest {
+  /** YYYY-MM-DD — required for the batch being saved */
+  effective_date: string;
   rates: ProductRateInput[];
 }
 
@@ -2078,6 +2113,9 @@ export interface ProductRateHistoryPoint {
   id: string;
   holding_capacity: number;
   rate: number;
+  /** YYYY-MM-DD — business date for this history line (X-axis / sort key) */
+  effective_date: string;
+  /** When the row was saved */
   created_at: string;
   created_by_full_name?: string | null;
 }

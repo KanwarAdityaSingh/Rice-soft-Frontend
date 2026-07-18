@@ -1,11 +1,11 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useEffect, useState } from 'react';
-import { X, Truck, Check, RefreshCw, ChevronDown, ExternalLink } from 'lucide-react';
+import { X, Truck, Check, RefreshCw, ChevronDown, Plus } from 'lucide-react';
 import { vehiclesAPI } from '../../../services/vehicles.api';
 import { useTransporters } from '../../../hooks/useTransporters';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { AlertDialog } from '../../shared/AlertDialog';
-import { getDirectoryTransportersPagePath } from '../../../utils/appRoutes';
+import { TransporterFormModal } from '../transporters/TransporterFormModal';
 import { getUserFacingApiErrorMessage } from '../../../utils/errorHandler';
 
 interface VehicleLinkTransportersDialogProps {
@@ -28,6 +28,7 @@ export function VehicleLinkTransportersDialog({
   const [saving, setSaving] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [transporterFormOpen, setTransporterFormOpen] = useState(false);
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
 
@@ -125,12 +126,10 @@ export function VehicleLinkTransportersDialog({
                       <div className="flex items-center gap-1.5 shrink-0">
                         <button
                           type="button"
-                          onClick={() =>
-                            window.open(getDirectoryTransportersPagePath({ create: true }), '_blank', 'noopener,noreferrer')
-                          }
+                          onClick={() => setTransporterFormOpen(true)}
                           className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/30 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted/50 transition-colors"
                         >
-                          <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                          <Plus className="h-3.5 w-3.5 shrink-0" />
                           Add Transporter
                         </button>
                         <button
@@ -235,6 +234,15 @@ export function VehicleLinkTransportersDialog({
         type="error"
         title="Error"
         message={alertMessage}
+      />
+
+      <TransporterFormModal
+        open={transporterFormOpen}
+        onOpenChange={(next) => {
+          setTransporterFormOpen(next);
+          if (!next) void refetchTransporters();
+        }}
+        nested
       />
     </>
   );

@@ -45,23 +45,23 @@ export function filterSaudasByRiceType(saudas: Sauda[], riceTypeKey: string): Sa
 export function saudaMatchesRiceLengthKey(
   sauda: Sauda,
   lengthKey: string,
-  lengthCode?: string | null,
+  lengthName?: string | null,
 ): boolean {
   if (isUnsetRiceLengthKey(lengthKey)) {
     return isUnsetRiceLengthKey(riceLengthGroupKey(sauda));
   }
   const key = riceLengthGroupKey(sauda);
   if (key === lengthKey) return true;
-  if (lengthCode && key === lengthCode) return true;
+  if (lengthName && sauda.rice_length_name?.trim() === lengthName.trim()) return true;
   return false;
 }
 
 export function filterSaudasByRiceLength(
   saudas: Sauda[],
   lengthKey: string,
-  lengthCode?: string | null,
+  lengthName?: string | null,
 ): Sauda[] {
-  return saudas.filter((s) => saudaMatchesRiceLengthKey(s, lengthKey, lengthCode));
+  return saudas.filter((s) => saudaMatchesRiceLengthKey(s, lengthKey, lengthName));
 }
 
 export function groupSaudasByRiceType(saudas: Sauda[]): Map<string, Sauda[]> {

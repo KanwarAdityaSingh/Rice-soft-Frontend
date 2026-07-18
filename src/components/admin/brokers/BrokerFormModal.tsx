@@ -72,6 +72,8 @@ interface BrokerFormModalProps {
   onOpenChange: (open: boolean) => void;
   /** When set, loads broker and saves via `POST /brokers/updateBroker/:id` */
   brokerId?: string | null;
+  /** Raise z-index when opened above another modal */
+  nested?: boolean;
 }
 
 const INITIAL_BROKER_FORM: CreateBrokerRequest = {
@@ -282,7 +284,7 @@ const toTitleCase = (str: string | undefined | null): string => {
     .join(' ');
 };
 
-export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerFormModalProps) {
+export function BrokerFormModal({ open, onOpenChange, brokerId = null, nested = false }: BrokerFormModalProps) {
   const { createBroker, updateBroker } = useBrokers();
   const isEdit = Boolean(brokerId);
   const [formData, setFormData] = useState<CreateBrokerRequest>(() => structuredClone(INITIAL_BROKER_FORM));
@@ -938,8 +940,8 @@ export function BrokerFormModal({ open, onOpenChange, brokerId = null }: BrokerF
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
-        <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-full max-w-3xl translate-x-[-50%] translate-y-[-50%]">
+        <Dialog.Overlay className={`fixed inset-0 bg-black/50 backdrop-blur-sm ${nested ? 'z-[100]' : 'z-40'}`} />
+        <Dialog.Content className={`fixed left-[50%] top-[50%] w-full max-w-3xl translate-x-[-50%] translate-y-[-50%] ${nested ? 'z-[110]' : 'z-50'}`}>
           <div className="glass rounded-2xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <Dialog.Title className="text-xl font-semibold">{isEdit ? 'Edit Broker' : 'Create Broker'}</Dialog.Title>

@@ -13,6 +13,7 @@ import { useBrokers } from '../../../hooks/useBrokers';
 import { transportersAPI } from '../../../services/transporters.api';
 import { riceCodesAPI } from '../../../services/riceCodes.api';
 import { riceLengthsAPI } from '../../../services/riceLengths.api';
+import { getRiceCodeNameById } from '../../../utils/saudaDisplay';
 import { getRiceTypeLabel, getRiceLengthLabel } from '../../../utils/riceType';
 import { toRiceLengthLabelOptions } from '../../../utils/riceLengthModule';
 import {
@@ -127,25 +128,28 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
   const [notificationInitialTab, setNotificationInitialTab] = useState<'email' | 'whatsapp'>('email');
   const [createdPaymentAdvice, setCreatedPaymentAdvice] = useState<PaymentAdvice | null>(null);
   const [loadedPaymentAdvice, setLoadedPaymentAdvice] = useState<PaymentAdvice | null>(null);
+  const [riceCodeNameById, setRiceCodeNameById] = useState<Record<string, string>>({});
+  const fetchedRiceCodeIdsRef = useRef(new Set<string>());
 
   // Load reference data
   useEffect(() => {
     const fetchReferenceData = async () => {
-      try {
-        const [codes, types, lengths, trans, recipient] = await Promise.all([
-          riceCodesAPI.getAllRiceCodes(),
-          riceCodesAPI.getRiceTypes(),
-          riceLengthsAPI.getAllRiceLengths(),
-          transportersAPI.getAllTransporters(),
-          vendorsAPI.getDefaultRecipient()
-        ]);
-        setRiceCodes(codes);
-        setRiceTypes(types);
-        setRiceLengths(toRiceLengthLabelOptions(lengths));
-        setTransporters(trans);
-        setDefaultRecipient(recipient);
-      } catch (error) {
-        console.error('Failed to fetch reference data:', error);
+      const results = await Promise.allSettled([
+        riceCodesAPI.getAllRiceCodes(),
+        riceCodesAPI.getRiceTypes(),
+        riceLengthsAPI.getAllRiceLengths(),
+        transportersAPI.getAllTransporters(),
+        vendorsAPI.getDefaultRecipient(),
+      ]);
+      if (results[0].status === 'fulfilled') setRiceCodes(results[0].value);
+      if (results[1].status === 'fulfilled') setRiceTypes(results[1].value);
+      if (results[2].status === 'fulfilled') {
+        setRiceLengths(toRiceLengthLabelOptions(results[2].value));
+      }
+      if (results[3].status === 'fulfilled') setTransporters(results[3].value);
+      if (results[4].status === 'fulfilled') setDefaultRecipient(results[4].value);
+      if (results[0].status === 'rejected') {
+        console.error('Failed to fetch rice codes:', results[0].reason);
       }
     };
     if (open) {
@@ -160,6 +164,56 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
       resetForm();
     }
   }, [open, paymentAdviceId]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+
+    const loadMissingRiceCodeNames = async () => {
+      const ids = new Set<string>();
+      for (const sauda of saudas) {
+        if (sauda.rice_code_id) ids.add(sauda.rice_code_id);
+      }
+      for (const row of preview?.summary?.saudas ?? []) {
+        if (row.sauda_details?.rice_code_id) ids.add(row.sauda_details.rice_code_id);
+      }
+      if (preview?.summary?.sauda_details?.rice_code_id) {
+        ids.add(preview.summary.sauda_details.rice_code_id);
+      }
+
+      const missingIds = [...ids].filter(
+        (id) =>
+          !riceCodes.some((rc) => rc.rice_code_id === id) &&
+          !fetchedRiceCodeIdsRef.current.has(id),
+      );
+      for (const id of missingIds) fetchedRiceCodeIdsRef.current.add(id);
+
+      const rows = await Promise.all(
+        missingIds.map(async (id) => {
+          try {
+            const riceCode = await riceCodesAPI.getRiceCodeById(id);
+            return [id, riceCode?.rice_code_name ?? ''] as const;
+          } catch {
+            return [id, ''] as const;
+          }
+        }),
+      );
+
+      if (cancelled) return;
+      setRiceCodeNameById((prev) => {
+        const next = { ...prev };
+        for (const [id, name] of rows) {
+          if (name && !next[id]) next[id] = name;
+        }
+        return next;
+      });
+    };
+
+    void loadMissingRiceCodeNames();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, saudas, preview, riceCodes]);
 
   const totalCharges = useMemo(
     () => computePaymentAdviceTotalCharges(formData.charges ?? [], preview?.amount ?? 0),
@@ -234,7 +288,7 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
         sauda_id: pa.sauda_id || null,
         inward_slip_pass_id: pa.inward_slip_pass_id || null,
         payer_id: '', // Not used anymore but kept for type compatibility
-        recipient_id: pa.recipient_id, // Keep recipient_id from loaded payment advice
+        recipient_id: pa.recipient_id || '', // Keep recipient_id from loaded payment advice
         amount: undefined, // amount comes from preview API on save
         date_of_payment: pa.date_of_payment,
         transaction_id: pa.transaction_id || null,
@@ -282,11 +336,8 @@ export function PaymentAdviceFormModal({ open, onOpenChange, paymentAdviceId }: 
     setNotificationOpen(false);
   };
 
-  const getRiceCodeName = (riceCodeId: string | null | undefined): string => {
-    if (!riceCodeId) return '';
-    const riceCode = riceCodes.find(rc => rc.rice_code_id === riceCodeId);
-    return riceCode ? riceCode.rice_code_name : '';
-  };
+  const getRiceCodeName = (riceCodeId: string | null | undefined): string =>
+    getRiceCodeNameById(riceCodeId, riceCodes, riceCodeNameById);
 
   const getVendorName = (vendorId: string | null | undefined): string => {
     if (!vendorId) return '';

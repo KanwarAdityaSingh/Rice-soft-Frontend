@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { salesSaudasAPI } from '../../../services/salesSaudas.api';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
+import { BillShipToAddresses } from '../shared/BillShipToAddresses';
 import type { SalesSauda } from '../../../types/sales';
 
 interface SalesSaudaDetailModalProps {
@@ -69,15 +70,29 @@ export function SalesSaudaDetailModal({
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <span className="text-muted-foreground">Sales Party</span>
-                  <p className="font-medium">{getCustomerName(sauda.sales_party_id)}</p>
+                  <p className="font-medium">
+                    {sauda.sales_party_name?.trim() || getCustomerName(sauda.sales_party_id)}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Salesman</span>
+                  <p className="font-medium">{sauda.salesman_name?.trim() || '–'}</p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Status</span>
                   <p className="font-medium capitalize">{sauda.status}</p>
                 </div>
                 <div>
+                  <span className="text-muted-foreground">Sauda type</span>
+                  <p className="font-medium uppercase">{sauda.sauda_type ?? '–'}</p>
+                </div>
+                <div>
                   <span className="text-muted-foreground">Order number</span>
                   <p className="font-medium">{sauda.order_number ?? '–'}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Financial year</span>
+                  <p className="font-medium">{sauda.financial_year ?? '–'}</p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Sauda date</span>
@@ -90,6 +105,12 @@ export function SalesSaudaDetailModal({
                       ? '–'
                       : `${sauda.payment_terms} days`}
                   </p>
+                </div>
+                <div className="col-span-2">
+                  <BillShipToAddresses
+                    billingAddress={sauda.billing_address}
+                    deliveryAddress={sauda.delivery_address}
+                  />
                 </div>
               </div>
               {sauda.lines && sauda.lines.length > 0 && (

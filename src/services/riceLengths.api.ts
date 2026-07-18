@@ -2,13 +2,11 @@ import { apiService } from './api';
 import type { RiceLengthRecord } from '../types/entities';
 
 export interface CreateRiceLengthRequest {
-  code: string;
   name: string;
   is_active?: boolean;
 }
 
 export interface UpdateRiceLengthRequest {
-  code?: string;
   name?: string;
   is_active?: boolean;
 }
@@ -21,12 +19,6 @@ export const riceLengthsAPI = {
 
   getRiceLengthById: (id: string): Promise<RiceLengthRecord> => {
     return apiService.get<RiceLengthRecord>(`/riceLengths/getRiceLengthById/${id}`);
-  },
-
-  getRiceLengthByCode: (code: string): Promise<RiceLengthRecord> => {
-    return apiService.get<RiceLengthRecord>(
-      `/riceLengths/getRiceLengthByCode?code=${encodeURIComponent(code)}`,
-    );
   },
 
   createRiceLength: (data: CreateRiceLengthRequest): Promise<RiceLengthRecord> => {

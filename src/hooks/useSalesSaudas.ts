@@ -10,6 +10,7 @@ import type {
 interface UseSalesSaudasParams {
   sales_party_id?: string;
   status?: SalesSaudaStatus;
+  financial_year?: string;
 }
 
 export function useSalesSaudas(params?: UseSalesSaudasParams) {
@@ -30,9 +31,9 @@ export function useSalesSaudas(params?: UseSalesSaudasParams) {
     } finally {
       setLoading(false);
     }
-  }, [params?.sales_party_id, params?.status]);
+  }, [params?.sales_party_id, params?.status, params?.financial_year]);
 
-  const paramsKey = `${params?.sales_party_id ?? ''}:${params?.status ?? ''}`;
+  const paramsKey = `${params?.sales_party_id ?? ''}:${params?.status ?? ''}:${params?.financial_year ?? ''}`;
 
   useEffect(() => {
     if (lastFetchedParamsRef.current === paramsKey) return;

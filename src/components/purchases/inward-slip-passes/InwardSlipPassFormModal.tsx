@@ -14,7 +14,7 @@ import { kaantasAPI } from '../../../services/kaantas.api';
 import { getRiceTypeLabel } from '../../../utils/riceType';
 import { getCompletionStatus, formatCompletionPercentage, formatWeightDisplay } from '../../../utils/saudaCompletion';
 import { getSaudaSerialNumber } from '../../../utils/saudaSerial';
-import { getDirectoryTransportersPagePath, getDirectoryVehiclesPagePath } from '../../../utils/appRoutes';
+import { getSaudaPurchaserName, partyDetailsFromSaudaVendor } from '../../../utils/saudaDisplay';
 import { getUserFacingApiErrorMessage } from '../../../utils/errorHandler';
 import {
   getVehicleNumberValidationError,
@@ -32,6 +32,8 @@ import { useGodowns } from '../../../hooks/useGodowns';
 import { AlertDialog } from '../../shared/AlertDialog';
 import { DateInputWithSteppers } from '../../shared/DateInputWithSteppers';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
+import { TransporterFormModal } from '../../admin/transporters/TransporterFormModal';
+import { VehicleFormModal } from '../../admin/vehicles/VehicleFormModal';
 import type { CreateInwardSlipPassRequest, UpdateInwardSlipPassRequest, RiceCode, RiceType, Sauda, Vehicle, OtherBill } from '../../../types/entities';
 import { parametersAPI } from '../../../services/parameters.api';
 import { QualityParametersFields } from '../../shared/QualityParametersFields';
@@ -73,7 +75,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   const { saudas } = useSaudas();
   const { vendors } = useVendors();
   const { transporters, refetch: refetchTransporters, loading: loadingTransporters } = useTransporters();
-  const { vehicles, refetch: refetchVehicles } = useVehicles();
+  const { vehicles, refetch: refetchVehicles, loading: loadingVehicles } = useVehicles();
   const { godowns } = useGodowns(false);
   const isEditMode = !!ispId;
   const [riceCodes, setRiceCodes] = useState<RiceCode[]>([]);
@@ -86,8 +88,12 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [creatingVehicle, setCreatingVehicle] = useState(false);
   const [vehicleDropdownOpen, setVehicleDropdownOpen] = useState(false);
-  const [vehicleSearchQuery, setVehicleSearchQuery] = useState('');
   const vehicleDropdownRef = useRef<HTMLDivElement>(null);
+  const [transporterDropdownOpen, setTransporterDropdownOpen] = useState(false);
+  const [transporterSearchQuery, setTransporterSearchQuery] = useState('');
+  const transporterDropdownRef = useRef<HTMLDivElement>(null);
+  const [transporterFormOpen, setTransporterFormOpen] = useState(false);
+  const [vehicleFormOpen, setVehicleFormOpen] = useState(false);
 
   useEffect(() => {
     const fetchRiceCodes = async () => {
@@ -127,16 +133,12 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     return riceCode ? riceCode.rice_code_name : '';
   };
 
-  const getPurchaserName = (purchaserId: string | null | undefined): string => {
-    if (!purchaserId) return '';
-    const purchaser = vendors.find((v) => v.id === purchaserId);
-    return purchaser ? purchaser.business_name : '';
-  };
+  const getPurchaserName = (sauda: Sauda): string => getSaudaPurchaserName(sauda, vendors);
 
   const getSaudaDisplayName = (sauda: Sauda): string => {
     const parts: string[] = [];
     
-    const purchaserName = getPurchaserName(sauda.purchaser_id);
+    const purchaserName = getPurchaserName(sauda);
     if (purchaserName) parts.push(purchaserName);
     
     const riceCodeName = getRiceCodeName(sauda.rice_code_id);
@@ -229,6 +231,41 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
   }, [saudaDropdownOpen]);
+
+  // Fill party details from sauda vendor (embedded name + vendor master for GST/address).
+  useEffect(() => {
+    if (!open || !formData.sauda_ids?.length) return;
+
+    const sauda = saudas.find((s) => s.id === formData.sauda_ids![0]);
+    if (!sauda) return;
+
+    let cancelled = false;
+
+    void (async () => {
+      let vendor = vendors.find((v) => v.id === sauda.purchaser_id) ?? null;
+      if (!vendor && sauda.purchaser_id) {
+        try {
+          vendor = await vendorsAPI.getVendorById(sauda.purchaser_id);
+        } catch {
+          // Vendor list may be incomplete; sauda embed still supplies party name.
+        }
+      }
+      if (cancelled) return;
+
+      const vendorList =
+        vendor && !vendors.some((v) => v.id === vendor!.id) ? [...vendors, vendor] : vendors;
+      const party = partyDetailsFromSaudaVendor(sauda, vendor, vendorList);
+
+      setFormData((prev) => {
+        if (!prev.sauda_ids?.length || prev.sauda_ids[0] !== sauda.id) return prev;
+        return { ...prev, ...party };
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, formData.sauda_ids, saudas, vendors]);
 
   const loadISPData = async () => {
     if (!ispId) return;
@@ -324,6 +361,8 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     setVehicleNumberInput('');
     setSelectedVehicle(null);
     setVehicleDropdownOpen(false);
+    setTransporterDropdownOpen(false);
+    setTransporterSearchQuery('');
     setIspQualityParameterId(null);
     setIspQualityDraft(emptyQualityParameterDraft());
   };
@@ -527,9 +566,16 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
         party_gst_number: formData.party_gst_number?.trim().toUpperCase() || null, // Convert to uppercase
         party_pan_number: formData.party_pan_number?.trim().toUpperCase() || null, // Convert to uppercase
         transporter_id: formData.transporter_id || null,
-        transportation_cost: formData.transportation_cost != null ? parseFloat(formData.transportation_cost.toFixed(2)) : null, // API contract: precision 2 decimal places
         notes: formData.notes?.trim() || null, // Convert empty string to null
       };
+
+      // Joi: optional() allows omit, not null — only include when a real cost is set (never for FOR saudas)
+      const selectedHaveFor = saudas
+        .filter((s) => (formData.sauda_ids || []).includes(s.id))
+        .some((s) => s.sauda_type === 'for');
+      if (!selectedHaveFor && formData.transportation_cost != null) {
+        cleanedData.transportation_cost = parseFloat(formData.transportation_cost.toFixed(2));
+      }
       
       let targetIspId: string;
 
@@ -640,13 +686,13 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
 
   const handleUploadOtherBill = async (targetIspId: string, name: string, file: File) => {
     try {
-      const result = await inwardSlipPassesAPI.uploadOtherBill(targetIspId, name, file);
-      // Reload ISP data to get updated other_bills array
       if (isEditMode && ispId) {
+        await inwardSlipPassesAPI.uploadOtherBill(targetIspId, name, file);
         const updatedISP = await inwardSlipPassesAPI.getInwardSlipPassById(ispId);
         setOtherBills(updatedISP.other_bills || []);
       } else {
-        setOtherBills(prev => [...prev, result.bill]);
+        const { bill } = await inwardSlipPassesAPI.uploadOtherBill(targetIspId, name, file);
+        setOtherBills((prev) => [...prev, bill]);
       }
       setAlertType('success');
       setAlertTitle('Success');
@@ -767,27 +813,15 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
           }
           
           const newIds = [...currentIds, saudaId];
-          const vendor = vendors.find(v => v.id === selectedSauda.purchaser_id);
-          if (vendor) {
-            // Fill party details from vendor
-            const addressParts = [
-              vendor.address.street,
-              vendor.address.city,
-              vendor.address.state,
-              vendor.address.pincode,
-              vendor.address.country
-            ].filter(Boolean);
-            
-            return {
-              ...prev,
-              sauda_ids: newIds,
-              party_name: vendor.business_name,
-              party_address: addressParts.join(', ') || null,
-              party_gst_number: vendor.business_details.gst_number || null,
-              party_pan_number: vendor.business_details.pan_number || null,
-            };
-          }
-          return { ...prev, sauda_ids: newIds };
+          const vendor = vendors.find((v) => v.id === selectedSauda.purchaser_id);
+          const party = partyDetailsFromSaudaVendor(selectedSauda, vendor, vendors);
+
+          return {
+            ...prev,
+            sauda_ids: newIds,
+            ...party,
+            ...(selectedSauda.sauda_type === 'for' ? { transportation_cost: null } : {}),
+          };
         }
       }
       
@@ -796,7 +830,14 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
       
       // If no saudas left, allow editing party details
       if (newIds.length === 0) {
-        return { ...prev, sauda_ids: newIds };
+        return {
+          ...prev,
+          sauda_ids: newIds,
+          party_name: '',
+          party_address: null,
+          party_gst_number: null,
+          party_pan_number: null,
+        };
       }
       
       // If saudas remain, keep party details locked (they're already set)
@@ -805,10 +846,20 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   };
 
   const removeSauda = (saudaId: string) => {
-    setFormData(prev => ({
-      ...prev,
-      sauda_ids: (prev.sauda_ids || []).filter(id => id !== saudaId)
-    }));
+    setFormData((prev) => {
+      const newIds = (prev.sauda_ids || []).filter((id) => id !== saudaId);
+      if (newIds.length === 0) {
+        return {
+          ...prev,
+          sauda_ids: newIds,
+          party_name: '',
+          party_address: null,
+          party_gst_number: null,
+          party_pan_number: null,
+        };
+      }
+      return { ...prev, sauda_ids: newIds };
+    });
   };
 
   const getFilteredSaudas = () => {
@@ -846,6 +897,8 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
     return saudas.filter(s => (formData.sauda_ids || []).includes(s.id));
   };
 
+  const hasForSauda = getSelectedSaudas().some((s) => s.sauda_type === 'for');
+
   // Get transporter name
   const getTransporterName = (transporterId: string | null): string => {
     if (!transporterId) return '-';
@@ -854,16 +907,54 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
   };
 
 
-  // Filter vehicles for dropdown
-  const getFilteredVehicles = () => {
-    if (!vehicleSearchQuery.trim()) return vehicles;
-    const query = vehicleSearchQuery.toLowerCase();
-    return vehicles.filter(v => 
-      v.vehicle_number.toLowerCase().includes(query) ||
-      v.owner_name?.toLowerCase().includes(query) ||
-      v.maker_model?.toLowerCase().includes(query)
+  // Filter transporters for dropdown
+  const getFilteredTransporters = () => {
+    const active = transporters.filter((t) => t.is_active);
+    if (!transporterSearchQuery.trim()) return active;
+    const query = transporterSearchQuery.toLowerCase();
+    return active.filter(
+      (t) =>
+        t.business_name.toLowerCase().includes(query) ||
+        t.gst_number?.toLowerCase().includes(query) ||
+        t.pan_number?.toLowerCase().includes(query) ||
+        t.contact_persons?.some(
+          (cp) =>
+            cp.name.toLowerCase().includes(query) ||
+            cp.phones?.some((phone) => phone.includes(query))
+        )
     );
   };
+
+  const selectTransporter = (transporterId: string | null) => {
+    setFormData((prev) => ({ ...prev, transporter_id: transporterId }));
+    setTransporterDropdownOpen(false);
+    setTransporterSearchQuery('');
+  };
+
+  const getFilteredVehicles = () => {
+    const query = vehicleNumberInput.trim().toLowerCase();
+    if (!query) return vehicles;
+    return vehicles.filter(
+      (v) =>
+        v.vehicle_number.toLowerCase().includes(query) ||
+        v.owner_name?.toLowerCase().includes(query) ||
+        v.maker_model?.toLowerCase().includes(query) ||
+        v.rc_number?.toLowerCase().includes(query)
+    );
+  };
+
+  // Close transporter dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (transporterDropdownRef.current && !transporterDropdownRef.current.contains(event.target as Node)) {
+        setTransporterDropdownOpen(false);
+      }
+    };
+    if (transporterDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [transporterDropdownOpen]);
 
   // Close vehicle dropdown when clicking outside
   useEffect(() => {
@@ -1334,25 +1425,77 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                     <div>
                       <label className="block text-xs font-medium mb-0.5">Transporter</label>
                       <div className="flex gap-1 flex-wrap items-stretch">
-                        <select value={formData.transporter_id || ''} onChange={(e) => {
-                            setFormData({ ...formData, transporter_id: e.target.value || null });
-                          }}
-                          className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md bg-background">
-                          <option value="">Select</option>
-                          {transporters.filter(t => t.is_active).map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {t.business_name}{t.is_verified ? '' : ' (unverified)'}
-                            </option>
-                          ))}
-                        </select>
+                        <div ref={transporterDropdownRef} className="relative flex-1 min-w-0">
+                          <button
+                            type="button"
+                            onClick={() => setTransporterDropdownOpen((open) => !open)}
+                            className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background flex items-center justify-between gap-2"
+                          >
+                            <span className={`truncate text-left ${formData.transporter_id ? '' : 'text-muted-foreground'}`}>
+                              {formData.transporter_id
+                                ? getTransporterName(formData.transporter_id)
+                                : 'Select transporter'}
+                            </span>
+                            <ChevronDown
+                              className={`h-3.5 w-3.5 shrink-0 transition-transform ${transporterDropdownOpen ? 'rotate-180' : ''}`}
+                            />
+                          </button>
+                          {transporterDropdownOpen && (
+                            <div className="absolute z-20 w-full mt-1 bg-background border border-border rounded-md shadow-lg">
+                              <div className="p-1.5 border-b border-border">
+                                <div className="relative">
+                                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                                  <input
+                                    type="text"
+                                    value={transporterSearchQuery}
+                                    onChange={(e) => setTransporterSearchQuery(e.target.value)}
+                                    placeholder="Search transporters..."
+                                    className="w-full pl-7 pr-2 py-1 text-xs border border-border rounded-md bg-background"
+                                    onClick={(e) => e.stopPropagation()}
+                                    autoFocus
+                                  />
+                                </div>
+                              </div>
+                              <div className="max-h-40 overflow-y-auto p-1">
+                                <button
+                                  type="button"
+                                  onClick={() => selectTransporter(null)}
+                                  className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-muted ${
+                                    !formData.transporter_id ? 'bg-muted font-medium' : ''
+                                  }`}
+                                >
+                                  None
+                                </button>
+                                {getFilteredTransporters().length === 0 ? (
+                                  <p className="text-xs text-muted-foreground py-1 px-2">No transporters found</p>
+                                ) : (
+                                  getFilteredTransporters().map((t) => (
+                                    <button
+                                      key={t.id}
+                                      type="button"
+                                      onClick={() => selectTransporter(t.id)}
+                                      className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-muted flex items-center justify-between gap-2 ${
+                                        formData.transporter_id === t.id ? 'bg-primary/10 text-primary' : ''
+                                      }`}
+                                    >
+                                      <span className="truncate">
+                                        {t.business_name}
+                                        {!t.is_verified ? ' (unverified)' : ''}
+                                      </span>
+                                      {formData.transporter_id === t.id && <Check className="h-3 w-3 shrink-0" />}
+                                    </button>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                         <button type="button" onClick={() => refetchTransporters()} disabled={loadingTransporters} className="flex-shrink-0 p-1.5 border border-border rounded-md bg-background hover:bg-muted disabled:opacity-50" title="Refresh list">
                           <RefreshCw className={`h-3.5 w-3.5 ${loadingTransporters ? 'animate-spin' : ''}`} />
                         </button>
                         <button
                           type="button"
-                          onClick={() =>
-                            window.open(getDirectoryTransportersPagePath({ create: true }), '_blank', 'noopener,noreferrer')
-                          }
+                          onClick={() => setTransporterFormOpen(true)}
                           className="flex-shrink-0 px-2 py-1.5 text-xs border border-border rounded-md bg-background hover:bg-muted whitespace-nowrap"
                         >
                           Add transporter
@@ -1380,13 +1523,14 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                           </button>
                         </div>
                       ) : (
-                        <div ref={vehicleDropdownRef} className="space-y-1">
+                        <div ref={vehicleDropdownRef} className="relative space-y-1">
                           <div className="flex gap-1 flex-wrap items-stretch">
                             <input 
                               type="text" 
                               value={vehicleNumberInput} 
                               onChange={(e) => {
                                 setVehicleNumberInput(sanitizeVehicleNumberInput(e.target.value));
+                                setVehicleDropdownOpen(true);
                                 setErrors((prev) => {
                                   const next = { ...prev };
                                   delete next.vehicle_id;
@@ -1395,14 +1539,21 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                               }}
                               onFocus={() => setVehicleDropdownOpen(true)}
                               maxLength={VEHICLE_NUMBER_MAX_LENGTH}
-                              placeholder="MH01AB1234"
+                              placeholder="Search or enter vehicle no."
                               className={`flex-1 min-w-[140px] px-2 py-1.5 text-sm border rounded-md bg-background uppercase ${errors.vehicle_id ? 'border-red-500' : 'border-border'}`}
                             />
                             <button
                               type="button"
-                              onClick={() =>
-                                window.open(getDirectoryVehiclesPagePath({ create: true }), '_blank', 'noopener,noreferrer')
-                              }
+                              onClick={() => void refetchVehicles()}
+                              disabled={loadingVehicles}
+                              className="flex-shrink-0 p-1.5 border border-border rounded-md bg-background hover:bg-muted disabled:opacity-50"
+                              title="Refresh list"
+                            >
+                              <RefreshCw className={`h-3.5 w-3.5 ${loadingVehicles ? 'animate-spin' : ''}`} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setVehicleFormOpen(true)}
                               className="flex-shrink-0 px-2 py-1.5 text-xs border border-border rounded-md bg-background hover:bg-muted whitespace-nowrap"
                             >
                               Add vehicle
@@ -1410,30 +1561,19 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                           </div>
                           
                           {/* Vehicle Dropdown */}
-                          {vehicleDropdownOpen && vehicles.length > 0 && (
-                            <div className="absolute z-20 w-full max-w-sm mt-1 bg-background border border-border rounded-md shadow-lg">
-                              <div className="p-1.5 border-b border-border">
-                                <div className="relative">
-                                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                                  <input
-                                    type="text"
-                                    value={vehicleSearchQuery}
-                                    onChange={(e) => setVehicleSearchQuery(e.target.value)}
-                                    placeholder="Search vehicles..."
-                                    className="w-full pl-7 pr-2 py-1 text-xs border border-border rounded-md bg-background"
-                                    onClick={(e) => e.stopPropagation()}
-                                  />
-                                </div>
-                              </div>
+                          {vehicleDropdownOpen && (
+                            <div className="absolute z-20 left-0 right-0 mt-1 bg-background border border-border rounded-md shadow-lg">
                               <div className="max-h-32 overflow-y-auto p-1">
-                                {getFilteredVehicles().length === 0 ? (
-                                  <p className="text-xs text-muted-foreground py-1 px-2">No vehicles found</p>
+                                {vehicles.length === 0 ? (
+                                  <p className="text-xs text-muted-foreground py-1 px-2">No vehicles in directory</p>
+                                ) : getFilteredVehicles().length === 0 ? (
+                                  <p className="text-xs text-muted-foreground py-1 px-2">No vehicles match your search</p>
                                 ) : (
-                                  getFilteredVehicles().slice(0, 10).map((v) => (
+                                  getFilteredVehicles().slice(0, 15).map((v) => (
                                     <button 
                                       key={v.id} 
                                       type="button" 
-                                      onClick={() => { selectVehicle(v); setVehicleSearchQuery(''); }}
+                                      onClick={() => selectVehicle(v)}
                                       className="w-full text-left px-2 py-1 rounded text-xs hover:bg-muted flex items-center justify-between"
                                     >
                                       <div>
@@ -1467,6 +1607,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                       {errors.vehicle_id && <p className="text-xs text-red-500 mt-0.5">{errors.vehicle_id}</p>}
                     </div>
 
+                    {!hasForSauda && (
                     <div>
                       <label className="block text-xs font-medium mb-0.5">Transport Cost (₹)</label>
                       <input 
@@ -1500,6 +1641,7 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
                         <p className="text-xs text-red-500 mt-0.5">{errors.transportation_cost}</p>
                       )}
                     </div>
+                    )}
                   </div>
 
                   {/* Bills Upload Section */}
@@ -1913,6 +2055,24 @@ export function InwardSlipPassFormModal({ open, onOpenChange, ispId }: InwardSli
         type={alertType}
         title={alertTitle}
         message={alertMessage}
+      />
+
+      <TransporterFormModal
+        open={transporterFormOpen}
+        onOpenChange={(open) => {
+          setTransporterFormOpen(open);
+          if (!open) void refetchTransporters();
+        }}
+        nested
+      />
+
+      <VehicleFormModal
+        open={vehicleFormOpen}
+        onOpenChange={(open) => {
+          setVehicleFormOpen(open);
+          if (!open) void refetchVehicles();
+        }}
+        nested
       />
     </>
   );

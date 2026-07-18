@@ -20,7 +20,6 @@ export function RiceLengthFormModal({
   onCreate,
   onUpdate,
 }: RiceLengthFormModalProps) {
-  const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -30,11 +29,9 @@ export function RiceLengthFormModal({
 
   useEffect(() => {
     if (riceLength) {
-      setCode(riceLength.code);
       setName(riceLength.name);
       setIsActive(riceLength.is_active);
     } else {
-      setCode('');
       setName('');
       setIsActive(true);
     }
@@ -44,7 +41,6 @@ export function RiceLengthFormModal({
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     const nextErrors: Record<string, string> = {};
-    if (!code.trim()) nextErrors.code = 'Code is required';
     if (!name.trim()) nextErrors.name = 'Name is required';
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
@@ -55,13 +51,11 @@ export function RiceLengthFormModal({
     try {
       if (riceLength) {
         await onUpdate(riceLength.id, {
-          code: code.trim(),
           name: name.trim(),
           is_active: isActive,
         });
       } else {
         await onCreate({
-          code: code.trim(),
           name: name.trim(),
           is_active: isActive,
         });
@@ -97,21 +91,11 @@ export function RiceLengthFormModal({
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">Code</label>
-                  <input
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    placeholder="dubar"
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                  />
-                  {errors.code && <p className="text-xs text-red-500 mt-1">{errors.code}</p>}
-                </div>
-                <div>
                   <label className="block text-sm font-medium mb-1">Name</label>
                   <input
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="Dubar (Double)"
+                    placeholder="Tibar"
                     className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
                   />
                   {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}

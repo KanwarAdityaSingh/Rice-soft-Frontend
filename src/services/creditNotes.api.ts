@@ -8,11 +8,17 @@ import type {
 const BASE = '/credit-notes';
 
 export const creditNotesAPI = {
-  list: (params?: { invoice_dispatch_id?: string; status?: CreditNoteStatus }) => {
+  list: (params?: {
+    invoice_dispatch_id?: string;
+    status?: CreditNoteStatus;
+    /** Indian FY label e.g. "2025-2026" */
+    financial_year?: string;
+  }) => {
     const search = new URLSearchParams();
     if (params?.invoice_dispatch_id)
       search.set('invoice_dispatch_id', params.invoice_dispatch_id);
     if (params?.status) search.set('status', params.status);
+    if (params?.financial_year) search.set('financial_year', params.financial_year);
     const q = search.toString();
     return apiService.get<CreditNote[]>(q ? `${BASE}?${q}` : BASE);
   },

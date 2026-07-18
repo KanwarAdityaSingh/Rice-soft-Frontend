@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { SearchBar } from '../../admin/shared/SearchBar';
+import { FilterDropdown } from '../../admin/shared/FilterDropdown';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
 import { EmptyState } from '../../admin/shared/EmptyState';
 import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
@@ -28,6 +29,11 @@ import { KaantaWeightDialog } from './KaantaWeightDialog';
 import { LinkedLotsDialog } from './LinkedLotsDialog';
 import { GodownFilterSelect } from '../../shared/GodownFilterSelect';
 import { useGodowns } from '../../../hooks/useGodowns';
+import {
+  buildFinancialYearFilterOptionsFromDates,
+  getCurrentFinancialYearKey,
+  isIsoDateInFinancialYear,
+} from '../../../utils/financialYear';
 import type { InwardSlipPass, Kaanta } from '../../../types/entities';
 
 type ISPRowActionsProps = {
@@ -185,6 +191,9 @@ function ISPRowActions({
 
 export function InwardSlipPassesTable() {
   const [godownFilter, setGodownFilter] = useState<string | undefined>();
+  const [financialYearFilter, setFinancialYearFilter] = useState<string | undefined>(
+    () => getCurrentFinancialYearKey(),
+  );
   const { godowns } = useGodowns(true);
   const { inwardSlipPasses, loading, deleteInwardSlipPass, refetch } = useInwardSlipPasses({
     godown_id: godownFilter,
@@ -237,8 +246,16 @@ export function InwardSlipPassesTable() {
 
   const godownName = (id: string | undefined) => (id ? godowns.find((g) => g.id === id)?.name ?? '—' : '—');
 
+  const financialYearOptions = useMemo(
+    () => buildFinancialYearFilterOptionsFromDates(inwardSlipPasses.map((isp) => isp.date)),
+    [inwardSlipPasses],
+  );
+
   const filtered = useMemo(() => {
     return inwardSlipPasses.filter((isp) => {
+      if (financialYearFilter && !isIsoDateInFinancialYear(isp.date, financialYearFilter)) {
+        return false;
+      }
       const q = searchQuery.toLowerCase();
       const vehicleNumber = getVehicleNumber(isp.vehicle_id);
       const matchesSearch =
@@ -248,7 +265,7 @@ export function InwardSlipPassesTable() {
 
       return matchesSearch;
     });
-  }, [inwardSlipPasses, searchQuery, getVehicleNumber]);
+  }, [inwardSlipPasses, financialYearFilter, searchQuery, getVehicleNumber]);
 
   return (
     <div>
@@ -257,6 +274,12 @@ export function InwardSlipPassesTable() {
           <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search by slip number, vehicle, or party..." />
         </div>
         <GodownFilterSelect value={godownFilter} onChange={setGodownFilter} label="Filter by godown" />
+        <FilterDropdown
+          label="Financial year"
+          options={financialYearOptions}
+          value={financialYearFilter}
+          onChange={setFinancialYearFilter}
+        />
         <div className="flex gap-2">
           <button
             type="button"
@@ -273,7 +296,15 @@ export function InwardSlipPassesTable() {
           <LoadingSpinner />
         </div>
       ) : filtered.length === 0 ? (
-        <EmptyState icon={FileText} title="No inward slip passes found" description="Create your first ISP or adjust filters." />
+        <EmptyState
+          icon={FileText}
+          title="No inward slip passes found"
+          description={
+            financialYearFilter
+              ? `No ISPs found for ${financialYearOptions.find((o) => o.value === financialYearFilter)?.label ?? financialYearFilter}. Try another financial year or adjust filters.`
+              : 'Create your first ISP or adjust filters.'
+          }
+        />
       ) : (
         <div className="overflow-x-auto rounded-xl border border-border/60 bg-card/30">
           <table className="w-full min-w-[900px] text-sm">

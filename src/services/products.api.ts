@@ -40,12 +40,17 @@ export const productsAPI = {
     return apiService.get<Array<{ value: string; label: string }>>('/products/brands');
   },
 
+  /** GET /products/hsn-codes — same shape as brands; sourced from backend HSN_CODES */
+  getHsnCodes: () => {
+    return apiService.get<Array<{ value: string; label: string }>>('/products/hsn-codes');
+  },
+
   /** GET /products/:id/rates — list rates for a product */
   getProductRates: (productId: string) => {
     return apiService.get<ProductRate[]>(`/products/${productId}/rates`);
   },
 
-  /** PUT /products/:id/rates — upsert rates by (product_id, holding_capacity) */
+  /** PUT /products/:id/rates — upsert rates for effective_date (+ history line per capacity) */
   setProductRates: (productId: string, data: SetProductRatesRequest) => {
     return apiService.put<ProductRate[]>(`/products/${productId}/rates`, data);
   },

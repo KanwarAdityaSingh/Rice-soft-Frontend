@@ -75,6 +75,7 @@ import {
 } from '../../../utils/transporterBank';
 import { canVerifyBankAccountLookup, getBankAccountHolderNameMismatchError, mapBankVerifyToBankDetails } from '../../../utils/bankVerification';
 import { assertEntityNotDuplicateBeforeVerification } from '../../../utils/entityDuplicateCheck';
+import { getUserFacingApiErrorMessage } from '../../../utils/errorHandler';
 import { TransporterBankDetailsStep } from './TransporterBankDetailsStep';
 
 function isContactPersonRowEmpty(cp: ContactPerson): boolean {
@@ -110,6 +111,10 @@ interface TransporterFormModalProps {
   onOpenChange: (open: boolean) => void;
   transporterId?: string | null;
   initialStep?: 1 | 2 | 3;
+  /** Raise z-index when opened above another modal */
+  nested?: boolean;
+  /** Raise further when this modal is stacked above another nested modal */
+  elevate?: boolean;
 }
 
 export function TransporterFormModal({
@@ -117,6 +122,8 @@ export function TransporterFormModal({
   onOpenChange,
   transporterId,
   initialStep = 1,
+  nested = false,
+  elevate = false,
 }: TransporterFormModalProps) {
   const { createTransporter, updateTransporter } = useTransporters();
   const isEditMode = !!transporterId;
@@ -398,7 +405,14 @@ export function TransporterFormModal({
       }
     } catch (error: any) {
       console.error('GST lookup error:', error);
-      setErrors({ ...errors, gst_number: error?.message || 'Failed to lookup GST details' });
+      const msg = error?.message || 'Failed to lookup GST details';
+      setErrors({ ...errors, gst_number: msg });
+      if (/already exists|already registered|duplicate/i.test(msg)) {
+        setAlertType('error');
+        setAlertTitle('Transporter already registered');
+        setAlertMessage(msg);
+        setAlertOpen(true);
+      }
     } finally {
       setLookupLoading(false);
     }
@@ -479,7 +493,14 @@ export function TransporterFormModal({
       }
     } catch (error: any) {
       console.error('PAN lookup error:', error);
-      setErrors({ ...errors, pan_number: error?.message || 'Failed to lookup PAN details' });
+      const msg = error?.message || 'Failed to lookup PAN details';
+      setErrors({ ...errors, pan_number: msg });
+      if (/already exists|already registered|duplicate/i.test(msg)) {
+        setAlertType('error');
+        setAlertTitle('Transporter already registered');
+        setAlertMessage(msg);
+        setAlertOpen(true);
+      }
     } finally {
       setLookupLoading(false);
     }
@@ -542,7 +563,14 @@ export function TransporterFormModal({
       }
     } catch (error: any) {
       console.error('Aadhaar lookup error:', error);
-      setErrors({ ...errors, aadhar_number: error?.message || 'Failed to validate Aadhaar number' });
+      const msg = error?.message || 'Failed to validate Aadhaar number';
+      setErrors({ ...errors, aadhar_number: msg });
+      if (/already exists|already registered|duplicate/i.test(msg)) {
+        setAlertType('error');
+        setAlertTitle('Transporter already registered');
+        setAlertMessage(msg);
+        setAlertOpen(true);
+      }
     } finally {
       setLookupLoading(false);
     }
@@ -767,10 +795,17 @@ export function TransporterFormModal({
         next.delete('bank_details.branch');
         return next;
       });
+      const msg = error instanceof Error ? error.message : 'Bank verification failed';
       setErrors((prev) => ({
         ...prev,
-        bank_ifsc_code: error instanceof Error ? error.message : 'Bank verification failed',
+        bank_ifsc_code: msg,
       }));
+      if (/already exists|already registered|duplicate/i.test(msg)) {
+        setAlertType('error');
+        setAlertTitle('Transporter already registered');
+        setAlertMessage(msg);
+        setAlertOpen(true);
+      }
     } finally {
       setIfscLoading(false);
     }
@@ -842,6 +877,43 @@ export function TransporterFormModal({
 
     setLoading(true);
     try {
+      // Client-side duplicate guard before create/update (GST / PAN / Aadhaar / bank)
+      const opts = duplicateCheckOptions();
+      if (formData.gst_number?.trim()) {
+        await assertEntityNotDuplicateBeforeVerification(
+          'transporter',
+          { gst_number: formData.gst_number },
+          'gst',
+          opts,
+        );
+      }
+      if (formData.pan_number?.trim()) {
+        await assertEntityNotDuplicateBeforeVerification(
+          'transporter',
+          { pan_number: formData.pan_number },
+          'pan',
+          opts,
+        );
+      }
+      if (formData.aadhar_number?.trim()) {
+        await assertEntityNotDuplicateBeforeVerification(
+          'transporter',
+          { aadhar_number: formData.aadhar_number },
+          'aadhaar',
+          opts,
+        );
+      }
+      const accountNumber = formData.bank_details?.account_number?.trim();
+      const ifscCode = formData.bank_details?.ifsc_code?.trim();
+      if (accountNumber && ifscCode) {
+        await assertEntityNotDuplicateBeforeVerification(
+          'transporter',
+          { account_number: accountNumber, ifsc_code: ifscCode },
+          'bank',
+          opts,
+        );
+      }
+
       // Remove vehicle_ids from payload - relationship is managed from vehicle side
       const { vehicle_ids, ...rest } = formData;
       const submitData = buildEntitySavePayload(
@@ -907,10 +979,26 @@ export function TransporterFormModal({
         onOpenChange(false);
         resetForm();
       }, 1500);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = getUserFacingApiErrorMessage(
+        error,
+        'Failed to save transporter. Please try again.',
+      );
+      const errorText = errorMessage.toLowerCase();
+      if (
+        errorText.includes('already exists') ||
+        errorText.includes('already registered') ||
+        errorText.includes('duplicate')
+      ) {
+        setApiLockedFields(new Set());
+      }
       setAlertType('error');
-      setAlertTitle('Error');
-      setAlertMessage(error.message || 'Failed to save transporter');
+      setAlertTitle(
+        errorText.includes('already exists') || errorText.includes('already registered')
+          ? 'Transporter already registered'
+          : 'Error',
+      );
+      setAlertMessage(errorMessage);
       setAlertOpen(true);
     } finally {
       setLoading(false);
@@ -922,8 +1010,8 @@ export function TransporterFormModal({
     <>
       <Dialog.Root open={open} onOpenChange={onOpenChange}>
         <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" />
-          <Dialog.Content className="fixed left-[50%] top-[50%] z-50 w-[95vw] sm:w-[90vw] md:w-full max-w-3xl translate-x-[-50%] translate-y-[-50%]">
+          <Dialog.Overlay className={`fixed inset-0 bg-black/60 backdrop-blur-sm ${elevate ? 'z-[140]' : nested ? 'z-[100]' : 'z-40'}`} />
+          <Dialog.Content className={`fixed left-[50%] top-[50%] w-[95vw] sm:w-[90vw] md:w-full max-w-3xl translate-x-[-50%] translate-y-[-50%] ${elevate ? 'z-[150]' : nested ? 'z-[110]' : 'z-50'}`}>
             <div className="glass rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 shadow-2xl max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3 min-w-0">

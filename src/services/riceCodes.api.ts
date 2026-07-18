@@ -1,6 +1,8 @@
 import { apiService } from './api';
 import type { RiceCategory, RiceCode, RiceType } from '../types/entities';
 
+const RICE_CATEGORIES: RiceCategory[] = ['basmati', 'non_basmati'];
+
 /** Non-basmati catalog includes basmati-only variants from legacy API — hide in UI. */
 const NON_BASMATI_EXCLUDED_VARIANTS = new Set(['golden_sella']);
 
@@ -27,8 +29,47 @@ export const riceCodesAPI = {
   },
 
   getAllRiceCodes: async (category?: RiceCategory): Promise<RiceCode[]> => {
-    const params = category ? `?category=${encodeURIComponent(category)}` : '';
-    return apiService.get<RiceCode[]>(`/riceCodes/getAllRiceCodes${params}`);
+    const categories = category ? [category] : RICE_CATEGORIES;
+    const results = await Promise.allSettled(
+      categories.map((cat) =>
+        apiService.get<RiceCode[]>(
+          `/riceCodes/getAllRiceCodes?category=${encodeURIComponent(cat)}`,
+        ),
+      ),
+    );
+    const merged: RiceCode[] = [];
+    const seen = new Set<string>();
+    for (const result of results) {
+      if (result.status !== 'fulfilled') continue;
+      for (const row of result.value) {
+        if (seen.has(row.rice_code_id)) continue;
+        seen.add(row.rice_code_id);
+        merged.push(row);
+      }
+    }
+    if (!category && merged.length === 0) {
+      const firstError = results.find((r) => r.status === 'rejected') as
+        | PromiseRejectedResult
+        | undefined;
+      if (firstError) throw firstError.reason;
+    }
+    return merged;
+  },
+
+  /** Resolve a rice code by id when it is missing from a bulk catalog fetch. */
+  getRiceCodeById: async (id: string): Promise<RiceCode | null> => {
+    for (const cat of RICE_CATEGORIES) {
+      try {
+        const rows = await apiService.get<RiceCode[]>(
+          `/riceCodes/getAllRiceCodes?category=${encodeURIComponent(cat)}`,
+        );
+        const found = rows.find((row) => row.rice_code_id === id);
+        if (found) return found;
+      } catch {
+        // try next category
+      }
+    }
+    return null;
   },
 
   getRiceCodeByName: async (name: string): Promise<RiceCode> => {
@@ -45,7 +86,14 @@ export const riceCodesAPI = {
 
   /** @deprecated use getRiceVariants — kept for modules not yet migrated */
   getRiceTypes: async (): Promise<RiceType[]> => {
-    return apiService.get<RiceType[]>('/riceCodes/getRiceTypes');
+    const rows = await Promise.all(
+      RICE_CATEGORIES.map((cat) => riceCodesAPI.getRiceVariants(cat)),
+    );
+    const byValue = new Map<string, RiceType>();
+    for (const variant of rows.flat()) {
+      byValue.set(variant.value, variant);
+    }
+    return [...byValue.values()];
   },
 
   createRiceCode: (data: CreateRiceCodeRequest) => {

@@ -11,16 +11,30 @@ interface FilterDropdownProps {
   options: FilterOption[];
   value?: string;
   onChange: (value: string | undefined) => void;
+  /** When true, omit the “All” reset item (mutually exclusive option sets). */
+  hideAllOption?: boolean;
 }
 
-export function FilterDropdown({ label, options, value, onChange }: FilterDropdownProps) {
+export function FilterDropdown({
+  label,
+  options,
+  value,
+  onChange,
+  hideAllOption = false,
+}: FilterDropdownProps) {
+  const selectedOption = value ? options.find((option) => option.value === value) : undefined;
+
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
         <button className="inline-flex items-center gap-2 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm hover:bg-muted/50 transition-colors">
           <Filter className="h-4 w-4" />
           <span>{label}</span>
-          {value && <span className="text-xs text-muted-foreground">({value})</span>}
+          {value && (
+            <span className="text-xs text-muted-foreground">
+              ({selectedOption?.label ?? value})
+            </span>
+          )}
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
@@ -29,12 +43,14 @@ export function FilterDropdown({ label, options, value, onChange }: FilterDropdo
           sideOffset={8}
           align="start"
         >
-          <DropdownMenu.Item
-            className="flex cursor-pointer select-none items-center rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
-            onSelect={() => onChange(undefined)}
-          >
-            All
-          </DropdownMenu.Item>
+          {!hideAllOption && (
+            <DropdownMenu.Item
+              className="flex cursor-pointer select-none items-center rounded-lg px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+              onSelect={() => onChange(undefined)}
+            >
+              All
+            </DropdownMenu.Item>
+          )}
           {options.map((option) => (
             <DropdownMenu.Item
               key={option.value}

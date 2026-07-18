@@ -11,6 +11,10 @@ import { useSalesSaudasData } from './SalesSaudasDataContext';
 import { SalesSaudaFormModal } from './SalesSaudaFormModal';
 import { SalesSaudaDetailModal } from './SalesSaudaDetailModal';
 import { toast } from '../../../utils/toast';
+import {
+  buildFinancialYearApiFilterOptions,
+  getCurrentFinancialYearApiValue,
+} from '../../../utils/financialYear';
 import type { SalesSauda, SalesSaudaStatus } from '../../../types/sales';
 
 interface SalesSaudasTableProps {
@@ -25,8 +29,12 @@ const statusOptions: { value: string; label: string }[] = [
 
 export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
   const [statusFilter, setStatusFilter] = useState<SalesSaudaStatus | ''>('');
+  const [financialYearFilter, setFinancialYearFilter] = useState<string | undefined>(
+    () => getCurrentFinancialYearApiValue(),
+  );
   const { salesSaudas, loading, deleteSauda, finalize, refetch } = useSalesSaudas({
     status: statusFilter || undefined,
+    financial_year: financialYearFilter,
   });
   const { salesParties, products, salesPartiesLoading } = useSalesSaudasData();
 
@@ -40,23 +48,40 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
     if (onRefreshRef) onRefreshRef.current = refetch;
   }, [refetch, onRefreshRef]);
 
-  const getSalesPartyName = (customerId: string) => {
-    const s = salesParties.find((x) => x.id === customerId);
-    return s?.business_name ?? customerId ?? '';
+  const financialYearOptions = useMemo(
+    () => buildFinancialYearApiFilterOptions(salesSaudas.map((s) => s.financial_year)),
+    [salesSaudas],
+  );
+
+  const salesPartyNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of salesParties) {
+      const name = p.business_name?.trim();
+      if (name) map.set(p.id, name);
+    }
+    return map;
+  }, [salesParties]);
+
+  const getSalesPartyName = (sauda: Pick<SalesSauda, 'sales_party_id' | 'sales_party_name'>) => {
+    const joined = sauda.sales_party_name?.trim();
+    if (joined) return joined;
+    return salesPartyNameById.get(sauda.sales_party_id) ?? '';
   };
 
   const filtered = useMemo(() => {
     const q = searchQuery.toLowerCase();
     return salesSaudas.filter((s) => {
-      const partyName = (getSalesPartyName(s.sales_party_id) ?? '').toLowerCase();
+      const partyName = getSalesPartyName(s).toLowerCase();
       const orderNum = (s.order_number ?? '').toLowerCase();
+      const salesmanName = (s.salesman_name ?? '').toLowerCase();
       return (
         partyName.includes(q) ||
         orderNum.includes(q) ||
+        salesmanName.includes(q) ||
         s.sauda_date.includes(q)
       );
     });
-  }, [salesSaudas, searchQuery, salesParties]);
+  }, [salesSaudas, searchQuery, salesPartyNameById]);
 
   const handleDelete = async () => {
     if (!selectedSauda) return;
@@ -95,7 +120,13 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
         <SearchBar
           value={searchQuery}
           onChange={setSearchQuery}
-          placeholder="Search by sales party, order number..."
+          placeholder="Search by sales party, salesman, order number..."
+        />
+        <FilterDropdown
+          label="Financial year"
+          options={financialYearOptions}
+          value={financialYearFilter}
+          onChange={setFinancialYearFilter}
         />
         <FilterDropdown
           label="Status"
@@ -110,7 +141,11 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
           <EmptyState
             icon={FileText}
             title="No sales saudas"
-            description="Create a sales sauda or adjust filters."
+            description={
+              financialYearFilter
+                ? `No sales saudas found for ${financialYearOptions.find((o) => o.value === financialYearFilter)?.label ?? financialYearFilter}. Try another financial year or adjust filters.`
+                : 'Create a sales sauda or adjust filters.'
+            }
           />
         ) : (
           <div className="overflow-x-auto">
@@ -118,8 +153,11 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className="text-left p-3 font-medium">Sales Party</th>
+                  <th className="text-left p-3 font-medium">Salesman</th>
+                  <th className="text-left p-3 font-medium">Type</th>
                   <th className="text-left p-3 font-medium">Status</th>
                   <th className="text-left p-3 font-medium">Order #</th>
+                  <th className="text-left p-3 font-medium">FY</th>
                   <th className="text-left p-3 font-medium">Date</th>
                   <th className="text-left p-3 font-medium">Payment Terms</th>
                   <th className="w-10 p-3" />
@@ -127,12 +165,13 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
               </thead>
               <tbody>
                 {filtered.map((s) => {
-                  const partyName = getSalesPartyName(s.sales_party_id);
-                  const showLoading =
-                    salesPartiesLoading && (partyName === (s.sales_party_id ?? '') || partyName === '');
+                  const partyName = getSalesPartyName(s);
+                  const showLoading = salesPartiesLoading && !partyName && !s.sales_party_name;
                   return (
                   <tr key={s.id} className="border-b hover:bg-muted/30">
-                    <td className="p-3">{showLoading ? 'Loading...' : partyName || s.sales_party_id || '–'}</td>
+                    <td className="p-3">{showLoading ? 'Loading...' : partyName || '–'}</td>
+                    <td className="p-3">{s.salesman_name?.trim() || '–'}</td>
+                    <td className="p-3 uppercase">{s.sauda_type ?? '–'}</td>
                     <td className="p-3">
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -147,6 +186,7 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
                       </span>
                     </td>
                     <td className="p-3">{s.order_number ?? '–'}</td>
+                    <td className="p-3 text-muted-foreground">{s.financial_year ?? '–'}</td>
                     <td className="p-3">{s.sauda_date}</td>
                     <td className="p-3">
                       {s.payment_terms === null || s.payment_terms === undefined
@@ -220,7 +260,11 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
         saudaId={detailId}
         open={!!detailId}
         onOpenChange={(open) => !open && setDetailId(null)}
-        getCustomerName={getSalesPartyName}
+        getCustomerName={(id) =>
+          salesPartyNameById.get(id) ||
+          salesSaudas.find((s) => s.sales_party_id === id)?.sales_party_name?.trim() ||
+          '–'
+        }
         getProductName={(id) => products.find((p) => p.id === id)?.name ?? id}
       />
 
