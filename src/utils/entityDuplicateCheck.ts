@@ -2,6 +2,7 @@ import { brokersAPI } from '../services/brokers.api';
 import { godownsAPI } from '../services/godowns.api';
 import { leadsAPI } from '../services/leads.api';
 import { packagingVendorsAPI } from '../services/packagingVendors.api';
+import { salesmenAPI } from '../services/salesmen.api';
 import { salesPartiesAPI } from '../services/salesParties.api';
 import { transportersAPI } from '../services/transporters.api';
 import { vendorsAPI } from '../services/vendors.api';
@@ -10,6 +11,7 @@ import type {
   Godown,
   Lead,
   PackagingVendor,
+  Salesman,
   SalesParty,
   Transporter,
   Vendor,
@@ -23,7 +25,8 @@ export type EntityModuleKind =
   | 'broker'
   | 'lead'
   | 'godown'
-  | 'packaging_vendor';
+  | 'packaging_vendor'
+  | 'salesman';
 
 export type DuplicateCheckField = 'gst' | 'pan' | 'aadhaar' | 'bank';
 
@@ -69,6 +72,7 @@ const MODULE_LABELS: Record<EntityModuleKind, string> = {
   lead: 'lead',
   godown: 'godown',
   packaging_vendor: 'packaging vendor',
+  salesman: 'salesperson',
 };
 
 const FIELD_LABELS: Record<DuplicateCheckField, string> = {
@@ -176,6 +180,17 @@ function mapPackagingVendorRecords(items: PackagingVendor[]): DuplicateCheckReco
   }));
 }
 
+function mapSalesmanRecords(items: Salesman[]): DuplicateCheckRecord[] {
+  return items.map((item) => ({
+    id: item.id,
+    displayName: item.name?.trim() || 'Unknown',
+    pan_number: item.pan_number,
+    aadhar_number: item.aadhar_number,
+    account_number: item.bank_details?.account_number,
+    ifsc_code: item.bank_details?.ifsc_code,
+  }));
+}
+
 export async function loadDuplicateCheckRecords(kind: EntityModuleKind): Promise<DuplicateCheckRecord[]> {
   switch (kind) {
     case 'vendor': {
@@ -206,6 +221,10 @@ export async function loadDuplicateCheckRecords(kind: EntityModuleKind): Promise
     case 'packaging_vendor': {
       const items = await packagingVendorsAPI.getAllPackagingVendors();
       return mapPackagingVendorRecords(items);
+    }
+    case 'salesman': {
+      const items = await salesmenAPI.getAllSalesmen(true);
+      return mapSalesmanRecords(Array.isArray(items) ? items : []);
     }
     default:
       return [];

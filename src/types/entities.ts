@@ -87,7 +87,8 @@ export type PersistableEntityType =
   | 'broker'
   | 'transporter'
   | 'driver'
-  | 'vehicle';
+  | 'vehicle'
+  | 'salesman';
 
 export interface KycPersistContext {
   entity_type: PersistableEntityType;
@@ -171,9 +172,21 @@ export interface VendorCheckResponse {
 }
 
 // Sales Party Types (Vendor shape without type; used for customers in sales)
-export type SalesParty = Omit<Vendor, 'type'>;
-export type CreateSalesPartyRequest = Omit<CreateVendorRequest, 'type'>;
-export type UpdateSalesPartyRequest = Omit<UpdateVendorRequest, 'type'>;
+export type SalesPartyRegistrationType = 'registered' | 'unregistered' | 'retail';
+/** Required only when registration_type is `retail`; must be null otherwise. */
+export type SalesPartyCustomerType = 'individual' | 'small_retailer' | 'cash_customer';
+
+export type SalesParty = Omit<Vendor, 'type' | 'registration_type'> & {
+  registration_type: SalesPartyRegistrationType;
+  customer_type?: SalesPartyCustomerType | null;
+};
+
+export type CreateSalesPartyRequest = Omit<CreateVendorRequest, 'type' | 'registration_type'> & {
+  registration_type: SalesPartyRegistrationType;
+  customer_type?: SalesPartyCustomerType | null;
+};
+
+export type UpdateSalesPartyRequest = Partial<CreateSalesPartyRequest>;
 
 /** Additional locations for a purchase party; primary address stays on `Vendor.address`. */
 export interface VendorSite {
@@ -635,6 +648,11 @@ export interface Godown {
   address?: GodownAddress | null;
   /** Optional Google Maps URL (share link or https://www.google.com/maps?q=...) */
   google_maps_link?: string | null;
+  /**
+   * Linked sales party for godown_transfer destination (migration 181).
+   * Server may auto-create when missing.
+   */
+  sales_party_id?: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -652,13 +670,61 @@ export interface CreateGodownRequest {
 
 export interface UpdateGodownRequest extends Partial<CreateGodownRequest> {}
 
-// Salesman Types
+// Salesman Types (Salesperson Master)
+export interface SalesmanAddress {
+  street: string;
+  city: string;
+  state: string;
+  pincode?: string;
+  country: string;
+}
+
+export interface SalesmanBankDetails {
+  account_holder_name?: string;
+  account_number?: string;
+  ifsc_code?: string;
+  bank_name?: string;
+  branch?: string;
+}
+
+export type SalesmanSalaryType = 'monthly';
+
+export interface SalesmanSalaryHistoryEntry {
+  id: string;
+  salesman_id: string;
+  salary_type: SalesmanSalaryType;
+  basic_salary: number;
+  effective_from: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface Salesman {
   id: string;
+  /** Auto-generated e.g. SP-0001 */
+  salesperson_code?: string | null;
   name: string;
   phone: string;
-  email: string;
+  alternate_phone?: string | null;
+  email?: string | null;
+  date_of_birth?: string | null;
+  date_of_joining?: string | null;
+  designation?: string | null;
+  aadhar_number?: string | null;
+  pan_number?: string | null;
+  address?: SalesmanAddress | null;
+  bank_details?: SalesmanBankDetails | null;
+  salary_type?: SalesmanSalaryType | null;
+  basic_salary?: number | null;
+  salary_effective_from?: string | null;
   is_active: boolean;
+  /** Identity KYC verified — does not gate is_active */
+  is_verified?: boolean;
+  verified_at?: string | null;
+  bank_details_verified_at?: string | null;
+  bank_details_verified_by?: string | null;
+  bank_verification_error?: string | null;
+  kyc_verification_details?: EntityKycVerificationDetails;
   created_at: string;
   updated_at: string;
 }
@@ -666,8 +732,22 @@ export interface Salesman {
 export interface CreateSalesmanRequest {
   name: string;
   phone: string;
-  email: string;
+  alternate_phone?: string | null;
+  email?: string | null;
+  date_of_birth?: string | null;
+  date_of_joining?: string | null;
+  designation?: string | null;
+  aadhar_number?: string | null;
+  pan_number?: string | null;
+  address?: SalesmanAddress | null;
+  bank_details?: SalesmanBankDetails | null;
+  salary_type?: SalesmanSalaryType | null;
+  basic_salary?: number | null;
+  salary_effective_from?: string | null;
   is_active?: boolean;
+  /** When true, backend compares bank_details to kyc_verification_details.bank on create. */
+  verify_bank?: boolean;
+  kyc_verification_details?: EntityKycVerificationDetails;
 }
 
 export interface UpdateSalesmanRequest extends Partial<CreateSalesmanRequest> {}

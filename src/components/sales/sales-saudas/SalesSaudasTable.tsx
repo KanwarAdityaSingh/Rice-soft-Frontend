@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { SearchBar } from '../../admin/shared/SearchBar';
 import { FilterDropdown } from '../../admin/shared/FilterDropdown';
@@ -10,12 +10,29 @@ import { useSalesSaudas } from '../../../hooks/useSalesSaudas';
 import { useSalesSaudasData } from './SalesSaudasDataContext';
 import { SalesSaudaFormModal } from './SalesSaudaFormModal';
 import { SalesSaudaDetailModal } from './SalesSaudaDetailModal';
+import { InvoiceDispatchFormModal } from '../invoice-dispatches/InvoiceDispatchFormModal';
+import { salesSaudasAPI } from '../../../services/salesSaudas.api';
 import { toast } from '../../../utils/toast';
 import {
   buildFinancialYearApiFilterOptions,
   getCurrentFinancialYearApiValue,
 } from '../../../utils/financialYear';
+import {
+  formatBagsInput,
+  formatQty,
+  fulfillmentLabelText,
+  summarizeSaudaFulfillment,
+  type SaudaFulfillmentSummary,
+} from '../../../utils/salesSaudaFulfillment';
+import {
+  isGodownTransfer,
+  SALES_MOVEMENT_TYPE_FILTER_OPTIONS,
+  type SalesMovementTypeFilter,
+} from '../../../constants/sales-movement-types';
+import { useGodowns } from '../../../hooks/useGodowns';
 import type { SalesSauda, SalesSaudaStatus } from '../../../types/sales';
+
+type FulfillmentCell = SaudaFulfillmentSummary | 'loading' | 'error';
 
 interface SalesSaudasTableProps {
   onRefreshRef?: React.MutableRefObject<(() => void) | null>;
@@ -29,20 +46,28 @@ const statusOptions: { value: string; label: string }[] = [
 
 export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
   const [statusFilter, setStatusFilter] = useState<SalesSaudaStatus | ''>('');
+  const [movementTypeFilter, setMovementTypeFilter] = useState<SalesMovementTypeFilter>('all');
   const [financialYearFilter, setFinancialYearFilter] = useState<string | undefined>(
     () => getCurrentFinancialYearApiValue(),
   );
   const { salesSaudas, loading, deleteSauda, finalize, refetch } = useSalesSaudas({
     status: statusFilter || undefined,
     financial_year: financialYearFilter,
+    movement_type: movementTypeFilter,
   });
   const { salesParties, products, salesPartiesLoading } = useSalesSaudasData();
+  const { godowns } = useGodowns(true);
+  const godownName = (id: string | null | undefined) =>
+    id ? godowns.find((g) => g.id === id)?.name ?? id.slice(0, 8) : '–';
 
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedSauda, setSelectedSauda] = useState<SalesSauda | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [dispatchFromSaudaId, setDispatchFromSaudaId] = useState<string | null>(null);
+  /** List API omits lines — fulfillment comes from GET /sales-saudas/:id */
+  const [fulfillmentById, setFulfillmentById] = useState<Record<string, FulfillmentCell>>({});
 
   useEffect(() => {
     if (onRefreshRef) onRefreshRef.current = refetch;
@@ -83,6 +108,49 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
     });
   }, [salesSaudas, searchQuery, salesPartyNameById]);
 
+  const orderSaudaIdsKey = useMemo(
+    () =>
+      filtered
+        .filter((s) => s.status === 'order')
+        .map((s) => s.id)
+        .sort()
+        .join(','),
+    [filtered],
+  );
+
+  const loadFulfillment = useCallback(async (ids: string[]) => {
+    if (ids.length === 0) return;
+    setFulfillmentById((prev) => {
+      const next = { ...prev };
+      for (const id of ids) next[id] = 'loading';
+      return next;
+    });
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          const detail = await salesSaudasAPI.getById(id);
+          setFulfillmentById((prev) => ({
+            ...prev,
+            [id]: summarizeSaudaFulfillment(detail),
+          }));
+        } catch {
+          setFulfillmentById((prev) => ({ ...prev, [id]: 'error' }));
+        }
+      }),
+    );
+  }, []);
+
+  useEffect(() => {
+    const ids = orderSaudaIdsKey ? orderSaudaIdsKey.split(',') : [];
+    void loadFulfillment(ids);
+  }, [orderSaudaIdsKey, loadFulfillment]);
+
+  const refreshListAndFulfillment = useCallback(() => {
+    void refetch();
+    const ids = orderSaudaIdsKey ? orderSaudaIdsKey.split(',') : [];
+    void loadFulfillment(ids);
+  }, [refetch, orderSaudaIdsKey, loadFulfillment]);
+
   const handleDelete = async () => {
     if (!selectedSauda) return;
     try {
@@ -98,8 +166,10 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
     try {
       await finalize(sauda.id);
       toast.success(
-        'Sales Sauda finalized',
-        'You can now create an invoice dispatch against it.'
+        isGodownTransfer(sauda) ? 'Godown transfer finalized' : 'Sales Sauda finalized',
+        isGodownTransfer(sauda)
+          ? 'Create a dispatch from the source godown to move stock.'
+          : 'You can now create an invoice dispatch against it.',
       );
     } catch (e) {
       console.error(e);
@@ -134,6 +204,13 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
           options={statusOptions}
           onChange={(v) => setStatusFilter((v ?? '') as SalesSaudaStatus | '')}
         />
+        <FilterDropdown
+          label="Movement"
+          value={movementTypeFilter}
+          options={SALES_MOVEMENT_TYPE_FILTER_OPTIONS}
+          onChange={(v) => setMovementTypeFilter((v as SalesMovementTypeFilter) || 'all')}
+          hideAllOption
+        />
       </div>
 
       <div className="rounded-xl border bg-card overflow-hidden">
@@ -153,9 +230,11 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
               <thead>
                 <tr className="border-b bg-muted/50">
                   <th className="text-left p-3 font-medium">Sales Party</th>
+                  <th className="text-left p-3 font-medium">Movement</th>
                   <th className="text-left p-3 font-medium">Salesman</th>
                   <th className="text-left p-3 font-medium">Type</th>
                   <th className="text-left p-3 font-medium">Status</th>
+                  <th className="text-left p-3 font-medium">Fulfillment</th>
                   <th className="text-left p-3 font-medium">Order #</th>
                   <th className="text-left p-3 font-medium">FY</th>
                   <th className="text-left p-3 font-medium">Date</th>
@@ -167,9 +246,37 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
                 {filtered.map((s) => {
                   const partyName = getSalesPartyName(s);
                   const showLoading = salesPartiesLoading && !partyName && !s.sales_party_name;
+                  const fulfillment = s.status === 'order' ? fulfillmentById[s.id] : undefined;
+                  const transfer = isGodownTransfer(s);
                   return (
                   <tr key={s.id} className="border-b hover:bg-muted/30">
-                    <td className="p-3">{showLoading ? 'Loading...' : partyName || '–'}</td>
+                    <td className="p-3">
+                      {transfer ? (
+                        <div>
+                          <p className="font-medium">
+                            {godownName(s.from_godown_id)} → {godownName(s.to_godown_id)}
+                          </p>
+                          {partyName ? (
+                            <p className="text-[11px] text-muted-foreground">{partyName}</p>
+                          ) : null}
+                        </div>
+                      ) : showLoading ? (
+                        'Loading...'
+                      ) : (
+                        partyName || '–'
+                      )}
+                    </td>
+                    <td className="p-3">
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                          transfer
+                            ? 'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300'
+                            : 'bg-muted text-muted-foreground'
+                        }`}
+                      >
+                        {transfer ? 'Transfer' : 'Sale'}
+                      </span>
+                    </td>
                     <td className="p-3">{s.salesman_name?.trim() || '–'}</td>
                     <td className="p-3 uppercase">{s.sauda_type ?? '–'}</td>
                     <td className="p-3">
@@ -184,6 +291,46 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
                       >
                         {s.status}
                       </span>
+                    </td>
+                    <td className="p-3">
+                      {s.status !== 'order' ? (
+                        <span className="text-xs text-muted-foreground">–</span>
+                      ) : fulfillment === 'loading' || fulfillment === undefined ? (
+                        <span className="text-xs text-muted-foreground">Loading…</span>
+                      ) : fulfillment === 'error' ? (
+                        <span className="text-xs text-muted-foreground">–</span>
+                      ) : (
+                        <div className="space-y-0.5">
+                          <span
+                            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                              fulfillment.label === 'fully_dispatched'
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
+                                : fulfillment.label === 'partial'
+                                  ? 'bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300'
+                                  : 'bg-muted text-muted-foreground'
+                            }`}
+                          >
+                            {fulfillmentLabelText(fulfillment.label)}
+                          </span>
+                          {fulfillment.hasLines && (
+                            <p className="text-[11px] tabular-nums text-muted-foreground">
+                              {fulfillment.hasBags &&
+                              fulfillment.remainingBags != null &&
+                              fulfillment.orderedBags != null ? (
+                                <>
+                                  {formatBagsInput(fulfillment.remainingBags) || '0'} bags left of{' '}
+                                  {formatBagsInput(fulfillment.orderedBags) || '0'}
+                                </>
+                              ) : (
+                                <>
+                                  {formatQty(fulfillment.remaining)} left of{' '}
+                                  {formatQty(fulfillment.ordered)}
+                                </>
+                              )}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="p-3">{s.order_number ?? '–'}</td>
                     <td className="p-3 text-muted-foreground">{s.financial_year ?? '–'}</td>
@@ -254,7 +401,7 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
         open={!!editId}
         onOpenChange={(open) => !open && setEditId(null)}
         saudaId={editId}
-        onSuccess={refetch}
+        onSuccess={refreshListAndFulfillment}
       />
       <SalesSaudaDetailModal
         saudaId={detailId}
@@ -266,6 +413,16 @@ export function SalesSaudasTable({ onRefreshRef }: SalesSaudasTableProps = {}) {
           '–'
         }
         getProductName={(id) => products.find((p) => p.id === id)?.name ?? id}
+        onCreateDispatch={(id) => {
+          setDetailId(null);
+          setDispatchFromSaudaId(id);
+        }}
+      />
+      <InvoiceDispatchFormModal
+        open={!!dispatchFromSaudaId}
+        onOpenChange={(open) => !open && setDispatchFromSaudaId(null)}
+        initialSalesSaudaId={dispatchFromSaudaId}
+        onSuccess={refreshListAndFulfillment}
       />
 
       <ConfirmDialog

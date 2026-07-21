@@ -192,19 +192,20 @@ export function collectVehicleKycEntries(
   details?: VehicleVerificationDetails | null,
 ): KycVerificationEntry[] {
   if (!details) return [];
-  return (['rc_full', 'rc', 'rc_challan'] as const)
-    .map((key) => {
-      const snapshot = details[key];
-      if (!snapshot?.verified_at) return null;
-      return {
-        key,
-        label: KYC_VERIFICATION_LABELS[key] ?? key,
-        verified_at: snapshot.verified_at,
-        snapshot,
-      };
-    })
-    .filter((entry): entry is KycVerificationEntry => entry !== null)
-    .sort((a, b) => new Date(b.verified_at).getTime() - new Date(a.verified_at).getTime());
+  const entries: KycVerificationEntry[] = [];
+  for (const key of ['rc_full', 'rc', 'rc_challan'] as const) {
+    const snapshot = details[key];
+    if (!snapshot?.verified_at) continue;
+    entries.push({
+      key,
+      label: KYC_VERIFICATION_LABELS[key] ?? key,
+      verified_at: snapshot.verified_at,
+      snapshot,
+    });
+  }
+  return entries.sort(
+    (a, b) => new Date(b.verified_at).getTime() - new Date(a.verified_at).getTime(),
+  );
 }
 
 export function collectDriverKycEntries(

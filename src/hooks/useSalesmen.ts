@@ -1,6 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { salesmenAPI } from '../services/salesmen.api';
-import type { Salesman, CreateSalesmanRequest, UpdateSalesmanRequest } from '../types/entities';
+import type {
+  Salesman,
+  CreateSalesmanRequest,
+  UpdateSalesmanRequest,
+  SalesmanSalaryHistoryEntry,
+} from '../types/entities';
 
 export interface UseSalesmenOptions {
   /** When true, returns active + inactive. Default list is active only. */
@@ -18,9 +23,10 @@ export function useSalesmen(options?: UseSalesmenOptions) {
     setError(null);
     try {
       const data = await salesmenAPI.getAllSalesmen(includeInactive);
-      setSalesmen(data);
+      setSalesmen(Array.isArray(data) ? data : []);
     } catch (err: any) {
       setError(err.message);
+      setSalesmen([]);
     } finally {
       setLoading(false);
     }
@@ -31,32 +37,31 @@ export function useSalesmen(options?: UseSalesmenOptions) {
   }, [fetchSalesmen]);
 
   const createSalesman = async (data: CreateSalesmanRequest) => {
-    try {
-      const newSalesman = await salesmenAPI.createSalesman(data);
-      await fetchSalesmen();
-      return newSalesman;
-    } catch (err: any) {
-      throw err;
-    }
+    const result = await salesmenAPI.createSalesman(data);
+    await fetchSalesmen();
+    return result;
   };
 
   const updateSalesman = async (id: string, data: UpdateSalesmanRequest) => {
-    try {
-      const updatedSalesman = await salesmenAPI.updateSalesman(id, data);
-      setSalesmen((prev) => prev.map((s) => (s.id === id ? updatedSalesman : s)));
-      return updatedSalesman;
-    } catch (err: any) {
-      throw err;
-    }
+    const result = await salesmenAPI.updateSalesman(id, data);
+    setSalesmen((prev) => prev.map((s) => (s.id === id ? result.salesman : s)));
+    return result;
   };
 
   const deleteSalesman = async (id: string) => {
-    try {
-      await salesmenAPI.deleteSalesman(id);
-      setSalesmen((prev) => prev.filter((s) => s.id !== id));
-    } catch (err: any) {
-      throw err;
-    }
+    await salesmenAPI.deleteSalesman(id);
+    setSalesmen((prev) => prev.filter((s) => s.id !== id));
+  };
+
+  const getSalaryHistory = async (id: string): Promise<SalesmanSalaryHistoryEntry[]> => {
+    const data = await salesmenAPI.getSalaryHistory(id);
+    return Array.isArray(data) ? data : [];
+  };
+
+  const confirmBankVerification = async (id: string) => {
+    const updated = await salesmenAPI.confirmBankVerification(id);
+    setSalesmen((prev) => prev.map((s) => (s.id === id ? updated : s)));
+    return updated;
   };
 
   return {
@@ -66,6 +71,8 @@ export function useSalesmen(options?: UseSalesmenOptions) {
     createSalesman,
     updateSalesman,
     deleteSalesman,
+    getSalaryHistory,
+    confirmBankVerification,
     refetch: fetchSalesmen,
   };
 }

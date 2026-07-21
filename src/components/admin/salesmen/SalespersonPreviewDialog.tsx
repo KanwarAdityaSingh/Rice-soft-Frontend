@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, CheckCircle2, User } from 'lucide-react';
+import { X, CheckCircle2, User, MapPin, CreditCard, Briefcase, Shield } from 'lucide-react';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import type { CreateSalesmanRequest } from '../../../types/entities';
 import { formatPhoneDisplay } from '../../../utils/validation';
@@ -13,7 +13,12 @@ interface SalespersonPreviewDialogProps {
   onConfirm: (data: CreateSalesmanRequest) => Promise<void>;
 }
 
-export function SalespersonPreviewDialog({ open, onOpenChange, formData, onConfirm }: SalespersonPreviewDialogProps) {
+export function SalespersonPreviewDialog({
+  open,
+  onOpenChange,
+  formData,
+  onConfirm,
+}: SalespersonPreviewDialogProps) {
   const [loading, setLoading] = useState(false);
 
   const handleConfirm = async () => {
@@ -23,22 +28,27 @@ export function SalespersonPreviewDialog({ open, onOpenChange, formData, onConfi
       onOpenChange(false);
     } catch (error) {
       console.error('Failed to create salesperson:', error);
-      // Re-throw error so parent component can handle it
       throw error;
     } finally {
       setLoading(false);
     }
   };
 
-  const InfoSection = ({ title, icon: Icon, children }: { title: string; icon: any; children: React.ReactNode }) => (
+  const InfoSection = ({
+    title,
+    icon: Icon,
+    children,
+  }: {
+    title: string;
+    icon: React.ComponentType<{ className?: string }>;
+    children: React.ReactNode;
+  }) => (
     <div className="space-y-3">
       <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
         <Icon className="h-4 w-4" />
         <span>{title}</span>
       </div>
-      <div className="pl-6 space-y-2 text-sm text-muted-foreground">
-        {children}
-      </div>
+      <div className="pl-6 space-y-2 text-sm text-muted-foreground">{children}</div>
     </div>
   );
 
@@ -51,6 +61,14 @@ export function SalespersonPreviewDialog({ open, onOpenChange, formData, onConfi
       </div>
     );
   };
+
+  const formatAadhaar = (v: string | null | undefined) => {
+    if (!v?.trim()) return undefined;
+    return v.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
+  };
+
+  const address = formData.address;
+  const bank = formData.bank_details;
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -78,8 +96,8 @@ export function SalespersonPreviewDialog({ open, onOpenChange, formData, onConfi
                   </Dialog.Description>
                 </div>
               </div>
-              <button 
-                onClick={() => onOpenChange(false)} 
+              <button
+                onClick={() => onOpenChange(false)}
                 className="rounded-lg p-1 hover:bg-muted/50 transition-colors"
                 disabled={loading}
               >
@@ -88,19 +106,64 @@ export function SalespersonPreviewDialog({ open, onOpenChange, formData, onConfi
             </div>
 
             <div className="space-y-6">
-              {/* Basic Information */}
-              <InfoSection title="Salesperson Information" icon={User}>
+              <InfoSection title="Personal" icon={User}>
                 <InfoRow label="Name" value={formData.name} />
-                <InfoRow label="Email" value={formData.email} />
                 <InfoRow label="Phone" value={formatPhoneDisplay(formData.phone)} />
-                <InfoRow 
-                  label="Status" 
-                  value={formData.is_active !== false ? 'Active' : 'Inactive'} 
+                <InfoRow
+                  label="Alternate phone"
+                  value={
+                    formData.alternate_phone
+                      ? formatPhoneDisplay(formData.alternate_phone)
+                      : undefined
+                  }
                 />
+                <InfoRow label="Email" value={formData.email ?? undefined} />
+                <InfoRow label="Date of birth" value={formData.date_of_birth ?? undefined} />
+                <InfoRow label="Date of joining" value={formData.date_of_joining ?? undefined} />
+                <InfoRow label="Designation" value={formData.designation ?? undefined} />
               </InfoSection>
+
+              <InfoSection title="Identity" icon={Shield}>
+                <InfoRow label="PAN" value={formData.pan_number ?? undefined} />
+                <InfoRow label="Aadhaar" value={formatAadhaar(formData.aadhar_number)} />
+              </InfoSection>
+
+              {address && (address.street || address.city || address.state) && (
+                <InfoSection title="Address" icon={MapPin}>
+                  <InfoRow label="Street" value={address.street} />
+                  <InfoRow label="City" value={address.city} />
+                  <InfoRow label="State" value={address.state} />
+                  <InfoRow label="Pincode" value={address.pincode} />
+                  <InfoRow label="Country" value={address.country} />
+                </InfoSection>
+              )}
+
+              {bank && (bank.account_number || bank.ifsc_code) && (
+                <InfoSection title="Bank" icon={CreditCard}>
+                  <InfoRow label="Account holder" value={bank.account_holder_name} />
+                  <InfoRow label="Account number" value={bank.account_number} />
+                  <InfoRow label="IFSC" value={bank.ifsc_code} />
+                  <InfoRow label="Bank" value={bank.bank_name} />
+                  <InfoRow label="Branch" value={bank.branch} />
+                </InfoSection>
+              )}
+
+              {(formData.basic_salary != null || formData.salary_effective_from) && (
+                <InfoSection title="Salary" icon={Briefcase}>
+                  <InfoRow label="Type" value={formData.salary_type ?? 'monthly'} />
+                  <InfoRow
+                    label="Basic salary"
+                    value={
+                      formData.basic_salary != null
+                        ? `₹${Number(formData.basic_salary).toLocaleString('en-IN')}`
+                        : undefined
+                    }
+                  />
+                  <InfoRow label="Effective from" value={formData.salary_effective_from ?? undefined} />
+                </InfoSection>
+              )}
             </div>
 
-            {/* Action Buttons */}
             <div className="flex gap-3 mt-8 pt-6 border-t border-border">
               <button
                 type="button"
@@ -135,4 +198,3 @@ export function SalespersonPreviewDialog({ open, onOpenChange, formData, onConfi
     </Dialog.Root>
   );
 }
-

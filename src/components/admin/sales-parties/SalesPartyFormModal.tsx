@@ -37,6 +37,8 @@ import type {
   VendorBankDetails,
   ContactPerson,
   EntityKycVerificationDetails,
+  SalesPartyCustomerType,
+  SalesPartyRegistrationType,
 } from '../../../types/entities';
 import {
   buildEntitySavePayload,
@@ -91,6 +93,29 @@ import {
   computeSalesPartyVerifiedFromKyc,
   formatSalesPartyVerifiedAt,
 } from '../../../utils/salesPartyVerification';
+
+const RETAIL_CUSTOMER_TYPE_OPTIONS: { value: SalesPartyCustomerType; label: string }[] = [
+  { value: 'individual', label: 'Individual' },
+  { value: 'small_retailer', label: 'Small Retailer Unregistered' },
+  { value: 'cash_customer', label: 'Cash Customer' },
+];
+
+function normalizeSalesPartySavePayload(
+  data: CreateSalesPartyRequest | UpdateSalesPartyRequest,
+): CreateSalesPartyRequest | UpdateSalesPartyRequest {
+  if (data.registration_type === 'retail') {
+    return {
+      ...data,
+      customer_type: data.customer_type ?? null,
+      aadhar_number: null,
+      business_details: {},
+    };
+  }
+  return {
+    ...data,
+    customer_type: null,
+  };
+}
 import { assertEntityNotDuplicateBeforeVerification } from '../../../utils/entityDuplicateCheck';
 import {
   applyAadhaarOcrToNestedParty,
@@ -161,6 +186,7 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
       branch: '',
     } as VendorBankDetails,
     registration_type: 'registered',
+    customer_type: null,
     aadhar_number: null,
     is_active: true,
     google_location_link: null,
@@ -198,7 +224,7 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
   const lockedClass = (key: string) => lockedClassFor(apiLockedFields, key);
 
   const isIdentityVerified = (
-    registrationType: 'registered' | 'unregistered' = formData.registration_type,
+    registrationType: SalesPartyRegistrationType = formData.registration_type,
   ) =>
     isVerified || computeSalesPartyVerifiedFromKyc(registrationType, kycVerificationDetails);
 
@@ -213,7 +239,7 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
   );
 
   const syncVerifiedFromKyc = (
-    registrationType: 'registered' | 'unregistered',
+    registrationType: SalesPartyRegistrationType,
     kyc: EntityKycVerificationDetails,
     serverVerified?: { is_verified: boolean; verified_at: string | null },
   ) => {
@@ -225,6 +251,44 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
     const computed = computeSalesPartyVerifiedFromKyc(registrationType, kyc);
     setIsVerified(computed);
     setVerifiedAt(computed ? new Date().toISOString() : null);
+  };
+
+  const handleRegistrationTypeChange = (value: string | null) => {
+    if (!value) return;
+    const registration_type = value as SalesPartyRegistrationType;
+    if (registration_type === 'retail') {
+      setFormData({
+        ...formData,
+        registration_type,
+        customer_type: formData.customer_type ?? null,
+        aadhar_number: null,
+        business_details: { pan_number: '', gst_number: '' },
+      });
+      setKycVerificationDetails({});
+      setAadhaarValidated(false);
+      setAadhaarValidationSummary(null);
+      setIsVerified(true);
+      setVerifiedAt(new Date().toISOString());
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next.gst_number;
+        delete next.pan_number;
+        delete next.aadhar_number;
+        return next;
+      });
+      return;
+    }
+    setFormData({
+      ...formData,
+      registration_type,
+      customer_type: null,
+    });
+    syncVerifiedFromKyc(registration_type, kycVerificationDetails);
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next.customer_type;
+      return next;
+    });
   };
 
   const refreshVerifiedFromServer = async () => {
@@ -316,13 +380,20 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
           branch: '',
         },
         registration_type: vendor.registration_type || 'registered',
+        customer_type: vendor.customer_type ?? null,
         aadhar_number: aadharNumber || null,
         is_active: vendor.is_active ?? true,
         google_location_link: vendor.google_location_link || null,
       });
       setKycVerificationDetails(vendor.kyc_verification_details ?? {});
-      setIsVerified(vendor.is_verified);
-      setVerifiedAt(vendor.verified_at);
+      setIsVerified(
+        vendor.registration_type === 'retail' ? true : vendor.is_verified,
+      );
+      setVerifiedAt(
+        vendor.registration_type === 'retail'
+          ? vendor.verified_at ?? new Date().toISOString()
+          : vendor.verified_at,
+      );
       setAadhaarValidated(Boolean(vendor.kyc_verification_details?.aadhaar));
       setBankDetailsVerifiedAt(vendor.bank_details_verified_at ?? null);
       setBankVerifiedInSession(Boolean(vendor.bank_details_verified_at));
@@ -401,6 +472,7 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
         branch: '',
       },
       registration_type: 'registered',
+      customer_type: null,
       aadhar_number: null,
       is_active: true,
       google_location_link: null,
@@ -919,7 +991,12 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.business_name) newErrors.business_name = 'Business name required';
+    if (!formData.business_name) {
+      newErrors.business_name =
+        formData.registration_type === 'retail'
+          ? 'Business name / customer name required'
+          : 'Business name required';
+    }
     
     // Validate contact persons
     if (!formData.contact_persons || formData.contact_persons.length === 0) {
@@ -963,7 +1040,7 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
         );
         if (mismatchError) newErrors.pan_number = mismatchError;
       }
-    } else {
+    } else if (formData.registration_type === 'unregistered') {
       if (!formData.aadhar_number?.trim()) {
         newErrors.aadhar_number = 'Aadhaar number is required for unregistered sales parties';
       } else if (!validateAadhaar(formData.aadhar_number)) {
@@ -972,6 +1049,10 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
       if (formData.business_details.pan_number?.trim()) {
         const panError = getPanValidationError(formData.business_details.pan_number);
         if (panError) newErrors.pan_number = panError;
+      }
+    } else if (formData.registration_type === 'retail') {
+      if (!formData.customer_type) {
+        newErrors.customer_type = 'Customer type is required for retail sales parties';
       }
     }
 
@@ -1000,7 +1081,8 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
           key.startsWith('contact_person_') ||
           key === 'gst_number' ||
           key === 'pan_number' ||
-          key === 'aadhar_number',
+          key === 'aadhar_number' ||
+          key === 'customer_type',
       );
       if (hasStep1Errors) {
         setStep(1);
@@ -1026,11 +1108,14 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
     if (isEditMode && salesPartyId) {
       setLoading(true);
       try {
-        const updatePayload = buildEntitySavePayload(formData as UpdateSalesPartyRequest, {
-          kycVerificationDetails,
-          bankDetailsVerifiedAt,
-          identityVerified: isIdentityVerified(),
-        });
+        const updatePayload = buildEntitySavePayload(
+          normalizeSalesPartySavePayload(formData as UpdateSalesPartyRequest) as UpdateSalesPartyRequest,
+          {
+            kycVerificationDetails,
+            bankDetailsVerifiedAt,
+            identityVerified: isIdentityVerified(),
+          },
+        );
         await updateSalesParty(salesPartyId, updatePayload);
         setAlertType('success');
         setAlertTitle('Sales Party Updated Successfully');
@@ -1060,25 +1145,31 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
     setLoading(true);
     try {
       if (isEditMode && salesPartyId) {
-        const updatePayload = buildEntitySavePayload(data as UpdateSalesPartyRequest, {
-          kycVerificationDetails,
-          bankDetailsVerifiedAt,
-          identityVerified: isIdentityVerified(
-            (data as CreateSalesPartyRequest).registration_type,
-          ),
-        });
+        const updatePayload = buildEntitySavePayload(
+          normalizeSalesPartySavePayload(data as UpdateSalesPartyRequest) as UpdateSalesPartyRequest,
+          {
+            kycVerificationDetails,
+            bankDetailsVerifiedAt,
+            identityVerified: isIdentityVerified(
+              (data as CreateSalesPartyRequest).registration_type,
+            ),
+          },
+        );
         await updateSalesParty(salesPartyId, updatePayload);
         setAlertType('success');
         setAlertTitle('Sales Party Updated Successfully');
         setAlertMessage('The sales party has been updated successfully.');
       } else {
-        const createPayload = buildEntitySavePayload(data as CreateSalesPartyRequest, {
-          kycVerificationDetails,
-          bankDetailsVerifiedAt,
-          identityVerified: isIdentityVerified(
-            (data as CreateSalesPartyRequest).registration_type,
-          ),
-        });
+        const createPayload = buildEntitySavePayload(
+          normalizeSalesPartySavePayload(data as CreateSalesPartyRequest) as CreateSalesPartyRequest,
+          {
+            kycVerificationDetails,
+            bankDetailsVerifiedAt,
+            identityVerified: isIdentityVerified(
+              (data as CreateSalesPartyRequest).registration_type,
+            ),
+          },
+        );
         await createSalesParty(createPayload);
         resetForm();
         setAlertType('success');
@@ -1209,21 +1300,18 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
                     </label>
                     <CustomSelect
                       value={formData.registration_type}
-                      onChange={(value) =>
-                        setFormData({
-                          ...formData,
-                          registration_type: value as 'registered' | 'unregistered',
-                        })
-                      }
+                      onChange={handleRegistrationTypeChange}
                       options={[
                         { value: 'registered', label: 'Registered' },
                         { value: 'unregistered', label: 'Unregistered' },
+                        { value: 'retail', label: 'Retail' },
                       ]}
                       placeholder="Select Registration Type"
                     />
                   </div>
 
-                  {(isVerified && verifiedAt) || (!isVerified && isEditMode && salesPartyId) ? (
+                  {formData.registration_type !== 'retail' &&
+                  ((isVerified && verifiedAt) || (!isVerified && isEditMode && salesPartyId)) ? (
                     <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 mb-2 space-y-1">
                       {!isVerified && isEditMode && salesPartyId && (
                         <p className="text-xs text-amber-700 dark:text-amber-400">
@@ -1239,7 +1327,7 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
                     </div>
                   ) : null}
 
-                  {!isVerified && (
+                  {!isVerified && formData.registration_type !== 'retail' && (
                     <KycDocumentOcrSection
                       docs={
                         formData.registration_type === 'registered'
@@ -1325,7 +1413,32 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
                     />
                   )}
 
-                  {formData.registration_type === 'registered' ? (
+                  {formData.registration_type === 'retail' ? (
+                    <div>
+                      <label className="text-sm font-medium mb-1.5 block">
+                        Customer Type <span className="text-red-500">*</span>
+                      </label>
+                      <CustomSelect
+                        value={formData.customer_type ?? ''}
+                        onChange={(value) => {
+                          setFormData({
+                            ...formData,
+                            customer_type: (value || null) as SalesPartyCustomerType | null,
+                          });
+                          setErrors((prev) => {
+                            const next = { ...prev };
+                            delete next.customer_type;
+                            return next;
+                          });
+                        }}
+                        options={RETAIL_CUSTOMER_TYPE_OPTIONS}
+                        placeholder="Select customer type"
+                      />
+                      {errors.customer_type && (
+                        <p className="mt-1 text-xs text-red-600">{errors.customer_type}</p>
+                      )}
+                    </div>
+                  ) : formData.registration_type === 'registered' ? (
                     <>
                       <div>
                         <label className="text-sm font-medium mb-1.5 block">
@@ -1539,13 +1652,23 @@ export function SalesPartyFormModal({ open, onOpenChange, salesPartyId }: SalesP
                   )}
 
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block">Business Name *</label>
+                    <label className="text-sm font-medium mb-1.5 block">
+                      {formData.registration_type === 'retail'
+                        ? 'Business Name / Customer Name'
+                        : 'Business Name'}{' '}
+                      *
+                    </label>
                     <input
                       type="text"
                       value={formData.business_name}
                       onChange={(e) => setFormData({ ...formData, business_name: e.target.value })}
                       className={`w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm outline-none ring-0 transition focus:border-primary ${isEditMode ? 'read-only:cursor-not-allowed' : ''}`}
                       readOnly={isEditMode}
+                      placeholder={
+                        formData.registration_type === 'retail'
+                          ? 'Store or customer name'
+                          : undefined
+                      }
                     />
                     {errors.business_name && <p className="mt-1 text-xs text-red-600">{errors.business_name}</p>}
                   </div>

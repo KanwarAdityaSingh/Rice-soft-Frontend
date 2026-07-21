@@ -3,6 +3,7 @@ import type {
   AadhaarLookupResponse,
   AadhaarValidationResult,
   SalesParty,
+  SalesPartyRegistrationType,
   CreateSalesPartyRequest,
   UpdateSalesPartyRequest,
 } from '../types/entities';
@@ -11,7 +12,7 @@ const BASE = '/sales-parties';
 
 export interface GetAllSalesPartiesOptions {
   includeInactive?: boolean;
-  registrationType?: 'registered' | 'unregistered';
+  registrationType?: SalesPartyRegistrationType;
   isVerified?: boolean;
 }
 

@@ -5,6 +5,10 @@ import { X, CheckCircle2, Building2, MapPin, Briefcase, UserCheck } from 'lucide
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 import type { CreateSalesPartyRequest } from '../../../types/entities';
 import { formatPhonesForDisplay } from '../../../utils/validation';
+import {
+  formatSalesPartyCustomerTypeLabel,
+  formatSalesPartyRegistrationLabel,
+} from '../../../utils/salesPartyVerification';
 
 interface SalesPartyPreviewDialogProps {
   open: boolean;
@@ -29,15 +33,12 @@ export function SalesPartyPreviewDialog({ open, onOpenChange, formData, onConfir
     }
   };
 
-  const getRegistrationTypeLabel = (registrationType: string | undefined): string => {
-    if (!registrationType) return 'Registered';
-    return registrationType === 'unregistered' ? 'Unregistered' : 'Registered';
-  };
-
   const formatAadhaarDisplay = (aadhar: string | null | undefined): string | undefined => {
     if (!aadhar?.trim()) return undefined;
     return aadhar.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
   };
+
+  const isRetail = formData.registration_type === 'retail';
 
   const InfoSection = ({ title, icon: Icon, children }: { title: string; icon: any; children: React.ReactNode }) => (
     <div className="space-y-3">
@@ -98,9 +99,22 @@ export function SalesPartyPreviewDialog({ open, onOpenChange, formData, onConfir
 
             <div className="space-y-6">
               <InfoSection title="Basic Information" icon={Building2}>
-                <InfoRow label="Business Name" value={formData.business_name} />
-                <InfoRow label="Registration" value={getRegistrationTypeLabel(formData.registration_type)} />
-                <InfoRow label="Aadhaar Number" value={formatAadhaarDisplay(formData.aadhar_number)} />
+                <InfoRow
+                  label={isRetail ? 'Business Name / Customer Name' : 'Business Name'}
+                  value={formData.business_name}
+                />
+                <InfoRow
+                  label="Registration"
+                  value={formatSalesPartyRegistrationLabel(formData.registration_type)}
+                />
+                {isRetail ? (
+                  <InfoRow
+                    label="Customer Type"
+                    value={formatSalesPartyCustomerTypeLabel(formData.customer_type)}
+                  />
+                ) : (
+                  <InfoRow label="Aadhaar Number" value={formatAadhaarDisplay(formData.aadhar_number)} />
+                )}
                 <InfoRow
                   label="Status"
                   value={formData.is_active !== false ? 'Active' : 'Inactive'}
@@ -145,7 +159,7 @@ export function SalesPartyPreviewDialog({ open, onOpenChange, formData, onConfir
                 </InfoSection>
               )}
 
-              {formData.business_details && (
+              {!isRetail && formData.business_details && (
                 <InfoSection title="Business Details" icon={Briefcase}>
                   <InfoRow
                     label="GST Number"

@@ -25,7 +25,8 @@ export function SalesmenTable() {
   const filteredSalesmen = salesmen.filter((salesman) => {
     const matchesSearch = 
       salesman.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      salesman.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (salesman.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (salesman.salesperson_code || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       salesman.phone.includes(searchQuery) ||
       formatPhoneDisplay(salesman.phone).includes(searchQuery);
     
@@ -77,7 +78,7 @@ export function SalesmenTable() {
                 {filteredSalesmen.map((salesman) => (
                   <tr key={salesman.id} className="border-b border-border/60 hover:bg-muted/30 transition-colors">
                     <td className="py-3 px-4 text-sm">{salesman.name}</td>
-                    <td className="py-3 px-4 text-sm">{salesman.email}</td>
+                    <td className="py-3 px-4 text-sm">{salesman.email || '—'}</td>
                     <td className="py-3 px-4 text-sm">{formatPhoneDisplay(salesman.phone)}</td>
                     <td className="py-3 px-4 text-right">
                       <ActionButtons

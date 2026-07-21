@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { X, Plus, Trash2, Loader2, RefreshCw } from 'lucide-react';
 import { useSalesSaudasData } from './SalesSaudasDataContext';
 import { useSalesmen } from '../../../hooks/useSalesmen';
+import { useGodowns } from '../../../hooks/useGodowns';
 import { salesSaudasAPI } from '../../../services/salesSaudas.api';
 import { salesPartiesAPI } from '../../../services/salesParties.api';
 import { salesPartySitesAPI } from '../../../services/salesPartySites.api';
@@ -17,6 +18,7 @@ import { toast } from '../../../utils/toast';
 import { formatVendorAddress } from '../../../utils/saudaDisplay';
 import type {
   CreateSalesSaudaRequest,
+  SalesMovementType,
   SalesSaudaAddress,
   SalesSaudaLineInput,
   SalesSaudaType,
@@ -25,6 +27,10 @@ import {
   isSalesSaudaType,
   SALES_SAUDA_TYPE_OPTIONS,
 } from '../../../constants/sales-sauda-types';
+import {
+  isGodownTransfer,
+  SALES_MOVEMENT_TYPE_OPTIONS,
+} from '../../../constants/sales-movement-types';
 
 function cloneAddress(address: VendorAddress | null | undefined): SalesSaudaAddress | null {
   if (!address) return null;
@@ -58,6 +64,11 @@ function formatSiteLabel(site: SalesPartySite): string {
   return name ? `${name}${line ? ` · ${line}` : ''}` : line || site.id.slice(0, 8);
 }
 
+function formatGodownOptionLabel(godown: { name: string; gst_number?: string | null }): string {
+  const gst = godown.gst_number?.trim();
+  return gst ? `${godown.name} · GST ${gst}` : godown.name;
+}
+
 interface SalesSaudaFormModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -73,6 +84,9 @@ const UNIT_FACTOR: Record<LineQuantityUnit, number> = {
   ton: 1000,
 };
 
+/** Max bags (packet_count) allowed on a sales sauda line. */
+const MAX_BAGS = 12_000;
+
 const defaultLine = (): SalesSaudaLineInput => ({
   product_id: '',
   packaging_id: undefined,
@@ -80,7 +94,7 @@ const defaultLine = (): SalesSaudaLineInput => ({
   quantity: undefined,
   quantity_unit: 'kg',
   rate: 0,
-  discount_value: 0,
+  discount_value: undefined,
   discount_type: 'per_kg',
   gst_percent: 0,
   sort_order: 0,
@@ -94,6 +108,7 @@ export function SalesSaudaFormModal({
 }: SalesSaudaFormModalProps) {
   const { salesParties, products } = useSalesSaudasData();
   const { salesmen, refetch: refetchSalesmen, loading: loadingSalesmen } = useSalesmen();
+  const { godowns } = useGodowns(false);
   const isEdit = !!saudaId;
   /** Party loaded by id when the selected sauda's party is missing from the list */
   const [extraSalesParty, setExtraSalesParty] = useState<SalesParty | null>(null);
@@ -105,16 +120,28 @@ export function SalesSaudaFormModal({
   const [packagingByProduct, setPackagingByProduct] = useState<Record<string, Packaging[]>>({});
   const requestedProductIds = useRef<Set<string>>(new Set());
   const [formData, setFormData] = useState<CreateSalesSaudaRequest>({
+    movement_type: 'sale',
     sales_party_id: '',
     status: 'draft',
     sauda_date: new Date().toISOString().split('T')[0],
     sauda_type: '' as SalesSaudaType,
+    from_godown_id: null,
+    to_godown_id: null,
     salesman_id: null,
     billing_address: null,
     delivery_address: null,
     payment_terms: null,
     lines: [defaultLine()],
   });
+  const isTransfer = isGodownTransfer(formData.movement_type);
+
+  // Godown → godown transfers always use FOR
+  useEffect(() => {
+    if (!isTransfer) return;
+    if (formData.sauda_type === 'for') return;
+    setFormData((p) => (p.sauda_type === 'for' ? p : { ...p, sauda_type: 'for' }));
+  }, [isTransfer, formData.sauda_type]);
+
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [loadingSauda, setLoadingSauda] = useState(false);
@@ -133,6 +160,8 @@ export function SalesSaudaFormModal({
   } | null>(null);
   /** Line index → true when rate was autofilled from suggested-rate API (rate input disabled). */
   const [rateAutofilledForLine, setRateAutofilledForLine] = useState<Record<number, boolean>>({});
+  /** Draft text for discount inputs so users can clear "0" and type decimals. */
+  const [discountDrafts, setDiscountDrafts] = useState<Record<number, string>>({});
 
   const salesPartyOptions = useMemo(() => {
     const byId = new Map<string, SalesParty>();
@@ -182,10 +211,13 @@ export function SalesSaudaFormModal({
       pendingHydratedAddressesRef.current = null;
       setExtraSalesParty(null);
       setFormData({
+        movement_type: 'sale',
         sales_party_id: '',
         status: 'draft',
         sauda_date: new Date().toISOString().split('T')[0],
         sauda_type: '' as SalesSaudaType,
+        from_godown_id: null,
+        to_godown_id: null,
         salesman_id: null,
         billing_address: null,
         delivery_address: null,
@@ -197,6 +229,7 @@ export function SalesSaudaFormModal({
       setSelectedDeliverySiteId('');
       setErrors({});
       setRateAutofilledForLine({});
+      setDiscountDrafts({});
     }
   }, [open, saudaId]);
 
@@ -207,6 +240,7 @@ export function SalesSaudaFormModal({
       setDeliverySites([]);
       setSelectedDeliverySiteId('');
       setExtraSalesParty(null);
+      setDiscountDrafts({});
     }
   }, [open]);
 
@@ -234,8 +268,8 @@ export function SalesSaudaFormModal({
 
   // When sales party changes: set billing from party address; load additional delivery sites
   useEffect(() => {
-    if (!open || !formData.sales_party_id) {
-      if (!formData.sales_party_id) {
+    if (!open || isTransfer || !formData.sales_party_id) {
+      if (!formData.sales_party_id || isTransfer) {
         setDeliverySites([]);
         setSelectedDeliverySiteId('');
       }
@@ -287,7 +321,7 @@ export function SalesSaudaFormModal({
     return () => {
       cancelled = true;
     };
-  }, [open, formData.sales_party_id, loadDeliverySites, salesPartyOptions]);
+  }, [open, isTransfer, formData.sales_party_id, loadDeliverySites, salesPartyOptions]);
 
   useEffect(() => {
     if (open) {
@@ -344,10 +378,17 @@ export function SalesSaudaFormModal({
       const delivery = cloneAddress(s.delivery_address);
       pendingHydratedAddressesRef.current = { billing, delivery };
       setFormData({
-        sales_party_id: s.sales_party_id,
+        movement_type: isGodownTransfer(s.movement_type) ? 'godown_transfer' : 'sale',
+        sales_party_id: s.sales_party_id ?? '',
         status: 'draft',
         sauda_date: s.sauda_date,
-        sauda_type: isSalesSaudaType(s.sauda_type) ? s.sauda_type : ('' as SalesSaudaType),
+        sauda_type: isGodownTransfer(s.movement_type)
+          ? 'for'
+          : isSalesSaudaType(s.sauda_type)
+            ? s.sauda_type
+            : ('' as SalesSaudaType),
+        from_godown_id: s.from_godown_id ?? null,
+        to_godown_id: s.to_godown_id ?? null,
         salesman_id: s.salesman_id ?? null,
         billing_address: billing,
         delivery_address: delivery,
@@ -555,13 +596,38 @@ export function SalesSaudaFormModal({
 
   const validate = (): boolean => {
     const e: Record<string, string> = {};
-    if (!formData.sales_party_id) e.sales_party_id = 'Select a sales party';
+    if (isTransfer) {
+      if (!formData.from_godown_id) e.from_godown_id = 'Select from godown';
+      if (!formData.to_godown_id) e.to_godown_id = 'Select to godown';
+      if (
+        formData.from_godown_id &&
+        formData.to_godown_id &&
+        formData.from_godown_id === formData.to_godown_id
+      ) {
+        e.to_godown_id = 'To godown must be different from from godown';
+      }
+    } else if (!formData.sales_party_id) {
+      e.sales_party_id = 'Select a sales party';
+    }
     if (!formData.sauda_date) e.sauda_date = 'Date is required';
-    if (!isSalesSaudaType(formData.sauda_type)) e.sauda_type = 'Select sauda type (EX or FOR)';
-    if (hasAdditionalDeliveryAddresses && !deliverySameAsBilling && !selectedDeliverySiteId) {
+    if (isTransfer) {
+      if (formData.sauda_type !== 'for') e.sauda_type = 'Godown transfer saudas must be FOR';
+    } else if (!isSalesSaudaType(formData.sauda_type)) {
+      e.sauda_type = 'Select sauda type (EX or FOR)';
+    }
+    if (
+      !isTransfer &&
+      hasAdditionalDeliveryAddresses &&
+      !deliverySameAsBilling &&
+      !selectedDeliverySiteId
+    ) {
       e.delivery_address = 'Select a delivery address or use same as billing';
     }
-    if (formData.payment_terms !== null && formData.payment_terms !== undefined) {
+    if (
+      !isTransfer &&
+      formData.payment_terms !== null &&
+      formData.payment_terms !== undefined
+    ) {
       if (!Number.isInteger(formData.payment_terms) || formData.payment_terms < 0) {
         e.payment_terms = 'Payment terms must be a whole number of days (>= 0)';
       } else if (formData.payment_terms > 90) {
@@ -587,14 +653,30 @@ export function SalesSaudaFormModal({
       if (packetCount > 0 && !Number.isInteger(packetCount)) {
         e[`line_${i}_qty`] = 'Packet count must be a whole number';
       }
+      if (packetCount > MAX_BAGS) {
+        e[`line_${i}_qty`] = `Bags cannot exceed ${MAX_BAGS.toLocaleString('en-IN')}`;
+      }
       if (packetCount > 0 && !l.packaging_id) {
         e[`line_${i}_packaging`] = 'Packaging is required when packet count is used';
       }
       const discountValue = Number(l.discount_value) || 0;
+      const rate = Number(l.rate) || 0;
+      const baseAmount = qty * rate;
       const gstPercent = Number(l.gst_percent) || 0;
-      if (discountValue < 0) e[`line_${i}_discount`] = 'Discount must be >= 0';
-      if (l.discount_type === 'percentage' && discountValue > 100) {
-        e[`line_${i}_discount`] = 'Percentage discount cannot exceed 100';
+      if (discountValue < 0) e[`line_${i}_discount`] = 'Discount must be ≥ 0';
+      if (l.discount_type === 'percentage') {
+        if (discountValue > 100) {
+          e[`line_${i}_discount`] = 'Percentage discount cannot exceed 100';
+        }
+      } else if (discountValue > rate + 1e-9) {
+        e[`line_${i}_discount`] = 'Discount cannot exceed the rate (base)';
+      }
+      const discountAmount =
+        l.discount_type === 'percentage'
+          ? (baseAmount * discountValue) / 100
+          : discountValue * qty;
+      if (discountAmount > baseAmount + 1e-9) {
+        e[`line_${i}_discount`] = 'Discount cannot exceed the base amount';
       }
       if (gstPercent < 0) e[`line_${i}_gst`] = 'GST percent must be >= 0';
       if (l.rate < 0) e[`line_${i}_rate`] = 'Rate cannot be negative';
@@ -614,47 +696,65 @@ export function SalesSaudaFormModal({
         formData.lines?.filter(
           (l) => l.product_id && ((Number(l.quantity) || 0) > 0 || (Number(l.packet_count) || 0) > 0)
         ) ?? [];
-      const billing = cloneAddress(formData.billing_address);
-      const delivery = deliverySameAsBilling
-        ? cloneAddress(billing)
-        : cloneAddress(formData.delivery_address);
-      const payload = {
-        sales_party_id: formData.sales_party_id,
-        status: formData.status,
-        sauda_date: formData.sauda_date,
-        sauda_type: formData.sauda_type,
-        salesman_id: formData.salesman_id || null,
-        billing_address: billing,
-        delivery_address: delivery,
-        payment_terms:
-          formData.payment_terms === null || formData.payment_terms === undefined
-            ? null
-            : Number(formData.payment_terms),
-        notes: formData.notes,
-        lines: filteredLines.map((l): SalesSaudaLineInput => {
-          const discountType: 'per_kg' | 'percentage' =
-            l.discount_type === 'percentage' ? 'percentage' : 'per_kg';
-          return {
-            product_id: l.product_id,
-            packaging_id: l.packaging_id || undefined,
-            packet_count: (Number(l.packet_count) || 0) > 0 ? Number(l.packet_count) : undefined,
-            quantity: (Number(l.quantity) || 0) > 0 ? Number(l.quantity) : undefined,
-            quantity_unit: l.quantity_unit || 'kg',
-            rate: Number(l.rate) || 0,
-            discount_value: Number(l.discount_value) || 0,
-            discount_type: discountType,
-            gst_percent: Number(l.gst_percent) || 0,
-            sort_order: l.sort_order,
+      const billing = isTransfer ? null : cloneAddress(formData.billing_address);
+      const delivery = isTransfer
+        ? null
+        : deliverySameAsBilling
+          ? cloneAddress(billing)
+          : cloneAddress(formData.delivery_address);
+      const linesPayload = filteredLines.map((l): SalesSaudaLineInput => {
+        const discountType: 'per_kg' | 'percentage' =
+          l.discount_type === 'percentage' ? 'percentage' : 'per_kg';
+        return {
+          product_id: l.product_id,
+          packaging_id: l.packaging_id || undefined,
+          packet_count: (Number(l.packet_count) || 0) > 0 ? Number(l.packet_count) : undefined,
+          quantity: (Number(l.quantity) || 0) > 0 ? Number(l.quantity) : undefined,
+          quantity_unit: l.quantity_unit || 'kg',
+          rate: Number(l.rate) || 0,
+          discount_value: Number(l.discount_value) || 0,
+          discount_type: discountType,
+          gst_percent: Number(l.gst_percent) || 0,
+          sort_order: l.sort_order,
+        };
+      });
+      const payload: CreateSalesSaudaRequest = isTransfer
+        ? {
+            movement_type: 'godown_transfer',
+            from_godown_id: formData.from_godown_id || null,
+            to_godown_id: formData.to_godown_id || null,
+            status: formData.status,
+            sauda_date: formData.sauda_date,
+            sauda_type: 'for',
+            payment_terms: null,
+            notes: formData.notes,
+            lines: linesPayload,
+          }
+        : {
+            movement_type: 'sale',
+            sales_party_id: formData.sales_party_id,
+            status: formData.status,
+            sauda_date: formData.sauda_date,
+            sauda_type: formData.sauda_type,
+            salesman_id: formData.salesman_id || null,
+            billing_address: billing,
+            delivery_address: delivery,
+            payment_terms:
+              formData.payment_terms === null || formData.payment_terms === undefined
+                ? null
+                : Number(formData.payment_terms),
+            notes: formData.notes,
+            lines: linesPayload,
           };
-        }),
-      };
       if (isEdit && saudaId) {
         await salesSaudasAPI.update(saudaId, payload);
       } else {
         await salesSaudasAPI.create(payload);
         toast.success(
-          'Sales Sauda created',
-          'Verify and finalize it before creating an invoice dispatch.'
+          isTransfer ? 'Godown transfer created' : 'Sales Sauda created',
+          isTransfer
+            ? 'Finalize it, then create a dispatch from the source godown.'
+            : 'Verify and finalize it before creating an invoice dispatch.',
         );
       }
       onOpenChange(false);
@@ -678,10 +778,16 @@ export function SalesSaudaFormModal({
             <div className="flex items-center justify-between">
               <div>
                 <Dialog.Title className="text-lg font-semibold tracking-tight text-foreground">
-                  {isEdit ? 'Edit Sales Sauda' : 'Sales Sauda'}
+                  {isEdit
+                    ? isTransfer
+                      ? 'Edit Godown Transfer'
+                      : 'Edit Sales Sauda'
+                    : isTransfer
+                      ? 'Godown Transfer'
+                      : 'Sales Sauda'}
                 </Dialog.Title>
                 <p className="mt-0.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Trade agreement
+                  {isTransfer ? 'Inter-godown stock move' : 'Trade agreement'}
                 </p>
               </div>
               <Dialog.Close asChild>
@@ -705,75 +811,193 @@ export function SalesSaudaFormModal({
                 {/* Party & date section */}
                 <section className="space-y-3">
                   <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/60 pb-1">
-                    Party & date
+                    {isTransfer ? 'Transfer & date' : 'Party & date'}
                   </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-foreground mb-1">Sales Party</label>
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-medium text-foreground mb-1">
+                        Movement type
+                      </label>
                       <select
                         className="w-full rounded-md border border-input bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                        value={formData.sales_party_id}
+                        value={formData.movement_type ?? 'sale'}
+                        disabled={isEdit}
                         onChange={(e) => {
+                          const next = e.target.value as SalesMovementType;
                           pendingHydratedAddressesRef.current = null;
-                          setFormData((p) => ({ ...p, sales_party_id: e.target.value }));
+                          setFormData((p) => ({
+                            ...p,
+                            movement_type: next,
+                            sales_party_id: next === 'godown_transfer' ? '' : p.sales_party_id,
+                            from_godown_id: next === 'godown_transfer' ? p.from_godown_id : null,
+                            to_godown_id: next === 'godown_transfer' ? p.to_godown_id : null,
+                            salesman_id: next === 'godown_transfer' ? null : p.salesman_id,
+                            payment_terms: next === 'godown_transfer' ? null : p.payment_terms,
+                            billing_address: next === 'godown_transfer' ? null : p.billing_address,
+                            delivery_address: next === 'godown_transfer' ? null : p.delivery_address,
+                            // Godown transfers are always FOR
+                            sauda_type: next === 'godown_transfer' ? 'for' : p.sauda_type,
+                          }));
+                          setErrors((prev) => {
+                            const n = { ...prev };
+                            delete n.sales_party_id;
+                            delete n.from_godown_id;
+                            delete n.to_godown_id;
+                            return n;
+                          });
                         }}
                       >
-                        <option value="">Select sales party</option>
-                        {salesPartyOptions.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.business_name?.trim() || 'Unnamed party'}
-                            {s.is_active === false ? ' (inactive)' : ''}
+                        {SALES_MOVEMENT_TYPE_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
                           </option>
                         ))}
                       </select>
-                      {errors.sales_party_id && (
-                        <p className="mt-1 text-xs text-destructive">{errors.sales_party_id}</p>
+                      {isTransfer && (
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          Sales party is created/linked from the destination godown. Addresses are
+                          filled by the server.
+                        </p>
                       )}
                     </div>
+                    {isTransfer ? (
+                      <>
+                        <div>
+                          <label className="block text-xs font-medium text-foreground mb-1">
+                            From godown
+                          </label>
+                          <select
+                            className="w-full rounded-md border border-input bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                            value={formData.from_godown_id ?? ''}
+                            onChange={(e) =>
+                              setFormData((p) => ({
+                                ...p,
+                                from_godown_id: e.target.value || null,
+                              }))
+                            }
+                          >
+                            <option value="">Select source godown</option>
+                            {godowns
+                              .filter((g) => g.is_active)
+                              .map((g) => (
+                                <option key={g.id} value={g.id}>
+                                  {formatGodownOptionLabel(g)}
+                                </option>
+                              ))}
+                          </select>
+                          {errors.from_godown_id && (
+                            <p className="mt-1 text-xs text-destructive">{errors.from_godown_id}</p>
+                          )}
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-foreground mb-1">
+                            To godown
+                          </label>
+                          <select
+                            className="w-full rounded-md border border-input bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                            value={formData.to_godown_id ?? ''}
+                            onChange={(e) =>
+                              setFormData((p) => ({
+                                ...p,
+                                to_godown_id: e.target.value || null,
+                              }))
+                            }
+                          >
+                            <option value="">Select destination godown</option>
+                            {godowns
+                              .filter((g) => g.is_active)
+                              .map((g) => (
+                                <option
+                                  key={g.id}
+                                  value={g.id}
+                                  disabled={g.id === formData.from_godown_id}
+                                >
+                                  {formatGodownOptionLabel(g)}
+                                </option>
+                              ))}
+                          </select>
+                          {errors.to_godown_id && (
+                            <p className="mt-1 text-xs text-destructive">{errors.to_godown_id}</p>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <label className="block text-xs font-medium text-foreground mb-1">
+                            Sales Party
+                          </label>
+                          <select
+                            className="w-full rounded-md border border-input bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                            value={formData.sales_party_id}
+                            onChange={(e) => {
+                              pendingHydratedAddressesRef.current = null;
+                              setFormData((p) => ({ ...p, sales_party_id: e.target.value }));
+                            }}
+                          >
+                            <option value="">Select sales party</option>
+                            {salesPartyOptions.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.business_name?.trim() || 'Unnamed party'}
+                                {s.is_active === false ? ' (inactive)' : ''}
+                              </option>
+                            ))}
+                          </select>
+                          {errors.sales_party_id && (
+                            <p className="mt-1 text-xs text-destructive">{errors.sales_party_id}</p>
+                          )}
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-foreground mb-1">
+                            Salesman{' '}
+                            <span className="text-muted-foreground font-normal">(optional)</span>
+                          </label>
+                          <div className="flex gap-1">
+                            <select
+                              className="min-w-0 flex-1 rounded-md border border-input bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                              value={formData.salesman_id ?? ''}
+                              onChange={(e) =>
+                                setFormData((p) => ({
+                                  ...p,
+                                  salesman_id: e.target.value || null,
+                                }))
+                              }
+                            >
+                              <option value="">None</option>
+                              {salesmanOptions.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name}
+                                  {!s.is_active ? ' (inactive)' : ''}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => void refetchSalesmen()}
+                              disabled={loadingSalesmen}
+                              className="flex-shrink-0 rounded-md border border-border bg-background p-2 hover:bg-muted transition-colors disabled:opacity-50"
+                              title="Refresh salesmen"
+                            >
+                              <RefreshCw
+                                className={`h-3.5 w-3.5 ${loadingSalesmen ? 'animate-spin' : ''}`}
+                              />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSalesmanFormOpen(true)}
+                              className="flex-shrink-0 rounded-md border border-border bg-background p-2 hover:bg-muted transition-colors"
+                              title="Add salesman"
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
                     <div>
                       <label className="block text-xs font-medium text-foreground mb-1">
-                        Salesman <span className="text-muted-foreground font-normal">(optional)</span>
+                        {isTransfer ? 'Transfer date' : 'Sauda Date'}
                       </label>
-                      <div className="flex gap-1">
-                        <select
-                          className="min-w-0 flex-1 rounded-md border border-input bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                          value={formData.salesman_id ?? ''}
-                          onChange={(e) =>
-                            setFormData((p) => ({
-                              ...p,
-                              salesman_id: e.target.value || null,
-                            }))
-                          }
-                        >
-                          <option value="">None</option>
-                          {salesmanOptions.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name}
-                              {!s.is_active ? ' (inactive)' : ''}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          type="button"
-                          onClick={() => void refetchSalesmen()}
-                          disabled={loadingSalesmen}
-                          className="flex-shrink-0 rounded-md border border-border bg-background p-2 hover:bg-muted transition-colors disabled:opacity-50"
-                          title="Refresh salesmen"
-                        >
-                          <RefreshCw className={`h-3.5 w-3.5 ${loadingSalesmen ? 'animate-spin' : ''}`} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSalesmanFormOpen(true)}
-                          className="flex-shrink-0 rounded-md border border-border bg-background p-2 hover:bg-muted transition-colors"
-                          title="Add salesman"
-                        >
-                          <Plus className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-foreground mb-1">Sauda Date</label>
                       <DateInputWithSteppers
                         className="w-full"
                         inputClassName="py-2 text-sm"
@@ -789,57 +1013,73 @@ export function SalesSaudaFormModal({
                       <label className="block text-xs font-medium text-foreground mb-1">
                         Sauda type
                       </label>
-                      <select
-                        className="w-full rounded-md border border-input bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                        value={formData.sauda_type || ''}
-                        onChange={(e) =>
-                          setFormData((p) => ({
-                            ...p,
-                            sauda_type: e.target.value as SalesSaudaType,
-                          }))
-                        }
-                      >
-                        <option value="">Select type</option>
-                        {saudaTypeOptions.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
+                      {isTransfer ? (
+                        <>
+                          <input
+                            type="text"
+                            readOnly
+                            className="w-full rounded-md border border-input bg-muted/40 px-2.5 py-2 text-sm text-muted-foreground"
+                            value="FOR"
+                          />
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            Godown transfers are always FOR.
+                          </p>
+                        </>
+                      ) : (
+                        <select
+                          className="w-full rounded-md border border-input bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                          value={formData.sauda_type || ''}
+                          onChange={(e) =>
+                            setFormData((p) => ({
+                              ...p,
+                              sauda_type: e.target.value as SalesSaudaType,
+                            }))
+                          }
+                        >
+                          <option value="">Select type</option>
+                          {saudaTypeOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                       {errors.sauda_type && (
                         <p className="mt-1 text-xs text-destructive">{errors.sauda_type}</p>
                       )}
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-foreground mb-1">
-                        Payment Terms (days)
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        max={90}
-                        step={1}
-                        className="w-full rounded-md border border-input bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                        value={formData.payment_terms ?? ''}
-                        onChange={(e) =>
-                          setFormData((p) => ({
-                            ...p,
-                            payment_terms:
-                              e.target.value === ''
-                                ? null
-                                : Math.min(90, Math.max(0, Math.floor(Number(e.target.value)))),
-                          }))
-                        }
-                        placeholder="e.g. 30 (max 90)"
-                      />
-                      {errors.payment_terms && (
-                        <p className="mt-1 text-xs text-destructive">{errors.payment_terms}</p>
-                      )}
-                    </div>
+                    {!isTransfer && (
+                      <div>
+                        <label className="block text-xs font-medium text-foreground mb-1">
+                          Payment Terms (days)
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={90}
+                          step={1}
+                          className="w-full rounded-md border border-input bg-background px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                          value={formData.payment_terms ?? ''}
+                          onChange={(e) =>
+                            setFormData((p) => ({
+                              ...p,
+                              payment_terms:
+                                e.target.value === ''
+                                  ? null
+                                  : Math.min(90, Math.max(0, Math.floor(Number(e.target.value)))),
+                            }))
+                          }
+                          placeholder="e.g. 30 (max 90)"
+                        />
+                        {errors.payment_terms && (
+                          <p className="mt-1 text-xs text-destructive">{errors.payment_terms}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </section>
 
-                {selectedSalesParty && (
+                {!isTransfer && selectedSalesParty && (
                   <section className="rounded-md border border-border/60 bg-muted/15 p-3 space-y-3">
                     <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                       Sales party details
@@ -1012,22 +1252,32 @@ export function SalesSaudaFormModal({
                           </div>
                           <div className="flex items-end gap-2">
                             <div className="w-[72px]">
-                              <label className="block text-xs font-medium text-muted-foreground mb-1">Packets</label>
+                              <label className="block text-xs font-medium text-muted-foreground mb-1">Bags</label>
                               <input
-                                type="number"
-                                min={1}
-                                step={1}
+                                type="text"
+                                inputMode="numeric"
                                 className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/20"
                                 value={line.packet_count ?? ''}
-                                onChange={(e) =>
-                                  updateLine(
-                                    i,
-                                    'packet_count',
-                                    e.target.value === ''
-                                      ? undefined
-                                      : Math.floor(Math.max(1, Number(e.target.value)))
-                                  )
-                                }
+                                onChange={(e) => {
+                                  const digits = e.target.value.replace(/\D/g, '');
+                                  if (digits === '') {
+                                    updateLine(i, 'packet_count', undefined);
+                                    return;
+                                  }
+                                  const n = Math.min(
+                                    MAX_BAGS,
+                                    Math.max(1, Math.floor(Number(digits))),
+                                  );
+                                  updateLine(i, 'packet_count', n);
+                                  if (errors[`line_${i}_qty`]) {
+                                    setErrors((prev) => {
+                                      const next = { ...prev };
+                                      delete next[`line_${i}_qty`];
+                                      return next;
+                                    });
+                                  }
+                                }}
+                                placeholder={`Max ${MAX_BAGS.toLocaleString('en-IN')}`}
                               />
                             </div>
                             <div className="w-[72px]">
@@ -1084,18 +1334,81 @@ export function SalesSaudaFormModal({
                           <div className="w-[88px]">
                             <label className="block text-xs font-medium text-muted-foreground mb-1">Discount</label>
                             <input
-                              type="number"
-                              min={0}
-                              step="any"
-                              className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/20"
-                              value={line.discount_value ?? 0}
-                              onChange={(e) =>
-                                updateLine(
-                                  i,
-                                  'discount_value',
-                                  e.target.value === '' ? 0 : Math.max(0, Number(e.target.value))
-                                )
+                              type="text"
+                              inputMode="decimal"
+                              className={`w-full rounded-md border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/20 ${
+                                errors[`line_${i}_discount`] ? 'border-red-500' : 'border-input'
+                              }`}
+                              value={
+                                discountDrafts[i] !== undefined
+                                  ? discountDrafts[i]
+                                  : line.discount_value == null || line.discount_value === 0
+                                    ? ''
+                                    : String(line.discount_value)
                               }
+                              onChange={(e) => {
+                                const raw = e.target.value.replace(/[^\d.]/g, '');
+                                const parts = raw.split('.');
+                                const cleaned =
+                                  parts.length <= 1
+                                    ? raw
+                                    : `${parts[0]}.${parts.slice(1).join('')}`;
+                                setDiscountDrafts((prev) => ({ ...prev, [i]: cleaned }));
+                                if (cleaned === '' || cleaned === '.') {
+                                  updateLine(i, 'discount_value', undefined);
+                                  if (errors[`line_${i}_discount`]) {
+                                    setErrors((prev) => {
+                                      const next = { ...prev };
+                                      delete next[`line_${i}_discount`];
+                                      return next;
+                                    });
+                                  }
+                                  return;
+                                }
+                                const n = Number(cleaned);
+                                if (Number.isNaN(n) || n < 0) return;
+                                const rate = Number(line.rate) || 0;
+                                const type = line.discount_type ?? 'per_kg';
+                                if (type === 'percentage' && n > 100) {
+                                  updateLine(i, 'discount_value', 100);
+                                  setDiscountDrafts((prev) => ({ ...prev, [i]: '100' }));
+                                  setErrors((prev) => ({
+                                    ...prev,
+                                    [`line_${i}_discount`]: 'Percentage discount cannot exceed 100',
+                                  }));
+                                  return;
+                                }
+                                if (type !== 'percentage' && n > rate) {
+                                  updateLine(i, 'discount_value', rate);
+                                  setDiscountDrafts((prev) => ({
+                                    ...prev,
+                                    [i]: rate === 0 ? '' : String(rate),
+                                  }));
+                                  setErrors((prev) => ({
+                                    ...prev,
+                                    [`line_${i}_discount`]:
+                                      'Discount cannot exceed the rate (base)',
+                                  }));
+                                  return;
+                                }
+                                updateLine(i, 'discount_value', n);
+                                if (errors[`line_${i}_discount`]) {
+                                  setErrors((prev) => {
+                                    const next = { ...prev };
+                                    delete next[`line_${i}_discount`];
+                                    return next;
+                                  });
+                                }
+                              }}
+                              onBlur={() => {
+                                setDiscountDrafts((prev) => {
+                                  if (prev[i] === undefined) return prev;
+                                  const next = { ...prev };
+                                  delete next[i];
+                                  return next;
+                                });
+                              }}
+                              placeholder="0"
                             />
                           </div>
                           <div className="w-[78px]">
@@ -1103,13 +1416,23 @@ export function SalesSaudaFormModal({
                             <select
                               className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/20"
                               value={line.discount_type ?? 'per_kg'}
-                              onChange={(e) =>
-                                updateLine(
-                                  i,
-                                  'discount_type',
-                                  (e.target.value as 'per_kg' | 'percentage') || 'per_kg'
-                                )
-                              }
+                              onChange={(e) => {
+                                const nextType =
+                                  (e.target.value as 'per_kg' | 'percentage') || 'per_kg';
+                                updateLine(i, 'discount_type', nextType);
+                                const n = Number(line.discount_value) || 0;
+                                const rate = Number(line.rate) || 0;
+                                if (nextType === 'percentage' && n > 100) {
+                                  updateLine(i, 'discount_value', 100);
+                                  setDiscountDrafts((prev) => ({ ...prev, [i]: '100' }));
+                                } else if (nextType === 'per_kg' && n > rate) {
+                                  updateLine(i, 'discount_value', rate || undefined);
+                                  setDiscountDrafts((prev) => ({
+                                    ...prev,
+                                    [i]: rate ? String(rate) : '',
+                                  }));
+                                }
+                              }}
                             >
                               <option value="per_kg">/kg</option>
                               <option value="percentage">%</option>

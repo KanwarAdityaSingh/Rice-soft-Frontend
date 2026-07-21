@@ -5,8 +5,9 @@
 
 import type { VendorAddress } from './entities';
 import type { SalesSaudaType } from '../constants/sales-sauda-types';
+import type { SalesMovementType } from '../constants/sales-movement-types';
 
-export type { SalesSaudaType };
+export type { SalesSaudaType, SalesMovementType };
 
 // --- Sales Sauda ---
 export type SalesSaudaStatus = 'draft' | 'order' | 'cancelled';
@@ -20,6 +21,7 @@ export interface SalesSaudaLine {
   product_id: string;
   packaging_id: string | null;
   packet_count: number | null;
+  /** Ordered quantity (same as quantity when fulfillment fields are present). */
   quantity: number;
   quantity_unit: string;
   rate: number;
@@ -33,12 +35,23 @@ export interface SalesSaudaLine {
   sort_order: number;
   created_at: string;
   updated_at: string;
+  /**
+   * Fulfillment snapshot from GET /sales-saudas/:id.
+   * remaining = ordered − allocated(draft+confirmed) + returned(confirmed credit notes)
+   */
+  ordered?: number;
+  allocated?: number;
+  returned?: number;
+  remaining?: number;
 }
 
 export interface SalesSauda {
   id: string;
   /** Short display code when present (e.g. "A95B") */
   display_id?: string | null;
+  /**
+   * Required for sale; for godown_transfer the server links/creates the to-godown party.
+   */
   sales_party_id: string;
   /** Joined from sales parties when API includes it */
   sales_party_name?: string | null;
@@ -47,6 +60,12 @@ export interface SalesSauda {
   /** Joined from salesmen on list/detail responses */
   salesman_name?: string | null;
   status: SalesSaudaStatus;
+  /** `sale` (default) | `godown_transfer` — migration 181 */
+  movement_type?: SalesMovementType | null;
+  /** Source godown when movement_type is godown_transfer */
+  from_godown_id?: string | null;
+  /** Destination godown when movement_type is godown_transfer */
+  to_godown_id?: string | null;
   /** `ex` | `for` — required on create (migration 174) */
   sauda_type?: SalesSaudaType | null;
   order_number: string | null;
@@ -80,11 +99,18 @@ export interface SalesSaudaLineInput {
 }
 
 export interface CreateSalesSaudaRequest {
-  sales_party_id: string;
+  /**
+   * Required for sale. Omit for godown_transfer (server resolves from to-godown).
+   */
+  sales_party_id?: string;
   status: 'draft';
   sauda_date: string;
   /** Required: `ex` | `for` */
   sauda_type: SalesSaudaType;
+  /** Default `sale`. Use `godown_transfer` for inter-godown stock move. */
+  movement_type?: SalesMovementType;
+  from_godown_id?: string | null;
+  to_godown_id?: string | null;
   /** Optional FK → salesmen.id */
   salesman_id?: string | null;
   billing_address?: SalesSaudaAddress | null;
@@ -99,6 +125,9 @@ export interface UpdateSalesSaudaRequest {
   status?: 'draft';
   sauda_date?: string;
   sauda_type?: SalesSaudaType;
+  movement_type?: SalesMovementType;
+  from_godown_id?: string | null;
+  to_godown_id?: string | null;
   /** Pass `null` to clear */
   salesman_id?: string | null;
   /** Pass `null` to clear */
@@ -111,7 +140,8 @@ export interface UpdateSalesSaudaRequest {
 }
 
 // --- Invoice Dispatch ---
-export type InvoiceDispatchStatus = 'draft' | 'confirmed';
+/** `cancelled` = reversed confirmed godown transfer (migration 182). */
+export type InvoiceDispatchStatus = 'draft' | 'confirmed' | 'cancelled';
 
 export interface InvoiceDispatchLine {
   id: string;
@@ -119,6 +149,8 @@ export interface InvoiceDispatchLine {
   sales_sauda_line_id: string;
   product_id: string;
   packaging_id: string | null;
+  /** Bags/packets when created via packet_count (migration 180). */
+  packet_count?: number | null;
   quantity: number;
   quantity_unit: string;
   rate: number;
@@ -129,7 +161,10 @@ export interface InvoiceDispatchLine {
 
 export interface InvoiceDispatch {
   id: string;
+  /** Dispatch / source godown (for transfer: from godown). */
   godown_id?: string;
+  /** Destination godown when sauda is godown_transfer (migration 181). */
+  to_godown_id?: string | null;
   sales_sauda_id: string;
   internal_invoice_number: string;
   dispatch_date: string;
@@ -155,6 +190,10 @@ export interface InvoiceDispatch {
   bilti_image_url?: string | null;
   /** Bilti/LR PDF when uploaded */
   bilti_pdf_url?: string | null;
+  /** Receiving document image (jpeg/png/gif) when uploaded — migration 184 */
+  receiving_doc_image_url?: string | null;
+  /** Receiving document PDF when uploaded — migration 184 */
+  receiving_doc_pdf_url?: string | null;
   status: InvoiceDispatchStatus;
   created_at: string;
   updated_at: string;
@@ -167,10 +206,35 @@ export interface UploadInvoiceDispatchBiltiResponse {
   bilti_pdf_url?: string | null;
 }
 
+export interface UploadInvoiceDispatchReceivingDocResponse {
+  url: string;
+  receiving_doc_image_url?: string | null;
+  receiving_doc_pdf_url?: string | null;
+}
+
+/**
+ * Partial dispatch line — product/rate/packaging come from the sauda line.
+ * Omit `lines` on create to ship all remaining qty on every line.
+ *
+ * Prefer `packet_count` (bags) when the sauda line has packaging_id:
+ * backend sets quantity = packet_count × holding_capacity.
+ * You may send `quantity` only, or both (they must match).
+ */
+export interface CreateInvoiceDispatchLineInput {
+  sales_sauda_line_id: string;
+  /** Bags; requires sauda line packaging_id. quantity = bags × capacity. */
+  packet_count?: number;
+  /** kg (or line unit); must be ≤ remaining. Optional if packet_count is sent. */
+  quantity?: number;
+}
+
 /** Server generates `internal_invoice_number` from godown GST state + dispatch_date FY — do not send it. */
 export interface CreateInvoiceDispatchRequest {
+  /** Source godown — for godown_transfer must be the sauda’s from_godown_id. */
   godown_id: string;
   sales_sauda_id: string;
+  /** Destination godown for godown_transfer (usually sauda.to_godown_id). */
+  to_godown_id?: string | null;
   dispatch_date?: string;
   delivery_site_id?: string | null;
   lr_number?: string | null;
@@ -183,6 +247,11 @@ export interface CreateInvoiceDispatchRequest {
   transportation_cost?: number | null;
   distance_km?: number;
   route_description?: string | null;
+  /**
+   * Partial fulfill: one entry per sauda line, quantity ≤ remaining.
+   * Omit to ship full remaining on all lines.
+   */
+  lines?: CreateInvoiceDispatchLineInput[];
 }
 
 /** At least one field required by API; use `delivery_site_id: null` to clear ship-to. */
@@ -190,6 +259,23 @@ export interface PatchInvoiceDispatchRequest {
   delivery_site_id?: string | null;
   lr_number?: string | null;
   tcs_amount?: number | null;
+}
+
+/**
+ * PUT /invoice-dispatches/:id — draft, confirmed, or cancelled.
+ * Editable: dispatch_date, transporter_id, vehicle_id, lr_number, transportation_cost,
+ * distance_km, route_description, usp (no inventory impact).
+ * Locked: sales_sauda_id, godown_id, internal_invoice_number, status, lines/quantities.
+ */
+export interface UpdateInvoiceDispatchRequest {
+  dispatch_date?: string;
+  transporter_id?: string | null;
+  vehicle_id?: string | null;
+  lr_number?: string | null;
+  transportation_cost?: number | null;
+  distance_km?: number | null;
+  route_description?: string | null;
+  usp?: string | null;
 }
 
 // --- E-Invoice ---
@@ -240,6 +326,209 @@ export interface CreateEWayBillRequest {
    * If omitted, generate uses dispatch.lr_number when set.
    */
   lr_number?: string;
+}
+
+/**
+ * How distance_km was resolved for e-way preview/generate.
+ * `unavailable` = Masters India distance call failed; preview still returns 200 with
+ * `distance_km: null` and `distance_error` — FE should let the user enter distance before generate.
+ */
+export type EWayDistanceSource =
+  | 'request'
+  | 'dispatch'
+  | 'masters_india'
+  | 'unavailable';
+
+/** Masters India generate-e-way request body (subset we render for Bill of Supply). */
+export interface MastersIndiaEWayPayload {
+  userGstin?: string;
+  supply_type?: string;
+  sub_supply_type?: string;
+  document_type?: string;
+  document_number?: string;
+  document_date?: string;
+  gstin_of_consignor?: string;
+  legal_name_of_consignor?: string;
+  address1_of_consignor?: string;
+  address2_of_consignor?: string;
+  place_of_consignor?: string;
+  pincode_of_consignor?: string | number;
+  state_of_consignor?: string;
+  actual_from_state_name?: string;
+  gstin_of_consignee?: string;
+  legal_name_of_consignee?: string;
+  address1_of_consignee?: string;
+  address2_of_consignee?: string;
+  place_of_consignee?: string;
+  pincode_of_consignee?: string | number;
+  state_of_supply?: string;
+  actual_to_state_name?: string;
+  total_invoice_value?: number;
+  taxable_amount?: number;
+  cgst_amount?: number;
+  sgst_amount?: number;
+  igst_amount?: number;
+  cess_amount?: number;
+  transporter_id?: string;
+  transporter_name?: string;
+  transporter_document_number?: string;
+  transporter_document_date?: string;
+  transportation_mode?: string;
+  transportation_distance?: string | number;
+  vehicle_number?: string;
+  vehicle_type?: string;
+  itemList?: MastersIndiaEWayItem[];
+  [key: string]: unknown;
+}
+
+export interface MastersIndiaEWayItem {
+  product_name?: string;
+  product_description?: string;
+  hsn_code?: string | number;
+  quantity?: number;
+  unit_of_product?: string;
+  cgst_rate?: number;
+  sgst_rate?: number;
+  igst_rate?: number;
+  cess_rate?: number;
+  taxable_amount?: number;
+  [key: string]: unknown;
+}
+
+/** UI-friendly summary from POST …/e-way-bill/preview */
+export interface EWayBillPreviewSummary {
+  document_number?: string | null;
+  document_date?: string | null;
+  document_type?: string | null;
+  distance_km?: number | null;
+  distance_source?: EWayDistanceSource | null;
+  /** Present when Masters India distance failed (preview still succeeds). */
+  distance_error?: string | null;
+  vehicle_number?: string | null;
+  transporter_name?: string | null;
+  lr_number?: string | null;
+  taxable_amount?: number | null;
+  total_invoice_value?: number | null;
+  consignor_name?: string | null;
+  consignee_name?: string | null;
+  [key: string]: unknown;
+}
+
+/** Flat line items on e-way preview (in addition to masters_india_payload.itemList). */
+export interface EWayBillPreviewItem {
+  product_name?: string | null;
+  hsn_code?: string | number | null;
+  quantity?: number | null;
+  unit?: string | null;
+  /** Bag/packet count when quantity is weight (e.g. KGS). */
+  bags?: number | null;
+  taxable_amount?: number | null;
+}
+
+/** Address block on preview consignor / consignee. */
+export interface EWayBillPreviewAddress {
+  street?: string | null;
+  city?: string | null;
+  state?: string | null;
+  state_code?: string | null;
+  state_name?: string | null;
+  pincode?: string | null;
+  country?: string | null;
+}
+
+export interface EWayBillPreviewContactPerson {
+  name?: string | null;
+  phones?: string[] | null;
+  emails?: string[] | null;
+}
+
+/** Dispatch godown / supplier side of preview. */
+export interface EWayBillPreviewConsignor {
+  id?: string | null;
+  gstin?: string | null;
+  name?: string | null;
+  pincode?: string | null;
+  place?: string | null;
+  state?: string | null;
+  state_code?: string | null;
+  state_name?: string | null;
+  address?: EWayBillPreviewAddress | null;
+  phone?: string | null;
+  email?: string | null;
+  contact_persons?: EWayBillPreviewContactPerson[] | null;
+  google_maps_link?: string | null;
+}
+
+/**
+ * Buyer / party side of preview.
+ * `address` = ship-to; `billing_address` may differ (bill-to).
+ */
+export interface EWayBillPreviewConsignee {
+  id?: string | null;
+  gstin?: string | null;
+  name?: string | null;
+  pincode?: string | null;
+  place?: string | null;
+  state?: string | null;
+  state_code?: string | null;
+  state_name?: string | null;
+  /** Ship-to */
+  address?: EWayBillPreviewAddress | null;
+  /** Bill-to when different from ship-to */
+  billing_address?: EWayBillPreviewAddress | null;
+  phone?: string | null;
+  email?: string | null;
+  pan_number?: string | null;
+  registration_type?: string | null;
+  contact_persons?: EWayBillPreviewContactPerson[] | null;
+  google_location_link?: string | null;
+}
+
+export interface EWayBillPreviewTransporter {
+  id?: string | null;
+  name?: string | null;
+  gst_number?: string | null;
+}
+
+export interface EWayBillPreviewTotals {
+  taxable?: number | null;
+  cgst?: number | null;
+  sgst?: number | null;
+  igst?: number | null;
+  invoice_value?: number | null;
+}
+
+/**
+ * POST /invoice-dispatches/:id/e-way-bill/preview
+ * Same prep as generate; does not write to DB or call generate.
+ * Rich FE fields (consignor/consignee/transporter/totals) are preferred over
+ * parsing masters_india_payload alone.
+ */
+export interface EWayBillPreviewResponse {
+  summary?: EWayBillPreviewSummary | null;
+  dispatch_id?: string;
+  already_generated?: boolean;
+  existing_eway_bill_number?: string | null;
+  document_number?: string | null;
+  document_type?: string | null;
+  document_date?: string | null;
+  vehicle_number?: string | null;
+  distance_km?: number | null;
+  distance_source?: EWayDistanceSource | null;
+  /**
+   * When Masters India distance fails, preview still returns 200 with
+   * `distance_km: null`, `distance_source: "unavailable"`, and this message.
+   */
+  distance_error?: string | null;
+  route?: string | null;
+  lr_number?: string | null;
+  transporter?: EWayBillPreviewTransporter | null;
+  consignor?: EWayBillPreviewConsignor | null;
+  consignee?: EWayBillPreviewConsignee | null;
+  totals?: EWayBillPreviewTotals | null;
+  items?: EWayBillPreviewItem[];
+  masters_india_payload: MastersIndiaEWayPayload;
+  [key: string]: unknown;
 }
 
 // --- Inventory Ledger ---

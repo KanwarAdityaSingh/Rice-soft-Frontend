@@ -5,11 +5,13 @@ import {
   Loader2,
   CheckCircle,
   FileDigit,
+  FileText,
   Truck,
   Package,
   AlertTriangle,
-  ExternalLink,
-  ChevronDown,
+  Pencil,
+  Trash2,
+  Undo2,
 } from 'lucide-react';
 import { useInvoiceDispatches } from '../../../hooks/useInvoiceDispatches';
 import { useTransporters } from '../../../hooks/useTransporters';
@@ -18,15 +20,15 @@ import { usePackaging } from '../../../hooks/usePackaging';
 import { useProducts } from '../../../hooks/useProducts';
 import { inventoryAPI } from '../../../services/inventory.api';
 import { salesSaudasAPI } from '../../../services/salesSaudas.api';
-import { salesPartySitesAPI } from '../../../services/salesPartySites.api';
 import { LoadingSpinner } from '../../admin/shared/LoadingSpinner';
+import { ConfirmDialog } from '../../admin/shared/ConfirmDialog';
 import { toast } from '../../../utils/toast';
+import { extractApiErrorMessage } from '../../../utils/mastersIndiaSales';
 import {
-  extractApiErrorMessage,
-  getComplianceProviderLabel,
-  isMastersIndiaMockPayload,
-} from '../../../utils/mastersIndiaSales';
-import QRCode from 'qrcode';
+  deleteInvoiceDispatchConfirmDescription,
+  extractInvoiceDispatchDeleteError,
+  invoiceDispatchDeleteToastTitle,
+} from '../../../utils/invoiceDispatchDelete';
 import { useGodowns } from '../../../hooks/useGodowns';
 import type {
   InvoiceDispatch,
@@ -34,11 +36,12 @@ import type {
   EInvoice,
   EWayBill,
   CreateEWayBillRequest,
+  EWayBillPreviewResponse,
 } from '../../../types/sales';
-import type { SalesPartySite } from '../../../types/entities';
 import { formatPacketTypeLabel } from '../../../constants/bagAndPacketTypes';
 import { BillShipToAddresses } from '../shared/BillShipToAddresses';
 import { UploadedDocumentPreview } from '../../shared/UploadedDocumentPreview';
+import { EWayBillPreviewDialog } from './EWayBillPreviewDialog';
 
 const BILTI_ACCEPT = 'image/jpeg,image/png,image/gif,application/pdf,.pdf';
 const BILTI_MAX_BYTES = 10 * 1024 * 1024;
@@ -52,64 +55,13 @@ function validateBiltiFile(file: File): string | null {
   return null;
 }
 
-function ComplianceProviderBadge({ payload, provider }: { payload?: unknown; provider?: string | null }) {
-  const isMock = provider === 'mock' || isMastersIndiaMockPayload(payload);
-  const label = isMock ? 'Mock' : provider ? getComplianceProviderLabel({ provider }) : getComplianceProviderLabel(payload);
-  return (
-    <span
-      className={`rounded px-2 py-0.5 text-xs font-medium ${
-        isMock
-          ? 'bg-amber-500/20 text-amber-800 dark:text-amber-200'
-          : 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300'
-      }`}
-    >
-      {label}
-    </span>
-  );
-}
-
-function EInvoiceQrDisplay({ content }: { content: string }) {
-  const [dataUrl, setDataUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void QRCode.toDataURL(content, { width: 160, margin: 1 })
-      .then((url) => {
-        if (!cancelled) setDataUrl(url);
-      })
-      .catch(() => {
-        if (!cancelled) setDataUrl(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [content]);
-
-  if (dataUrl) {
-    return (
-      <img
-        src={dataUrl}
-        alt="E-invoice QR code"
-        className="h-40 w-40 rounded border bg-white p-1"
-      />
-    );
-  }
-  return (
-    <p className="font-mono text-xs break-all text-muted-foreground">{content}</p>
-  );
-}
-
-function formatPartySiteLabel(site: SalesPartySite): string {
-  const n = site.name?.trim();
-  const line = [site.address?.city, site.address?.state].filter(Boolean).join(', ');
-  return n ? `${n}${line ? ` · ${line}` : ''}` : line || site.id.slice(0, 8);
-}
-
 interface InvoiceDispatchDetailModalProps {
   dispatchId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
+  /** Open edit form (logistics fields) for this dispatch. */
+  onEdit?: (id: string) => void;
   getProductName: (id: string) => string;
 }
 
@@ -118,16 +70,19 @@ export function InvoiceDispatchDetailModal({
   open,
   onOpenChange,
   onSuccess,
+  onEdit,
   getProductName,
 }: InvoiceDispatchDetailModalProps) {
   const {
     getById,
-    patch,
+    remove,
     confirm,
+    cancel,
     uploadBilti,
     getEInvoice,
     getEWayBills,
     generateEInvoice,
+    previewEWayBill,
     generateEWayBill,
   } = useInvoiceDispatches();
   const { transporters } = useTransporters();
@@ -150,92 +105,133 @@ export function InvoiceDispatchDetailModal({
   const [loadingFgi, setLoadingFgi] = useState(false);
 
   const [linkedSauda, setLinkedSauda] = useState<SalesSauda | null>(null);
-  const [partySites, setPartySites] = useState<SalesPartySite[]>([]);
-  const [loadingSites, setLoadingSites] = useState(false);
-  const [patchDeliverySiteId, setPatchDeliverySiteId] = useState('');
-  const [patchLrNumber, setPatchLrNumber] = useState('');
-  // const [patchTcsAmount, setPatchTcsAmount] = useState('');
-  const [savingPatch, setSavingPatch] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [uploadingBilti, setUploadingBilti] = useState(false);
 
-  const [eWayVehicleNumber, setEWayVehicleNumber] = useState('');
-  const [eWayDistanceKm, setEWayDistanceKm] = useState('');
-  const [eWayRoute, setEWayRoute] = useState('');
-  const [eWayTransporterId, setEWayTransporterId] = useState<string>('');
-  const [eWayLrNumber, setEWayLrNumber] = useState('');
-  const [eWayAdvancedOpen, setEWayAdvancedOpen] = useState(false);
-
-  useEffect(() => {
-    if (!dispatch || dispatch.status !== 'confirmed') return;
-    setEWayVehicleNumber((prev) => {
-      if (prev.trim()) return prev;
-      return dispatch.vehicle_id ? getVehicleNumber(dispatch.vehicle_id) || '' : '';
-    });
-    setEWayDistanceKm((prev) => {
-      if (prev.trim()) return prev;
-      return dispatch.distance_km != null ? String(dispatch.distance_km) : '';
-    });
-    setEWayRoute((prev) => {
-      if (prev.trim()) return prev;
-      return dispatch.route_description?.trim() || '';
-    });
-    setEWayTransporterId((prev) => prev || dispatch.transporter_id || '');
-    setEWayLrNumber((prev) => {
-      if (prev.trim()) return prev;
-      return dispatch.lr_number?.trim() || '';
-    });
-    if (!dispatch.vehicle_id) setEWayAdvancedOpen(true);
-  }, [
-    dispatch?.id,
-    dispatch?.status,
-    dispatch?.vehicle_id,
-    dispatch?.distance_km,
-    dispatch?.route_description,
-    dispatch?.transporter_id,
-    dispatch?.lr_number,
-    getVehicleNumber,
-  ]);
+  const [eWayPreviewOpen, setEWayPreviewOpen] = useState(false);
+  const [eWayPreview, setEWayPreview] = useState<EWayBillPreviewResponse | null>(null);
+  const [eWayPreviewLoading, setEWayPreviewLoading] = useState(false);
+  const [eWayGenerateLoading, setEWayGenerateLoading] = useState(false);
 
   const resolvedEWayVehicle = useCallback((): string => {
-    const override = eWayVehicleNumber.trim();
-    if (override) return override;
     if (dispatch?.vehicle_id) return getVehicleNumber(dispatch.vehicle_id) || '';
     return '';
-  }, [dispatch?.vehicle_id, eWayVehicleNumber, getVehicleNumber]);
+  }, [dispatch?.vehicle_id, getVehicleNumber]);
 
-  const godownGstin =
-    dispatch?.godown_id != null
-      ? godowns.find((g) => g.id === dispatch.godown_id)?.gst_number?.trim() || null
-      : null;
-
-  const validateEWayGenerate = (): boolean => {
+  const validateEWayGenerate = (distanceKm?: number | null): boolean => {
     if (!resolvedEWayVehicle()) {
       toast.error(
         'Vehicle required',
-        'Set a verified vehicle on the dispatch or enter a vehicle number under e-way overrides.',
+        'Set a verified vehicle on the dispatch before generating an e-way bill.',
       );
-      setEWayAdvancedOpen(true);
+      return false;
+    }
+    const km = distanceKm ?? dispatch?.distance_km ?? null;
+    if (km == null || !Number.isFinite(Number(km)) || Number(km) < 0) {
+      toast.error(
+        'Distance required',
+        'Enter distance (km) before generating. Open Bill of Supply preview if Masters India could not calculate it.',
+      );
       return false;
     }
     return true;
   };
 
-  const buildEWayBody = useCallback((): CreateEWayBillRequest => {
-    const body: CreateEWayBillRequest = {};
-    const v = resolvedEWayVehicle();
-    if (v) body.vehicle_number = v.toUpperCase();
-    const dk = eWayDistanceKm.trim();
-    if (dk !== '') {
-      const n = Number(dk);
-      if (!Number.isNaN(n)) body.distance_km = n;
+  const buildEWayBody = useCallback(
+    (overrides?: Pick<CreateEWayBillRequest, 'distance_km'>): CreateEWayBillRequest => {
+      const body: CreateEWayBillRequest = {};
+      const v = resolvedEWayVehicle();
+      if (v) body.vehicle_number = v.toUpperCase();
+      if (overrides?.distance_km != null) {
+        body.distance_km = overrides.distance_km;
+      } else if (dispatch?.distance_km != null) {
+        body.distance_km = dispatch.distance_km;
+      }
+      const route = dispatch?.route_description?.trim();
+      if (route) body.route = route;
+      if (dispatch?.transporter_id) body.transporter_id = dispatch.transporter_id;
+      const lr = dispatch?.lr_number?.trim();
+      if (lr) body.lr_number = lr;
+      return body;
+    },
+    [
+      dispatch?.distance_km,
+      dispatch?.route_description,
+      dispatch?.transporter_id,
+      dispatch?.lr_number,
+      resolvedEWayVehicle,
+    ],
+  );
+
+  const openBillOfSupplyPreview = async () => {
+    if (!dispatchId) return;
+    setEWayPreviewLoading(true);
+    try {
+      const preview = await previewEWayBill(dispatchId, buildEWayBody());
+      setEWayPreview(preview);
+      setEWayPreviewOpen(true);
+    } catch (e) {
+      toast.error(
+        'Bill of Supply preview failed',
+        extractApiErrorMessage(e, 'Could not build preview'),
+      );
+    } finally {
+      setEWayPreviewLoading(false);
     }
-    const r = eWayRoute.trim();
-    if (r) body.route = r;
-    if (eWayTransporterId) body.transporter_id = eWayTransporterId;
-    const lr = eWayLrNumber.trim();
-    if (lr) body.lr_number = lr;
-    return body;
-  }, [eWayDistanceKm, eWayRoute, eWayTransporterId, eWayLrNumber, resolvedEWayVehicle]);
+  };
+
+  const runGenerateEWayBill = async (
+    force: boolean,
+    overrides?: Pick<CreateEWayBillRequest, 'distance_km'>,
+    opts?: { skipConfirm?: boolean },
+  ) => {
+    if (!dispatchId) return;
+    const body = buildEWayBody(overrides);
+    if (!validateEWayGenerate(body.distance_km)) {
+      // Open preview so the user can enter distance when MI distance failed.
+      if (body.distance_km == null) {
+        void openBillOfSupplyPreview();
+      }
+      return;
+    }
+    if (!opts?.skipConfirm) {
+      if (
+        force &&
+        !window.confirm(
+          'Regenerate e-way bill? This will call Masters India with force=true.',
+        )
+      ) {
+        return;
+      }
+      if (
+        !force &&
+        !window.confirm('Generate e-way bill with Masters India for this dispatch?')
+      ) {
+        return;
+      }
+    }
+    setEWayGenerateLoading(true);
+    try {
+      const ewb = await generateEWayBill(dispatchId, {
+        force,
+        body,
+      });
+      const list = await getEWayBills(dispatchId);
+      setEWayBills(list);
+      setEWayPreviewOpen(false);
+      setEWayPreview(null);
+      toast.success(
+        force ? 'E-Way bill regenerated' : 'E-Way bill generated',
+        ewb.eway_bill_number ? `EWB ${ewb.eway_bill_number}` : 'Masters India accepted the request.',
+      );
+      onSuccess?.();
+    } catch (e) {
+      toast.error('E-Way generate failed', extractApiErrorMessage(e, 'Action failed'));
+    } finally {
+      setEWayGenerateLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (open && dispatchId) {
@@ -249,56 +245,22 @@ export function InvoiceDispatchDetailModal({
       setEInvoice(undefined);
       setEWayBills([]);
       setFgiByProduct({});
-      setPartySites([]);
-      setEWayVehicleNumber('');
-      setEWayDistanceKm('');
-      setEWayRoute('');
-      setEWayTransporterId('');
-      setEWayAdvancedOpen(false);
     }
   }, [open, dispatchId, getById]);
 
   useEffect(() => {
-    if (!dispatch) return;
-    setPatchDeliverySiteId(dispatch.delivery_site_id ?? '');
-    setPatchLrNumber(dispatch.lr_number ?? '');
-    // setPatchTcsAmount(
-    //   dispatch.tcs_amount != null && !Number.isNaN(Number(dispatch.tcs_amount))
-    //     ? String(dispatch.tcs_amount)
-    //     : ''
-    // );
-  }, [dispatch?.id, dispatch?.delivery_site_id, dispatch?.lr_number /*, dispatch?.tcs_amount */]);
-
-  useEffect(() => {
     if (!open || !dispatch?.sales_sauda_id) {
       setLinkedSauda(null);
-      setPartySites([]);
       return;
     }
     let cancelled = false;
-    setLoadingSites(true);
     salesSaudasAPI
       .getById(dispatch.sales_sauda_id)
       .then((sauda) => {
-        if (cancelled) return Promise.resolve(null);
-        setLinkedSauda(sauda);
-        if (!sauda?.sales_party_id) {
-          setPartySites([]);
-          return Promise.resolve(null);
-        }
-        return salesPartySitesAPI.list(sauda.sales_party_id);
-      })
-      .then((sites) => {
-        if (!cancelled && sites && Array.isArray(sites)) setPartySites(sites);
+        if (!cancelled) setLinkedSauda(sauda);
       })
       .catch(() => {
-        if (!cancelled) {
-          setLinkedSauda(null);
-          setPartySites([]);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingSites(false);
+        if (!cancelled) setLinkedSauda(null);
       });
     return () => {
       cancelled = true;
@@ -341,6 +303,10 @@ export function InvoiceDispatchDetailModal({
 
   const biltiPreviewUrl =
     dispatch?.bilti_image_url?.trim() || dispatch?.bilti_pdf_url?.trim() || null;
+  const receivingDocPreviewUrl =
+    dispatch?.receiving_doc_image_url?.trim() ||
+    dispatch?.receiving_doc_pdf_url?.trim() ||
+    null;
 
   const handleBiltiUpload = async (file: File | null) => {
     if (!dispatch || !file) return;
@@ -364,37 +330,66 @@ export function InvoiceDispatchDetailModal({
     }
   };
 
-  const handleSavePatch = async () => {
+  const handleDelete = async () => {
     if (!dispatch) return;
-    const nextSite = patchDeliverySiteId.trim() || null;
-    const nextLr = patchLrNumber.trim() || null;
-    // TCS amount temporarily hidden from invoice dispatch UI
-    // const tcsTrim = patchTcsAmount.trim();
-    // let nextTcs: number | null = null;
-    // if (tcsTrim !== '') {
-    //   const n = Number(tcsTrim);
-    //   if (Number.isNaN(n)) {
-    //     toast.error('Validation', 'TCS amount must be a valid number');
-    //     return;
-    //   }
-    //   nextTcs = n;
-    // }
-    setSavingPatch(true);
+    setActionLoading('delete');
     try {
-      await patch(dispatch.id, {
-        delivery_site_id: nextSite,
-        lr_number: nextLr,
-        // tcs_amount: nextTcs,
-      });
-      const updated = await getById(dispatch.id);
-      setDispatch(updated);
-      toast.success('Saved', 'Dispatch details updated');
+      await remove(dispatch.id);
+      const successDetail =
+        dispatch.status === 'confirmed'
+          ? 'Inventory was reversed and the dispatch was removed. Sauda remaining quantity is available again.'
+          : dispatch.status === 'cancelled'
+            ? 'The cancelled dispatch was removed.'
+            : 'The draft invoice dispatch was removed.';
+      toast.success('Dispatch deleted', successDetail);
+      setDeleteConfirmOpen(false);
+      onOpenChange(false);
       onSuccess?.();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Save failed';
-      toast.error('Error', msg);
+      toast.error(
+        invoiceDispatchDeleteToastTitle(e),
+        extractInvoiceDispatchDeleteError(e),
+      );
     } finally {
-      setSavingPatch(false);
+      setActionLoading(null);
+    }
+  };
+
+  const canCancelTransfer =
+    dispatch?.status === 'confirmed' && Boolean(dispatch.to_godown_id);
+
+  /** Soft client hint — server still returns 409 with a clear message for all delete blockers. */
+  const deleteBlockedByCompliance = Boolean(
+    eInvoice?.irn || eWayBills.some((e) => e.eway_bill_number || e.id),
+  );
+  const deleteBlockedReason = eInvoice?.irn
+    ? 'Cannot delete while an e-invoice exists on this dispatch'
+    : eWayBills.some((e) => e.eway_bill_number || e.id)
+      ? 'Cannot delete while an e-way bill exists on this dispatch'
+      : undefined;
+
+  const handleCancelTransfer = async () => {
+    if (!dispatch || !canCancelTransfer) return;
+    setActionLoading('cancel');
+    try {
+      const updated = await cancel(dispatch.id);
+      setDispatch(updated);
+      setCancelConfirmOpen(false);
+      toast.success(
+        'Transfer cancelled',
+        'Stock was reversed. Sauda remaining quantity is available again.',
+      );
+      onSuccess?.();
+    } catch (e) {
+      toast.error(
+        'Cancel failed',
+        extractApiErrorMessage(
+          e,
+          'Could not reverse this transfer. Destination stock may already have been used.',
+        ),
+      );
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -441,250 +436,278 @@ export function InvoiceDispatchDetailModal({
   };
 
   return (
+    <>
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
-        <Dialog.Content className="fixed left-[50%] top-[50%] z-50 max-h-[90vh] w-[95vw] max-w-2xl translate-x-[-50%] translate-y-[-50%] overflow-y-auto rounded-xl border bg-background p-6 shadow-xl">
-          <div className="flex items-center justify-between mb-4">
-            <Dialog.Title className="text-lg font-semibold">Invoice Dispatch</Dialog.Title>
-            <Dialog.Close asChild>
-              <button className="rounded-lg p-2 hover:bg-muted" aria-label="Close">
-                <X className="h-4 w-4" />
-              </button>
-            </Dialog.Close>
-          </div>
+        <Dialog.Content className="fixed left-[50%] top-[50%] z-50 flex max-h-[92vh] w-[95vw] max-w-3xl translate-x-[-50%] translate-y-[-50%] flex-col overflow-hidden rounded-xl border bg-background shadow-xl">
           {loading ? (
-            <div className="flex justify-center py-8">
-              <LoadingSpinner />
+            <div className="p-6">
+              <Dialog.Title className="sr-only">Invoice Dispatch</Dialog.Title>
+              <div className="flex justify-center py-12">
+                <LoadingSpinner />
+              </div>
             </div>
           ) : dispatch ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-muted-foreground">Invoice No.</span>
-                  <p className="font-medium">{dispatch.internal_invoice_number}</p>
+            <>
+          <div className="shrink-0 border-b border-border/70 px-5 py-4 sm:px-6">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <Dialog.Title className="text-lg font-semibold tracking-tight">
+                  Invoice Dispatch
+                </Dialog.Title>
+                <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                  <p className="truncate text-base font-semibold tabular-nums">
+                    {dispatch.internal_invoice_number}
+                  </p>
+                  <span
+                    className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-medium capitalize ${
+                      dispatch.status === 'confirmed'
+                        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
+                        : dispatch.status === 'cancelled'
+                          ? 'bg-red-500/15 text-red-700 dark:text-red-400'
+                          : 'bg-amber-500/15 text-amber-800 dark:text-amber-300'
+                    }`}
+                  >
+                    {dispatch.status}
+                  </span>
                   {dispatch.financial_year ? (
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      FY {dispatch.financial_year}
-                    </p>
+                    <span className="text-xs text-muted-foreground">FY {dispatch.financial_year}</span>
                   ) : null}
                 </div>
-                <div>
-                  <span className="text-muted-foreground">Status</span>
-                  <p className="font-medium capitalize">{dispatch.status}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Dispatch date</span>
-                  <p className="font-medium">{dispatch.dispatch_date}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Dispatch from</span>
-                  <p className="font-medium">
-                    {dispatch.godown_id
-                      ? godowns.find((g) => g.id === dispatch.godown_id)?.name ?? dispatch.godown_id
-                      : '–'}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Party</span>
-                  <p className="font-medium">{dispatch.party_name}</p>
-                </div>
-                <div className="col-span-2 rounded-md border border-border/50 bg-muted/10 p-3">
-                  <BillShipToAddresses
-                    billingAddress={linkedSauda?.billing_address}
-                    deliveryAddress={linkedSauda?.delivery_address}
-                    billingFallbackText={dispatch.party_address}
-                  />
-                  {!linkedSauda?.billing_address &&
-                    !linkedSauda?.delivery_address &&
-                    !dispatch.party_address && (
-                      <p className="text-xs text-muted-foreground">No bill/ship addresses.</p>
-                    )}
-                </div>
-                <div>
-                  <span className="text-muted-foreground">GST</span>
-                  <p className="font-medium">{dispatch.party_gst_number ?? '–'}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">PAN</span>
-                  <p className="font-medium">{dispatch.party_pan_number ?? '–'}</p>
-                </div>
-                {dispatch.usp?.trim() && (
-                  <div className="col-span-2">
-                    <span className="text-muted-foreground">USP</span>
-                    <p className="font-medium whitespace-pre-wrap">{dispatch.usp}</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {dispatch.dispatch_date}
+                  {' · '}
+                  {(() => {
+                    const from = dispatch.godown_id
+                      ? godowns.find((g) => g.id === dispatch.godown_id)
+                      : undefined;
+                    const fromLabel = from
+                      ? `${from.name}${from.gst_number?.trim() ? ` · GST ${from.gst_number.trim()}` : ''}`
+                      : dispatch.godown_id
+                        ? 'Godown'
+                        : 'No godown';
+                    if (!dispatch.to_godown_id) return fromLabel;
+                    const to = godowns.find((g) => g.id === dispatch.to_godown_id);
+                    const toLabel = to
+                      ? `${to.name}${to.gst_number?.trim() ? ` · GST ${to.gst_number.trim()}` : ''}`
+                      : 'To godown';
+                    return `${fromLabel} → ${toLabel}`;
+                  })()}
+                  {' · '}
+                  {dispatch.party_name}
+                </p>
+              </div>
+              <Dialog.Close asChild>
+                <button className="rounded-lg p-2 hover:bg-muted" aria-label="Close">
+                  <X className="h-4 w-4" />
+                </button>
+              </Dialog.Close>
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4 sm:px-6">
+              {/* Party */}
+              <section className="rounded-xl border border-border/60 bg-muted/10 p-4">
+                <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Party & addresses
+                </h4>
+                <div className="grid gap-4 text-sm sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <p className="text-xs text-muted-foreground">Sales party</p>
+                    <p className="font-medium">{dispatch.party_name}</p>
                   </div>
-                )}
-                <div>
-                  <span className="text-muted-foreground">Transporter</span>
-                  <p className="font-medium">{transporterName(dispatch.transporter_id)}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">LR number</span>
-                  <p className="font-medium">{dispatch.lr_number?.trim() || '–'}</p>
-                </div>
-                <div className="col-span-2 space-y-2 rounded-md border border-border/50 bg-muted/10 p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-muted-foreground text-sm">Bilti</span>
-                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50">
-                      {uploadingBilti ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : null}
-                      {biltiPreviewUrl ? 'Replace bilti' : 'Upload bilti'}
-                      <input
-                        type="file"
-                        accept={BILTI_ACCEPT}
-                        className="sr-only"
-                        disabled={uploadingBilti}
-                        onChange={(e) => {
-                          void handleBiltiUpload(e.target.files?.[0] || null);
-                          e.target.value = '';
-                        }}
-                      />
-                    </label>
+                  <div>
+                    <p className="text-xs text-muted-foreground">GST</p>
+                    <p className="font-medium tabular-nums">{dispatch.party_gst_number ?? '–'}</p>
                   </div>
-                  <p className="text-xs text-muted-foreground">JPEG, PNG, GIF, or PDF — max 10MB</p>
-                  {biltiPreviewUrl ? (
-                    <UploadedDocumentPreview url={biltiPreviewUrl} compact alt="Bilti" />
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No bilti uploaded</p>
+                  <div>
+                    <p className="text-xs text-muted-foreground">PAN</p>
+                    <p className="font-medium tabular-nums">{dispatch.party_pan_number ?? '–'}</p>
+                  </div>
+                  <div className="sm:col-span-2 rounded-lg border border-border/50 bg-background/70 p-3">
+                    <BillShipToAddresses
+                      billingAddress={linkedSauda?.billing_address}
+                      deliveryAddress={linkedSauda?.delivery_address}
+                      billingFallbackText={dispatch.party_address}
+                    />
+                    {!linkedSauda?.billing_address &&
+                      !linkedSauda?.delivery_address &&
+                      !dispatch.party_address && (
+                        <p className="text-xs text-muted-foreground">No bill/ship addresses on sauda.</p>
+                      )}
+                    <p className="mt-2 text-[11px] text-muted-foreground">
+                      From sales sauda · used for e-invoice / e-way
+                    </p>
+                  </div>
+                  {dispatch.usp?.trim() && (
+                    <div className="sm:col-span-2">
+                      <p className="text-xs text-muted-foreground">USP</p>
+                      <p className="font-medium whitespace-pre-wrap">{dispatch.usp}</p>
+                    </div>
                   )}
                 </div>
-                <div>
-                  <span className="text-muted-foreground">Vehicle</span>
-                  <p className="font-medium">{dispatch.vehicle_id ? getVehicleNumber(dispatch.vehicle_id) : '–'}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Transportation cost</span>
-                  <p className="font-medium">
-                    {dispatch.transportation_cost != null &&
-                    !Number.isNaN(Number(dispatch.transportation_cost))
-                      ? `₹ ${Number(dispatch.transportation_cost).toLocaleString('en-IN', {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}`
-                      : '–'}
-                  </p>
-                </div>
-                {dispatch.distance_km != null && (
-                  <div>
-                    <span className="text-muted-foreground">Distance (km)</span>
-                    <p className="font-medium">{dispatch.distance_km}</p>
-                  </div>
-                )}
-                {dispatch.route_description && (
-                  <div className="col-span-2">
-                    <span className="text-muted-foreground">Route</span>
-                    <p className="font-medium">{dispatch.route_description}</p>
-                  </div>
-                )}
-              </div>
+              </section>
 
-              <div className="rounded-lg border border-dashed border-border/70 bg-muted/15 p-3 space-y-3 text-sm">
-                <div className="font-medium text-foreground">LR & ship-to</div>
-                <p className="text-xs text-muted-foreground">
-                  Optional overrides for Masters India e-invoice / e-way bill. Same as bill-to if ship-to is cleared.
-                </p>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {/* Logistics */}
+              <section className="rounded-xl border border-border/60 bg-muted/10 p-4">
+                <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Logistics
+                </h4>
+                <div className="grid gap-4 text-sm sm:grid-cols-2">
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                      LR number
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
-                      value={patchLrNumber}
-                      onChange={(e) => setPatchLrNumber(e.target.value)}
-                      placeholder="Transporter LR / doc no."
-                    />
+                    <p className="text-xs text-muted-foreground">Transporter</p>
+                    <p className="font-medium">{transporterName(dispatch.transporter_id)}</p>
                   </div>
-                  <div className="sm:col-span-2">
-                    <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                      Ship-to site
-                    </label>
-                    <select
-                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
-                      disabled={loadingSites}
-                      value={patchDeliverySiteId}
-                      onChange={(e) => setPatchDeliverySiteId(e.target.value)}
-                    >
-                      <option value="">Same as bill-to</option>
-                      {partySites.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {formatPartySiteLabel(s)}
-                        </option>
-                      ))}
-                    </select>
-                    {loadingSites && (
-                      <p className="mt-1 text-xs text-muted-foreground">Loading sites…</p>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Vehicle</p>
+                    <p className="font-medium">
+                      {dispatch.vehicle_id ? getVehicleNumber(dispatch.vehicle_id) : '–'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Transportation cost</p>
+                    <p className="font-medium">
+                      {dispatch.transportation_cost != null &&
+                      !Number.isNaN(Number(dispatch.transportation_cost))
+                        ? `₹ ${Number(dispatch.transportation_cost).toLocaleString('en-IN', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}`
+                        : '–'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Distance (km)</p>
+                    <p className="font-medium">
+                      {dispatch.distance_km != null ? dispatch.distance_km : '–'}
+                    </p>
+                    {dispatch.distance_km == null && (
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        Required for e-way generate if Masters India cannot calculate it.
+                      </p>
                     )}
                   </div>
-                  {/* <div>
-                    <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                      TCS amount
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
-                      value={patchTcsAmount}
-                      onChange={(e) => setPatchTcsAmount(e.target.value)}
-                      placeholder="Optional"
-                    />
-                  </div> */}
+                  {dispatch.route_description && (
+                    <div className="sm:col-span-2">
+                      <p className="text-xs text-muted-foreground">Route</p>
+                      <p className="font-medium">{dispatch.route_description}</p>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-xs text-muted-foreground">LR number</p>
+                    <p className="font-medium">{dispatch.lr_number?.trim() || '–'}</p>
+                  </div>
+                  <div className="sm:col-span-2 text-[11px] text-muted-foreground">
+                    To change logistics (date, transporter, vehicle, LR, freight, distance, route,
+                    USP), use Edit. Sauda, godown, invoice number, and lines stay locked.
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  disabled={savingPatch}
-                  onClick={() => void handleSavePatch()}
-                  className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-muted hover:bg-muted/80 disabled:opacity-50"
-                >
-                  {savingPatch && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Save LR / ship-to
-                </button>
-              </div>
+              </section>
+
+              {/* Bilti */}
+              <section className="rounded-xl border border-border/60 bg-muted/10 p-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Bilti
+                  </h4>
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50">
+                    {uploadingBilti ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                    {biltiPreviewUrl ? 'Replace' : 'Upload'}
+                    <input
+                      type="file"
+                      accept={BILTI_ACCEPT}
+                      className="sr-only"
+                      disabled={uploadingBilti}
+                      onChange={(e) => {
+                        void handleBiltiUpload(e.target.files?.[0] || null);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                </div>
+                <p className="mb-2 text-[11px] text-muted-foreground">JPEG, PNG, GIF, or PDF — max 10MB</p>
+                {biltiPreviewUrl ? (
+                  <UploadedDocumentPreview url={biltiPreviewUrl} compact alt="Bilti" />
+                ) : (
+                  <p className="rounded-lg border border-dashed border-border/60 px-3 py-4 text-center text-sm text-muted-foreground">
+                    No bilti uploaded
+                  </p>
+                )}
+              </section>
+
+              {/* Receiving document */}
+              <section className="rounded-xl border border-border/60 bg-muted/10 p-4">
+                <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Receiving document
+                </h4>
+                <p className="mb-2 text-[11px] text-muted-foreground">
+                  Upload from the invoice dispatch table. JPEG, PNG, GIF, or PDF — max 10MB.
+                </p>
+                {receivingDocPreviewUrl ? (
+                  <UploadedDocumentPreview
+                    url={receivingDocPreviewUrl}
+                    compact
+                    alt="Receiving document"
+                  />
+                ) : (
+                  <p className="rounded-lg border border-dashed border-border/60 px-3 py-4 text-center text-sm text-muted-foreground">
+                    No receiving document uploaded
+                  </p>
+                )}
+              </section>
 
               {dispatch.lines && dispatch.lines.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-medium mb-2">Lines</h4>
-                  <div className="rounded-lg border overflow-hidden">
+                <section className="rounded-xl border border-border/60 overflow-hidden">
+                  <div className="border-b border-border/60 bg-muted/20 px-4 py-2.5">
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Lines
+                    </h4>
+                  </div>
+                  <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="bg-muted/50 border-b">
-                          <th className="text-left p-2 font-medium">Product</th>
-                          <th className="text-left p-2 font-medium">HSN</th>
-                          <th className="text-left p-2 font-medium">Bag</th>
-                          <th className="text-right p-2 font-medium">Qty</th>
-                          <th className="text-right p-2 font-medium">Rate</th>
-                          <th className="text-right p-2 font-medium">Amount</th>
+                        <tr className="border-b bg-muted/30 text-left">
+                          <th className="p-2.5 font-medium">Product</th>
+                          <th className="p-2.5 font-medium">HSN</th>
+                          <th className="p-2.5 font-medium">Bag</th>
+                          <th className="p-2.5 text-right font-medium">Bags</th>
+                          <th className="p-2.5 text-right font-medium">Qty</th>
+                          <th className="p-2.5 text-right font-medium">Rate</th>
+                          <th className="p-2.5 text-right font-medium">Amount</th>
                         </tr>
                       </thead>
                       <tbody>
                         {dispatch.lines.map((l) => {
                           const hsn = getProductHsn(l.product_id);
                           return (
-                          <tr key={l.id} className="border-b last:border-0">
-                            <td className="p-2">{getProductName(l.product_id)}</td>
-                            <td className="p-2">
-                              {hsn ? (
-                                <span className="tabular-nums">{hsn}</span>
-                              ) : (
-                                <span className="text-amber-700 dark:text-amber-300">Missing</span>
-                              )}
-                            </td>
-                            <td className="p-2">{getPackagingLabel(l.packaging_id)}</td>
-                            <td className="p-2 text-right">
-                              {l.quantity} {l.quantity_unit}
-                            </td>
-                            <td className="p-2 text-right">{l.rate}</td>
-                            <td className="p-2 text-right">{l.amount}</td>
-                          </tr>
+                            <tr key={l.id} className="border-b last:border-0">
+                              <td className="p-2.5">{getProductName(l.product_id)}</td>
+                              <td className="p-2.5">
+                                {hsn ? (
+                                  <span className="tabular-nums">{hsn}</span>
+                                ) : (
+                                  <span className="text-amber-700 dark:text-amber-300">Missing</span>
+                                )}
+                              </td>
+                              <td className="p-2.5">{getPackagingLabel(l.packaging_id)}</td>
+                              <td className="p-2.5 text-right tabular-nums">
+                                {l.packet_count != null && Number(l.packet_count) > 0
+                                  ? l.packet_count
+                                  : '–'}
+                              </td>
+                              <td className="p-2.5 text-right tabular-nums">
+                                {l.quantity} {l.quantity_unit}
+                              </td>
+                              <td className="p-2.5 text-right tabular-nums">{l.rate}</td>
+                              <td className="p-2.5 text-right tabular-nums">{l.amount}</td>
+                            </tr>
                           );
                         })}
                       </tbody>
                     </table>
                   </div>
-                </div>
+                </section>
               )}
               {dispatch.status === 'draft' && dispatch.lines && dispatch.lines.length > 0 && (
                 <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
@@ -734,150 +757,38 @@ export function InvoiceDispatchDetailModal({
                   )}
                 </div>
               )}
-              {dispatch.status === 'confirmed' && (
-                <div className="rounded-lg border border-border/60 bg-muted/15 p-3 text-sm">
-                  <h4 className="mb-2 font-medium">Masters India prerequisites</h4>
-                  <ul className="space-y-1 text-xs text-muted-foreground">
-                    <li className={dispatch.status === 'confirmed' ? 'text-foreground' : ''}>
-                      Dispatch confirmed
-                    </li>
-                    <li className={godownGstin ? 'text-foreground' : 'text-amber-700 dark:text-amber-300'}>
-                      Godown GSTIN: {godownGstin || 'Missing — add GSTIN on godown master'}
-                    </li>
-                    <li className={dispatch.party_gst_number ? 'text-foreground' : 'text-amber-700 dark:text-amber-300'}>
-                      Party GSTIN: {dispatch.party_gst_number || 'Missing'}
-                    </li>
-                    <li className={resolvedEWayVehicle() ? 'text-foreground' : 'text-amber-700 dark:text-amber-300'}>
-                      Vehicle for e-way: {resolvedEWayVehicle() || 'Required before generate'}
-                    </li>
-                    <li className={eInvoice?.irn ? 'text-foreground' : 'text-muted-foreground'}>
-                      E-invoice IRN: {eInvoice?.irn ? 'Generated' : 'Not generated yet'}
-                    </li>
-                  </ul>
-                </div>
-              )}
-              {dispatch.status === 'confirmed' && eInvoice !== undefined && (
-                <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
-                  <h4 className="text-sm font-medium mb-2 flex flex-wrap items-center gap-2">
-                    <FileDigit className="h-4 w-4" /> E-Invoice (Masters India)
-                    {eInvoice != null && (
-                      <ComplianceProviderBadge
-                        provider={eInvoice.provider}
-                        payload={eInvoice.government_response_payload}
-                      />
-                    )}
-                    {eInvoice?.status && (
-                      <span className="rounded bg-muted px-2 py-0.5 text-xs capitalize">{eInvoice.status}</span>
-                    )}
-                  </h4>
-                  {eInvoice == null ? (
-                    <p className="text-sm text-muted-foreground">Not generated yet. Use the button below to generate.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        {eInvoice.irn && (
-                          <div>
-                            <span className="text-muted-foreground">IRN</span>
-                            <p className="font-medium break-all">{eInvoice.irn}</p>
-                          </div>
-                        )}
-                        {eInvoice.acknowledgement_number && (
-                          <div>
-                            <span className="text-muted-foreground">Ack. number</span>
-                            <p className="font-medium">{eInvoice.acknowledgement_number}</p>
-                          </div>
-                        )}
-                        {eInvoice.ack_date && (
-                          <div>
-                            <span className="text-muted-foreground">Ack. date</span>
-                            <p className="font-medium">{eInvoice.ack_date}</p>
-                          </div>
-                        )}
-                        {eInvoice.qr_code_content && (
-                          <div className="col-span-2">
-                            <span className="text-muted-foreground">Signed QR</span>
-                            <div className="mt-2">
-                              <EInvoiceQrDisplay content={eInvoice.qr_code_content} />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      <details className="text-xs">
-                        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-                          Masters India response (audit)
-                        </summary>
-                        <pre className="mt-2 max-h-28 overflow-auto rounded border bg-background/80 p-2 font-mono">
-                          {JSON.stringify(eInvoice.government_response_payload, null, 2)}
-                        </pre>
-                      </details>
-                    </div>
-                  )}
-                </div>
-              )}
-              {dispatch.status === 'confirmed' && (
-                <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
-                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                    <Truck className="h-4 w-4" /> E-Way Bill(s) — Masters India
-                  </h4>
-                  {eWayBills.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">None yet. Generate below (vehicle on dispatch or in overrides).</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {eWayBills.map((ewb) => (
-                        <div key={ewb.id} className="rounded border bg-background/60 p-2 text-sm">
-                          <div className="mb-1 flex flex-wrap items-center gap-2">
-                            <ComplianceProviderBadge provider={ewb.provider} payload={ewb.payload} />
-                            {ewb.print_url && (
-                              <a
-                                href={ewb.print_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                              >
-                                <ExternalLink className="h-3 w-3" /> Print / PDF
-                              </a>
-                            )}
-                          </div>
-                          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                            {ewb.eway_bill_number && (
-                              <div>
-                                <span className="text-muted-foreground">EWB number</span>
-                                <p className="font-medium">{ewb.eway_bill_number}</p>
-                              </div>
-                            )}
-                            {ewb.vehicle_number && (
-                              <div>
-                                <span className="text-muted-foreground">Vehicle</span>
-                                <p className="font-medium">{ewb.vehicle_number}</p>
-                              </div>
-                            )}
-                            {ewb.distance_km != null && (
-                              <div>
-                                <span className="text-muted-foreground">Distance (km)</span>
-                                <p className="font-medium">{ewb.distance_km}</p>
-                              </div>
-                            )}
-                            {ewb.valid_until && (
-                              <div>
-                                <span className="text-muted-foreground">Valid until</span>
-                                <p className="font-medium">{ewb.valid_until}</p>
-                              </div>
-                            )}
-                            {ewb.route && (
-                              <div className="col-span-2">
-                                <span className="text-muted-foreground">Route</span>
-                                <p className="font-medium">{ewb.route}</p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+          </div>
+
+          {(dispatch.status === 'draft' ||
+            dispatch.status === 'confirmed' ||
+            dispatch.status === 'cancelled') && (
+            <div className="shrink-0 space-y-3 border-t border-border/70 bg-background px-5 py-3 sm:px-6">
               {dispatch.status === 'draft' && (
-                <div className="flex flex-wrap gap-2 pt-2 border-t">
+                <div className="flex flex-wrap gap-2">
+                  {onEdit && (
+                    <button
+                      type="button"
+                      disabled={!!actionLoading}
+                      onClick={() => {
+                        onOpenChange(false);
+                        onEdit(dispatch.id);
+                      }}
+                      className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium border border-border bg-background hover:bg-muted disabled:opacity-50"
+                    >
+                      <Pencil className="h-4 w-4" /> Edit
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={!!actionLoading}
+                    onClick={() => setDeleteConfirmOpen(true)}
+                    className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium border border-red-200 text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/40 disabled:opacity-50"
+                  >
+                    {actionLoading === 'delete' && (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    )}
+                    <Trash2 className="h-4 w-4" /> Delete
+                  </button>
                   <button
                     type="button"
                     disabled={!!actionLoading}
@@ -894,179 +805,191 @@ export function InvoiceDispatchDetailModal({
                 </div>
               )}
               {dispatch.status === 'confirmed' && (
-                <div className="space-y-3 border-t pt-3">
-                  <button
-                    type="button"
-                    onClick={() => setEWayAdvancedOpen((o) => !o)}
-                    className="flex w-full items-center justify-between rounded-lg border border-border/60 bg-muted/25 px-3 py-2 text-left text-sm font-medium hover:bg-muted/40"
-                  >
-                    E-way overrides (vehicle, distance, route, transporter, LR)
-                    {resolvedEWayVehicle() && (
-                      <span className="ml-2 text-xs font-normal text-muted-foreground">
-                        Vehicle: {resolvedEWayVehicle()}
-                      </span>
-                    )}
-                    <ChevronDown
-                      className={`h-4 w-4 shrink-0 transition-transform ${eWayAdvancedOpen ? 'rotate-180' : ''}`}
-                    />
-                  </button>
-                  {eWayAdvancedOpen && (
-                    <div className="grid grid-cols-1 gap-3 rounded-lg border border-dashed border-border/70 p-3 sm:grid-cols-2 text-sm">
-                      <div className="sm:col-span-2">
-                        <label className="mb-1 block text-xs text-muted-foreground">
-                          Vehicle number (required if dispatch has no vehicle)
-                        </label>
-                        <input
-                          type="text"
-                          className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
-                          value={eWayVehicleNumber}
-                          onChange={(e) => setEWayVehicleNumber(e.target.value)}
-                          placeholder="Override registration"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs text-muted-foreground">Distance (km)</label>
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
-                          value={eWayDistanceKm}
-                          onChange={(e) => setEWayDistanceKm(e.target.value)}
-                          placeholder="Optional"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs text-muted-foreground">Transporter override</label>
-                        <select
-                          className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
-                          value={eWayTransporterId}
-                          onChange={(e) => setEWayTransporterId(e.target.value)}
-                        >
-                          <option value="">Use dispatch transporter</option>
-                          {transporters.map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {t.business_name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="sm:col-span-2">
-                        <label className="mb-1 block text-xs text-muted-foreground">Route</label>
-                        <input
-                          type="text"
-                          className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
-                          value={eWayRoute}
-                          onChange={(e) => setEWayRoute(e.target.value)}
-                          placeholder="Optional"
-                        />
-                      </div>
-                      <div className="sm:col-span-2">
-                        <label className="mb-1 block text-xs text-muted-foreground">
-                          LR number (transporter document)
-                        </label>
-                        <input
-                          type="text"
-                          className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
-                          value={eWayLrNumber}
-                          onChange={(e) => setEWayLrNumber(e.target.value)}
-                          placeholder={
-                            dispatch.lr_number?.trim()
-                              ? `Default: ${dispatch.lr_number.trim()}`
-                              : 'Optional override for e-way'
-                          }
-                        />
-                      </div>
-                    </div>
+                <div className="flex flex-wrap gap-2">
+                  {onEdit && (
+                    <button
+                      type="button"
+                      disabled={!!actionLoading || eWayPreviewLoading || eWayGenerateLoading}
+                      onClick={() => {
+                        onOpenChange(false);
+                        onEdit(dispatch.id);
+                      }}
+                      className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium border border-border bg-background hover:bg-muted disabled:opacity-50"
+                    >
+                      <Pencil className="h-4 w-4" /> Edit
+                    </button>
                   )}
-                  <div className="flex flex-wrap gap-2">
+                  {canCancelTransfer && (
                     <button
                       type="button"
                       disabled={!!actionLoading}
-                      onClick={() =>
-                        runAction(
-                          'e-invoice',
-                          () => generateEInvoice(dispatch.id),
-                          (result) => {
-                            const einv = result as EInvoice;
-                            return {
-                              title: 'E-Invoice generated',
-                              description: einv.irn
-                                ? `IRN ${einv.irn.slice(0, 24)}…`
-                                : 'Masters India accepted the request.',
-                            };
-                          },
-                        )
-                      }
-                      className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-muted hover:bg-muted/80 disabled:opacity-50"
+                      onClick={() => setCancelConfirmOpen(true)}
+                      className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium border border-red-200 text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/40 disabled:opacity-50"
                     >
-                      {actionLoading === 'e-invoice' && (
+                      {actionLoading === 'cancel' && (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       )}
-                      <FileDigit className="h-4 w-4" />
-                      {eInvoice?.irn ? 'Regenerate E-Invoice' : 'Generate E-Invoice'}
+                      <Undo2 className="h-4 w-4" /> Cancel transfer
                     </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={
+                      !!actionLoading ||
+                      eWayPreviewLoading ||
+                      eWayGenerateLoading ||
+                      deleteBlockedByCompliance
+                    }
+                    title={deleteBlockedReason}
+                    onClick={() => setDeleteConfirmOpen(true)}
+                    className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium border border-red-200 text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/40 disabled:opacity-50"
+                  >
+                    {actionLoading === 'delete' && (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    )}
+                    <Trash2 className="h-4 w-4" /> Delete
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!!actionLoading || eWayPreviewLoading || eWayGenerateLoading}
+                    onClick={() => void openBillOfSupplyPreview()}
+                    className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium border border-border bg-background hover:bg-muted/50 disabled:opacity-50"
+                  >
+                    {eWayPreviewLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                    <FileText className="h-4 w-4" /> Preview & Generate Bill of Supply
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!!actionLoading || eWayPreviewLoading || eWayGenerateLoading}
+                    onClick={() => void runGenerateEWayBill(false)}
+                    className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                  >
+                    {eWayGenerateLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                    <Truck className="h-4 w-4" /> Generate E-Way Bill
+                  </button>
+                  {eWayBills.length > 0 && (
+                    <button
+                      type="button"
+                      disabled={!!actionLoading || eWayPreviewLoading || eWayGenerateLoading}
+                      onClick={() => void runGenerateEWayBill(true)}
+                      className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium border border-border bg-background hover:bg-muted/50 disabled:opacity-50"
+                    >
+                      <Truck className="h-4 w-4" /> Regenerate E-Way (force)
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={!!actionLoading || eWayPreviewLoading || eWayGenerateLoading}
+                    onClick={() =>
+                      runAction(
+                        'e-invoice',
+                        () => generateEInvoice(dispatch.id),
+                        (result) => {
+                          const einv = result as EInvoice;
+                          return {
+                            title: 'E-Invoice generated',
+                            description: einv.irn
+                              ? `IRN ${einv.irn.slice(0, 24)}…`
+                              : 'Masters India accepted the request.',
+                          };
+                        },
+                      )
+                    }
+                    className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-muted hover:bg-muted/80 disabled:opacity-50"
+                  >
+                    {actionLoading === 'e-invoice' && (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    )}
+                    <FileDigit className="h-4 w-4" />
+                    {eInvoice?.irn ? 'Regenerate E-Invoice' : 'Generate E-Invoice'}
+                  </button>
+                </div>
+              )}
+              {dispatch.status === 'cancelled' && (
+                <div className="flex flex-wrap gap-2">
+                  {onEdit && (
                     <button
                       type="button"
                       disabled={!!actionLoading}
                       onClick={() => {
-                        if (!validateEWayGenerate()) return;
-                        void runAction(
-                          'e-way',
-                          () => generateEWayBill(dispatch.id, { body: buildEWayBody() }),
-                          (result) => {
-                            const ewb = result as EWayBill;
-                            return {
-                              title: 'E-Way bill generated',
-                              description: ewb.eway_bill_number
-                                ? `EWB ${ewb.eway_bill_number}`
-                                : 'Masters India accepted the request.',
-                            };
-                          },
-                        );
+                        onOpenChange(false);
+                        onEdit(dispatch.id);
                       }}
-                      className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium bg-muted hover:bg-muted/80 disabled:opacity-50"
+                      className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium border border-border bg-background hover:bg-muted disabled:opacity-50"
                     >
-                      {actionLoading === 'e-way' && (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      )}
-                      <Truck className="h-4 w-4" /> Generate E-Way Bill
+                      <Pencil className="h-4 w-4" /> Edit
                     </button>
-                    {eWayBills.length > 0 && (
-                      <button
-                        type="button"
-                        disabled={!!actionLoading}
-                        onClick={() => {
-                          if (
-                            !window.confirm(
-                              'Regenerate e-way bill? This calls Masters India again with force=true and may add another e-way row.'
-                            )
-                          )
-                            return;
-                          if (!validateEWayGenerate()) return;
-                          void runAction('e-way-force', () =>
-                            generateEWayBill(dispatch.id, {
-                              force: true,
-                              body: buildEWayBody(),
-                            })
-                          );
-                        }}
-                        className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium border border-border bg-background hover:bg-muted/50 disabled:opacity-50"
-                      >
-                        {actionLoading === 'e-way-force' && (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        )}
-                        <Truck className="h-4 w-4" /> Regenerate E-Way (force)
-                      </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={!!actionLoading}
+                    onClick={() => setDeleteConfirmOpen(true)}
+                    className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium border border-red-200 text-red-700 hover:bg-red-50 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/40 disabled:opacity-50"
+                  >
+                    {actionLoading === 'delete' && (
+                      <Loader2 className="h-4 w-4 animate-spin" />
                     )}
-                  </div>
+                    <Trash2 className="h-4 w-4" /> Delete
+                  </button>
                 </div>
               )}
             </div>
+          )}
+            </>
           ) : (
-            <p className="text-muted-foreground text-sm">Could not load dispatch.</p>
+            <div className="p-6">
+              <div className="mb-4 flex items-center justify-between">
+                <Dialog.Title className="text-lg font-semibold">Invoice Dispatch</Dialog.Title>
+                <Dialog.Close asChild>
+                  <button className="rounded-lg p-2 hover:bg-muted" aria-label="Close">
+                    <X className="h-4 w-4" />
+                  </button>
+                </Dialog.Close>
+              </div>
+              <p className="text-sm text-muted-foreground">Could not load dispatch.</p>
+            </div>
           )}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+
+    <EWayBillPreviewDialog
+      open={eWayPreviewOpen}
+      onOpenChange={(next) => {
+        setEWayPreviewOpen(next);
+        if (!next) setEWayPreview(null);
+      }}
+      preview={eWayPreview}
+      mode="bill-of-supply"
+      confirming={eWayGenerateLoading}
+      onConfirmGenerate={(overrides) =>
+        void runGenerateEWayBill(false, overrides, { skipConfirm: true })
+      }
+    />
+
+    <ConfirmDialog
+      open={deleteConfirmOpen}
+      onOpenChange={setDeleteConfirmOpen}
+      onConfirm={() => void handleDelete()}
+      title="Delete invoice dispatch"
+      description={
+        dispatch
+          ? deleteInvoiceDispatchConfirmDescription(dispatch.status)
+          : 'This dispatch will be permanently deleted.'
+      }
+      confirmText="Delete"
+      variant="danger"
+    />
+
+    <ConfirmDialog
+      open={cancelConfirmOpen}
+      onOpenChange={setCancelConfirmOpen}
+      onConfirm={() => void handleCancelTransfer()}
+      title="Cancel godown transfer"
+      description="This reverses the confirmed transfer: destination stock is debited and source stock is restored. It will fail if destination stock was already used. Sauda remaining quantity becomes available again."
+      confirmText="Cancel transfer"
+      variant="danger"
+    />
+    </>
   );
 }

@@ -6,11 +6,14 @@ import type {
   UpdateSalesSaudaRequest,
   SalesSaudaStatus,
 } from '../types/sales';
+import type { SalesMovementTypeFilter } from '../constants/sales-movement-types';
 
 interface UseSalesSaudasParams {
   sales_party_id?: string;
   status?: SalesSaudaStatus;
   financial_year?: string;
+  /** Server default is `sale` when omitted. */
+  movement_type?: SalesMovementTypeFilter;
 }
 
 export function useSalesSaudas(params?: UseSalesSaudasParams) {
@@ -31,9 +34,9 @@ export function useSalesSaudas(params?: UseSalesSaudasParams) {
     } finally {
       setLoading(false);
     }
-  }, [params?.sales_party_id, params?.status, params?.financial_year]);
+  }, [params?.sales_party_id, params?.status, params?.financial_year, params?.movement_type]);
 
-  const paramsKey = `${params?.sales_party_id ?? ''}:${params?.status ?? ''}:${params?.financial_year ?? ''}`;
+  const paramsKey = `${params?.sales_party_id ?? ''}:${params?.status ?? ''}:${params?.financial_year ?? ''}:${params?.movement_type ?? ''}`;
 
   useEffect(() => {
     if (lastFetchedParamsRef.current === paramsKey) return;

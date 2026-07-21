@@ -87,10 +87,14 @@ export function getSaudaRiceCategoryLabel(
 
 export function formatVendorAddress(address: VendorAddress | null | undefined): string {
   if (!address) return '';
-  const parts = [address.street, address.city, address.state, address.pincode, address.country]
+  const street = address.street?.trim() || '';
+  const streetLower = street.toLowerCase();
+  // Avoid repeating city/state/pincode/country when street already embeds them (common after GST OCR).
+  const extras = [address.city, address.state, address.pincode, address.country]
     .map((part) => part?.trim())
-    .filter(Boolean);
-  return parts.join(', ');
+    .filter((part): part is string => Boolean(part))
+    .filter((part) => !streetLower.includes(part.toLowerCase()));
+  return [street, ...extras].filter(Boolean).join(', ');
 }
 
 export function addressesEqual(

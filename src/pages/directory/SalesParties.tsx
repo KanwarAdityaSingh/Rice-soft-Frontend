@@ -17,17 +17,24 @@ import { salesSaudasAPI } from '../../services/salesSaudas.api';
 import { isAdmin } from '../../utils/permissions';
 import type { Lead } from '../../types/entities';
 import { formatPhoneDisplay } from '../../utils/validation';
-import { formatSalesPartyVerifiedAt } from '../../utils/salesPartyVerification';
+import {
+  formatSalesPartyCustomerTypeLabel,
+  formatSalesPartyRegistrationLabel,
+  formatSalesPartyVerifiedAt,
+} from '../../utils/salesPartyVerification';
+import type { SalesPartyRegistrationType } from '../../types/entities';
 
 export default function SalesPartiesPage() {
   const [registrationFilter, setRegistrationFilter] = useState<string | undefined>();
   const [statusFilter, setStatusFilter] = useState<string | undefined>('active');
   const registrationTypeParam =
-    registrationFilter === 'registered' || registrationFilter === 'unregistered'
-      ? registrationFilter
+    registrationFilter === 'registered' ||
+    registrationFilter === 'unregistered' ||
+    registrationFilter === 'retail'
+      ? (registrationFilter as SalesPartyRegistrationType)
       : undefined;
   const { salesParties, loading, deleteSalesParty, refetch } = useSalesParties({
-    registrationType: registrationTypeParam as 'registered' | 'unregistered' | undefined,
+    registrationType: registrationTypeParam,
     includeInactive: statusFilter !== 'active',
   });
   const navigate = useNavigate();
@@ -136,6 +143,7 @@ export default function SalesPartiesPage() {
             options={[
               { label: 'Registered', value: 'registered' },
               { label: 'Unregistered', value: 'unregistered' },
+              { label: 'Retail', value: 'retail' },
             ]}
             value={registrationFilter}
             onChange={setRegistrationFilter}
@@ -202,8 +210,13 @@ export default function SalesPartiesPage() {
                 </div>
                 <div className="flex flex-wrap gap-1 justify-end shrink-0">
                   <span className="whitespace-nowrap px-2 py-1 rounded-md text-[10px] bg-muted text-muted-foreground border border-border/60">
-                    {s.registration_type === 'unregistered' ? 'Unregistered' : 'Registered'}
+                    {formatSalesPartyRegistrationLabel(s.registration_type)}
                   </span>
+                  {s.registration_type === 'retail' && s.customer_type ? (
+                    <span className="whitespace-nowrap px-2 py-1 rounded-md text-[10px] bg-sky-500/10 text-sky-700 dark:text-sky-400 border border-sky-500/20">
+                      {formatSalesPartyCustomerTypeLabel(s.customer_type)}
+                    </span>
+                  ) : null}
                   <span
                     className={`whitespace-nowrap px-2 py-1 rounded-md text-[10px] ${
                       s.is_active ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground'

@@ -190,9 +190,18 @@ export const vendorsAPI = {
     return normalizeAadhaarLookupResponse(response);
   },
 
-  // Get default payment advice recipient
+  // Get default payment advice recipient (company / supplier profile)
   getDefaultRecipient: () => {
-    return apiService.get<{ name: string; address: string; llpin: string }>('/vendors/getDefaultRecipient');
+    return apiService.get<{
+      name: string;
+      address: string;
+      llpin: string;
+      phone?: string | null;
+      email?: string | null;
+      website?: string | null;
+      phones?: string[] | null;
+      emails?: string[] | null;
+    }>('/vendors/getDefaultRecipient');
   },
 };
 

@@ -3,11 +3,13 @@ import { invoiceDispatchesAPI } from '../services/invoiceDispatches.api';
 import type {
   InvoiceDispatch,
   CreateInvoiceDispatchRequest,
+  UpdateInvoiceDispatchRequest,
   PatchInvoiceDispatchRequest,
   InvoiceDispatchStatus,
   EInvoice,
   EWayBill,
   CreateEWayBillRequest,
+  EWayBillPreviewResponse,
 } from '../types/sales';
 
 interface UseInvoiceDispatchesParams {
@@ -55,6 +57,15 @@ export function useInvoiceDispatches(params?: UseInvoiceDispatchesParams) {
     return created;
   }, [fetchList]);
 
+  const update = useCallback(
+    async (id: string, data: UpdateInvoiceDispatchRequest) => {
+      const updated = await invoiceDispatchesAPI.update(id, data);
+      await fetchList();
+      return updated;
+    },
+    [fetchList]
+  );
+
   const patch = useCallback(
     async (id: string, data: PatchInvoiceDispatchRequest) => {
       const updated = await invoiceDispatchesAPI.patch(id, data);
@@ -64,8 +75,19 @@ export function useInvoiceDispatches(params?: UseInvoiceDispatchesParams) {
     [fetchList]
   );
 
+  const remove = useCallback(async (id: string) => {
+    await invoiceDispatchesAPI.delete(id);
+    await fetchList();
+  }, [fetchList]);
+
   const confirm = useCallback(async (id: string) => {
     const updated = await invoiceDispatchesAPI.confirm(id);
+    await fetchList();
+    return updated;
+  }, [fetchList]);
+
+  const cancel = useCallback(async (id: string) => {
+    const updated = await invoiceDispatchesAPI.cancel(id);
     await fetchList();
     return updated;
   }, [fetchList]);
@@ -92,8 +114,21 @@ export function useInvoiceDispatches(params?: UseInvoiceDispatchesParams) {
     []
   );
 
+  const previewEWayBill = useCallback(
+    async (id: string, body?: CreateEWayBillRequest): Promise<EWayBillPreviewResponse> => {
+      return invoiceDispatchesAPI.previewEWayBill(id, body);
+    },
+    []
+  );
+
   const uploadBilti = useCallback(async (id: string, file: File) => {
     const result = await invoiceDispatchesAPI.uploadBilti(id, file);
+    await fetchList();
+    return result;
+  }, [fetchList]);
+
+  const uploadReceivingDoc = useCallback(async (id: string, file: File) => {
+    const result = await invoiceDispatchesAPI.uploadReceivingDoc(id, file);
     await fetchList();
     return result;
   }, [fetchList]);
@@ -105,12 +140,17 @@ export function useInvoiceDispatches(params?: UseInvoiceDispatchesParams) {
     refetch: fetchList,
     getById,
     create,
+    update,
     patch,
+    remove,
     confirm,
+    cancel,
     uploadBilti,
+    uploadReceivingDoc,
     getEInvoice,
     getEWayBills,
     generateEInvoice,
+    previewEWayBill,
     generateEWayBill,
   };
 }

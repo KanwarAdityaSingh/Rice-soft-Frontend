@@ -32,12 +32,16 @@ export function BillShipToAddresses({
     <div className={`space-y-2 text-sm ${className}`}>
       <div>
         <p className="text-xs font-medium text-muted-foreground">Bill to</p>
-        <p className="mt-0.5 font-medium text-foreground">{billText || '–'}</p>
+        <p className="mt-0.5 break-words font-medium leading-snug text-foreground">
+          {billText || '–'}
+        </p>
       </div>
       {!same && (
         <div>
           <p className="text-xs font-medium text-muted-foreground">Ship to / Deliver to</p>
-          <p className="mt-0.5 font-medium text-foreground">{shipText || '–'}</p>
+          <p className="mt-0.5 break-words font-medium leading-snug text-foreground">
+            {shipText || '–'}
+          </p>
         </div>
       )}
     </div>

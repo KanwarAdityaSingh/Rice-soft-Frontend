@@ -70,9 +70,6 @@ import {
   formatTransporterVerifiedAt,
   getTransporterSaveAlert,
 } from '../../../utils/transporterVerification';
-import {
-  hasTransporterBankInput,
-} from '../../../utils/transporterBank';
 import { canVerifyBankAccountLookup, getBankAccountHolderNameMismatchError, mapBankVerifyToBankDetails } from '../../../utils/bankVerification';
 import { assertEntityNotDuplicateBeforeVerification } from '../../../utils/entityDuplicateCheck';
 import { getUserFacingApiErrorMessage } from '../../../utils/errorHandler';
@@ -686,19 +683,9 @@ export function TransporterFormModal({
     }
 
     const bd = formData.bank_details;
+    // Bank is optional. Only validate IFSC format when the user entered one.
     if (bd?.ifsc_code?.trim() && !validateIFSC(bd.ifsc_code)) {
       newErrors.bank_ifsc_code = 'Invalid IFSC format';
-    }
-    if (hasTransporterBankInput(bd) && !shouldVerifyBankFields(bd)) {
-      if (!bd?.account_holder_name?.trim()) {
-        newErrors.bank_account_holder_name = 'Account holder name is required';
-      }
-      if (!bd?.account_number?.trim()) {
-        newErrors.bank_account_number = 'Account number is required';
-      }
-      if (!bd?.ifsc_code?.trim() || bd.ifsc_code.length !== 11) {
-        newErrors.bank_ifsc_code = newErrors.bank_ifsc_code ?? 'Valid IFSC is required';
-      }
     }
 
     return newErrors;
@@ -916,9 +903,14 @@ export function TransporterFormModal({
 
       // Remove vehicle_ids from payload - relationship is managed from vehicle side
       const { vehicle_ids, ...rest } = formData;
+      // Incomplete bank is optional — omit until holder + account + IFSC are all present
+      const bank_details = shouldVerifyBankFields(formData.bank_details)
+        ? formData.bank_details
+        : undefined;
       const submitData = buildEntitySavePayload(
         {
           ...rest,
+          bank_details,
           contact_persons: (formData.contact_persons || []).filter((cp) => !isContactPersonRowEmpty(cp)),
         },
         {

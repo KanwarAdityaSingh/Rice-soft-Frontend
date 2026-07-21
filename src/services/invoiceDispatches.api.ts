@@ -3,12 +3,15 @@ import { authenticatedFetchEnvelopeData } from './authenticatedFetch';
 import type {
   InvoiceDispatch,
   CreateInvoiceDispatchRequest,
+  UpdateInvoiceDispatchRequest,
   PatchInvoiceDispatchRequest,
   InvoiceDispatchStatus,
   EInvoice,
   EWayBill,
   CreateEWayBillRequest,
+  EWayBillPreviewResponse,
   UploadInvoiceDispatchBiltiResponse,
+  UploadInvoiceDispatchReceivingDocResponse,
 } from '../types/sales';
 
 const BASE = '/invoice-dispatches';
@@ -35,10 +38,35 @@ export const invoiceDispatchesAPI = {
   create: (data: CreateInvoiceDispatchRequest) =>
     apiService.post<InvoiceDispatch>(BASE, data),
 
+  /**
+   * PUT /invoice-dispatches/:id — draft, confirmed, or cancelled.
+   * Editable logistics only (no inventory impact). Locked: sauda, godown, invoice number, status, lines.
+   */
+  update: (id: string, data: UpdateInvoiceDispatchRequest) =>
+    apiService.put<InvoiceDispatch>(`${BASE}/${id}`, data),
+
   patch: (id: string, data: PatchInvoiceDispatchRequest) =>
     apiService.patch<InvoiceDispatch>(`${BASE}/${id}`, data),
 
+  /**
+   * DELETE /invoice-dispatches/:id
+   * - draft: hard delete
+   * - confirmed: reverse inventory (restore source FGI; godown transfer also reverses destination), then hard delete
+   * - cancelled: hard delete (stock already reversed)
+   * 409 when credit notes or an e-invoice exist on the dispatch.
+   */
+  delete: (id: string) =>
+    apiService.delete<{ success: boolean; message?: string }>(`${BASE}/${id}`),
+
   confirm: (id: string) => apiService.post<InvoiceDispatch>(`${BASE}/${id}/confirm`),
+
+  /**
+   * POST /invoice-dispatches/:id/cancel
+   * Confirmed godown transfers only (`to_godown_id` required).
+   * Reverses FGI at destination then restores source; status → cancelled.
+   * Fails if destination stock was already consumed.
+   */
+  cancel: (id: string) => apiService.post<InvoiceDispatch>(`${BASE}/${id}/cancel`),
 
   /**
    * POST /invoice-dispatches/:id/upload-bilti
@@ -49,6 +77,19 @@ export const invoiceDispatchesAPI = {
     formData.append('file', file);
     return authenticatedFetchEnvelopeData<UploadInvoiceDispatchBiltiResponse>(
       `${API_BASE_URL}${BASE}/${id}/upload-bilti`,
+      { method: 'POST', body: formData }
+    );
+  },
+
+  /**
+   * POST /invoice-dispatches/:id/upload-receiving-doc
+   * multipart field `file` — jpeg/png/gif or pdf, max 10MB (same pattern as bilti).
+   */
+  uploadReceivingDoc: (id: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return authenticatedFetchEnvelopeData<UploadInvoiceDispatchReceivingDocResponse>(
+      `${API_BASE_URL}${BASE}/${id}/upload-receiving-doc`,
       { method: 'POST', body: formData }
     );
   },
@@ -64,6 +105,13 @@ export const invoiceDispatchesAPI = {
   /** Get e-way bill(s) for dispatch (newest first); empty array if none */
   getEWayBills: (id: string) =>
     apiService.get<EWayBill[]>(`${BASE}/${id}/e-way-bill`),
+
+  /**
+   * Preview e-way bill payload (same prep as generate, including distance API).
+   * Does not generate or persist.
+   */
+  previewEWayBill: (id: string, body?: CreateEWayBillRequest) =>
+    apiService.post<EWayBillPreviewResponse>(`${BASE}/${id}/e-way-bill/preview`, body ?? {}),
 
   /**
    * Generate e-way bill via Masters India.
